@@ -438,6 +438,13 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
     # _cpp._compiled_snapshot may omit rule-level execution metadata that is
     # losslessly available from the native model; enrich so v0.2 round trips
     # preserve driving work and other explicitly serialized rule semantics.
+    for barrier in model_snapshot.get("barrier_patterns", []):
+        if isinstance(barrier, Mapping) and isinstance(
+            barrier.get("expression"), Mapping
+        ):
+            barrier["expression"] = _expression_v02(
+                barrier["expression"], model_snapshot
+            )
     native_rules = list(getattr(native, "reaction_rules", []))
     for index, rule in enumerate(model_snapshot.get("rules", [])):
         if not isinstance(rule, Mapping) or index >= len(native_rules):
@@ -3724,24 +3731,49 @@ class EqualityUndecided(Exception):
 
 
 def _evaluate_model_expression_exact(
-    expr_str: str, parameters: Mapping[str, Fraction]
+    expr_str: str,
+    parameters: Mapping[str, Fraction],
+    functions: Mapping[str, str] | None = None,
+    _visiting: frozenset[str] = frozenset(),
 ) -> Fraction:
     """Evaluate the rational arithmetic subset without rounding.
 
-    This evaluator is intentionally smaller than BNGL's expression language.
-    Equality outside the subset must remain undecided rather than being
-    established by floating-point proximity.
+    Supports exact rational arithmetic over parameters and acyclic nullary
+    rational functions. Equality outside the subset must remain undecided rather
+    than being established by floating-point proximity.
     """
+    normalized_expr = expr_str.replace("^", "**")
     try:
-        root = ast.parse(expr_str, mode="eval").body
+        root = ast.parse(normalized_expr, mode="eval").body
     except SyntaxError as exc:
         raise ValueError(f"not a rational arithmetic expression: {expr_str}") from exc
 
+    fn_map = functions or {}
+
     def visit(node: ast.AST) -> Fraction:
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            if isinstance(node.value, bool):
+                raise ValueError(f"boolean constant outside rational arithmetic: {expr_str}")
+            if isinstance(node.value, float) and not math.isfinite(node.value):
+                raise ValueError(f"non-finite literal: {expr_str}")
             return Fraction(str(node.value))
-        if isinstance(node, ast.Name) and node.id in parameters:
-            return parameters[node.id]
+        if isinstance(node, ast.Name):
+            if node.id in parameters:
+                return parameters[node.id]
+            if node.id in fn_map and node.id not in _visiting:
+                return _evaluate_model_expression_exact(
+                    fn_map[node.id], parameters, fn_map, _visiting | {node.id}
+                )
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if (
+                not node.args
+                and not node.keywords
+                and node.func.id in fn_map
+                and node.func.id not in _visiting
+            ):
+                return _evaluate_model_expression_exact(
+                    fn_map[node.func.id], parameters, fn_map, _visiting | {node.func.id}
+                )
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
             value = visit(node.operand)
             return value if isinstance(node.op, ast.UAdd) else -value
@@ -3758,10 +3790,1436 @@ def _evaluate_model_expression_exact(
                     raise ValueError("division by zero in rational expression")
                 return left / right
             if isinstance(node.op, ast.Pow) and right.denominator == 1:
+                if left == 0 and right.numerator < 0:
+                    raise ValueError("division by zero in negative power")
                 return left**right.numerator
         raise ValueError(f"expression is outside exact rational arithmetic: {expr_str}")
 
     return visit(root)
+
+
+# ---------------------------------------------------------------------------
+# Exact multivariate polynomial & rational-expression normalization with
+# pre-cancellation pole-domain tracking (EQ-functions).
+# ---------------------------------------------------------------------------
+
+_Monomial = tuple[tuple[str, int], ...]
+_Poly = tuple[tuple[_Monomial, Fraction], ...]
+
+
+def _poly_from_dict(terms: Mapping[_Monomial, Fraction]) -> _Poly:
+    return tuple(sorted((m, c) for m, c in terms.items() if c != 0))
+
+
+def _poly_const(value: Fraction) -> _Poly:
+    return (((), value),) if value != 0 else ()
+
+
+def _poly_var(name: str) -> _Poly:
+    return ((((name, 1),), Fraction(1)),)
+
+
+def _poly_is_zero(p: _Poly) -> bool:
+    return len(p) == 0
+
+
+def _poly_is_const(p: _Poly) -> bool:
+    return len(p) == 0 or (len(p) == 1 and p[0][0] == ())
+
+
+def _poly_vars(p: _Poly) -> frozenset[str]:
+    names: set[str] = set()
+    for mono, _ in p:
+        for name, _ in mono:
+            names.add(name)
+    return frozenset(names)
+
+
+def _poly_add(a: _Poly, b: _Poly) -> _Poly:
+    acc: dict[_Monomial, Fraction] = dict(a)
+    for m, c in b:
+        acc[m] = acc.get(m, Fraction(0)) + c
+    return _poly_from_dict(acc)
+
+
+def _poly_neg(a: _Poly) -> _Poly:
+    return tuple((m, -c) for m, c in a)
+
+
+def _poly_sub(a: _Poly, b: _Poly) -> _Poly:
+    return _poly_add(a, _poly_neg(b))
+
+
+def _mono_mul(m1: _Monomial, m2: _Monomial) -> _Monomial:
+    acc: dict[str, int] = dict(m1)
+    for k, e in m2:
+        acc[k] = acc.get(k, 0) + e
+    return tuple(sorted((k, e) for k, e in acc.items() if e > 0))
+
+
+def _poly_mul(a: _Poly, b: _Poly) -> _Poly:
+    if not a or not b:
+        return ()
+    acc: dict[_Monomial, Fraction] = {}
+    for m1, c1 in a:
+        for m2, c2 in b:
+            m = _mono_mul(m1, m2)
+            acc[m] = acc.get(m, Fraction(0)) + c1 * c2
+    return _poly_from_dict(acc)
+
+
+def _poly_pow(a: _Poly, exp: int) -> _Poly:
+    if exp < 0:
+        raise ValueError("negative polynomial exponent")
+    result = _poly_const(Fraction(1))
+    base = a
+    e = exp
+    while e > 0:
+        if e & 1:
+            result = _poly_mul(result, base)
+        e >>= 1
+        if e:
+            base = _poly_mul(base, base)
+    return result
+
+
+def _poly_scale(p: _Poly, factor: Fraction) -> _Poly:
+    if factor == 0 or not p:
+        return ()
+    return tuple((m, c * factor) for m, c in p)
+
+
+def _poly_lead_coeff(p: _Poly) -> Fraction:
+    return p[-1][1] if p else Fraction(0)
+
+
+def _poly_monic(p: _Poly) -> _Poly:
+    if not p:
+        return ()
+    return _poly_scale(p, Fraction(1) / _poly_lead_coeff(p))
+
+
+def _poly_to_univariate(p: _Poly, var: str) -> list[Fraction]:
+    if not p:
+        return []
+    deg = max((dict(m).get(var, 0) for m, _ in p), default=0)
+    coeffs = [Fraction(0)] * (deg + 1)
+    for m, c in p:
+        coeffs[dict(m).get(var, 0)] += c
+    while coeffs and coeffs[-1] == 0:
+        coeffs.pop()
+    return coeffs
+
+
+def _univariate_to_poly(coeffs: list[Fraction], var: str) -> _Poly:
+    terms: dict[_Monomial, Fraction] = {}
+    for deg, c in enumerate(coeffs):
+        if c != 0:
+            terms[((var, deg),) if deg > 0 else ()] = c
+    return _poly_from_dict(terms)
+
+
+def _uni_divmod(
+    a: list[Fraction], b: list[Fraction]
+) -> tuple[list[Fraction], list[Fraction]]:
+    rem = list(a)
+    while rem and rem[-1] == 0:
+        rem.pop()
+    b_clean = list(b)
+    while b_clean and b_clean[-1] == 0:
+        b_clean.pop()
+    if not b_clean:
+        raise ZeroDivisionError("univariate polynomial division by zero")
+    deg_b = len(b_clean) - 1
+    lead_b = b_clean[-1]
+    quot = [Fraction(0)] * max(0, len(rem) - deg_b)
+    while len(rem) >= len(b_clean):
+        shift = len(rem) - len(b_clean)
+        factor = rem[-1] / lead_b
+        quot[shift] = factor
+        for i in range(len(b_clean)):
+            rem[shift + i] -= factor * b_clean[i]
+        while rem and rem[-1] == 0:
+            rem.pop()
+    while quot and quot[-1] == 0:
+        quot.pop()
+    return quot, rem
+
+
+def _uni_gcd(a: list[Fraction], b: list[Fraction]) -> list[Fraction]:
+    x = list(a)
+    y = list(b)
+    while x and x[-1] == 0:
+        x.pop()
+    while y and y[-1] == 0:
+        y.pop()
+    while y:
+        _, r = _uni_divmod(x, y)
+        x, y = y, r
+    if x:
+        lead = x[-1]
+        x = [c / lead for c in x]
+    return x
+
+
+def _uni_derivative(a: list[Fraction]) -> list[Fraction]:
+    if len(a) <= 1:
+        return []
+    return [a[i] * Fraction(i) for i in range(1, len(a))]
+
+
+def _poly_squarefree_pole(p: _Poly) -> _Poly:
+    """Return canonical square-free monic form for univariate poles, monic otherwise."""
+    if _poly_is_const(p):
+        return ()
+    variables = _poly_vars(p)
+    if len(variables) == 1:
+        var = next(iter(variables))
+        coeffs = _poly_to_univariate(p, var)
+        deriv = _uni_derivative(coeffs)
+        if deriv:
+            g = _uni_gcd(coeffs, deriv)
+            if len(g) > 1:
+                sf, _ = _uni_divmod(coeffs, g)
+                return _poly_monic(_univariate_to_poly(sf, var))
+    return _poly_monic(p)
+
+
+def _poly_extract_monomial_gcd(a: _Poly, b: _Poly) -> tuple[_Poly, _Poly]:
+    """Cancel any common monomial factor across all terms of a and b."""
+    if not a or not b:
+        return a, b
+    all_monos = [dict(m) for m, _ in a] + [dict(m) for m, _ in b]
+    common_vars = set(all_monos[0])
+    for d in all_monos[1:]:
+        common_vars &= set(d)
+    if not common_vars:
+        return a, b
+    min_exp = {v: min(d[v] for d in all_monos) for v in common_vars}
+
+    def div_mono(p: _Poly) -> _Poly:
+        out: dict[_Monomial, Fraction] = {}
+        for m, c in p:
+            d = dict(m)
+            for v, e in min_exp.items():
+                d[v] -= e
+            nm = tuple(sorted((k, v) for k, v in d.items() if v > 0))
+            out[nm] = c
+        return _poly_from_dict(out)
+
+    return div_mono(a), div_mono(b)
+
+
+def _poly_reduce_pair(num: _Poly, den: _Poly) -> tuple[_Poly, _Poly]:
+    """Reduce (num, den) to canonical exact ratio with monic denominator."""
+    if _poly_is_zero(den):
+        raise ValueError("division by zero in rational expression")
+    if _poly_is_zero(num):
+        return (), _poly_const(Fraction(1))
+    num, den = _poly_extract_monomial_gcd(num, den)
+    # Exact proportional cancellation handles multivariate (P*c)/(P*d)
+    if _poly_monic(num) == _poly_monic(den):
+        ratio = _poly_lead_coeff(num) / _poly_lead_coeff(den)
+        return _poly_const(ratio), _poly_const(Fraction(1))
+    variables = _poly_vars(num) | _poly_vars(den)
+    if len(variables) == 1:
+        var = next(iter(variables))
+        u_num = _poly_to_univariate(num, var)
+        u_den = _poly_to_univariate(den, var)
+        g = _uni_gcd(u_num, u_den)
+        if len(g) > 1:
+            q_num, _ = _uni_divmod(u_num, g)
+            q_den, _ = _uni_divmod(u_den, g)
+            num = _univariate_to_poly(q_num, var)
+            den = _univariate_to_poly(q_den, var)
+    lead = _poly_lead_coeff(den)
+    return _poly_scale(num, Fraction(1) / lead), _poly_scale(den, Fraction(1) / lead)
+
+
+def _poly_eval(p: _Poly, assignment: Mapping[str, Fraction]) -> Fraction:
+    total = Fraction(0)
+    for mono, coeff in p:
+        term = coeff
+        for var, exp in mono:
+            term *= assignment[var] ** exp
+        total += term
+    return total
+
+
+class _RationalExpr:
+    """Exact multivariate rational expression with pre-cancellation pole domain."""
+
+    __slots__ = ("num", "den", "poles")
+
+    def __init__(self, num: _Poly, den: _Poly, poles: frozenset[_Poly]) -> None:
+        r_num, r_den = _poly_reduce_pair(num, den)
+        self.num = r_num
+        self.den = r_den
+        cleaned_poles = set(poles)
+        if not _poly_is_const(den):
+            sf = _poly_squarefree_pole(den)
+            if sf:
+                cleaned_poles.add(sf)
+        self.poles = frozenset(cleaned_poles)
+
+    def key(self) -> tuple[_Poly, _Poly, frozenset[_Poly]]:
+        return (self.num, self.den, self.poles)
+
+    def ratio_key(self) -> tuple[_Poly, _Poly]:
+        return (self.num, self.den)
+
+    def variables(self) -> frozenset[str]:
+        v = set(_poly_vars(self.num)) | set(_poly_vars(self.den))
+        for p in self.poles:
+            v |= set(_poly_vars(p))
+        return frozenset(v)
+
+    def eval_at(self, assignment: Mapping[str, Fraction]) -> Fraction | None:
+        for pole in self.poles:
+            if _poly_eval(pole, assignment) == 0:
+                return None
+        d_val = _poly_eval(self.den, assignment)
+        if d_val == 0:
+            return None
+        return _poly_eval(self.num, assignment) / d_val
+
+
+def _parse_rational_expr(
+    expr_str: str,
+    *,
+    allowed_vars: frozenset[str],
+    zero_arg_functions: Mapping[str, str] | None = None,
+    var_renaming: Mapping[str, str] | None = None,
+    _visiting: frozenset[str] = frozenset(),
+) -> _RationalExpr | None:
+    """Parse an expression into an exact canonical rational function with poles.
+
+    Returns None when the expression falls outside the exact rational subset
+    (e.g. transcendental functions, conditionals, TFUN).
+    """
+    normalized_expr = expr_str.replace("^", "**")
+    try:
+        root = ast.parse(normalized_expr, mode="eval").body
+    except SyntaxError:
+        return None
+
+    fn_map = zero_arg_functions or {}
+    rename = var_renaming or {}
+
+    def visit(node: ast.AST) -> _RationalExpr | None:
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            if isinstance(node.value, bool):
+                return None
+            if isinstance(node.value, float) and not math.isfinite(node.value):
+                return None
+            return _RationalExpr(
+                _poly_const(Fraction(str(node.value))),
+                _poly_const(Fraction(1)),
+                frozenset(),
+            )
+        if isinstance(node, ast.Name):
+            if node.id in fn_map and node.id not in _visiting:
+                return _parse_rational_expr(
+                    fn_map[node.id],
+                    allowed_vars=allowed_vars,
+                    zero_arg_functions=fn_map,
+                    var_renaming=rename,
+                    _visiting=_visiting | {node.id},
+                )
+            if node.id in allowed_vars:
+                mapped = rename.get(node.id, node.id)
+                return _RationalExpr(
+                    _poly_var(mapped), _poly_const(Fraction(1)), frozenset()
+                )
+            return None
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if (
+                not node.args
+                and not node.keywords
+                and node.func.id in fn_map
+                and node.func.id not in _visiting
+            ):
+                return _parse_rational_expr(
+                    fn_map[node.func.id],
+                    allowed_vars=allowed_vars,
+                    zero_arg_functions=fn_map,
+                    var_renaming=rename,
+                    _visiting=_visiting | {node.func.id},
+                )
+            if not node.args and not node.keywords and node.func.id in allowed_vars:
+                mapped = rename.get(node.func.id, node.func.id)
+                return _RationalExpr(
+                    _poly_var(mapped), _poly_const(Fraction(1)), frozenset()
+                )
+            return None
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            inner = visit(node.operand)
+            if inner is None:
+                return None
+            if isinstance(node.op, ast.UAdd):
+                return inner
+            return _RationalExpr(_poly_neg(inner.num), inner.den, inner.poles)
+        if isinstance(node, ast.BinOp):
+            left = visit(node.left)
+            right = visit(node.right)
+            if left is None or right is None:
+                return None
+            poles = left.poles | right.poles
+            if isinstance(node.op, ast.Add):
+                return _RationalExpr(
+                    _poly_add(
+                        _poly_mul(left.num, right.den),
+                        _poly_mul(right.num, left.den),
+                    ),
+                    _poly_mul(left.den, right.den),
+                    poles,
+                )
+            if isinstance(node.op, ast.Sub):
+                return _RationalExpr(
+                    _poly_sub(
+                        _poly_mul(left.num, right.den),
+                        _poly_mul(right.num, left.den),
+                    ),
+                    _poly_mul(left.den, right.den),
+                    poles,
+                )
+            if isinstance(node.op, ast.Mult):
+                return _RationalExpr(
+                    _poly_mul(left.num, right.num),
+                    _poly_mul(left.den, right.den),
+                    poles,
+                )
+            if isinstance(node.op, ast.Div):
+                if _poly_is_zero(right.num):
+                    return None
+                extra_poles = set(poles)
+                if not _poly_is_const(right.num):
+                    sf = _poly_squarefree_pole(right.num)
+                    if sf:
+                        extra_poles.add(sf)
+                return _RationalExpr(
+                    _poly_mul(left.num, right.den),
+                    _poly_mul(left.den, right.num),
+                    frozenset(extra_poles),
+                )
+            if isinstance(node.op, ast.Pow):
+                if not (_poly_is_const(right.num) and _poly_is_const(right.den)):
+                    return None
+                exp_val = (
+                    Fraction(0)
+                    if _poly_is_zero(right.num)
+                    else right.num[0][1] / right.den[0][1]
+                )
+                if exp_val.denominator != 1 or abs(exp_val.numerator) > 16:
+                    return None
+                n = exp_val.numerator
+                if n == 0:
+                    return _RationalExpr(
+                        _poly_const(Fraction(1)),
+                        _poly_const(Fraction(1)),
+                        poles,
+                    )
+                if n > 0:
+                    return _RationalExpr(
+                        _poly_pow(left.num, n), _poly_pow(left.den, n), poles
+                    )
+                if _poly_is_zero(left.num):
+                    return None
+                extra_poles = set(poles)
+                if not _poly_is_const(left.num):
+                    sf = _poly_squarefree_pole(left.num)
+                    if sf:
+                        extra_poles.add(sf)
+                return _RationalExpr(
+                    _poly_pow(left.den, -n),
+                    _poly_pow(left.num, -n),
+                    frozenset(extra_poles),
+                )
+        return None
+
+    try:
+        return visit(root)
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Exact piecewise-linear / step inline TFUN normalization (EQ-time).
+# ---------------------------------------------------------------------------
+
+
+def _eval_tfun_exact(
+    xs: tuple[Fraction, ...], ys: tuple[Fraction, ...], method: str, t: Fraction
+) -> Fraction:
+    if len(xs) == 1:
+        return ys[0]
+    if t <= xs[0]:
+        return ys[0]
+    if t >= xs[-1]:
+        return ys[-1]
+    for i in range(len(xs) - 1):
+        if xs[i] <= t < xs[i + 1]:
+            if method == "step":
+                return ys[i]
+            return ys[i] + (t - xs[i]) * (ys[i + 1] - ys[i]) / (xs[i + 1] - xs[i])
+    return ys[-1]
+
+
+def _canonicalize_tfun_table(
+    xs: list[Fraction], ys: list[Fraction], method: str, nonnegative_domain: bool
+) -> tuple[str, tuple[tuple[Fraction, Fraction], ...]]:
+    """Return canonical minimal knot table for linear/step TFUN with clamping."""
+    if nonnegative_domain:
+        y0 = _eval_tfun_exact(tuple(xs), tuple(ys), method, Fraction(0))
+        filtered = [(x, y) for x, y in zip(xs, ys) if x > 0]
+        xs = [Fraction(0)] + [x for x, _ in filtered]
+        ys = [y0] + [y for _, y in filtered]
+
+    pts = list(zip(xs, ys))
+    if method == "linear":
+        changed = True
+        while changed and len(pts) >= 3:
+            changed = False
+            reduced = [pts[0]]
+            for i in range(1, len(pts) - 1):
+                x0, y0 = reduced[-1]
+                x1, y1 = pts[i]
+                x2, y2 = pts[i + 1]
+                if (y1 - y0) * (x2 - x0) == (y2 - y0) * (x1 - x0):
+                    changed = True
+                else:
+                    reduced.append(pts[i])
+            reduced.append(pts[-1])
+            pts = reduced
+        while len(pts) >= 2 and pts[0][1] == pts[1][1]:
+            pts.pop(0)
+        while len(pts) >= 2 and pts[-1][1] == pts[-2][1]:
+            pts.pop()
+        if len(pts) == 1:
+            return ("const", ((Fraction(0), pts[0][1]),))
+        return ("linear", tuple(pts))
+
+    # Step interpolation (right-continuous, constant clamped outside range).
+    reduced_step = [pts[0]]
+    for x, y in pts[1:]:
+        if y != reduced_step[-1][1]:
+            reduced_step.append((x, y))
+    if len(reduced_step) == 1:
+        return ("const", ((Fraction(0), reduced_step[0][1]),))
+    return ("step", tuple(reduced_step))
+
+
+def _normalize_inline_tfun_doc(
+    expr_doc: Mapping[str, Any],
+    model_doc: Mapping[str, Any],
+    obs_renaming: Mapping[str, str] | None = None,
+) -> tuple[tuple[str, str], str, tuple[tuple[Fraction, Fraction], ...]] | None:
+    """Normalize an inline table_function AST node from BNGIR v0.2."""
+    if not isinstance(expr_doc, Mapping) or expr_doc.get("kind") != "table_function":
+        return None
+    if expr_doc.get("file"):
+        return None
+    method = str(expr_doc.get("method") or "linear").lower()
+    if method not in {"linear", "step"}:
+        return None
+    raw_x = expr_doc.get("x")
+    raw_y = expr_doc.get("y")
+    if (
+        not isinstance(raw_x, list)
+        or not isinstance(raw_y, list)
+        or not raw_x
+        or len(raw_x) != len(raw_y)
+    ):
+        return None
+    try:
+        xs = [Fraction(str(float(v))) for v in raw_x]
+        ys = [Fraction(str(float(v))) for v in raw_y]
+    except (TypeError, ValueError):
+        return None
+    if any(xs[i] >= xs[i + 1] for i in range(len(xs) - 1)):
+        return None
+    args = expr_doc.get("arguments", [])
+    if len(args) != 1 or not isinstance(args[0], Mapping):
+        return None
+    counter_doc = args[0]
+    ckind = counter_doc.get("kind")
+    if ckind == "time_ref":
+        counter_key = ("time", "time")
+        nonneg = True
+    elif ckind == "observable_ref":
+        sym = counter_doc.get("symbol", {})
+        name = _name_for_symbol(model_doc, str(sym.get("kind")), int(sym.get("index")))
+        mapped = (obs_renaming or {}).get(name, name)
+        counter_key = ("obs", mapped)
+        nonneg = True
+    elif ckind == "parameter_ref":
+        sym = counter_doc.get("symbol", {})
+        name = _name_for_symbol(model_doc, str(sym.get("kind")), int(sym.get("index")))
+        counter_key = ("param", name)
+        nonneg = False
+    else:
+        return None
+    canon_method, canon_pts = _canonicalize_tfun_table(xs, ys, method, nonneg)
+    return (counter_key, canon_method, canon_pts)
+
+
+def _tfun_counterexample(
+    left_tfun: tuple[tuple[str, str], str, tuple[tuple[Fraction, Fraction], ...]],
+    right_tfun: tuple[tuple[str, str], str, tuple[tuple[Fraction, Fraction], ...]],
+) -> dict[str, Any] | None:
+    """Return an explicit rational point where two same-counter TFUNs disagree."""
+    l_counter, l_method, l_pts = left_tfun
+    r_counter, r_method, r_pts = right_tfun
+    if l_counter != r_counter:
+        return None
+    if (l_method, l_pts) == (r_method, r_pts):
+        return None
+    l_xs = tuple(x for x, _ in l_pts)
+    l_ys = tuple(y for _, y in l_pts)
+    r_xs = tuple(x for x, _ in r_pts)
+    r_ys = tuple(y for _, y in r_pts)
+    all_xs = sorted(set(l_xs) | set(r_xs))
+    nonneg = l_counter[0] in {"time", "obs"}
+    candidates: list[Fraction] = list(all_xs)
+    if all_xs:
+        low = all_xs[0] - Fraction(1)
+        if not nonneg or low >= 0:
+            candidates.append(low)
+        elif nonneg:
+            candidates.append(Fraction(0))
+        candidates.append(all_xs[-1] + Fraction(1))
+    for i in range(len(all_xs) - 1):
+        mid = (all_xs[i] + all_xs[i + 1]) / Fraction(2)
+        if not nonneg or mid >= 0:
+            candidates.append(mid)
+    for t in candidates:
+        if nonneg and t < 0:
+            continue
+        lv = _eval_tfun_exact(l_xs, l_ys, "linear" if l_method == "const" else l_method, t)
+        rv = _eval_tfun_exact(r_xs, r_ys, "linear" if r_method == "const" else r_method, t)
+        if lv != rv:
+            return {
+                "counter": l_counter[1],
+                "point": str(t),
+                "left": str(lv),
+                "right": str(rv),
+            }
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Exact typed molecular graph parsing, isomorphism, and hierarchical renaming
+# (EQ-rename, EQ-order, EQ-split, EQ-observables, EQ-energy, EQ-barrier).
+# ---------------------------------------------------------------------------
+
+_QUANTIFIER_RE = re.compile(r"^(.*?)\s*(>=|<=|==|!=|>|<)\s*(\d+)\s*$")
+
+
+def _parse_graph_pattern(text: str) -> dict[str, Any] | None:
+    """Parse a canonical BNGL species or observable pattern into a typed graph."""
+    raw = text.strip()
+    if not raw or raw == "0":
+        return {"species_comp": "", "quantifier": None, "molecules": []}
+
+    quantifier: tuple[str, int] | None = None
+    q_match = _QUANTIFIER_RE.match(raw)
+    if q_match:
+        prefix = q_match.group(1).strip()
+        if prefix and (prefix[-1] == ")" or prefix[-1].isalnum() or prefix[-1] == "_"):
+            quantifier = (q_match.group(2), int(q_match.group(3)))
+            raw = prefix
+
+    species_comp = ""
+    if raw.startswith("@") and ":" in raw:
+        colon = raw.index(":")
+        species_comp = raw[1:colon].strip()
+        raw = raw[colon + 1 :].strip()
+
+    # Split top-level '.' separating molecules (ignoring '.' inside parentheses).
+    mol_tokens: list[str] = []
+    depth = 0
+    start = 0
+    for idx, ch in enumerate(raw):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth < 0:
+                return None
+        elif ch == "." and depth == 0:
+            mol_tokens.append(raw[start:idx].strip())
+            start = idx + 1
+    if depth != 0:
+        return None
+    mol_tokens.append(raw[start:].strip())
+
+    molecules: list[dict[str, Any]] = []
+    for token in mol_tokens:
+        if not token:
+            return None
+        mol_comp = ""
+        if "@" in token:
+            at_pos = token.rfind("@")
+            if ")" not in token[at_pos:]:
+                mol_comp = token[at_pos + 1 :].strip()
+                token = token[:at_pos].strip()
+        if "(" in token:
+            if not token.endswith(")"):
+                return None
+            lp = token.index("(")
+            mol_type = token[:lp].strip()
+            sites_str = token[lp + 1 : -1].strip()
+        else:
+            mol_type = token.strip()
+            sites_str = ""
+        # Strip any local scope tag %label on molecule name if present.
+        mol_scope = ""
+        if "%" in mol_type:
+            mol_type, mol_scope = mol_type.split("%", 1)
+        sites: list[dict[str, Any]] = []
+        if sites_str:
+            for site_tok in sites_str.split(","):
+                s = site_tok.strip()
+                if not s:
+                    continue
+                # Extract bond tokens (!1, !+, !?, or unbound marker).
+                bonds: list[str] = []
+                # Split on '!' first.
+                parts = s.split("!")
+                head = parts[0]
+                for bpart in parts[1:]:
+                    bonds.append(bpart.strip())
+                # Strip trailing '.' unbound marker if present.
+                if head.endswith("."):
+                    head = head[:-1]
+                    bonds.append(".")
+                # Extract state (~state) and optional label (%tag).
+                site_label = ""
+                if "%" in head:
+                    head, site_label = head.split("%", 1)
+                state: str | None = None
+                if "~" in head:
+                    comp_name, state = head.split("~", 1)
+                else:
+                    comp_name = head
+                sites.append(
+                    {
+                        "comp": comp_name.strip(),
+                        "state": state,
+                        "bonds": tuple(bonds),
+                        "label": site_label,
+                    }
+                )
+        molecules.append(
+            {
+                "type": mol_type,
+                "comp": mol_comp,
+                "scope": mol_scope,
+                "sites": sites,
+            }
+        )
+    return {
+        "species_comp": species_comp,
+        "quantifier": quantifier,
+        "molecules": molecules,
+    }
+
+
+def _rename_parsed_graph(
+    graph: Mapping[str, Any],
+    mol_map: Mapping[str, str],
+    comp_map: Mapping[str, Mapping[str, str]],
+    state_map: Mapping[tuple[str, str], Mapping[str, str]],
+    compartment_map: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    cmap = compartment_map or {}
+    new_mols = []
+    for mol in graph["molecules"]:
+        m_type = mol["type"]
+        new_type = mol_map.get(m_type, m_type)
+        c_sub = comp_map.get(m_type, {})
+        new_sites = []
+        for site in mol["sites"]:
+            c_name = site["comp"]
+            new_c = c_sub.get(c_name, c_name)
+            st = site["state"]
+            if st is not None:
+                s_sub = state_map.get((m_type, c_name), {})
+                st = s_sub.get(st, st)
+            new_sites.append(
+                {
+                    "comp": new_c,
+                    "state": st,
+                    "bonds": site["bonds"],
+                    "label": site["label"],
+                }
+            )
+        new_mols.append(
+            {
+                "type": new_type,
+                "comp": cmap.get(mol["comp"], mol["comp"]) if mol["comp"] else "",
+                "scope": mol["scope"],
+                "sites": new_sites,
+            }
+        )
+    sp_comp = graph["species_comp"]
+    return {
+        "species_comp": cmap.get(sp_comp, sp_comp) if sp_comp else "",
+        "quantifier": graph["quantifier"],
+        "molecules": new_mols,
+    }
+
+
+def _site_bond_split(bonds: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Separate numeric bond IDs (binders) from non-numeric bond constraints."""
+    numeric = tuple(b for b in bonds if b.isdigit())
+    wild = tuple(sorted(b for b in bonds if not b.isdigit()))
+    return numeric, wild
+
+
+def _graphs_isomorphic(g1: Mapping[str, Any], g2: Mapping[str, Any]) -> bool:
+    """Exact graph isomorphism modulo molecule order, site order, and bond IDs."""
+    if g1["species_comp"] != g2["species_comp"] or g1["quantifier"] != g2["quantifier"]:
+        return False
+    mols1 = g1["molecules"]
+    mols2 = g2["molecules"]
+    if len(mols1) != len(mols2):
+        return False
+    if not mols1:
+        return True
+
+    def mol_inv(mol: Mapping[str, Any]) -> tuple[Any, ...]:
+        site_invs = []
+        for s in mol["sites"]:
+            num_b, wild_b = _site_bond_split(s["bonds"])
+            site_invs.append((s["comp"], s["state"], s["label"], len(num_b), wild_b))
+        return (mol["type"], mol["comp"], mol["scope"], tuple(sorted(site_invs)))
+
+    invs1 = [mol_inv(m) for m in mols1]
+    invs2 = [mol_inv(m) for m in mols2]
+    if sorted(invs1) != sorted(invs2):
+        return False
+
+    # Backtracking molecule + site matching carrying exact bond-ID bijection.
+    used_m2 = [False] * len(mols2)
+
+    def match_sites(
+        sites1: list[dict[str, Any]],
+        sites2: list[dict[str, Any]],
+        idx: int,
+        used_s2: list[bool],
+        b_fwd: dict[str, str],
+        b_rev: dict[str, str],
+        next_mol_fn,
+    ) -> bool:
+        if idx == len(sites1):
+            return next_mol_fn(b_fwd, b_rev)
+        s1 = sites1[idx]
+        num1, wild1 = _site_bond_split(s1["bonds"])
+        for j, s2 in enumerate(sites2):
+            if used_s2[j]:
+                continue
+            num2, wild2 = _site_bond_split(s2["bonds"])
+            if (
+                s1["comp"] != s2["comp"]
+                or s1["state"] != s2["state"]
+                or s1["label"] != s2["label"]
+                or wild1 != wild2
+                or len(num1) != len(num2)
+            ):
+                continue
+            # Match numeric bond binders on this site (usually 0 or 1).
+            if not num1:
+                used_s2[j] = True
+                if match_sites(sites1, sites2, idx + 1, used_s2, b_fwd, b_rev, next_mol_fn):
+                    return True
+                used_s2[j] = False
+            elif len(num1) == 1:
+                b1, b2 = num1[0], num2[0]
+                if (b1 in b_fwd and b_fwd[b1] != b2) or (
+                    b2 in b_rev and b_rev[b2] != b1
+                ):
+                    continue
+                new_fwd = dict(b_fwd)
+                new_rev = dict(b_rev)
+                new_fwd[b1] = b2
+                new_rev[b2] = b1
+                used_s2[j] = True
+                if match_sites(
+                    sites1, sites2, idx + 1, used_s2, new_fwd, new_rev, next_mol_fn
+                ):
+                    return True
+                used_s2[j] = False
+            else:
+                import itertools
+
+                for perm in itertools.permutations(num2):
+                    new_fwd = dict(b_fwd)
+                    new_rev = dict(b_rev)
+                    ok = True
+                    for b1, b2 in zip(num1, perm):
+                        if (b1 in new_fwd and new_fwd[b1] != b2) or (
+                            b2 in new_rev and new_rev[b2] != b1
+                        ):
+                            ok = False
+                            break
+                        new_fwd[b1] = b2
+                        new_rev[b2] = b1
+                    if ok:
+                        used_s2[j] = True
+                        if match_sites(
+                            sites1,
+                            sites2,
+                            idx + 1,
+                            used_s2,
+                            new_fwd,
+                            new_rev,
+                            next_mol_fn,
+                        ):
+                            return True
+                        used_s2[j] = False
+        return False
+
+    def match_mol(m_idx: int, b_fwd: dict[str, str], b_rev: dict[str, str]) -> bool:
+        if m_idx == len(mols1):
+            return True
+        inv = invs1[m_idx]
+        m1 = mols1[m_idx]
+        for j in range(len(mols2)):
+            if used_m2[j] or invs2[j] != inv:
+                continue
+            used_m2[j] = True
+            used_s2 = [False] * len(mols2[j]["sites"])
+            if match_sites(
+                m1["sites"],
+                mols2[j]["sites"],
+                0,
+                used_s2,
+                b_fwd,
+                b_rev,
+                lambda nf, nr: match_mol(m_idx + 1, nf, nr),
+            ):
+                return True
+            used_m2[j] = False
+        return False
+
+    return match_mol(0, {}, {})
+
+
+def _count_pattern_embeddings(
+    pattern: Mapping[str, Any], species: Mapping[str, Any]
+) -> int:
+    """Count exact injective embeddings of a BNGL pattern into a species graph."""
+    if pattern["species_comp"] and species["species_comp"] != pattern["species_comp"]:
+        return 0
+    pmols = pattern["molecules"]
+    smols = species["molecules"]
+    if not pmols or len(pmols) > len(smols):
+        return 0
+
+    used_m = [False] * len(smols)
+    count = 0
+
+    def match_sites(
+        psites: list[dict[str, Any]],
+        ssites: list[dict[str, Any]],
+        s_idx: int,
+        used_s: list[bool],
+        b_fwd: dict[str, str],
+        b_rev: dict[str, str],
+        cont,
+    ) -> None:
+        if s_idx == len(psites):
+            cont(b_fwd, b_rev)
+            return
+        ps = psites[s_idx]
+        p_num, p_wild = _site_bond_split(ps["bonds"])
+        for j, ss in enumerate(ssites):
+            if used_s[j]:
+                continue
+            if ps["comp"] != ss["comp"]:
+                continue
+            if ps["state"] is not None and ps["state"] != ss["state"]:
+                continue
+            s_num, _ = _site_bond_split(ss["bonds"])
+            # Bond compatibility:
+            if "?" in p_wild:
+                # Any bond state allowed.
+                used_s[j] = True
+                match_sites(psites, ssites, s_idx + 1, used_s, b_fwd, b_rev, cont)
+                used_s[j] = False
+                continue
+            if "+" in p_wild:
+                if not s_num:
+                    continue
+                used_s[j] = True
+                match_sites(psites, ssites, s_idx + 1, used_s, b_fwd, b_rev, cont)
+                used_s[j] = False
+                continue
+            if not p_num:
+                # Unbound required when no bond wildcard specified.
+                if s_num:
+                    continue
+                used_s[j] = True
+                match_sites(psites, ssites, s_idx + 1, used_s, b_fwd, b_rev, cont)
+                used_s[j] = False
+                continue
+            if len(p_num) != len(s_num):
+                continue
+            if len(p_num) == 1:
+                b1, b2 = p_num[0], s_num[0]
+                if (b1 in b_fwd and b_fwd[b1] != b2) or (
+                    b2 in b_rev and b_rev[b2] != b1
+                ):
+                    continue
+                nf = dict(b_fwd)
+                nr = dict(b_rev)
+                nf[b1] = b2
+                nr[b2] = b1
+                used_s[j] = True
+                match_sites(psites, ssites, s_idx + 1, used_s, nf, nr, cont)
+                used_s[j] = False
+
+    def match_mol(m_idx: int, b_fwd: dict[str, str], b_rev: dict[str, str]) -> None:
+        nonlocal count
+        if m_idx == len(pmols):
+            count += 1
+            return
+        pm = pmols[m_idx]
+        for j, sm in enumerate(smols):
+            if used_m[j]:
+                continue
+            if pm["type"] != sm["type"]:
+                continue
+            if pm["comp"] and pm["comp"] != sm["comp"]:
+                continue
+            used_m[j] = True
+            used_s = [False] * len(sm["sites"])
+            match_sites(
+                pm["sites"],
+                sm["sites"],
+                0,
+                used_s,
+                b_fwd,
+                b_rev,
+                lambda nf, nr: match_mol(m_idx + 1, nf, nr),
+            )
+            used_m[j] = False
+
+    match_mol(0, {}, {})
+    return count
+
+
+def _enumerate_signature_renamings(
+    left_model: Any,
+    right_model: Any,
+    max_candidates: int = 4096,
+) -> tuple[
+    list[tuple[dict[str, str], dict[str, dict[str, str]], dict[tuple[str, str], dict[str, str]]]],
+    bool,
+]:
+    """Enumerate consistent (molecule, component, state) bijections up to budget."""
+    import itertools
+
+    left_types = list(left_model._model.molecule_types)
+    right_types = list(right_model._model.molecule_types)
+    if len(left_types) != len(right_types):
+        return [], False
+
+    def type_shape(mt: Any) -> tuple[bool, tuple[int, ...]]:
+        return (
+            bool(mt.is_population),
+            tuple(sorted(len(c.allowed_states) for c in mt.components)),
+        )
+
+    l_by_shape: dict[tuple[bool, tuple[int, ...]], list[Any]] = {}
+    r_by_shape: dict[tuple[bool, tuple[int, ...]], list[Any]] = {}
+    for mt in left_types:
+        l_by_shape.setdefault(type_shape(mt), []).append(mt)
+    for mt in right_types:
+        r_by_shape.setdefault(type_shape(mt), []).append(mt)
+    if set(l_by_shape) != set(r_by_shape) or any(
+        len(l_by_shape[k]) != len(r_by_shape[k]) for k in l_by_shape
+    ):
+        return [], False
+
+    def comp_state_renamings(
+        l_mt: Any, r_mt: Any, budget: int
+    ) -> tuple[list[tuple[dict[str, str], dict[tuple[str, str], dict[str, str]]]], bool]:
+        l_by_arity: dict[int, list[Any]] = {}
+        r_by_arity: dict[int, list[Any]] = {}
+        for c in l_mt.components:
+            l_by_arity.setdefault(len(c.allowed_states), []).append(c)
+        for c in r_mt.components:
+            r_by_arity.setdefault(len(c.allowed_states), []).append(c)
+
+        results: list[tuple[dict[str, str], dict[tuple[str, str], dict[str, str]]]] = [
+            ({}, {})
+        ]
+        for arity in sorted(l_by_arity):
+            lc_list = l_by_arity[arity]
+            rc_list = r_by_arity[arity]
+            next_results: list[
+                tuple[dict[str, str], dict[tuple[str, str], dict[str, str]]]
+            ] = []
+            for perm_c in itertools.permutations(rc_list):
+                pair_state_options: list[list[dict[str, str]]] = []
+                for lc, rc in zip(lc_list, perm_c):
+                    l_states = list(lc.allowed_states)
+                    r_states = list(rc.allowed_states)
+                    if not l_states:
+                        pair_state_options.append([{}])
+                    else:
+                        opts = [
+                            dict(zip(l_states, sp))
+                            for sp in itertools.permutations(r_states)
+                        ]
+                        pair_state_options.append(opts)
+                for state_choice in itertools.product(*pair_state_options):
+                    for cur_c, cur_s in results:
+                        nc = dict(cur_c)
+                        ns = dict(cur_s)
+                        for lc, rc, smap in zip(lc_list, perm_c, state_choice):
+                            nc[lc.name] = rc.name
+                            if smap:
+                                ns[(l_mt.name, lc.name)] = smap
+                        next_results.append((nc, ns))
+                        if len(next_results) > budget:
+                            return next_results[:budget], True
+            results = next_results
+        return results, False
+
+    candidates: list[
+        tuple[
+            dict[str, str],
+            dict[str, dict[str, str]],
+            dict[tuple[str, str], dict[str, str]],
+        ]
+    ] = [({}, {}, {})]
+    truncated = False
+    for shape in sorted(l_by_shape):
+        l_group = l_by_shape[shape]
+        r_group = r_by_shape[shape]
+        next_candidates = []
+        for perm_m in itertools.permutations(r_group):
+            per_pair_options = []
+            for l_mt, r_mt in zip(l_group, perm_m):
+                opts, sub_trunc = comp_state_renamings(l_mt, r_mt, max_candidates)
+                if sub_trunc:
+                    truncated = True
+                per_pair_options.append((l_mt.name, r_mt.name, opts))
+            for combo in itertools.product(*(item[2] for item in per_pair_options)):
+                for cur_m, cur_c, cur_s in candidates:
+                    nm = dict(cur_m)
+                    nc = dict(cur_c)
+                    ns = dict(cur_s)
+                    for (lm_name, rm_name, _), (c_sub, s_sub) in zip(
+                        per_pair_options, combo
+                    ):
+                        nm[lm_name] = rm_name
+                        nc[lm_name] = c_sub
+                        ns.update(s_sub)
+                    next_candidates.append((nm, nc, ns))
+                    if len(next_candidates) > max_candidates:
+                        return next_candidates[:max_candidates], True
+        candidates = next_candidates
+    return candidates, truncated
+
+
+def _match_observables_exact(
+    left_obs: list[Any],
+    right_obs: list[Any],
+    mol_map: Mapping[str, str],
+    comp_map: Mapping[str, Mapping[str, str]],
+    state_map: Mapping[tuple[str, str], Mapping[str, str]],
+    compartment_map: Mapping[str, str] | None = None,
+) -> tuple[bool, dict[str, str]]:
+    """Match observables bijectively via exact graph isomorphism of patterns."""
+    if len(left_obs) != len(right_obs):
+        return False, {}
+    if not left_obs:
+        return True, {}
+
+    def parsed_list(obs: Any, do_rename: bool) -> list[dict[str, Any]] | None:
+        out = []
+        for p in obs.patterns:
+            g = _parse_graph_pattern(p)
+            if g is None:
+                return None
+            if do_rename:
+                g = _rename_parsed_graph(g, mol_map, comp_map, state_map, compartment_map)
+            out.append(g)
+        return out
+
+    def patterns_bijective(
+        l_graphs: list[dict[str, Any]], r_graphs: list[dict[str, Any]]
+    ) -> bool:
+        if len(l_graphs) != len(r_graphs):
+            return False
+        m = len(l_graphs)
+        adj_p = [
+            [j for j in range(m) if _graphs_isomorphic(l_graphs[i], r_graphs[j])]
+            for i in range(m)
+        ]
+        match_r = [-1] * m
+
+        def dfs_p(u: int, vis: list[bool]) -> bool:
+            for v in adj_p[u]:
+                if not vis[v]:
+                    vis[v] = True
+                    if match_r[v] < 0 or dfs_p(match_r[v], vis):
+                        match_r[v] = u
+                        return True
+            return False
+
+        return all(dfs_p(u, [False] * m) for u in range(m))
+
+    l_parsed = [parsed_list(o, True) for o in left_obs]
+    r_parsed = [parsed_list(o, False) for o in right_obs]
+    if any(p is None for p in l_parsed) or any(p is None for p in r_parsed):
+        return False, {}
+
+    n = len(left_obs)
+    adj: list[list[int]] = []
+    for i, o_l in enumerate(left_obs):
+        edges = []
+        for j, o_r in enumerate(right_obs):
+            if o_l.type == o_r.type and patterns_bijective(l_parsed[i], r_parsed[j]):
+                edges.append(j)
+        adj.append(edges)
+
+    match_r = [-1] * n
+
+    def dfs(u: int, visited: list[bool]) -> bool:
+        for v in adj[u]:
+            if not visited[v]:
+                visited[v] = True
+                if match_r[v] < 0 or dfs(match_r[v], visited):
+                    match_r[v] = u
+                    return True
+        return False
+
+    for u in range(n):
+        if not dfs(u, [False] * n):
+            return False, {}
+
+    obs_map = {left_obs[match_r[j]].name: right_obs[j].name for j in range(n)}
+    return True, obs_map
+
+
+# ---------------------------------------------------------------------------
+# Exact Lindemann-Weierstrass / TFUN / rational hazard representation
+# ---------------------------------------------------------------------------
+
+_PolyExp = tuple[tuple[Fraction, Fraction], ...]
+
+
+def _poly_exp_add(a: _PolyExp, b: _PolyExp) -> _PolyExp:
+    acc: dict[Fraction, Fraction] = dict(a)
+    for exp_arg, coeff in b:
+        acc[exp_arg] = acc.get(exp_arg, Fraction(0)) + coeff
+    return tuple(sorted((e, c) for e, c in acc.items() if c != 0))
+
+
+def _poly_exp_scale(a: _PolyExp, factor: Fraction) -> _PolyExp:
+    if factor == 0:
+        return ()
+    return tuple((e, c * factor) for e, c in a)
+
+
+def _hazard_add(h1: tuple[Any, ...], h2: tuple[Any, ...]) -> tuple[Any, ...] | None:
+    if h1[0] == "poly_exp" and h2[0] == "poly_exp":
+        return ("poly_exp", _poly_exp_add(h1[1], h2[1]))
+    if h1[0] == "tfun" and h2[0] == "tfun" and h1[1] == h2[1]:
+        s = h1[2] + h2[2]
+        return ("poly_exp", ()) if s == 0 else ("tfun", h1[1], s)
+    if h1[0] == "rational" and h2[0] == "rational":
+        r1: _RationalExpr = h1[1]
+        r2: _RationalExpr = h2[1]
+        summed = _RationalExpr(
+            _poly_add(_poly_mul(r1.num, r2.den), _poly_mul(r2.num, r1.den)),
+            _poly_mul(r1.den, r2.den),
+            r1.poles | r2.poles,
+        )
+        return ("rational", summed)
+    return None
+
+
+def _hazard_is_zero(h: tuple[Any, ...]) -> bool:
+    if h[0] == "poly_exp":
+        return len(h[1]) == 0
+    if h[0] == "tfun":
+        return h[2] == 0
+    if h[0] == "rational":
+        return _poly_is_zero(h[1].num)
+    return False
+
+
+def _hazard_scale(h: tuple[Any, ...], factor: Fraction) -> tuple[Any, ...]:
+    if h[0] == "poly_exp":
+        return ("poly_exp", _poly_exp_scale(h[1], factor))
+    if h[0] == "tfun":
+        return ("poly_exp", ()) if factor == 0 else ("tfun", h[1], h[2] * factor)
+    if h[0] == "rational":
+        r: _RationalExpr = h[1]
+        return (
+            "rational",
+            _RationalExpr(_poly_scale(r.num, factor), r.den, r.poles),
+        )
+    return h
+
+
+def _hazard_key(h: tuple[Any, ...]) -> Any:
+    if h[0] == "rational":
+        return ("rational", h[1].key())
+    return h
+
+
+def _compartment_unit_conversion_exact(
+    reactants: tuple[str, ...],
+    products: tuple[str, ...],
+    compartments: Mapping[str, tuple[int, Fraction]],
+    is_total_rate: bool,
+) -> tuple[Fraction, bool]:
+    """Compute exact BNG2/BNG3 compartment unit-conversion factor.
+
+    Returns (factor, scaled_by_volume) where scaled_by_volume is True when a
+    compartment volume non-trivially enters the propensity.
+    """
+    if is_total_rate or not compartments:
+        return Fraction(1), False
+
+    def species_comp(sp: str) -> str:
+        g = _parse_graph_pattern(sp)
+        if g is None:
+            return ""
+        if g["species_comp"]:
+            return g["species_comp"]
+        for m in g["molecules"]:
+            if m["comp"]:
+                return m["comp"]
+        return ""
+
+    if reactants:
+        rc: list[tuple[int, Fraction]] = []
+        for sp in reactants:
+            cname = species_comp(sp)
+            if cname in compartments:
+                rc.append(compartments[cname])
+        if len(rc) <= 1:
+            return Fraction(1), False
+        # Anchor first 2D surface, else first 3D volume, else first reactant.
+        anchor = None
+        for idx, (dim, _) in enumerate(rc):
+            if dim == 2:
+                anchor = idx
+                break
+        if anchor is None:
+            for idx, (dim, _) in enumerate(rc):
+                if dim == 3:
+                    anchor = idx
+                    break
+        if anchor is None:
+            anchor = 0
+        factor = Fraction(1)
+        for idx, (_, vol) in enumerate(rc):
+            if idx != anchor:
+                if vol == 0:
+                    raise ValueError("zero compartment volume")
+                factor /= vol
+        return factor, True
+
+    if products:
+        for sp in products:
+            cname = species_comp(sp)
+            if cname in compartments:
+                return compartments[cname][1], True
+    return Fraction(1), False
+
+
+def _rename_reaction_center_key(
+    center: str,
+    mol_map: Mapping[str, str],
+    comp_map: Mapping[str, Mapping[str, str]],
+    state_map: Mapping[tuple[str, str], Mapping[str, str]],
+) -> str | None:
+    """Rename a canonical C++ BarrierTable ReactionCenterKey string."""
+    if ":" not in center or "|" not in center:
+        return None
+    kind, rest = center.split(":", 1)
+    left_half, right_half = rest.split("|", 1)
+    if kind == "bond":
+        if "." not in left_half or "." not in right_half:
+            return None
+        ta, sa = left_half.split(".", 1)
+        tb, sb = right_half.split(".", 1)
+        nta = mol_map.get(ta, ta)
+        nsa = comp_map.get(ta, {}).get(sa, sa)
+        ntb = mol_map.get(tb, tb)
+        nsb = comp_map.get(tb, {}).get(sb, sb)
+        halves = sorted([(nta, nsa), (ntb, nsb)])
+        return f"bond:{halves[0][0]}.{halves[0][1]}|{halves[1][0]}.{halves[1][1]}"
+    if kind == "state":
+        if "." not in left_half or "~" not in left_half or "~" not in right_half:
+            return None
+        ta, site_sa = left_half.split(".", 1)
+        sa, st_a = site_sa.split("~", 1)
+        tb, site_sb = right_half.split(".", 1)
+        sb, st_b = site_sb.split("~", 1)
+        nta = mol_map.get(ta, ta)
+        nsa = comp_map.get(ta, {}).get(sa, sa)
+        n_sta = state_map.get((ta, sa), {}).get(st_a, st_a)
+        n_stb = state_map.get((tb, sb), {}).get(st_b, st_b)
+        s1, s2 = sorted([n_sta, n_stb])
+        return f"state:{nta}.{nsa}~{s1}|{nta}.{nsa}~{s2}"
+    return None
+
+
+def _reaction_center_for_jump(
+    reactants: tuple[str, ...], products: tuple[str, ...]
+) -> str | None:
+    """Derive canonical ReactionCenterKey for simple state-change / binding jumps."""
+    if len(reactants) == 1 and len(products) == 1:
+        gr = _parse_graph_pattern(reactants[0])
+        gp = _parse_graph_pattern(products[0])
+        if gr and gp and len(gr["molecules"]) == 1 and len(gp["molecules"]) == 1:
+            mr, mp = gr["molecules"][0], gp["molecules"][0]
+            if mr["type"] == mp["type"]:
+                rs = {s["comp"]: s["state"] for s in mr["sites"]}
+                ps = {s["comp"]: s["state"] for s in mp["sites"]}
+                diffs = [
+                    (c, rs[c], ps[c])
+                    for c in rs
+                    if c in ps and rs[c] is not None and ps[c] is not None and rs[c] != ps[c]
+                ]
+                if len(diffs) == 1:
+                    c, s1, s2 = diffs[0]
+                    a, b = sorted([s1, s2])
+                    return f"state:{mr['type']}.{c}~{a}|{mr['type']}.{c}~{b}"
+    return None
+
+
+def _parse_arrhenius_args(rate_law_str: str) -> tuple[str, str] | None:
+    """Extract (phi_expr, Ea_expr) from an Arrhenius(phi, Ea) rate string."""
+    s = rate_law_str.strip()
+    m = re.fullmatch(r"(?i)arrhenius\s*\((.*)\)", s)
+    if not m:
+        return None
+    inner = m.group(1)
+    depth = 0
+    split_pos = -1
+    for i, ch in enumerate(inner):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            if split_pos != -1:
+                return None
+            split_pos = i
+    if split_pos == -1:
+        return None
+    return inner[:split_pos].strip(), inner[split_pos + 1 :].strip()
 
 
 def _canonical_seed_identity(model: Any, seed: Any) -> str | None:
@@ -3823,24 +5281,47 @@ def _canonical_seed_identity(model: Any, seed: Any) -> str | None:
 
 def _extract_jump_hazards(
     model: Any,
+    *,
+    structural_doc: Mapping[str, Any] | None = None,
+    apply_volume_scaling: bool = False,
+    obs_renaming: Mapping[str, str] | None = None,
 ) -> tuple[
-    dict[tuple[tuple[str, ...], tuple[str, ...]], Fraction],
+    dict[tuple[Any, ...], tuple[Any, ...]],
     dict[str, Fraction],
     list[str],
     bool,
     bool,
+    bool,
 ]:
-    """Extract rational hazards and network completeness signals."""
+    """Extract exact symbolic/rational jump hazards and completeness signals.
+
+    Jump keys have the form:
+      (reactants, products, delay_or_None, non_consuming_bool, directed_work_or_0)
+    where immediate self-loops (reactants == products and delay is None) are
+    omitted.  Returns (jumps, init_counts, species_names, converged, pruned,
+    any_volume_scaled).
+    """
     param_dict = {p.name: Fraction(str(p.value)) for p in model.parameters}
-    # A complete finite network is required for an equality certificate.  An
-    # unbounded network (e.g. a polymerisation rule) grows exponentially and
-    # the default generation budget never terminates.  Bound the search so an
-    # incomplete/truncated network is reported through generation_converged /
-    # generation_pruned_species, which exact_process_equal turns into an
-    # explicit EqualityUndecided instead of hanging.  Finite networks that
-    # converge within the budget keep their exact verdict.  An explicit
-    # generate_network(max_iter=>N) action is a user-declared cutoff and is
-    # preserved (including max_iter=>0, which must remain a truncation control).
+    zero_arg_fn_bodies = {
+        f.name: f.expression.to_string()
+        for f in model._model.functions
+        if not f.args
+    }
+    obs_names = frozenset(o.name for o in model._model.observables)
+
+    # Index inline TFUN nullary functions from the v0.2 structural snapshot.
+    tfun_fn_map: dict[
+        str, tuple[tuple[str, str], str, tuple[tuple[Fraction, Fraction], ...]]
+    ] = {}
+    if structural_doc is not None:
+        for fn_doc in structural_doc.get("functions", []):
+            if not fn_doc.get("arguments"):
+                norm_tfun = _normalize_inline_tfun_doc(
+                    fn_doc.get("expression", {}), structural_doc, obs_renaming
+                )
+                if norm_tfun is not None:
+                    tfun_fn_map[str(fn_doc["name"])] = norm_tfun
+
     equality_max_iter = _EQUALITY_NETWORK_MAX_ITER
     for action in getattr(model._model, "actions", []):
         if action.name == "generate_network" and "max_iter" in action.arguments:
@@ -3855,12 +5336,10 @@ def _extract_jump_hazards(
     init_counts: dict[str, Fraction] = {sp: Fraction(0) for sp in species_names}
     for seed in model._model.seed_species:
         amount_val = _evaluate_model_expression_exact(
-            seed.amount.to_string(), param_dict
+            seed.amount.to_string(), param_dict, zero_arg_fn_bodies
         )
         identity = _canonical_seed_identity(model, seed)
         if identity is None or identity not in init_counts:
-            # Never leave an unmatched seed at zero: that would certify two
-            # different initial laws as equal. Decline instead.
             raise EqualityUndecided(
                 "A seed species has no canonical identity in the generated network",
                 {
@@ -3871,27 +5350,197 @@ def _extract_jump_hazards(
             )
         init_counts[identity] += amount_val
 
-    jump_hazards: dict[tuple[tuple[str, ...], tuple[str, ...]], Fraction] = {}
+    # Map authored rules by rule_name to recover delay, non_consuming,
+    # TotalRate, and driving_work metadata per generated reaction.
+    rules_by_name = {r.rule_name: r for r in model._model.reaction_rules}
+    rxn_rule_names = list(getattr(net, "reaction_rules", []))
+
+    # Precompute exact species energies when energy_patterns exist.
+    species_energies: dict[str, Fraction] = {}
+    if model._model.energy_patterns:
+        parsed_ep = []
+        v02_eps = (structural_doc or {}).get("energy_patterns") or []
+        for ep_idx, ep in enumerate(model._model.energy_patterns):
+            ep_graph = None
+            if ep_idx < len(v02_eps) and isinstance(v02_eps[ep_idx], Mapping):
+                ep_graph = _graph_from_v02_pattern(v02_eps[ep_idx].get("pattern", {}))
+            if ep_graph is None:
+                ep_graph = _parse_graph_pattern(ep.pattern)
+            if ep_graph is None:
+                raise EqualityUndecided(
+                    "Energy pattern could not be parsed for exact delta calculation",
+                    {"pattern": ep.pattern},
+                )
+            ep_val = _evaluate_model_expression_exact(
+                ep.expression.to_string(), param_dict, zero_arg_fn_bodies
+            )
+            parsed_ep.append((ep_graph, ep_val))
+        for sp in species_names:
+            sp_graph = _parse_graph_pattern(sp)
+            if sp_graph is None:
+                raise EqualityUndecided(
+                    "Species graph could not be parsed for exact energy calculation",
+                    {"species": sp},
+                )
+            total_e = Fraction(0)
+            for ep_graph, ep_val in parsed_ep:
+                total_e += Fraction(_count_pattern_embeddings(ep_graph, sp_graph)) * ep_val
+            species_energies[sp] = total_e
+
+    # Precompute canonical barrier energies by ReactionCenterKey when present.
+    barrier_by_center: dict[str, Fraction] = {}
+    if structural_doc is not None and structural_doc.get("barrier_patterns"):
+        for bp_doc in structural_doc.get("barrier_patterns", []):
+            center = str(bp_doc.get("reaction_center") or "")
+            if not center or not bp_doc.get("center_resolved"):
+                raise EqualityUndecided(
+                    "Barrier pattern lacks a resolved reaction center",
+                    {"barrier": bp_doc},
+                )
+            expr_text = bp_doc.get("expression", "")
+            b_val = _evaluate_model_expression_exact(
+                str(expr_text), param_dict, zero_arg_fn_bodies
+            )
+            barrier_by_center[center] = barrier_by_center.get(center, Fraction(0)) + b_val
+
+    compartments_map: dict[str, tuple[int, Fraction]] = {
+        c.name: (int(c.dimension), Fraction(str(float(c.volume))))
+        for c in model._model.compartments
+    }
+
+    jump_hazards: dict[tuple[Any, ...], tuple[Any, ...]] = {}
     rxn_participants = net.reaction_participants
     rate_laws = net.reaction_rate_laws
     factors = net.reaction_factors
+    any_volume_scaled = False
 
     for idx, (reactants_idx, products_idx) in enumerate(rxn_participants):
         reactants = tuple(sorted(species_names[i] for i in reactants_idx))
         products = tuple(sorted(species_names[i] for i in products_idx))
-        # A transition that leaves the molecular state unchanged contributes
-        # nothing to the ordinary state-process generator. Reaction-counting
-        # observables are guarded separately because they can make such firings
-        # visible.
-        if reactants == products:
+
+        raw_rule_name = rxn_rule_names[idx] if idx < len(rxn_rule_names) else ""
+        is_reverse = raw_rule_name.startswith("_reverse__")
+        base_rule_name = raw_rule_name[len("_reverse__") :] if is_reverse else raw_rule_name
+        rule_obj = rules_by_name.get(base_rule_name)
+
+        delay_spec: Fraction | None = None
+        non_consuming = False
+        directed_work = Fraction(0)
+        is_total_rate = False
+        if rule_obj is not None:
+            if rule_obj.has_delay and rule_obj.delay_expression is not None:
+                delay_spec = _evaluate_model_expression_exact(
+                    str(rule_obj.delay_expression), param_dict, zero_arg_fn_bodies
+                )
+            non_consuming = bool(rule_obj.is_non_consuming)
+            if rule_obj.has_driving_work and rule_obj.driving_work:
+                w_val = _evaluate_model_expression_exact(
+                    str(rule_obj.driving_work), param_dict, zero_arg_fn_bodies
+                )
+                directed_work = -w_val if is_reverse else w_val
+            is_total_rate = any(
+                str(m).strip().lower() == "totalrate" for m in rule_obj.modifiers
+            )
+
+        # Immediate self-loops leave the molecular state unchanged.
+        if reactants == products and delay_spec is None:
             continue
+
         rate_law_str = rate_laws[idx]
-        factor = factors[idx]
-        rate_val = _evaluate_model_expression_exact(
-            rate_law_str, param_dict
-        ) * Fraction(str(factor))
-        key = (reactants, products)
-        jump_hazards[key] = jump_hazards.get(key, Fraction(0)) + rate_val
+        factor = Fraction(str(factors[idx]))
+
+        vol_factor = Fraction(1)
+        if apply_volume_scaling:
+            vol_factor, was_scaled = _compartment_unit_conversion_exact(
+                reactants, products, compartments_map, is_total_rate
+            )
+            if was_scaled:
+                any_volume_scaled = True
+
+        arr_args = _parse_arrhenius_args(rate_law_str)
+        hazard: tuple[Any, ...] | None = None
+        work_key = directed_work
+        if arr_args is not None:
+            phi_val = _evaluate_model_expression_exact(
+                arr_args[0], param_dict, zero_arg_fn_bodies
+            )
+            ea_val = _evaluate_model_expression_exact(
+                arr_args[1], param_dict, zero_arg_fn_bodies
+            )
+            dir_phi = (Fraction(1) - phi_val) if is_reverse else phi_val
+            dg = sum((species_energies.get(sp, Fraction(0)) for sp in products), Fraction(0)) - sum(
+                (species_energies.get(sp, Fraction(0)) for sp in reactants), Fraction(0)
+            )
+            gb = Fraction(0)
+            if barrier_by_center:
+                center = _reaction_center_for_jump(reactants, products)
+                if center is None:
+                    raise EqualityUndecided(
+                        "Barrier energy lookup requires a resolved jump reaction center",
+                        {"reactants": reactants, "products": products},
+                    )
+                gb = barrier_by_center.get(center, Fraction(0))
+            exponent = -(ea_val + gb + dir_phi * (dg - directed_work))
+            hazard = ("poly_exp", ((exponent, factor * vol_factor),))
+            # Driving work is already folded into the exact Arrhenius exponent.
+            work_key = Fraction(0)
+        else:
+            # Check direct inline TFUN nullary function reference (e.g. f or f()).
+            bare_fn = rate_law_str.strip()
+            if bare_fn.endswith("()"):
+                bare_fn = bare_fn[:-2].strip()
+            if bare_fn in tfun_fn_map:
+                tfun_norm = tfun_fn_map[bare_fn]
+                if tfun_norm[1] == "const":
+                    c_val = tfun_norm[2][0][1] * factor * vol_factor
+                    hazard = (
+                        ("poly_exp", ((Fraction(0), c_val),))
+                        if c_val != 0
+                        else ("poly_exp", ())
+                    )
+                else:
+                    hazard = ("tfun", tfun_norm, factor * vol_factor)
+            else:
+                try:
+                    rate_val = (
+                        _evaluate_model_expression_exact(
+                            rate_law_str, param_dict, zero_arg_fn_bodies
+                        )
+                        * factor
+                        * vol_factor
+                    )
+                    hazard = (
+                        ("poly_exp", ((Fraction(0), rate_val),))
+                        if rate_val != 0
+                        else ("poly_exp", ())
+                    )
+                except ValueError:
+                    # Try exact rational expression over observables + bound parameters.
+                    if obs_names:
+                        rat = _parse_rational_expr(
+                            rate_law_str,
+                            allowed_vars=frozenset(param_dict) | obs_names,
+                            zero_arg_functions=zero_arg_fn_bodies,
+                            var_renaming=obs_renaming,
+                        )
+                        if rat is not None:
+                            hazard = _hazard_scale(("rational", rat), factor * vol_factor)
+                    if hazard is None:
+                        raise
+
+        key = (reactants, products, delay_spec, non_consuming, work_key)
+        if key in jump_hazards:
+            combined = _hazard_add(jump_hazards[key], hazard)
+            if combined is None:
+                raise EqualityUndecided(
+                    "Cannot combine heterogeneous hazard classes on the same jump",
+                    {"jump": key},
+                )
+            jump_hazards[key] = combined
+        else:
+            jump_hazards[key] = hazard
+
+    jump_hazards = {k: v for k, v in jump_hazards.items() if not _hazard_is_zero(v)}
 
     return (
         jump_hazards,
@@ -3899,47 +5548,19 @@ def _extract_jump_hazards(
         species_names,
         net.generation_converged,
         net.generation_pruned_species,
+        any_volume_scaled,
     )
-
-
-def _only_delay_asymmetry(left_signatures: list, right_signatures: list) -> bool:
-    """True when exactly one side has delay-only rule execution features."""
-    if left_signatures == right_signatures:
-        return False
-    if not (bool(left_signatures) ^ bool(right_signatures)):
-        return False
-    signatures = left_signatures or right_signatures
-    for raw in signatures:
-        try:
-            signature = json.loads(raw)
-        except (TypeError, ValueError):
-            return False
-        if signature.get("delay") is None:
-            return False
-        if (
-            signature.get("non_consuming", False)
-            or signature.get("modifiers")
-            or signature.get("driving_work")
-            or signature.get("forward.driving_work")
-            or signature.get("reverse.driving_work")
-            or signature.get("forward.non_consuming")
-            or signature.get("reverse.non_consuming")
-        ):
-            return False
-    return True
 
 
 def _volume_rhs_counterexample(left_model: Any, right_model: Any) -> dict | None:
     """Decide inequality when only compartment volumes change the initial RHS."""
-    from fractions import Fraction
-
     try:
         from .model import _cpp
 
-        left_jumps, left_init, left_species, left_ok, left_pruned = (
+        left_jumps, left_init, left_species, left_ok, left_pruned, _ = (
             _extract_jump_hazards(left_model)
         )
-        right_jumps, right_init, right_species, right_ok, right_pruned = (
+        right_jumps, right_init, right_species, right_ok, right_pruned, _ = (
             _extract_jump_hazards(right_model)
         )
     except Exception:
@@ -3948,7 +5569,8 @@ def _volume_rhs_counterexample(left_model: Any, right_model: Any) -> dict | None
         not (left_ok and right_ok)
         or left_pruned
         or right_pruned
-        or left_jumps != right_jumps
+        or {k: _hazard_key(v) for k, v in left_jumps.items()}
+        != {k: _hazard_key(v) for k, v in right_jumps.items()}
         or set(left_species) != set(right_species)
         or set(left_species) != set(left_init)
         or set(right_species) != set(right_init)
@@ -3979,7 +5601,14 @@ def _volume_rhs_counterexample(left_model: Any, right_model: Any) -> dict | None
     return None
 
 
-def _initial_state_counterexample(left_model: Any, right_model: Any) -> dict | None:
+def _initial_state_counterexample(
+    left_model: Any,
+    right_model: Any,
+    *,
+    left_structural: Mapping[str, Any] | None = None,
+    right_structural: Mapping[str, Any] | None = None,
+    apply_volume_scaling: bool = False,
+) -> dict | None:
     """Find an enabled jump that differs between two identically labelled models.
 
     Only complete, unpruned networks with the same species labels are compared,
@@ -3990,11 +5619,19 @@ def _initial_state_counterexample(left_model: Any, right_model: Any) -> dict | N
     from collections import Counter
 
     try:
-        left_jumps, left_init, left_species, left_complete, left_pruned = (
-            _extract_jump_hazards(left_model)
+        left_jumps, left_init, left_species, left_complete, left_pruned, _ = (
+            _extract_jump_hazards(
+                left_model,
+                structural_doc=left_structural,
+                apply_volume_scaling=apply_volume_scaling,
+            )
         )
-        right_jumps, right_init, right_species, right_complete, right_pruned = (
-            _extract_jump_hazards(right_model)
+        right_jumps, right_init, right_species, right_complete, right_pruned, _ = (
+            _extract_jump_hazards(
+                right_model,
+                structural_doc=right_structural,
+                apply_volume_scaling=apply_volume_scaling,
+            )
         )
     except Exception:
         return None
@@ -4011,16 +5648,11 @@ def _initial_state_counterexample(left_model: Any, right_model: Any) -> dict | N
         )
 
     if set(left_species) != set(right_species):
-        # Only a strict species subset under an identical type inventory can
-        # support the identity mapping this witness needs.  A permutation or
-        # partial rename must stay undecided instead of being called unequal.
         if not (
             set(left_species) < set(right_species)
             or set(right_species) < set(left_species)
         ):
             return None
-        # A reachable product absent from the other network is a decisive
-        # witness: the other process has no state with that species at all.
         for jumps, init, other_species, side in (
             (left_jumps, left_init, set(right_species), "left"),
             (right_jumps, right_init, set(left_species), "right"),
@@ -4042,12 +5674,30 @@ def _initial_state_counterexample(left_model: Any, right_model: Any) -> dict | N
         if not enabled(key, left_init):
             continue
         right_rate = right_jumps.get(key)
-        if right_rate != left_rate:
+        if right_rate is None:
             return {
                 "jump": [list(key[0]), list(key[1])],
                 "left_rate": str(left_rate),
-                "right_rate": str(right_rate),
+                "right_rate": "0",
             }
+        if _hazard_key(right_rate) != _hazard_key(left_rate):
+            if left_rate[0] == "poly_exp" and right_rate[0] == "poly_exp":
+                return {
+                    "jump": [list(key[0]), list(key[1])],
+                    "left_rate": str(left_rate),
+                    "right_rate": str(right_rate),
+                }
+            if left_rate[0] == "tfun" and right_rate[0] == "tfun":
+                if left_rate[2] == right_rate[2]:
+                    w = _tfun_counterexample(left_rate[1], right_rate[1])
+                    if w is not None:
+                        return w
+                else:
+                    return {
+                        "jump": [list(key[0]), list(key[1])],
+                        "left_rate": str(left_rate),
+                        "right_rate": str(right_rate),
+                    }
     for key in right_jumps:
         if key not in left_jumps and enabled(key, right_init):
             return {
@@ -4058,6 +5708,194 @@ def _initial_state_counterexample(left_model: Any, right_model: Any) -> dict | N
     return None
 
 
+def _compare_functions_exact(
+    left_model: Any,
+    right_model: Any,
+    left_structural: Mapping[str, Any],
+    right_structural: Mapping[str, Any],
+    obs_renaming: Mapping[str, str] | None = None,
+) -> tuple[bool | None, dict[str, Any]]:
+    """Compare function tables F exactly.
+
+    Returns (True, {}) when every function has a verified equivalence
+    certificate, (False, witness) when a verified counterexample exists, and
+    (None, diagnostic) when undecided.
+    """
+    left_fns = {f.name: f for f in left_model._model.functions}
+    right_fns = {f.name: f for f in right_model._model.functions}
+    left_docs = {
+        str(f["name"]): f for f in left_structural.get("functions", [])
+    }
+    right_docs = {
+        str(f["name"]): f for f in right_structural.get("functions", [])
+    }
+    left_zero_bodies = {
+        f.name: f.expression.to_string()
+        for f in left_model._model.functions
+        if not f.args
+    }
+    right_zero_bodies = {
+        f.name: f.expression.to_string()
+        for f in right_model._model.functions
+        if not f.args
+    }
+    left_params = {p.name: Fraction(str(p.value)) for p in left_model.parameters}
+    right_params = {p.name: Fraction(str(p.value)) for p in right_model.parameters}
+    left_obs = frozenset(o.name for o in left_model._model.observables)
+    right_obs = frozenset(o.name for o in right_model._model.observables)
+
+    if set(left_fns) != set(right_fns):
+        return None, {
+            "left_functions": sorted(left_fns),
+            "right_functions": sorted(right_fns),
+        }
+
+    if not left_fns:
+        return True, {}
+
+    all_equal = True
+    for name in sorted(left_fns):
+        lf = left_fns[name]
+        rf = right_fns[name]
+        l_args = tuple(lf.args)
+        r_args = tuple(rf.args)
+        l_body = lf.expression.to_string()
+        r_body = rf.expression.to_string()
+        if len(l_args) != len(r_args):
+            return None, {"function": name, "left_args": l_args, "right_args": r_args}
+
+        # Exact identical syntax (including same argument names) without renamed obs.
+        if l_args == r_args and l_body == r_body and not (
+            obs_renaming and any(k != v for k, v in obs_renaming.items())
+        ):
+            continue
+
+        # Functions with formal arguments: certify alpha-equivalent rational
+        # expressions; leave differing parameterized functions undecided.
+        if l_args:
+            l_rename = {a: f"__arg_{i}" for i, a in enumerate(l_args)}
+            r_rename = {a: f"__arg_{i}" for i, a in enumerate(r_args)}
+            if obs_renaming:
+                l_rename.update(obs_renaming)
+            l_rat = _parse_rational_expr(
+                l_body,
+                allowed_vars=frozenset(left_params) | left_obs | frozenset(l_args),
+                zero_arg_functions=left_zero_bodies,
+                var_renaming=l_rename,
+            )
+            r_rat = _parse_rational_expr(
+                r_body,
+                allowed_vars=frozenset(right_params) | right_obs | frozenset(r_args),
+                zero_arg_functions=right_zero_bodies,
+                var_renaming=r_rename,
+            )
+            if l_rat is not None and r_rat is not None and l_rat.key() == r_rat.key():
+                continue
+            all_equal = False
+            continue
+
+        # Nullary inline TFUN comparison (EQ-time).
+        l_tfun = _normalize_inline_tfun_doc(
+            left_docs.get(name, {}).get("expression", {}),
+            left_structural,
+            obs_renaming,
+        )
+        r_tfun = _normalize_inline_tfun_doc(
+            right_docs.get(name, {}).get("expression", {}),
+            right_structural,
+            None,
+        )
+        if l_tfun is not None and r_tfun is not None:
+            if l_tfun == r_tfun:
+                continue
+            witness = _tfun_counterexample(l_tfun, r_tfun)
+            if witness is not None:
+                return False, {"function": name, **witness}
+            all_equal = False
+            continue
+
+        # Nullary exact rational expression comparison with pole checks.
+        l_rat = _parse_rational_expr(
+            l_body,
+            allowed_vars=frozenset(left_params) | left_obs,
+            zero_arg_functions=left_zero_bodies,
+            var_renaming=obs_renaming,
+        )
+        r_rat = _parse_rational_expr(
+            r_body,
+            allowed_vars=frozenset(right_params) | right_obs,
+            zero_arg_functions=right_zero_bodies,
+            var_renaming=None,
+        )
+        if l_rat is not None and r_rat is not None:
+            if l_rat.key() == r_rat.key():
+                continue
+            # Check for an explicit rational counterexample (either value
+            # mismatch or definedness/pole mismatch at an admissible point).
+            all_vars = sorted(l_rat.variables() | r_rat.variables())
+            # 1) Test bound parameter values + admissible non-negative counts (0, 1, 2, 3, 5).
+            bound_map: dict[str, Fraction] = {}
+            for v in all_vars:
+                if v in left_params and v in right_params and left_params[v] == right_params[v]:
+                    bound_map[v] = left_params[v]
+                elif v in left_params:
+                    bound_map[v] = left_params[v]
+                elif v in right_params:
+                    bound_map[v] = right_params[v]
+            # Test distinct prime/integer assignments including 0 for observables/bound zeros.
+            primes = (2, 3, 5, 7, 11, 13, 17, 19)
+            probe_assignments: list[dict[str, Fraction]] = []
+            if len(bound_map) == len(all_vars):
+                probe_assignments.append(dict(bound_map))
+            # Check with 0 on each variable that is an observable or bound to 0.
+            for zero_var in all_vars:
+                if zero_var in right_obs or bound_map.get(zero_var) == 0:
+                    a = {
+                        v: (Fraction(0) if v == zero_var else Fraction(primes[i % len(primes)]))
+                        for i, v in enumerate(all_vars)
+                    }
+                    probe_assignments.append(a)
+                    # Also test small non-negative integer counts (1, 2) for pole roots like x-1=0.
+                    for root_probe in (1, 2):
+                        a_int = {
+                            v: (Fraction(root_probe) if v == zero_var else Fraction(primes[i % len(primes)]))
+                            for i, v in enumerate(all_vars)
+                        }
+                        probe_assignments.append(a_int)
+            for shift in range(4):
+                probe_assignments.append(
+                    {
+                        v: Fraction(primes[(i + shift) % len(primes)])
+                        for i, v in enumerate(all_vars)
+                    }
+                )
+            for assignment in probe_assignments:
+                lv = l_rat.eval_at(assignment)
+                rv = r_rat.eval_at(assignment)
+                if lv != rv:
+                    # Both defined with distinct values OR one hits a pole while
+                    # the other is defined at an admissible point.
+                    return False, {
+                        "function": name,
+                        "assignment": {k: str(v) for k, v in assignment.items()},
+                        "left": "undefined" if lv is None else str(lv),
+                        "right": "undefined" if rv is None else str(rv),
+                    }
+            all_equal = False
+            continue
+
+        all_equal = False
+
+    if all_equal:
+        return True, {}
+
+    # Fallback: original rational parameter assignment probe for mixed bodies.
+    witness = _function_counterexample(left_model, right_model)
+    if witness is not None:
+        return False, witness
+    return None, {"left_functions": sorted(left_fns), "right_functions": sorted(right_fns)}
+
+
 def _function_counterexample(left_model: Any, right_model: Any) -> dict | None:
     """Find a rational assignment where matching zero-argument functions differ.
 
@@ -4065,8 +5903,6 @@ def _function_counterexample(left_model: Any, right_model: Any) -> dict | None:
     is a sound inequivalence witness for F; no witness means the case stays
     undecided, never equal.
     """
-    from fractions import Fraction
-
     def visible(model: Any) -> dict[str, tuple[tuple[str, ...], str]]:
         return {
             f.name: (tuple(f.args), f.expression.to_string())
@@ -4075,19 +5911,29 @@ def _function_counterexample(left_model: Any, right_model: Any) -> dict | None:
 
     left_functions = visible(left_model)
     right_functions = visible(right_model)
+    left_zero = {k: body for k, (args, body) in left_functions.items() if not args}
+    right_zero = {k: body for k, (args, body) in right_functions.items() if not args}
     parameter_names = sorted(
         {p.name for m in (left_model, right_model) for p in m._model.parameters}
     )
-    for value in (1, 2, 3, 5):
-        assignment = {name: Fraction(value) for name in parameter_names}
+    primes = (1, 2, 3, 5, 7, 11)
+    for shift in range(len(primes)):
+        assignment = {
+            name: Fraction(primes[(i + shift) % len(primes)])
+            for i, name in enumerate(parameter_names)
+        }
         for name in sorted(set(left_functions) & set(right_functions)):
             left_args, left_body = left_functions[name]
             right_args, right_body = right_functions[name]
             if left_args or right_args:
                 continue
             try:
-                left_value = _evaluate_model_expression_exact(left_body, assignment)
-                right_value = _evaluate_model_expression_exact(right_body, assignment)
+                left_value = _evaluate_model_expression_exact(
+                    left_body, assignment, left_zero
+                )
+                right_value = _evaluate_model_expression_exact(
+                    right_body, assignment, right_zero
+                )
             except (ValueError, TypeError):
                 continue
             if left_value != right_value:
@@ -4098,6 +5944,238 @@ def _function_counterexample(left_model: Any, right_model: Any) -> dict | None:
                     "right": str(right_value),
                 }
     return None
+
+
+def _normalized_metadata(model_doc: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract execution-relevant metadata, excluding non-semantic model name."""
+    raw = dict(model_doc.get("metadata") or {})
+    raw.pop("name", None)
+    unit_defs = raw.get("unit_definitions")
+    if isinstance(unit_defs, list):
+        raw["unit_definitions"] = sorted(
+            unit_defs, key=lambda d: (str(d.get("id", "")), str(d.get("expression", "")))
+        )
+    return raw
+
+
+def _normalized_compartments(model: Any) -> list[tuple[str, int, str, Fraction, str]]:
+    """Order-independent canonical compartment descriptors."""
+    out = []
+    for c in model._model.compartments:
+        out.append(
+            (
+                str(c.name),
+                int(c.dimension),
+                str(c.parent),
+                Fraction(str(float(c.volume))),
+                str(c.unit or ""),
+            )
+        )
+    out.sort()
+    return out
+
+
+def _enumerate_compartment_renamings(
+    left_model: Any, right_model: Any
+) -> list[dict[str, str]]:
+    """Enumerate valid compartment bijections when compartment name sets differ.
+
+    When both models share the exact same compartment name inventory (e.g.
+    {c1, c2}), only the identity map is allowed so distinct named compartments
+    within a shared inventory are never silently swapped.
+    """
+    import itertools
+
+    lc = _normalized_compartments(left_model)
+    rc = _normalized_compartments(right_model)
+    if len(lc) != len(rc):
+        return []
+    if not lc:
+        return [{}]
+    l_names = [c[0] for c in lc]
+    r_names = [c[0] for c in rc]
+    if set(l_names) == set(r_names):
+        return [{name: name for name in l_names}] if lc == rc else []
+
+    l_by_name = {c[0]: c for c in lc}
+    r_by_name = {c[0]: c for c in rc}
+    valid: list[dict[str, str]] = []
+    if len(l_names) > 6:
+        return []
+    for perm in itertools.permutations(r_names):
+        cmap = dict(zip(l_names, perm))
+        ok = True
+        for lname, rname in cmap.items():
+            _, ldim, lparent, lvol, lunit = l_by_name[lname]
+            _, rdim, rparent, rvol, runit = r_by_name[rname]
+            mapped_parent = cmap.get(lparent, lparent) if lparent else ""
+            if (ldim, mapped_parent, lvol, lunit) != (rdim, rparent, rvol, runit):
+                ok = False
+                break
+        if ok:
+            valid.append(cmap)
+    return valid
+
+
+def _graph_from_v02_pattern(pattern_doc: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Convert a C++-resolved BNGIR v0.2 structural pattern dict to a typed graph."""
+    if not isinstance(pattern_doc, Mapping):
+        return None
+    molecules: list[dict[str, Any]] = []
+    for raw_mol in pattern_doc.get("molecules", []):
+        if not isinstance(raw_mol, Mapping):
+            return None
+        mol_type = str(raw_mol.get("type") or "")
+        if not mol_type:
+            return None
+        sites: list[dict[str, Any]] = []
+        for raw_site in raw_mol.get("sites", []):
+            if not isinstance(raw_site, Mapping):
+                return None
+            comp_name = str(raw_site.get("component") or "")
+            if not comp_name:
+                return None
+            state_doc = raw_site.get("state") or {}
+            state_kind = state_doc.get("kind", "any")
+            state_val: str | None = None
+            if state_kind == "exact":
+                state_val = str(state_doc.get("value"))
+            elif state_kind == "set":
+                values = state_doc.get("values", [])
+                state_val = "~".join(str(v) for v in sorted(values))
+            bond_doc = raw_site.get("bond") or {}
+            alternatives = bond_doc.get("alternatives")
+            bond_entries = alternatives if alternatives else [bond_doc]
+            bonds: list[str] = []
+            for b in bond_entries:
+                bkind = b.get("kind", "unspecified")
+                if bkind == "exact":
+                    bonds.append(str(int(b["group"])))
+                elif bkind == "bound":
+                    bonds.append("+")
+                elif bkind == "any":
+                    bonds.append("?")
+                elif bkind == "unbound":
+                    bonds.append(".")
+            sites.append(
+                {
+                    "comp": comp_name,
+                    "state": state_val,
+                    "bonds": tuple(bonds),
+                    "label": str(raw_site.get("label") or ""),
+                }
+            )
+        molecules.append(
+            {
+                "type": mol_type,
+                "comp": str(raw_mol.get("compartment") or ""),
+                "scope": "",
+                "sites": sites,
+            }
+        )
+    return {
+        "species_comp": str(pattern_doc.get("compartment") or ""),
+        "quantifier": None,
+        "molecules": molecules,
+    }
+
+
+def _normalized_energy_map(
+    model: Any,
+    structural_doc: Mapping[str, Any],
+    mol_map: Mapping[str, str],
+    comp_map: Mapping[str, Mapping[str, str]],
+    state_map: Mapping[tuple[str, str], Mapping[str, str]],
+    compartment_map: Mapping[str, str] | None = None,
+) -> list[tuple[dict[str, Any], Fraction]] | None:
+    """Combine energy patterns by exact graph isomorphism and sum rational energies."""
+    param_dict = {p.name: Fraction(str(p.value)) for p in model.parameters}
+    zero_fn = {
+        f.name: f.expression.to_string()
+        for f in model._model.functions
+        if not f.args
+    }
+    combined: list[tuple[dict[str, Any], Fraction]] = []
+    v02_eps = structural_doc.get("energy_patterns") or []
+    native_eps = list(model._model.energy_patterns)
+    for idx, ep in enumerate(native_eps):
+        g = None
+        if idx < len(v02_eps) and isinstance(v02_eps[idx], Mapping):
+            g = _graph_from_v02_pattern(v02_eps[idx].get("pattern", {}))
+        if g is None:
+            g = _parse_graph_pattern(ep.pattern)
+        if g is None:
+            return None
+        g = _rename_parsed_graph(g, mol_map, comp_map, state_map, compartment_map)
+        try:
+            val = _evaluate_model_expression_exact(
+                ep.expression.to_string(), param_dict, zero_fn
+            )
+        except ValueError:
+            return None
+        merged = False
+        for i, (eg, ev) in enumerate(combined):
+            if _graphs_isomorphic(eg, g):
+                combined[i] = (eg, ev + val)
+                merged = True
+                break
+        if not merged:
+            combined.append((g, val))
+    return [(g, v) for g, v in combined if v != 0]
+
+
+def _energy_maps_equal(
+    left_map: list[tuple[dict[str, Any], Fraction]],
+    right_map: list[tuple[dict[str, Any], Fraction]],
+) -> bool:
+    if len(left_map) != len(right_map):
+        return False
+    used = [False] * len(right_map)
+    for lg, lv in left_map:
+        matched = False
+        for j, (rg, rv) in enumerate(right_map):
+            if not used[j] and lv == rv and _graphs_isomorphic(lg, rg):
+                used[j] = True
+                matched = True
+                break
+        if not matched:
+            return False
+    return True
+
+
+def _normalized_barrier_map(
+    model: Any,
+    structural_doc: Mapping[str, Any],
+    mol_map: Mapping[str, str],
+    comp_map: Mapping[str, Mapping[str, str]],
+    state_map: Mapping[tuple[str, str], Mapping[str, str]],
+) -> dict[str, Fraction] | None:
+    """Combine barrier patterns by canonical ReactionCenterKey and sum rational barriers."""
+    barriers = structural_doc.get("barrier_patterns") or []
+    if not barriers:
+        return {}
+    param_dict = {p.name: Fraction(str(p.value)) for p in model.parameters}
+    zero_fn = {
+        f.name: f.expression.to_string()
+        for f in model._model.functions
+        if not f.args
+    }
+    result: dict[str, Fraction] = {}
+    for bp in barriers:
+        if not bp.get("center_resolved"):
+            return None
+        center = str(bp.get("reaction_center") or "")
+        renamed = _rename_reaction_center_key(center, mol_map, comp_map, state_map)
+        if renamed is None:
+            return None
+        try:
+            val = _evaluate_model_expression_exact(
+                str(bp.get("expression", "")), param_dict, zero_fn
+            )
+        except ValueError:
+            return None
+        result[renamed] = result.get(renamed, Fraction(0)) + val
+    return {k: v for k, v in result.items() if v != 0}
 
 
 def exact_process_equal(
@@ -4118,11 +6196,6 @@ def exact_process_equal(
         right if isinstance(right, BioNetGenModel) else from_bngir(right_doc or right)
     )
 
-    # Network generation does not carry every BNGL execution feature into its
-    # reaction table. Require those features to agree structurally before the
-    # finite-network certificate can establish equality. This deliberately
-    # declines alpha-equivalent but differently encoded cases until a proof
-    # method for those fields is available.
     try:
         left_structural = _parse_document(to_bngir(left_model, version="0.2"))["model"]
         right_structural = _parse_document(to_bngir(right_model, version="0.2"))[
@@ -4134,127 +6207,55 @@ def exact_process_equal(
             {"error": str(exc)},
         ) from exc
 
-    def unlowered_contract(model_doc: Mapping[str, Any]) -> dict[str, Any]:
-        rules = model_doc.get("rules", [])
-
-        def _rule_execution_signature(rule: Mapping[str, Any]) -> dict[str, Any]:
+    # Check non-lowered execution surfaces that are NOT carried into the
+    # normalized jump table (population maps, TotalRate modifiers, metadata/units,
+    # and raw non-rational energy/barrier features).
+    def runtime_modifiers(model_doc: Mapping[str, Any]) -> list[str]:
+        out = []
+        for rule in model_doc.get("rules", []):
             if not isinstance(rule, Mapping):
-                return {"raw": rule}
-            # v0.1 rules carry kinetics/execution modifiers at top level; v0.2
-            # carries delay/non-consuming/modifiers and may place driving work on
-            # the rule or direction. Include every field that can change process
-            # semantics outside the finite jump table.
-            signature: dict[str, Any] = {
-                "delay": rule.get("delay"),
-                "non_consuming": rule.get("non_consuming", False),
-                "modifiers": rule.get("modifiers", []),
-                "driving_work": rule.get("driving_work", ""),
-            }
-            for direction_name in ("forward", "reverse"):
-                direction = rule.get(direction_name)
-                if isinstance(direction, Mapping):
-                    if "driving_work" in direction:
-                        signature[f"{direction_name}.driving_work"] = direction.get(
-                            "driving_work"
-                        )
-                    if "non_consuming" in direction:
-                        signature[f"{direction_name}.non_consuming"] = direction.get(
-                            "non_consuming"
-                        )
-            return signature
+                continue
+            for m in rule.get("modifiers", []):
+                kind = m.get("kind") if isinstance(m, Mapping) else str(m)
+                if kind in {"total_rate", "TotalRate", "unknown"}:
+                    out.append(str(kind))
+        return sorted(out)
 
-        return {
-            key: model_doc.get(key)
-            for key in (
-                "barrier_patterns",
-                "compartments",
-                "energy_patterns",
-                "metadata",
-                "population_maps",
-                "population_types",
-            )
-        } | {
-            "parameters_for_delays": (
-                model_doc.get("parameters")
-                if any(
-                    (rule.get("delay") if isinstance(rule, Mapping) else None)
-                    is not None
-                    for rule in rules
-                )
-                else []
-            ),
-            "rule_execution_features": sorted(
-                json.dumps(
-                    _rule_execution_signature(rule),
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
-                for rule in rules
-                if isinstance(rule, Mapping)
-                and (
-                    rule.get("delay") is not None
-                    or rule.get("non_consuming", False)
-                    or rule.get("modifiers")
-                    or rule.get("driving_work")
-                    or (
-                        isinstance(rule.get("forward"), Mapping)
-                        and (
-                            rule["forward"].get("driving_work")
-                            or rule["forward"].get("non_consuming")
-                        )
-                    )
-                    or (
-                        isinstance(rule.get("reverse"), Mapping)
-                        and (
-                            rule["reverse"].get("driving_work")
-                            or rule["reverse"].get("non_consuming")
-                        )
-                    )
-                )
-            ),
-        }
-
-    # A concrete enabled transition difference at the initial state decides
-    # inequality even when structural execution fields differ.  This is checked
-    # before the structural guard so that a valid witness is never hidden by a
-    # field that would otherwise force an undecided result.  The check is
-    # deliberately narrow: identical species labels, complete networks and an
-    # actually enabled jump are required.
-    initial_witness = _initial_state_counterexample(left_model, right_model)
-    if initial_witness is not None:
-        return False
-
-    left_unlowered = unlowered_contract(left_structural)
-    right_unlowered = unlowered_contract(right_structural)
-    if left_unlowered != right_unlowered:
-        # Only compartment volume may differ for this witness.  With identical
-        # jump tables, a differing initial ODE RHS is a decisive observation of
-        # volume scaling (e.g. a bimolecular propensity in that compartment).
-        non_volume_keys = set(left_unlowered) - {"compartments"}
-        if (
-            all(left_unlowered[key] == right_unlowered[key] for key in non_volume_keys)
-            and _volume_rhs_counterexample(left_model, right_model) is not None
-        ):
-            return False
-        # One model has delayed rules and the other has none, with every other
-        # execution field and the generated jump table identical: completion
-        # clocks differ, so the initialized path laws differ.
-        other_keys = set(left_unlowered) - {
-            "rule_execution_features",
-            "parameters_for_delays",
-        }
-        if all(
-            left_unlowered[key] == right_unlowered[key] for key in other_keys
-        ) and _only_delay_asymmetry(
-            left_unlowered["rule_execution_features"],
-            right_unlowered["rule_execution_features"],
-        ):
-            return False
-        raise EqualityUndecided(
-            "Execution features outside the finite jump table differ and need a dedicated certificate",
-            {"left_contract": left_unlowered, "right_contract": right_unlowered},
+    def has_arrhenius_rules(model: Any) -> bool:
+        return any(
+            any(_parse_arrhenius_args(rate) is not None for rate in r.rates)
+            for r in model._model.reaction_rules
         )
 
+    left_meta = _normalized_metadata(left_structural)
+    right_meta = _normalized_metadata(right_structural)
+    left_pop = (
+        left_structural.get("population_maps"),
+        left_structural.get("population_types"),
+    )
+    right_pop = (
+        right_structural.get("population_maps"),
+        right_structural.get("population_types"),
+    )
+    left_rt_mods = runtime_modifiers(left_structural)
+    right_rt_mods = runtime_modifiers(right_structural)
+
+    # Check compartment relationship:
+    # - exact match (order-independent)
+    # - disjoint compartment renaming (same dimensions/parents/volumes/units)
+    # - volume-rescaling match (same names/dimensions/parents/units, different volumes)
+    left_comps = _normalized_compartments(left_model)
+    right_comps = _normalized_compartments(right_model)
+    same_comp_structure = left_comps == right_comps
+    comp_renamings = _enumerate_compartment_renamings(left_model, right_model)
+    volume_rescaling_mode = False
+    if not same_comp_structure and not comp_renamings:
+        l_novol = [(n, d, p, u) for n, d, p, _, u in left_comps]
+        r_novol = [(n, d, p, u) for n, d, p, _, u in right_comps]
+        if l_novol == r_novol and left_comps:
+            volume_rescaling_mode = True
+
+    # Protocol actions (both model actions and simulation_protocol actions).
     def action_signature(action: Any) -> tuple[str, tuple[tuple[str, str], ...]]:
         if hasattr(action, "arguments"):
             arguments = action.arguments
@@ -4268,8 +6269,64 @@ def exact_process_equal(
             items = ()
         return (str(action.name), items)
 
-    left_actions = [action_signature(a) for a in left_model._model.actions]
-    right_actions = [action_signature(a) for a in right_model._model.actions]
+    left_actions = [
+        ("model", action_signature(a)) for a in left_model._model.actions
+    ] + [
+        ("protocol", action_signature(a))
+        for a in getattr(left_model._model, "protocol_actions", [])
+    ]
+    right_actions = [
+        ("model", action_signature(a)) for a in right_model._model.actions
+    ] + [
+        ("protocol", action_signature(a))
+        for a in getattr(right_model._model, "protocol_actions", [])
+    ]
+
+    # Concrete enabled transition difference at the initial state decides
+    # inequality before structural guards (for identically labelled models).
+    # Skip when energy_patterns exist without Arrhenius rules (so EQ-energy
+    # unlowered semantics stay conservative) or when protocols differ.
+    if (
+        left_actions == right_actions
+        and left_meta == right_meta
+        and left_pop == right_pop
+        and left_rt_mods == right_rt_mods
+        and (same_comp_structure or volume_rescaling_mode)
+    ):
+        initial_witness = _initial_state_counterexample(
+            left_model,
+            right_model,
+            left_structural=left_structural,
+            right_structural=right_structural,
+            apply_volume_scaling=volume_rescaling_mode,
+        )
+        if initial_witness is not None:
+            return False
+
+    # Guard non-normalized execution surfaces before proof search.
+    if left_meta != right_meta:
+        raise EqualityUndecided(
+            "Execution-relevant metadata or units differ and require a dedicated unit certificate",
+            {"left_metadata": left_meta, "right_metadata": right_meta},
+        )
+    if left_pop != right_pop:
+        raise EqualityUndecided(
+            "Population map definitions differ and require a dedicated correspondence certificate",
+            {"left_population": left_pop, "right_population": right_pop},
+        )
+    if left_rt_mods != right_rt_mods:
+        raise EqualityUndecided(
+            "Runtime rule modifiers (e.g. TotalRate) differ and require a dedicated certificate",
+            {"left_modifiers": left_rt_mods, "right_modifiers": right_rt_mods},
+        )
+    if not same_comp_structure and not comp_renamings and not volume_rescaling_mode:
+        if _volume_rhs_counterexample(left_model, right_model) is not None:
+            return False
+        raise EqualityUndecided(
+            "Compartment structures differ without a valid renaming or rescaling correspondence",
+            {"left_compartments": left_comps, "right_compartments": right_comps},
+        )
+
     if left_actions != right_actions:
         raise EqualityUndecided(
             "Protocol difference requires an exact intervention-semantics witness",
@@ -4285,36 +6342,6 @@ def exact_process_equal(
                     {"function": f.name, "expression": body},
                 )
 
-    def function_signature(model: Any) -> tuple[tuple[str, tuple[str, ...], str], ...]:
-        return tuple(
-            sorted(
-                (
-                    f.name,
-                    tuple(f.args),
-                    f.expression.to_string(),
-                )
-                for f in model._model.functions
-            )
-        )
-
-    if function_signature(left_model) != function_signature(right_model):
-        # A single rational parameter assignment where corresponding
-        # zero-argument functions take different values is a verified
-        # counterexample to equality of the function interpretations F, which
-        # are part of the initialized process under the equality contract.
-        # Expressions outside the exact rational subset are skipped; absence
-        # of a witness leaves the case undecided rather than declaring it equal.
-        witness = _function_counterexample(left_model, right_model)
-        if witness is not None:
-            return False
-        raise EqualityUndecided(
-            "Function interpretations differ and have no verified equivalence certificate",
-            {
-                "left_functions": function_signature(left_model),
-                "right_functions": function_signature(right_model),
-            },
-        )
-
     if any(
         observable.type == "Counter"
         for model in (left_model, right_model)
@@ -4325,88 +6352,38 @@ def exact_process_equal(
             {},
         )
 
-    def _match_observables(
-        left_obs: list[Any],
-        right_obs: list[Any],
-        type_mapping: Mapping[str, str],
-    ) -> bool:
-        if len(left_obs) != len(right_obs):
-            return False
-        if not left_obs:
-            return True
-
-        substitutions = sorted(type_mapping, key=len, reverse=True)
-        pat_re = (
-            re.compile(
-                r"(?<![A-Za-z0-9_])(?:"
-                + "|".join(re.escape(name) for name in substitutions)
-                + r")(?=\s*\()"
-            )
-            if substitutions
-            else None
-        )
-
-        def rename_pat(p: str) -> str:
-            return pat_re.sub(lambda m: type_mapping[m.group(0)], p) if pat_re else p
-
-        n = len(left_obs)
-        adj: list[list[int]] = []
-        for o_l in left_obs:
-            type_l = o_l.type
-            mapped_pats = tuple(sorted(rename_pat(p) for p in o_l.patterns))
-            edges = []
-            for j, o_r in enumerate(right_obs):
-                type_r = o_r.type
-                if type_l == type_r and mapped_pats == tuple(sorted(o_r.patterns)):
-                    edges.append(j)
-            adj.append(edges)
-
-        match_r = [-1] * n
-
-        def dfs(u: int, visited: list[bool]) -> bool:
-            for v in adj[u]:
-                if not visited[v]:
-                    visited[v] = True
-                    if match_r[v] < 0 or dfs(match_r[v], visited):
-                        match_r[v] = u
-                        return True
-            return False
-
-        for u in range(n):
-            visited = [False] * n
-            if not dfs(u, visited):
-                return False
-
-        return True
-
-    def molecule_type_signatures(model: Any) -> dict[str, tuple[Any, ...]]:
-        return {
-            molecule_type.name: (
-                molecule_type.is_population,
-                tuple(
-                    sorted(
-                        (
-                            component.name,
-                            tuple(sorted(component.allowed_states)),
-                        )
-                        for component in molecule_type.components
-                    )
-                ),
-            )
-            for molecule_type in model._model.molecule_types
-        }
-
-    type_signatures_l = molecule_type_signatures(left_model)
-    type_signatures_r = molecule_type_signatures(right_model)
-
+    # Extract jump hazards for right model once; left model may depend on
+    # observable renaming when functions reference observables.
     try:
-        jumps_l, init_l, species_l, complete_l, pruned_l = _extract_jump_hazards(
-            left_model
+        jumps_l, init_l, species_l, complete_l, pruned_l, vol_scaled_l = (
+            _extract_jump_hazards(
+                left_model,
+                structural_doc=left_structural,
+                apply_volume_scaling=volume_rescaling_mode,
+            )
         )
-        jumps_r, init_r, species_r, complete_r, pruned_r = _extract_jump_hazards(
-            right_model
+        jumps_r, init_r, species_r, complete_r, pruned_r, vol_scaled_r = (
+            _extract_jump_hazards(
+                right_model,
+                structural_doc=right_structural,
+                apply_volume_scaling=volume_rescaling_mode,
+            )
         )
+    except EqualityUndecided:
+        # Even if jump extraction declines (e.g. non-rational function in rate),
+        # check whether functions F alone have an exact counterexample witness.
+        fn_status, fn_info = _compare_functions_exact(
+            left_model, right_model, left_structural, right_structural
+        )
+        if fn_status is False:
+            return False
+        raise
     except Exception as exc:
+        fn_status, fn_info = _compare_functions_exact(
+            left_model, right_model, left_structural, right_structural
+        )
+        if fn_status is False:
+            return False
         raise EqualityUndecided(
             f"Network generation could not settle exact process equality: {exc}",
             {"error": str(exc)},
@@ -4444,7 +6421,33 @@ def exact_process_equal(
             },
         )
 
-    if set(species_l) == set(species_r):
+    # Check function table F when observable names are not renamed yet; if a
+    # definite counterexample exists on parameter-only functions, return False.
+    obs_l = list(left_model._model.observables)
+    obs_r = list(right_model._model.observables)
+
+    # Fast path: identically named species & same compartment names.
+    def molecule_type_signatures(model: Any) -> dict[str, tuple[Any, ...]]:
+        return {
+            molecule_type.name: (
+                molecule_type.is_population,
+                tuple(
+                    sorted(
+                        (
+                            component.name,
+                            tuple(sorted(component.allowed_states)),
+                        )
+                        for component in molecule_type.components
+                    )
+                ),
+            )
+            for molecule_type in model._model.molecule_types
+        }
+
+    type_signatures_l = molecule_type_signatures(left_model)
+    type_signatures_r = molecule_type_signatures(right_model)
+
+    if set(species_l) == set(species_r) and (same_comp_structure or volume_rescaling_mode):
         if type_signatures_l != type_signatures_r:
             raise EqualityUndecided(
                 "Identically named species require matching molecule type signatures",
@@ -4453,102 +6456,189 @@ def exact_process_equal(
                     "right_type_signatures": type_signatures_r,
                 },
             )
+        id_mol = {t: t for t in type_signatures_l}
+        id_comp = {
+            mt.name: {c.name: c.name for c in mt.components}
+            for mt in left_model._model.molecule_types
+        }
+        id_state = {
+            (mt.name, c.name): {s: s for s in c.allowed_states}
+            for mt in left_model._model.molecule_types
+            for c in mt.components
+        }
+        obs_ok, obs_map = _match_observables_exact(obs_l, obs_r, id_mol, id_comp, id_state)
+        fn_status, fn_info = _compare_functions_exact(
+            left_model,
+            right_model,
+            left_structural,
+            right_structural,
+            obs_renaming=obs_map if obs_ok else None,
+        )
+        if fn_status is False:
+            return False
+
         for sp in species_l:
             if init_l.get(sp, Fraction(0)) != init_r.get(sp, Fraction(0)):
                 return False
 
-        if set(jumps_l.keys()) != set(jumps_r.keys()):
+        # Re-extract left jumps with observable renaming if observables were renamed.
+        eff_jumps_l = jumps_l
+        if obs_ok and any(k != v for k, v in obs_map.items()):
+            eff_jumps_l, _, _, _, _, _ = _extract_jump_hazards(
+                left_model,
+                structural_doc=left_structural,
+                apply_volume_scaling=volume_rescaling_mode,
+                obs_renaming=obs_map,
+            )
+
+        if set(eff_jumps_l.keys()) != set(jumps_r.keys()):
             from collections import Counter
 
-            def enabled(key: tuple[tuple[str, ...], tuple[str, ...]]) -> bool:
+            def enabled(key: tuple[Any, ...]) -> bool:
                 need = Counter(key[0])
                 return all(
                     init_l.get(sp, Fraction(0)) >= count for sp, count in need.items()
                 )
 
-            for key in set(jumps_l) | set(jumps_r):
-                if enabled(key) and jumps_l.get(key, Fraction(0)) != jumps_r.get(
-                    key, Fraction(0)
-                ):
+            for key in set(eff_jumps_l) | set(jumps_r):
+                if enabled(key) and _hazard_key(
+                    eff_jumps_l.get(key, ("poly_exp", ()))
+                ) != _hazard_key(jumps_r.get(key, ("poly_exp", ()))):
                     return False
             raise EqualityUndecided(
                 "Generated jump tables differ, but no initial-state counterexample was found",
-                {"left_jump_count": len(jumps_l), "right_jump_count": len(jumps_r)},
+                {"left_jump_count": len(eff_jumps_l), "right_jump_count": len(jumps_r)},
             )
 
-        for key in jumps_l:
-            rate_l = jumps_l[key]
+        for key in eff_jumps_l:
+            rate_l = eff_jumps_l[key]
             rate_r = jumps_r[key]
-            if rate_l != rate_r:
+            if _hazard_key(rate_l) != _hazard_key(rate_r):
                 from collections import Counter
 
                 need = Counter(key[0])
                 if all(
                     init_l.get(sp, Fraction(0)) >= count for sp, count in need.items()
                 ):
-                    return False
+                    if rate_l[0] == "poly_exp" and rate_r[0] == "poly_exp":
+                        return False
+                    if rate_l[0] == "tfun" and rate_r[0] == "tfun":
+                        if rate_l[2] != rate_r[2] or _tfun_counterexample(rate_l[1], rate_r[1]) is not None:
+                            return False
                 raise EqualityUndecided(
-                    "Generated rate coefficients differ, but the transition is not enabled initially",
+                    "Generated rate coefficients differ without a verified counterexample",
                     {"jump": key, "left_rate": str(rate_l), "right_rate": str(rate_r)},
                 )
 
-        obs_l = list(left_model._model.observables)
-        obs_r = list(right_model._model.observables)
-        if not _match_observables(obs_l, obs_r, {t: t for t in type_signatures_l}):
+        # If volume rescaling mode was used, require at least one volume-scaled
+        # reaction so unimolecular-only models with mutated compartment volumes
+        # stay undecided rather than silently discarding compartment volume.
+        if volume_rescaling_mode and not (vol_scaled_l and vol_scaled_r):
+            raise EqualityUndecided(
+                "Compartment volumes differ with no volume-scaled reaction to witness rescaling",
+                {"left_compartments": left_comps, "right_compartments": right_comps},
+            )
+
+        # For non-Arrhenius models with energy/barrier patterns, verify
+        # normalized energy/barrier maps agree.
+        if not (has_arrhenius_rules(left_model) and has_arrhenius_rules(right_model)):
+            if left_model._model.energy_patterns or right_model._model.energy_patterns:
+                le = _normalized_energy_map(
+                    left_model, left_structural, id_mol, id_comp, id_state
+                )
+                re_ = _normalized_energy_map(
+                    right_model, right_structural, id_mol, id_comp, id_state
+                )
+                if le is None or re_ is None or not _energy_maps_equal(le, re_):
+                    raise EqualityUndecided(
+                        "Energy patterns differ without Arrhenius transition-rate reduction",
+                        {"left_energy": len(left_model._model.energy_patterns), "right_energy": len(right_model._model.energy_patterns)},
+                    )
+            if left_structural.get("barrier_patterns") or right_structural.get("barrier_patterns"):
+                lb = _normalized_barrier_map(left_model, left_structural, id_mol, id_comp, id_state)
+                rb = _normalized_barrier_map(right_model, right_structural, id_mol, id_comp, id_state)
+                if lb is None or rb is None or lb != rb:
+                    raise EqualityUndecided(
+                        "Barrier patterns differ without Arrhenius transition-rate reduction",
+                        {},
+                    )
+
+        if not obs_ok:
             return False
+
+        if fn_status is not True:
+            raise EqualityUndecided(
+                "Function interpretations differ and have no verified equivalence certificate",
+                fn_info,
+            )
 
         return True
 
+    # General hierarchical renaming search (molecule types, sites, states,
+    # bond labels, and disjoint compartment names).
     if len(species_l) != len(species_r) or len(jumps_l) != len(jumps_r):
         raise EqualityUndecided(
             "Generated networks differ without a verified reachable counterexample",
             {"left_species": len(species_l), "right_species": len(species_r)},
         )
 
-    import itertools
-
-    left_type_names = list(type_signatures_l)
-    right_type_names = list(type_signatures_r)
-    if len(left_type_names) != len(right_type_names):
+    if volume_rescaling_mode:
         raise EqualityUndecided(
-            "Molecule type inventories differ; no structural renaming certificate was found",
-            {"left_types": left_type_names, "right_types": right_type_names},
+            "Simultaneous volume rescaling and species renaming is uncertified",
+            {"left_species": species_l, "right_species": species_r},
         )
 
+    sig_renamings, sig_truncated = _enumerate_signature_renamings(
+        left_model, right_model
+    )
+    if not sig_renamings:
+        raise EqualityUndecided(
+            "No hierarchical signature renaming induces a species correspondence",
+            {
+                "left_type_signatures": type_signatures_l,
+                "right_type_signatures": type_signatures_r,
+            },
+        )
+
+    parsed_species_l = {sp: _parse_graph_pattern(sp) for sp in species_l}
+    parsed_species_r = {sp: _parse_graph_pattern(sp) for sp in species_r}
+    if any(g is None for g in parsed_species_l.values()) or any(
+        g is None for g in parsed_species_r.values()
+    ):
+        raise EqualityUndecided(
+            "Generated species could not be parsed for exact graph isomorphism",
+            {"left_species": species_l, "right_species": species_r},
+        )
+
+    comp_map_candidates = comp_renamings if comp_renamings else [{}]
     candidates = []
-    for perm in itertools.permutations(right_type_names):
-        type_mapping = dict(zip(left_type_names, perm))
-        if any(
-            type_signatures_l[source] != type_signatures_r[target]
-            for source, target in type_mapping.items()
-        ):
-            continue
-
-        substitutions = sorted(type_mapping, key=len, reverse=True)
-        pattern = (
-            re.compile(
-                r"(?<![A-Za-z0-9_])(?:"
-                + "|".join(re.escape(name) for name in substitutions)
-                + r")(?=\s*\()"
-            )
-            if substitutions
-            else None
-        )
-
-        def rename_species(species: str) -> str:
-            if pattern is None:
-                return species
-            return pattern.sub(lambda match: type_mapping[match.group(0)], species)
-
-        species_mapping = {source: rename_species(source) for source in species_l}
-        if len(set(species_mapping.values())) == len(species_mapping) and set(
-            species_mapping.values()
-        ) == set(species_r):
-            candidates.append((type_mapping, species_mapping))
+    for cmap in comp_map_candidates:
+        for mol_map, comp_map, state_map in sig_renamings:
+            species_mapping: dict[str, str] = {}
+            used_r: set[str] = set()
+            ok = True
+            for sp_l in species_l:
+                renamed_g = _rename_parsed_graph(
+                    parsed_species_l[sp_l], mol_map, comp_map, state_map, cmap
+                )
+                found_r = None
+                for sp_r in species_r:
+                    if sp_r not in used_r and _graphs_isomorphic(
+                        renamed_g, parsed_species_r[sp_r]
+                    ):
+                        found_r = sp_r
+                        break
+                if found_r is None:
+                    ok = False
+                    break
+                species_mapping[sp_l] = found_r
+                used_r.add(found_r)
+            if ok and len(used_r) == len(species_r):
+                candidates.append((mol_map, comp_map, state_map, cmap, species_mapping))
 
     if not candidates:
         raise EqualityUndecided(
-            "No molecule-type renaming induces the generated species correspondence",
+            "No signature renaming induces the generated species correspondence",
             {
                 "left_type_signatures": type_signatures_l,
                 "right_type_signatures": type_signatures_r,
@@ -4556,30 +6646,73 @@ def exact_process_equal(
         )
 
     transition_mapping_with_initial_mismatch = False
-    for type_mapping, mapping in candidates:
+    for mol_map, comp_map, state_map, cmap, mapping in candidates:
+        obs_ok, obs_map = _match_observables_exact(
+            obs_l, obs_r, mol_map, comp_map, state_map, cmap
+        )
+        eff_jumps_l = jumps_l
+        if obs_ok and any(k != v for k, v in obs_map.items()):
+            eff_jumps_l, _, _, _, _, _ = _extract_jump_hazards(
+                left_model,
+                structural_doc=left_structural,
+                obs_renaming=obs_map,
+            )
+
         mapped_jumps_l = {}
-        for (reactants, products), rate in jumps_l.items():
+        for (reactants, products, delay_spec, non_consuming, work_key), rate in eff_jumps_l.items():
             mapped_reactants = tuple(sorted(mapping[sp] for sp in reactants))
             mapped_products = tuple(sorted(mapping[sp] for sp in products))
-            mapped_jumps_l[(mapped_reactants, mapped_products)] = rate
+            mapped_jumps_l[(mapped_reactants, mapped_products, delay_spec, non_consuming, work_key)] = rate
 
         if set(mapped_jumps_l.keys()) == set(jumps_r.keys()):
-            if all(mapped_jumps_l[key] == jumps_r[key] for key in jumps_r):
+            if all(
+                _hazard_key(mapped_jumps_l[key]) == _hazard_key(jumps_r[key])
+                for key in jumps_r
+            ):
                 initial_matches = all(
                     init_l.get(source, Fraction(0)) == init_r.get(target, Fraction(0))
                     for source, target in mapping.items()
                 )
-                if initial_matches:
-                    if _match_observables(
-                        list(left_model._model.observables),
-                        list(right_model._model.observables),
-                        type_mapping,
-                    ):
-                        return True
-                else:
+                if not initial_matches:
                     transition_mapping_with_initial_mismatch = True
+                    continue
 
-    if transition_mapping_with_initial_mismatch:
+                if not obs_ok:
+                    continue
+
+                fn_status, _ = _compare_functions_exact(
+                    left_model,
+                    right_model,
+                    left_structural,
+                    right_structural,
+                    obs_renaming=obs_map,
+                )
+                if fn_status is not True:
+                    continue
+
+                if not (has_arrhenius_rules(left_model) and has_arrhenius_rules(right_model)):
+                    if left_model._model.energy_patterns or right_model._model.energy_patterns:
+                        le = _normalized_energy_map(
+                            left_model, left_structural, mol_map, comp_map, state_map, cmap
+                        )
+                        re_ = _normalized_energy_map(
+                            right_model, right_structural, {}, {}, {}, {}
+                        )
+                        if le is None or re_ is None or not _energy_maps_equal(le, re_):
+                            continue
+                    if left_structural.get("barrier_patterns") or right_structural.get("barrier_patterns"):
+                        lb = _normalized_barrier_map(
+                            left_model, left_structural, mol_map, comp_map, state_map
+                        )
+                        rb = _normalized_barrier_map(
+                            right_model, right_structural, {}, {}, {}
+                        )
+                        if lb is None or rb is None or lb != rb:
+                            continue
+
+                return True
+
+    if transition_mapping_with_initial_mismatch and not sig_truncated:
         return False
 
     raise EqualityUndecided(
