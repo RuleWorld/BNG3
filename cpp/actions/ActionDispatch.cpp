@@ -1722,8 +1722,25 @@ void loadTfunFiles(engine::OdeIntegrator& integrator, const ast::Model& model, c
     }
 }
 
-std::string simulationPrefix(const ast::Action& action, const std::filesystem::path& sourcePath, std::optional<std::size_t> scanIndex = std::nullopt) {
-    std::string prefix = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+std::string defaultModelPrefix(const ast::Model& model, const std::filesystem::path& sourcePath) {
+    if (!model.getModelName().empty()) {
+        return model.getModelName();
+    }
+    return sourcePath.stem().string();
+}
+
+std::string simulationPrefix(
+    const ast::Action& action,
+    const std::filesystem::path& sourcePath,
+    std::optional<std::size_t> scanIndex = std::nullopt,
+    const ast::Model* model = nullptr) {
+    const std::string fallback = model != nullptr
+        ? defaultModelPrefix(*model, sourcePath)
+        : sourcePath.stem().string();
+    std::string prefix = stripQuotes(readArgument(action, "prefix", fallback));
+    if (prefix.empty()) {
+        prefix = fallback;
+    }
     const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
     if (!suffix.empty()) {
         prefix += "_" + suffix;
@@ -2301,7 +2318,7 @@ void runSimulation(
         ? opts.tEnd : result.timePoints.back();
 
     // Write output files
-    const auto prefix = simulationPrefix(action, sourcePath);
+    const auto prefix = simulationPrefix(action, sourcePath, std::nullopt, &model);
     const auto outputPrefix = sourcePath.parent_path() / prefix;
     engine::OdeIntegrator integrator(model, network);
     if (opts.binaryOutput) {
@@ -2356,12 +2373,12 @@ void runSimulation(
         }
     }
 
-    // print_net: write .net file after simulation with final concentrations
+    // print_net: write <prefix>_save.net file after simulation with final concentrations (BNG2 run_network -n parity)
     if (opts.printNet && !result.concentrations.empty()) {
         for (std::size_t i = 0; i < network.species.size() && i < result.concentrations.back().size(); ++i) {
             network.species.get(i).setAmount(result.concentrations.back()[i]);
         }
-        const auto netPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".net");
+        const auto netPath = sourcePath.parent_path() / (prefix + "_save.net");
         io::NetWriter::write(netPath, model, network);
         if (verbose) {
             std::cerr << "[bng_cpp] print_net: wrote " << netPath.string() << "\n";
@@ -2455,6 +2472,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         model.merge(incoming);
         evaluateParametersAndRefresh();
+        generator = engine::NetworkGenerator(model);
+        network.reset();
+        loadedNetData.reset();
     };
 
     // Implicit generation and refresh must keep native events in memory.
@@ -2748,7 +2768,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
     const auto writeCurrentNetwork = [&](const io::NetWriterOptions& options = {}) {
         return writeNetworkAt(
-            sourcePath.parent_path() / (sourcePath.stem().string() + ".net"), options);
+            sourcePath.parent_path() / (defaultModelPrefix(model, sourcePath) + ".net"), options);
     };
 
     std::unique_ptr<NFcore::System> hybridStage;
@@ -2762,7 +2782,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (model.getEventFormatVersion().has_value()) {
             throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
         }
-        const auto prefix = simulationPrefix(action, sourcePath);
+        const auto prefix = simulationPrefix(action, sourcePath, std::nullopt, &model);
         const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
 
         const bool modelUsesPopulationTypes = std::any_of(
@@ -3301,7 +3321,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // BNG2 exposes readNetwork and readModel as aliases for readFile.
         // Normalize here too so programmatically constructed actions get the
         // same semantics as parsed BNGL sources.
-        if (actionName == "readnetwork" || actionName == "readmodel") {
+        if (actionName == "readnetwork" || actionName == "readmodel" || actionName == "readsbml") {
             actionName = "readfile";
         }
         if (actionName == "simulate_ps") {
@@ -3310,9 +3330,17 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "readfile") {
             hybridStage.reset();
-            const auto filepath = stripQuotes(readArgument(action, "file", ""));
+            auto filepath = stripQuotes(readArgument(action, "file", ""));
+            if (filepath.empty()) {
+                filepath = stripQuotes(readArgument(action, "target",
+                    stripQuotes(readArgument(action, "value", ""))));
+            }
             if (filepath.empty()) {
                 throw std::runtime_error("readFile requires 'file' argument");
+            }
+            const auto basenameArg = stripQuotes(readArgument(action, "basename", ""));
+            if (!basenameArg.empty()) {
+                model.setModelName(basenameArg);
             }
 
             // Determine file type
@@ -3458,7 +3486,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             if (!overwrite) {
                 // Check if .net file already exists; if so, read it instead of regenerating
-                auto netPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".net");
+                auto netPath = sourcePath.parent_path() / (defaultModelPrefix(model, sourcePath) + ".net");
                 if (std::filesystem::exists(netPath)) {
                     auto parseResult = io::NetReader::parse(netPath);
                     if (parseResult.success) {
@@ -4036,7 +4064,29 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "linearparametersensitivity") {
-            ensureNetwork();
+            const auto netFileArg = stripQuotes(readArgument(action, "net_file", ""));
+            if (!netFileArg.empty()) {
+                std::filesystem::path netPath(netFileArg);
+                if (netPath.extension() != ".net") {
+                    netPath += ".net";
+                }
+                if (!netPath.is_absolute()) {
+                    netPath = sourcePath.parent_path() / netPath;
+                }
+                auto parseResult = io::NetReader::parse(netPath);
+                if (!parseResult.success) {
+                    throw std::runtime_error(
+                        "LinearParameterSensitivity failed to read net_file: " + parseResult.error);
+                }
+                for (const auto& [name, value] : parseResult.parameters) {
+                    replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
+                }
+                evaluateParametersAndRefresh();
+                network = networkFromNetData(parseResult, model);
+                loadedNetData = std::move(parseResult);
+            } else {
+                ensureNetwork();
+            }
 
             // Required parameter: t_end
             const auto tEndText = readArgument(action, "t_end", "");
@@ -4056,10 +4106,48 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const bool reEquil = (reEquilText == "1" || reEquilText == "true");
             const double tEquil = parseScalarValue(readArgument(action, "t_equil", "1e6"), model);
 
-            const auto prefix = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            const std::string defaultLpsPrefix = !netFileArg.empty()
+                ? std::filesystem::path(netFileArg).stem().string()
+                : defaultModelPrefix(model, sourcePath);
+            const auto prefix = stripQuotes(readArgument(action, "prefix", defaultLpsPrefix));
             const auto outputDir = sourcePath.parent_path();
 
-            // Save original parameter values
+            // Optional input perturbations (inp_ppert / inp_cpert)
+            auto parsePerturbationPairs = [](const std::string& raw,
+                                             const std::string& namesKey,
+                                             const std::string& valuesKey)
+                -> std::vector<std::pair<std::string, std::string>> {
+                std::vector<std::pair<std::string, std::string>> pairs;
+                if (raw.empty()) return pairs;
+                auto extractBracketList = [&](const std::string& key) -> std::vector<std::string> {
+                    std::vector<std::string> items;
+                    const auto keyPos = raw.find(key);
+                    if (keyPos == std::string::npos) return items;
+                    const auto openPos = raw.find('[', keyPos);
+                    const auto closePos = openPos == std::string::npos ? std::string::npos : raw.find(']', openPos);
+                    if (openPos == std::string::npos || closePos == std::string::npos) return items;
+                    std::stringstream ss(raw.substr(openPos + 1, closePos - openPos - 1));
+                    std::string tok;
+                    while (std::getline(ss, tok, ',')) {
+                        tok = stripQuotes(trim(tok));
+                        if (!tok.empty()) items.push_back(tok);
+                    }
+                    return items;
+                };
+                const auto names = extractBracketList(namesKey);
+                const auto values = extractBracketList(valuesKey);
+                const auto count = std::min(names.size(), values.size());
+                for (std::size_t i = 0; i < count; ++i) {
+                    pairs.emplace_back(names[i], values[i]);
+                }
+                return pairs;
+            };
+            const auto pperts = parsePerturbationPairs(
+                readArgument(action, "inp_ppert", ""), "pnames", "pvalues");
+            const auto cperts = parsePerturbationPairs(
+                readArgument(action, "inp_cpert", ""), "cnames", "cvalues");
+
+            // Save original parameter values BEFORE any input perturbations
             std::vector<std::pair<std::string, double>> originalParamValues;
             for (const auto& param : model.getParameters().all()) {
                 originalParamValues.emplace_back(param.getName(), param.getValue());
@@ -4067,6 +4155,22 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             // Save initial species concentrations
             const auto initialConc = snapshotConcentrations(*network);
+
+            auto applyInputPerturbations = [&]() {
+                if (!pperts.empty()) {
+                    for (const auto& [pName, pVal] : pperts) {
+                        replaceParameter(ast::Parameter(
+                            pName, ast::Expression::number(parseScalarValue(pVal, model))));
+                    }
+                    evaluateParametersAndRefresh();
+                    regeneratePreservingAmounts(generator, implicitNetworkPath(), network);
+                }
+                for (const auto& [cName, cVal] : cperts) {
+                    if (const auto idx = findSpeciesIndex(*network, cName); idx.has_value()) {
+                        network->species.get(*idx).setAmount(parseScalarValue(cVal, model));
+                    }
+                }
+            };
 
             // Helper to build a simulate action with given prefix
             auto makeSimulateAction = [&](const std::string& simPrefix, double tEnd, bool steadyState) -> ast::Action {
@@ -4084,12 +4188,18 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 return simAction;
             };
 
-            // Initial equilibration of the base model if requested
+            // Initial equilibration of the unperturbed base model if requested
             if (initEquil) {
                 std::string equilPrefix = prefix + "_baseequil_" + suffix;
                 auto equilAction = makeSimulateAction(equilPrefix, tEquil, true);
                 runSimulation(model, equilAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                if (!lastSimulationState.empty()) {
+                    restoreConcentrations(*network, lastSimulationState);
+                }
             }
+
+            // Apply input perturbations right before base case simulation (matching BNGAction.pm:2078-2102)
+            applyInputPerturbations();
 
             // Run base case simulation
             {
@@ -4113,20 +4223,27 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
                 const double newValue = paramValue * (1.0 + bump / 100.0);
 
-                // Restore initial concentrations
-                restoreConcentrations(*network, initialConc);
-
-                // Bump the parameter
+                // Restore all original parameters before applying this single-parameter bump
+                for (const auto& [origName, origVal] : originalParamValues) {
+                    replaceParameter(ast::Parameter(origName, ast::Expression::number(origVal)));
+                }
                 replaceParameter(ast::Parameter(paramName, ast::Expression::number(newValue)));
                 evaluateParametersAndRefresh();
                 network = generator.generate(sourcePath);
+                restoreConcentrations(*network, initialConc);
 
                 // Re-equilibrate if requested
                 if (reEquil) {
                     std::string equilPrefix = prefix + "_equil_" + paramName + "_" + suffix;
                     auto equilAction = makeSimulateAction(equilPrefix, tEquil, true);
                     runSimulation(model, equilAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                    if (!lastSimulationState.empty()) {
+                        restoreConcentrations(*network, lastSimulationState);
+                    }
                 }
+
+                // Apply input perturbations right before bumped simulation (matching BNGAction.pm:2146-2170)
+                applyInputPerturbations();
 
                 // Run bumped simulation
                 std::string bumpPrefix = prefix + "_" + paramName + "_" + suffix;
@@ -4225,7 +4342,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             simulateAction.arguments["method"] = readArgument(action, "method", "ode");
             simulateAction.arguments.erase("suffix");
 
-            const auto prefix = simulationPrefix(action, sourcePath);
+            const auto prefix = simulationPrefix(action, sourcePath, std::nullopt, &model);
             const auto outputDir = sourcePath.parent_path();
 
             // Save original parameters and initial concentrations for post-scan restoration
@@ -5082,25 +5199,84 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
+        if (actionName == "readnfspecies") {
+            hybridStage.reset();
+            auto filepath = stripQuotes(readArgument(action, "file", ""));
+            if (filepath.empty()) {
+                filepath = stripQuotes(readArgument(action, "target",
+                    stripQuotes(readArgument(action, "value", ""))));
+            }
+            if (filepath.empty()) {
+                throw std::runtime_error("readNFspecies requires a file path");
+            }
+            std::filesystem::path speciesPath(filepath);
+            if (!speciesPath.is_absolute()) {
+                speciesPath = sourcePath.parent_path() / filepath;
+            }
+            std::ifstream in(speciesPath);
+            if (!in) {
+                throw std::runtime_error("Couldn't read from file " + speciesPath.string());
+            }
+            ensureNetwork();
+            for (std::size_t i = 0; i < network->species.size(); ++i) {
+                network->species.get(i).setAmount(0.0);
+            }
+            std::string line;
+            while (std::getline(in, line)) {
+                const auto hashPos = line.find('#');
+                if (hashPos != std::string::npos) line = line.substr(0, hashPos);
+                line = trim(line);
+                if (line.empty()) continue;
+                std::istringstream iss(line);
+                std::string spStr, countStr;
+                if (!(iss >> spStr >> countStr)) continue;
+                const double amount = parseScalarValue(countStr, model);
+                if (const auto idx = findSpeciesIndex(*network, spStr); idx.has_value()) {
+                    network->species.get(*idx).setAmount(
+                        network->species.get(*idx).getAmount() + amount);
+                }
+            }
+            continue;
+        }
+
+        if (actionName == "codename") {
+            const auto requested = stripQuotes(readArgument(action, "value",
+                stripQuotes(readArgument(action, "target", ""))));
+            if (requested.empty()) {
+                throw std::runtime_error("codename argument is empty.");
+            }
+            throw std::runtime_error(
+                "Requested BioNetGen codename " + requested + ". Active version is .");
+        }
+
         if (actionName == "simulate_protocol") {
             const auto& protocol = model.getSimulationProtocol();
             if (protocol.empty()) {
                 throw std::runtime_error(
                     "simulate_protocol requires a non-empty protocol block");
             }
+            const auto prefixArg = stripQuotes(readArgument(action, "prefix", ""));
+            std::optional<std::filesystem::path> prefixOverride;
+            if (!prefixArg.empty()) {
+                std::filesystem::path p(prefixArg);
+                if (!p.is_absolute()) {
+                    p = sourcePath.parent_path() / p;
+                }
+                prefixOverride = p;
+            }
             if (verbose) {
                 std::cerr << "[bng_cpp] simulate_protocol: dispatching " << protocol.size() << " protocol actions\n";
             }
-            runProtocol(std::nullopt);
+            runProtocol(prefixOverride);
             continue;
         }
 
         if (actionName == "writenetwork" || actionName == "writenet") {
             ensureNetwork();
             auto prefixText = stripQuotes(readArgument(
-                action, "prefix", sourcePath.stem().string()));
+                action, "prefix", defaultModelPrefix(model, sourcePath)));
             if (prefixText.empty()) {
-                prefixText = sourcePath.stem().string();
+                prefixText = defaultModelPrefix(model, sourcePath);
             }
             std::filesystem::path outputPrefix(prefixText);
             if (!outputPrefix.is_absolute()) {
