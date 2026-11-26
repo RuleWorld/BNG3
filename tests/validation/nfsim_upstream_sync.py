@@ -128,7 +128,19 @@ def test_embedded_matches_upstream_rulemonkey_refusal(tmp_path, nfsim_binaries):
         for binary in (upstream / "build" / "NFsim", candidate / "NFsim"):
             proc = _run_nfsim(
                 binary,
-                ["-xml", xml, "-sim", "1", "-oSteps", "1", "-seed", "1", flag, "-o", tmp_path / "out.gdat"],
+                [
+                    "-xml",
+                    xml,
+                    "-sim",
+                    "1",
+                    "-oSteps",
+                    "1",
+                    "-seed",
+                    "1",
+                    flag,
+                    "-o",
+                    tmp_path / "out.gdat",
+                ],
                 tmp_path,
             )
             assert proc.returncode != 0
@@ -140,7 +152,10 @@ def test_embedded_matches_upstream_single_rng_and_unseeded(tmp_path, nfsim_binar
     xml = upstream / "test" / "molecularity" / "dot_molecule_two_candidates.xml"
     oracle_out = tmp_path / "oracle.gdat"
     embedded_out = tmp_path / "embedded.gdat"
-    for binary, out in ((upstream / "build" / "NFsim", oracle_out), (candidate / "NFsim", embedded_out)):
+    for binary, out in (
+        (upstream / "build" / "NFsim", oracle_out),
+        (candidate / "NFsim", embedded_out),
+    ):
         proc = _run_nfsim(
             binary,
             ["-xml", xml, "-sim", "1", "-oSteps", "5", "-seed", "17", "-o", out],
@@ -154,7 +169,16 @@ def test_embedded_matches_upstream_single_rng_and_unseeded(tmp_path, nfsim_binar
     for i in range(3):
         proc = _run_nfsim(
             candidate / "NFsim",
-            ["-xml", xml, "-sim", "0.1", "-oSteps", "1", "-o", tmp_path / f"unseeded_{i}.gdat"],
+            [
+                "-xml",
+                xml,
+                "-sim",
+                "0.1",
+                "-oSteps",
+                "1",
+                "-o",
+                tmp_path / f"unseeded_{i}.gdat",
+            ],
             tmp_path,
         )
         assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -171,7 +195,19 @@ def test_embedded_matches_upstream_no_bscb_conserved_total(tmp_path, nfsim_binar
         out = tmp_path / f"{binary.parent.name}.gdat"
         proc = _run_nfsim(
             binary,
-            ["-xml", xml, "-no-bscb", "-sim", "10", "-oSteps", "10", "-seed", "3", "-o", out],
+            [
+                "-xml",
+                xml,
+                "-no-bscb",
+                "-sim",
+                "10",
+                "-oSteps",
+                "10",
+                "-seed",
+                "3",
+                "-o",
+                out,
+            ],
             tmp_path,
         )
         assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -193,7 +229,18 @@ def test_embedded_matches_upstream_unknown_rate_law_refusal(tmp_path, nfsim_bina
     for binary in (upstream / "build" / "NFsim", candidate / "NFsim"):
         proc = _run_nfsim(
             binary,
-            ["-xml", xml, "-sim", "1", "-oSteps", "1", "-seed", "1", "-o", tmp_path / "out.gdat"],
+            [
+                "-xml",
+                xml,
+                "-sim",
+                "1",
+                "-oSteps",
+                "1",
+                "-seed",
+                "1",
+                "-o",
+                tmp_path / "out.gdat",
+            ],
             tmp_path,
         )
         assert proc.returncode != 0 or not (tmp_path / "out.gdat").exists()
@@ -204,28 +251,51 @@ def test_embedded_matches_upstream_rnf_and_set_parameter(tmp_path, nfsim_binarie
     upstream, candidate = nfsim_binaries
     # First-word RNF command dispatch (#144), zero-rate rule activation (#137), and MM refresh (#141).
     cases = [
-        (upstream / "test" / "Issue144" / "issue144_keq.xml", "set Keq 5\nupdate\nsim 2 4\n"),
-        (upstream / "test" / "setParameter" / "zero_rate_rule.xml", "set kon 3\nupdate\nsim 2 4\n"),
-        (upstream / "test" / "setParameter" / "mm_set_parameter.xml", "set kcat 5\nset Km 10\nupdate\nsim 2 4\n"),
+        (
+            upstream / "test" / "Issue144" / "issue144_keq.xml",
+            "set Keq 5\nupdate\nsim 2 4\n",
+        ),
+        (
+            upstream / "test" / "setParameter" / "zero_rate_rule.xml",
+            "set kon 3\nupdate\nsim 2 4\n",
+        ),
+        (
+            upstream / "test" / "setParameter" / "mm_set_parameter.xml",
+            "set kcat 5\nset Km 10\nupdate\nsim 2 4\n",
+        ),
     ]
     for idx, (xml, block) in enumerate(cases):
         oracle_out = tmp_path / f"oracle_{idx}.gdat"
         embedded_out = tmp_path / f"embedded_{idx}.gdat"
-        for binary, out in ((upstream / "build" / "NFsim", oracle_out), (candidate / "NFsim", embedded_out)):
+        for binary, out in (
+            (upstream / "build" / "NFsim", oracle_out),
+            (candidate / "NFsim", embedded_out),
+        ):
             rnf = tmp_path / f"run_{idx}_{binary.parent.name}.rnf"
-            rnf.write_text(f"-xml {xml}\n-o {out}\n-seed 11\nbegin\n{block}end\n", encoding="utf-8")
+            rnf.write_text(
+                f"-xml {xml}\n-o {out}\n-seed 11\nbegin\n{block}end\n", encoding="utf-8"
+            )
             proc = _run_nfsim(binary, ["-rnf", rnf], tmp_path)
             assert proc.returncode == 0, proc.stdout + proc.stderr
         assert embedded_out.read_text() == oracle_out.read_text()
 
 
-def test_embedded_matches_upstream_time_table_and_tfun_comments(tmp_path, nfsim_binaries):
+def test_embedded_matches_upstream_time_table_and_tfun_comments(
+    tmp_path, nfsim_binaries
+):
     upstream, candidate = nfsim_binaries
-    for name in ("time_table_step.xml", "time_table_step_up.xml", "time_table_ramp.xml"):
+    for name in (
+        "time_table_step.xml",
+        "time_table_step_up.xml",
+        "time_table_ramp.xml",
+    ):
         xml = upstream / "test" / "Issue142" / name
         oracle_out = tmp_path / f"oracle_{name}.gdat"
         embedded_out = tmp_path / f"embedded_{name}.gdat"
-        for binary, out in ((upstream / "build" / "NFsim", oracle_out), (candidate / "NFsim", embedded_out)):
+        for binary, out in (
+            (upstream / "build" / "NFsim", oracle_out),
+            (candidate / "NFsim", embedded_out),
+        ):
             proc = _run_nfsim(
                 binary,
                 ["-xml", xml, "-sim", "5", "-oSteps", "5", "-seed", "7", "-o", out],
@@ -236,35 +306,67 @@ def test_embedded_matches_upstream_time_table_and_tfun_comments(tmp_path, nfsim_
 
     # .tfun file with UTF-8 BOM, # header/comments, CRLF endings, and malformed line rejection (#150).
     good_tfun = tmp_path / "good.tfun"
-    good_tfun.write_bytes(b"\xef\xbb\xbf# time rate\r\n\r\n0 0 # start\r\n1 5\r\n5 5\r\n")
+    good_tfun.write_bytes(
+        b"\xef\xbb\xbf# time rate\r\n\r\n0 0 # start\r\n1 5\r\n5 5\r\n"
+    )
     bad_tfun = tmp_path / "bad.tfun"
     bad_tfun.write_text("# header\n0 0\n1\n2 2\n", encoding="utf-8")
     template = (upstream / "test" / "Issue142" / "time_table_ramp.xml").read_text()
-    assert 'mode="inline"' in template or 'xData=' in template
+    assert 'mode="inline"' in template or "xData=" in template
     # Build a minimal file-backed TFUN XML from time_table_ramp.xml.
     import re
+
     good_xml = tmp_path / "good_tfun.xml"
     bad_xml = tmp_path / "bad_tfun.xml"
     for target_xml, data_file in ((good_xml, good_tfun), (bad_xml, bad_tfun)):
         patched = re.sub(r'mode="inline"', 'mode="file"', template)
-        patched = re.sub(r'xData="[^"]*"\s*', '', patched)
+        patched = re.sub(r'xData="[^"]*"\s*', "", patched)
         patched = re.sub(r'yData="[^"]*"', f'file="{data_file}"', patched)
         target_xml.write_text(patched, encoding="utf-8")
     out = tmp_path / "good_tfun.gdat"
-    proc = _run_nfsim(candidate / "NFsim", ["-xml", good_xml, "-sim", "5", "-oSteps", "5", "-seed", "5", "-o", out], tmp_path)
+    proc = _run_nfsim(
+        candidate / "NFsim",
+        ["-xml", good_xml, "-sim", "5", "-oSteps", "5", "-seed", "5", "-o", out],
+        tmp_path,
+    )
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert out.is_file()
-    proc_bad = _run_nfsim(candidate / "NFsim", ["-xml", bad_xml, "-sim", "1", "-oSteps", "1", "-seed", "5", "-o", tmp_path / "bad.gdat"], tmp_path)
+    proc_bad = _run_nfsim(
+        candidate / "NFsim",
+        [
+            "-xml",
+            bad_xml,
+            "-sim",
+            "1",
+            "-oSteps",
+            "1",
+            "-seed",
+            "5",
+            "-o",
+            tmp_path / "bad.gdat",
+        ],
+        tmp_path,
+    )
     assert "expected two numbers" in (proc_bad.stdout + proc_bad.stderr)
 
 
-def test_embedded_matches_upstream_whole_complex_and_matchonce(tmp_path, nfsim_binaries):
+def test_embedded_matches_upstream_whole_complex_and_matchonce(
+    tmp_path, nfsim_binaries
+):
     upstream, candidate = nfsim_binaries
-    for name in ("whole_complex_deletion.xml", "match_once.xml", "match_once_disjoint.xml", "match_once_symmetric.xml"):
+    for name in (
+        "whole_complex_deletion.xml",
+        "match_once.xml",
+        "match_once_disjoint.xml",
+        "match_once_symmetric.xml",
+    ):
         xml = upstream / "test" / "perComplex" / name
         oracle_out = tmp_path / f"oracle_{name}.gdat"
         embedded_out = tmp_path / f"embedded_{name}.gdat"
-        for binary, out in ((upstream / "build" / "NFsim", oracle_out), (candidate / "NFsim", embedded_out)):
+        for binary, out in (
+            (upstream / "build" / "NFsim", oracle_out),
+            (candidate / "NFsim", embedded_out),
+        ):
             proc = _run_nfsim(
                 binary,
                 ["-xml", xml, "-sim", "2", "-oSteps", "4", "-seed", "13", "-o", out],
@@ -278,14 +380,27 @@ def test_embedded_matches_upstream_whole_complex_and_matchonce(tmp_path, nfsim_b
         xml = upstream / "test" / "perComplex" / name
         proc = _run_nfsim(
             candidate / "NFsim",
-            ["-xml", xml, "-sim", "2", "-oSteps", "2", "-seed", "1", "-o", tmp_path / f"{name}.gdat"],
+            [
+                "-xml",
+                xml,
+                "-sim",
+                "2",
+                "-oSteps",
+                "2",
+                "-seed",
+                "1",
+                "-o",
+                tmp_path / f"{name}.gdat",
+            ],
             tmp_path,
         )
         assert proc.returncode != 0
         assert "Michaelis-Menten" in (proc.stdout + proc.stderr)
 
 
-def test_embedded_matches_upstream_reactant_count_and_math_parser(tmp_path, nfsim_binaries):
+def test_embedded_matches_upstream_reactant_count_and_math_parser(
+    tmp_path, nfsim_binaries
+):
     upstream, candidate = nfsim_binaries
     for name in (
         "reactant_count_zero_order.xml",
@@ -296,7 +411,18 @@ def test_embedded_matches_upstream_reactant_count_and_math_parser(tmp_path, nfsi
         xml = upstream / "test" / "ReactantCount" / name
         proc = _run_nfsim(
             candidate / "NFsim",
-            ["-xml", xml, "-sim", "1", "-oSteps", "1", "-seed", "1", "-o", tmp_path / f"{name}.gdat"],
+            [
+                "-xml",
+                xml,
+                "-sim",
+                "1",
+                "-oSteps",
+                "1",
+                "-seed",
+                "1",
+                "-o",
+                tmp_path / f"{name}.gdat",
+            ],
             tmp_path,
         )
         assert "which reads reactant_" in (proc.stdout + proc.stderr)
@@ -304,8 +430,15 @@ def test_embedded_matches_upstream_reactant_count_and_math_parser(tmp_path, nfsi
     accepted = upstream / "test" / "ReactantCount" / "reactant_count_accepted.xml"
     oracle_out = tmp_path / "oracle_acc.gdat"
     embedded_out = tmp_path / "embedded_acc.gdat"
-    for binary, out in ((upstream / "build" / "NFsim", oracle_out), (candidate / "NFsim", embedded_out)):
-        proc = _run_nfsim(binary, ["-xml", accepted, "-sim", "2", "-oSteps", "2", "-seed", "9", "-o", out], tmp_path)
+    for binary, out in (
+        (upstream / "build" / "NFsim", oracle_out),
+        (candidate / "NFsim", embedded_out),
+    ):
+        proc = _run_nfsim(
+            binary,
+            ["-xml", accepted, "-sim", "2", "-oSteps", "2", "-seed", "9", "-o", out],
+            tmp_path,
+        )
         assert proc.returncode == 0, proc.stdout + proc.stderr
     assert embedded_out.read_text() == oracle_out.read_text()
 
@@ -317,13 +450,22 @@ def test_embedded_matches_upstream_reactant_count_and_math_parser(tmp_path, nfsi
     assert "10) test expressions muParser refuses" in proc_math.stdout
 
 
-def test_embedded_matches_upstream_tiny_propensity_and_end_time(tmp_path, nfsim_binaries):
+def test_embedded_matches_upstream_tiny_propensity_and_end_time(
+    tmp_path, nfsim_binaries
+):
     upstream, candidate = nfsim_binaries
     xml = upstream / "test" / "Issue145" / "issue145_slow.xml"
     oracle_out = tmp_path / "oracle_slow.gdat"
     embedded_out = tmp_path / "embedded_slow.gdat"
-    for binary, out in ((upstream / "build" / "NFsim", oracle_out), (candidate / "NFsim", embedded_out)):
-        proc = _run_nfsim(binary, ["-xml", xml, "-sim", "10", "-oSteps", "5", "-seed", "23", "-o", out], tmp_path)
+    for binary, out in (
+        (upstream / "build" / "NFsim", oracle_out),
+        (candidate / "NFsim", embedded_out),
+    ):
+        proc = _run_nfsim(
+            binary,
+            ["-xml", xml, "-sim", "10", "-oSteps", "5", "-seed", "23", "-o", out],
+            tmp_path,
+        )
         assert proc.returncode == 0, proc.stdout + proc.stderr
     assert embedded_out.read_text() == oracle_out.read_text()
 
@@ -337,7 +479,19 @@ def test_embedded_and_direct_match_upstream_seed_rounding(tmp_path, nfsim_binari
 
     oracle_out = tmp_path / "oracle_seed.gdat"
     oracle = terminal_counts(
-        [upstream / "build" / "NFsim", "-xml", fixture_xml, "-sim", "1", "-oSteps", "1", "-seed", "1", "-o", oracle_out],
+        [
+            upstream / "build" / "NFsim",
+            "-xml",
+            fixture_xml,
+            "-sim",
+            "1",
+            "-oSteps",
+            "1",
+            "-seed",
+            "1",
+            "-o",
+            oracle_out,
+        ],
         oracle_out,
         tmp_path,
         env,
@@ -347,13 +501,31 @@ def test_embedded_and_direct_match_upstream_seed_rounding(tmp_path, nfsim_binari
     embedded_out = tmp_path / "embedded_seed.gdat"
     proc_emb = _run_nfsim(
         candidate / "NFsim",
-        ["-xml", fixture_xml, "-sim", "1", "-oSteps", "1", "-seed", "1", "-o", embedded_out],
+        [
+            "-xml",
+            fixture_xml,
+            "-sim",
+            "1",
+            "-oSteps",
+            "1",
+            "-seed",
+            "1",
+            "-o",
+            embedded_out,
+        ],
         tmp_path,
     )
     assert proc_emb.returncode == 0, proc_emb.stdout + proc_emb.stderr
     assert "is not a whole number; rounded to " in (proc_emb.stdout + proc_emb.stderr)
-    header, *rows = [line for line in embedded_out.read_text().splitlines() if line.strip()]
-    embedded = dict(zip(header.lstrip("#").split()[1:], [int(float(v)) for v in rows[-1].split()[1:]]))
+    header, *rows = [
+        line for line in embedded_out.read_text().splitlines() if line.strip()
+    ]
+    embedded = dict(
+        zip(
+            header.lstrip("#").split()[1:],
+            [int(float(v)) for v in rows[-1].split()[1:]],
+        )
+    )
     assert embedded == expected
 
     model = tmp_path / "issue160_direct.bngl"
@@ -374,7 +546,14 @@ def test_embedded_and_direct_match_upstream_seed_rounding(tmp_path, nfsim_binari
     assert proc_dir.returncode == 0, proc_dir.stdout + proc_dir.stderr
     assert "is not a whole number; rounded to " in (proc_dir.stdout + proc_dir.stderr)
     d_header, *d_rows = [
-        line for line in (tmp_path / "direct_seed.gdat").read_text().splitlines() if line.strip()
+        line
+        for line in (tmp_path / "direct_seed.gdat").read_text().splitlines()
+        if line.strip()
     ]
-    direct = dict(zip(d_header.lstrip("#").split()[1:], [int(float(v)) for v in d_rows[-1].split()[1:]]))
+    direct = dict(
+        zip(
+            d_header.lstrip("#").split()[1:],
+            [int(float(v)) for v in d_rows[-1].split()[1:]],
+        )
+    )
     assert direct == expected

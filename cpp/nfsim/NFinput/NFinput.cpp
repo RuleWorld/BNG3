@@ -4690,7 +4690,7 @@ static bool initReactionRulesBody(
             }
 
             // ReactionClass::fire() thins a MatchOnce reactant to once per
-            // complex whatever the rate law, so a local-function (DOR) rule
+            // complex whatever the rate law, so a local function (DOR) rule
             // takes it as any other rule does.
             if (hasMatchOnce) {
                 unsigned int nReactants = r->getNumOfReactants();
