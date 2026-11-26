@@ -48,15 +48,17 @@ def verify_identity(report):
         if not all(reference.get(key) for key in ("path", "revision", "repository")):
             raise ValueError("replay reference identity incomplete: " + name)
         campaign.verify_source(Path(reference["path"]), reference)
-        for path, sha in (
-            ("binary", "sha256"),
-            ("script", "script_sha256"),
-            ("network_binary", "network_binary_sha256"),
+        for path, sha_keys in (
+            ("binary", ("binary_sha256", "sha256")),
+            ("script", ("script_sha256",)),
+            ("network_binary", ("network_binary_sha256",)),
         ):
             if reference.get(path):
-                if not reference.get(sha):
+                digests = [reference[k] for k in sha_keys if reference.get(k)]
+                if not digests:
                     raise ValueError("replay reference digest missing: " + name)
-                campaign.verify_digest(Path(reference[path]), reference[sha])
+                for digest in digests:
+                    campaign.verify_digest(Path(reference[path]), digest)
     for relative, expected in report.get("inputs", {}).items():
         campaign.verify_digest(ROOT / relative, expected)
 

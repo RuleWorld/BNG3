@@ -52,32 +52,43 @@ def test_differential_reporting_is_additive_and_nightly():
 def test_unbounded_manual_conformance_uses_the_scheduled_corpus():
     workflow = parse_workflow(ROOT / ".github/workflows/parity.yml")
     steps = workflow["jobs"]["bng2-parity"]["steps"]
+    install_step = next(
+        s for s in steps if s.get("name") == "Install build and comparison dependencies"
+    )
+    assert "libroadrunner" in install_step["run"]
     command = next(
         s["run"]
         for s in steps
         if "scripts/validate.py --tier smoke" in s.get("run", "")
     )
+    assert "--nfsim-root" in command
+    assert "--nfsim-binary" in command
+    assert "--nfsim-sha256" in command
     selection = command[
         command.index("corpus_tier=s") : command.index(
             ".venv/bin/python scripts/validate.py"
         )
     ]
-    for event, bounded, expected in [
-        ("schedule", "false", "p"),
-        ("workflow_dispatch", "false", "p"),
-        ("workflow_dispatch", "true", "s"),
-        ("pull_request", "false", "s"),
+    for event, bounded, expected_tier, expected_timeout in [
+        ("schedule", "false", "p", "180"),
+        ("workflow_dispatch", "false", "p", "180"),
+        ("workflow_dispatch", "true", "s", "30"),
+        ("pull_request", "false", "s", "30"),
     ]:
         script = selection.replace("${{ github.event_name }}", event).replace(
             "${{ inputs.bounded }}", bounded
         )
         result = subprocess.run(
-            ["bash", "-c", script + '\nprintf "%s" "$corpus_tier"'],
+            [
+                "bash",
+                "-c",
+                script + '\nprintf "%s:%s" "$corpus_tier" "$case_timeout"',
+            ],
             check=True,
             capture_output=True,
             text=True,
         )
-        assert result.stdout == expected
+        assert result.stdout == f"{expected_tier}:{expected_timeout}"
 
 
 def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():

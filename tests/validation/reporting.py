@@ -506,6 +506,14 @@ def investigation_tasks(
                 command += ["--bng2-root", ref["path"]]
                 if ref.get("network_binary_sha256"):
                     command += ["--bng2-network-sha256", ref["network_binary_sha256"]]
+            nfsim_ref = report["references"].get("nfsim", {})
+            if nfsim_ref:
+                command += ["--nfsim-root", nfsim_ref["path"]]
+                if nfsim_ref.get("binary"):
+                    command += ["--nfsim-binary", nfsim_ref["binary"]]
+                nfsim_sha = nfsim_ref.get("binary_sha256") or nfsim_ref.get("sha256")
+                if nfsim_sha:
+                    command += ["--nfsim-sha256", nfsim_sha]
             if config.get("net_reload"):
                 command += ["--net-reload"]
             if config.get("simulate"):
@@ -545,6 +553,9 @@ def investigation_tasks(
             )
             if reference.get("network_binary_sha256"):
                 replay_env["BNG2_NETWORK_SHA256"] = reference["network_binary_sha256"]
+        nfsim_reference = report["references"].get("nfsim", {})
+        if nfsim_reference and nfsim_reference.get("binary"):
+            replay_env["NFSIM_BIN"] = nfsim_reference["binary"]
         receipts = list(row.get("receipts", [])) + (
             [row["receipt"]] if row.get("receipt") else []
         )
