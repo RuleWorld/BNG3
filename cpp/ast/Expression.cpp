@@ -959,10 +959,16 @@ std::string Expression::renderExpression(bool canonicalFunctionNames) const {
         return text_ + children_.front().renderExpression(canonicalFunctionNames);
     case ExpressionKind::Binary: {
         std::string lhs = children_[0].renderExpression(canonicalFunctionNames);
-        if ((text_ == "^" || text_ == "**") &&
-            (children_[0].kind() == ExpressionKind::Unary ||
-             (children_[0].kind() == ExpressionKind::Number &&
-              children_[0].numberValue() < 0.0))) {
+        const auto isNegativeNumber = [](const Expression& expr) {
+            if (expr.kind() == ExpressionKind::Number) {
+                return expr.numberValue() < 0.0;
+            }
+            return expr.kind() == ExpressionKind::Unary &&
+                   expr.text_ == "-" &&
+                   expr.children_.size() == 1 &&
+                   expr.children_[0].kind() == ExpressionKind::Number;
+        };
+        if ((text_ == "^" || text_ == "**") && isNegativeNumber(children_[0])) {
             lhs = "(" + lhs + ")";
         }
         return "(" + lhs + " " + text_ + " " +
