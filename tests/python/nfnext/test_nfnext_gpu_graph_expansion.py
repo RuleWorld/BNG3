@@ -21,7 +21,9 @@ def _usable_gpu_backend() -> str | None:
     return None
 
 
-def _run_nfnext_cpu_ensemble(model, times: list[float], n_runs: int, seed_base: int) -> dict[str, np.ndarray]:
+def _run_nfnext_cpu_ensemble(
+    model, times: list[float], n_runs: int, seed_base: int
+) -> dict[str, np.ndarray]:
     samples: dict[str, list[np.ndarray]] = {}
     for run in range(n_runs):
         res = model.simulate(
@@ -199,7 +201,9 @@ end model
     _assert_ensemble_parity(cpu, gpu, ("Au", "Ap"))
 
 
-def test_nfnext_gpu_graph_refuses_product_filters_and_totalrate_with_filter(tmp_path: Path):
+def test_nfnext_gpu_graph_refuses_product_filters_and_totalrate_with_filter(
+    tmp_path: Path,
+):
     backend = _usable_gpu_backend()
     if backend is None:
         return
@@ -246,7 +250,9 @@ end model
 """
     p2 = tmp_path / "tr_filter.bngl"
     p2.write_text(tr_filter, encoding="utf-8")
-    with pytest.raises(RuntimeError, match="TotalRate combined with include/exclude filters"):
+    with pytest.raises(
+        RuntimeError, match="TotalRate combined with include/exclude filters"
+    ):
         bionetgen.load(str(p2)).simulate_nfnext_gpu(
             [0.0, 1.0], seed=1, batch_size=4, backend=backend, mode="graph"
         )

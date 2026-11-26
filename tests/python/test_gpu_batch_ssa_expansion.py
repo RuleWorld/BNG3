@@ -16,7 +16,9 @@ def _usable_finite_gpu_backend() -> str | None:
     return backend if backend in {"metal", "cuda"} else None
 
 
-def _assert_statistical_parity(cpu_res: dict, gpu_res: dict, z_limit: float = 4.0) -> None:
+def _assert_statistical_parity(
+    cpu_res: dict, gpu_res: dict, z_limit: float = 4.0
+) -> None:
     obs_names = cpu_res["observable_names"]
     assert gpu_res["observable_names"] == obs_names
     batch_cpu = cpu_res["batch_size"]
@@ -32,9 +34,9 @@ def _assert_statistical_parity(cpu_res: dict, gpu_res: dict, z_limit: float = 4.
         mask = se > 1e-6
         if np.any(mask):
             z_scores = np.abs(g_mean[mask] - c_mean[mask]) / se[mask]
-            assert float(np.max(z_scores)) < z_limit, (
-                f"{name}: max |Z| = {float(np.max(z_scores)):.2f} >= {z_limit}"
-            )
+            assert (
+                float(np.max(z_scores)) < z_limit
+            ), f"{name}: max |Z| = {float(np.max(z_scores)):.2f} >= {z_limit}"
         if np.any(~mask):
             np.testing.assert_allclose(g_mean[~mask], c_mean[~mask], atol=1e-4)
 
@@ -42,9 +44,9 @@ def _assert_statistical_parity(cpu_res: dict, gpu_res: dict, z_limit: float = 4.
         g_final = np.asarray(gpu_res["final_observables"], dtype=float)[:, idx]
         if float(np.std(c_final)) > 1e-6 or float(np.std(g_final)) > 1e-6:
             ks = stats.ks_2samp(c_final, g_final)
-            assert ks.pvalue > 1e-3, (
-                f"{name}: two-sample KS failed (stat={ks.statistic:.4f}, p={ks.pvalue:.4g})"
-            )
+            assert (
+                ks.pvalue > 1e-3
+            ), f"{name}: two-sample KS failed (stat={ks.statistic:.4f}, p={ks.pvalue:.4g})"
 
 
 def test_gpu_batch_ssa_authored_totalrate_parity():
@@ -86,7 +88,13 @@ end model
     if backend is None:
         return
     gpu_res = cpp.simulate_batch_ssa_gpu(
-        model, network, batch_size=2000, t_end=3.0, n_steps=6, base_seed=5101, backend=backend
+        model,
+        network,
+        batch_size=2000,
+        t_end=3.0,
+        n_steps=6,
+        base_seed=5101,
+        backend=backend,
     )
     assert gpu_res["backend"] == backend
     np.testing.assert_allclose(
@@ -170,7 +178,9 @@ end model
     )
     expected_final = (8.0 / 0.25) * (1.0 - math.exp(-0.25 * 4.0))
     gpu_final_mean = float(g2["observable_means"]["X_cnt"][-1])
-    assert abs(gpu_final_mean - expected_final) < 4.5 * math.sqrt(expected_final / batch)
+    assert abs(gpu_final_mean - expected_final) < 4.5 * math.sqrt(
+        expected_final / batch
+    )
     _assert_statistical_parity(c2, g2)
 
 
@@ -215,13 +225,21 @@ end model
         model, network, batch_size=2000, t_end=5.0, n_steps=5, base_seed=5301, threads=1
     )
     np.testing.assert_array_equal(cpu_multi["event_counts"], cpu_single["event_counts"])
-    np.testing.assert_array_equal(cpu_multi["final_species"], cpu_single["final_species"])
+    np.testing.assert_array_equal(
+        cpu_multi["final_species"], cpu_single["final_species"]
+    )
 
     backend = _usable_finite_gpu_backend()
     if backend is None:
         return
     gpu_res = cpp.simulate_batch_ssa_gpu(
-        model, network, batch_size=2000, t_end=5.0, n_steps=5, base_seed=5301, backend=backend
+        model,
+        network,
+        batch_size=2000,
+        t_end=5.0,
+        n_steps=5,
+        base_seed=5301,
+        backend=backend,
     )
     assert gpu_res["backend"] == backend
     _assert_statistical_parity(cpu_multi, gpu_res)
@@ -264,7 +282,13 @@ end model
         model, network, batch_size=2000, t_end=4.0, n_steps=4, base_seed=5401, threads=4
     )
     gpu_res = cpp.simulate_batch_ssa_gpu(
-        model, network, batch_size=2000, t_end=4.0, n_steps=4, base_seed=5401, backend=backend
+        model,
+        network,
+        batch_size=2000,
+        t_end=4.0,
+        n_steps=4,
+        base_seed=5401,
+        backend=backend,
     )
     np.testing.assert_allclose(
         np.asarray(gpu_res["observable_means"]["S_obs"])
@@ -298,7 +322,12 @@ end model
     n_time = cpp.generate_network(m_time)
     with pytest.raises(RuntimeError, match="time-dependent|time|unsupported"):
         cpp.simulate_batch_ssa_gpu(
-            m_time, n_time, batch_size=8, t_end=1.0, n_steps=2, backend=backend or "metal"
+            m_time,
+            n_time,
+            batch_size=8,
+            t_end=1.0,
+            n_steps=2,
+            backend=backend or "metal",
         )
 
     delay_src = """begin model
@@ -321,7 +350,12 @@ end model
     n_delay = cpp.generate_network(m_delay)
     with pytest.raises(RuntimeError, match="Delayed|delay"):
         cpp.simulate_batch_ssa_gpu(
-            m_delay, n_delay, batch_size=8, t_end=2.0, n_steps=2, backend=backend or "metal"
+            m_delay,
+            n_delay,
+            batch_size=8,
+            t_end=2.0,
+            n_steps=2,
+            backend=backend or "metal",
         )
 
     if backend is not None:

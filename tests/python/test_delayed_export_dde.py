@@ -18,7 +18,9 @@ def _exec_exported_python(code: str) -> dict:
     return namespace
 
 
-def test_python_export_consuming_delayed_rule_matches_analytic_and_cvode(tmp_path: Path):
+def test_python_export_consuming_delayed_rule_matches_analytic_and_cvode(
+    tmp_path: Path,
+):
     source = """begin model
 begin parameters
   tau 2.0
@@ -65,18 +67,26 @@ end model
 
     # Exact closed-form: A(t) = 10*exp(-0.5*t), B(t) = 0 for t<=2 else 10*(1 - exp(-0.5*(t-2)))
     expected_a = 10.0 * np.exp(-0.5 * times)
-    expected_b = np.where(times <= 2.0, 0.0, 10.0 * (1.0 - np.exp(-0.5 * (times - 2.0))))
+    expected_b = np.where(
+        times <= 2.0, 0.0, 10.0 * (1.0 - np.exp(-0.5 * (times - 2.0)))
+    )
     np.testing.assert_allclose(obs_out[:, 0], expected_a, rtol=1e-5, atol=1e-6)
     np.testing.assert_allclose(obs_out[:, 1], expected_b, rtol=1e-5, atol=1e-6)
 
     # Compare against native CVODE
     native = cpp.simulate_ode(model, network, t_end=5.0, n_steps=20)
-    np.testing.assert_allclose(obs_out[:, 0], native["observables"]["A_obs"], rtol=1e-4, atol=1e-5)
-    np.testing.assert_allclose(obs_out[:, 1], native["observables"]["B_obs"], rtol=1e-4, atol=1e-5)
+    np.testing.assert_allclose(
+        obs_out[:, 0], native["observables"]["A_obs"], rtol=1e-4, atol=1e-5
+    )
+    np.testing.assert_allclose(
+        obs_out[:, 1], native["observables"]["B_obs"], rtol=1e-4, atol=1e-5
+    )
 
     # Custom parameter override must update lag tau dynamically (tau=3.0, k=0.5)
     _, _, obs_custom = ns["simulate"](times, parameters=np.array([3.0, 0.5]))
-    expected_b_tau3 = np.where(times <= 3.0, 0.0, 10.0 * (1.0 - np.exp(-0.5 * (times - 3.0))))
+    expected_b_tau3 = np.where(
+        times <= 3.0, 0.0, 10.0 * (1.0 - np.exp(-0.5 * (times - 3.0)))
+    )
     np.testing.assert_allclose(obs_custom[:, 1], expected_b_tau3, rtol=1e-5, atol=1e-6)
 
     # MATLAB export uses dde23 + ddeset + calc_species_deriv_dde
