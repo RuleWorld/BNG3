@@ -41,7 +41,8 @@ ParseResult parseFile(const std::string& path) {
 }
 
 void printUsage() {
-    std::cerr << "Usage: bng_cpp [--check] [--verbose] [--version] [--console|-i] [--parallel JOBS] [--parallel-dir DIR] <model1.bngl> [model2.bngl ...]\n";
+    std::cerr << "Usage: bng_cpp [--check] [--verbose] [--version] [--outdir DIR] [--console|-i] [--parallel JOBS] [--parallel-dir DIR] <model1.bngl> [model2.bngl ...]\n";
+    std::cerr << "  --outdir DIR    Write output files into DIR (alias: --output_dir)\n";
     std::cerr << "  --console, -i   Enter interactive console mode\n";
     std::cerr << "  --parallel JOBS Run independent models in isolated child processes (alias: --jobs)\n";
     std::cerr << "  --parallel-dir DIR  Store isolated job outputs under DIR\n";
@@ -70,6 +71,7 @@ int main(int argc, char** argv) {
     bool consoleMode = false;
     std::size_t parallelJobs = 0;
     std::filesystem::path parallelDirectory;
+    std::filesystem::path outputDirectory;
     std::vector<std::string> inputs;
 
     for (int i = 1; i < argc; ++i) {
@@ -117,6 +119,27 @@ int main(int argc, char** argv) {
             parallelDirectory = arg.substr(std::string("--parallel-dir=").size());
             if (parallelDirectory.empty()) {
                 std::cerr << "error: --parallel-dir requires a directory\n";
+                return 1;
+            }
+            continue;
+        }
+        if (arg == "--outdir" || arg == "--output_dir") {
+            if (i + 1 >= argc) {
+                std::cerr << "error: --outdir requires a directory\n";
+                return 1;
+            }
+            outputDirectory = argv[++i];
+            if (outputDirectory.empty()) {
+                std::cerr << "error: --outdir requires a directory\n";
+                return 1;
+            }
+            continue;
+        }
+        if (arg.rfind("--outdir=", 0) == 0 || arg.rfind("--output_dir=", 0) == 0) {
+            const auto separator = arg.find('=');
+            outputDirectory = arg.substr(separator + 1);
+            if (outputDirectory.empty()) {
+                std::cerr << "error: --outdir requires a directory\n";
                 return 1;
             }
             continue;
@@ -210,7 +233,12 @@ int main(int argc, char** argv) {
                     std::cerr << "[bng_cpp] executing actions for " << input << '\n';
                 }
                 try {
-                    bng::actions::ActionDispatch::execute(*result.model, input, verbose);
+                    std::filesystem::path dispatchPath = input;
+                    if (!outputDirectory.empty()) {
+                        std::filesystem::create_directories(outputDirectory);
+                        dispatchPath = outputDirectory / std::filesystem::path(input).filename();
+                    }
+                    bng::actions::ActionDispatch::execute(*result.model, dispatchPath, verbose);
                 } catch (const std::exception& ex) {
                     std::cerr << input << ": action execution failed: " << ex.what() << '\n';
                     ++failures;
