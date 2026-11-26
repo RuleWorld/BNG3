@@ -93,7 +93,9 @@ CLI_OPTION_PROBES: tuple[NfsimCliProbe, ...] = (
     NfsimCliProbe("nf.option.rm", ("-rm",), mode="stdout"),
     NfsimCliProbe("nf.option.rulemonkey", ("-rulemonkey",), mode="stdout"),
     NfsimCliProbe("nf.option.test", ("-test",), mode="stdout"),
-    NfsimCliProbe("nf.option.walk", ("-walk",), mode="stdout", stdin_text="5\n"),
+    NfsimCliProbe(
+        "nf.option.walk", ("-walk", "-seed", "1"), mode="stdout", stdin_text="5\n"
+    ),
 )
 
 # Summary and cross-cutting rows grounded against pinned native NFsim execution.
