@@ -1,5 +1,5 @@
 {
-  "generated_at_utc": "2026-10-29T00:58:36.950852+00:00",
+  "generated_at_utc": "2026-11-25T22:25:22.703711+00:00",
   "generation": {
     "c_library_first_draws": {
       "alpha": 0.001,
@@ -9871,11 +9871,11 @@
   "oracle": {
     "BNG2_PERL": "/home/runner/work/_temp/ensemble-bng2/bng2/BNG2.pl",
     "name": "Perl BNG2.pl plus run_network",
-    "revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+    "revision": "740006ff3cfa0b6d5445e10367c9f2fcd0f75d67",
     "sha256": {
       "BNG2.pl": "cf5fd82d3df9b84835d29234bd32268b87eaa985dd221bd5d39aadef744795f4",
-      "Perl2/BNGAction.pm": "8221eb57929f3c3ed58ae34ef896a34b5e48035d2a0cccd905e9c4601efbeeb4",
-      "bin/run_network": "39996ad296ee30e2d2122c1c46b6fe22756fa56b0b3f75329a2621f07b4a6325"
+      "Perl2/BNGAction.pm": "c081eb0cb550ea50110c5fce242c3b3b0b95cee67a62818fe4c65c2ab0343f07",
+      "bin/run_network": "ecb3a45061a63b19a9fd64a398b02d61597d1da3bf59f8f51c14916aa2e2c52b"
     }
   },
   "schema_version": 1

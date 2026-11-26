@@ -20,19 +20,24 @@ public:
         std::optional<Expression> rateExpression = std::nullopt,
         std::optional<Expression> delayExpression = std::nullopt,
         bool nonConsuming = false,
-        bool absoluteFlux = false);
+        bool absoluteFlux = false,
+        bool totalRate = false);
 
     const std::string& getLabel() const;
     const std::vector<std::size_t>& getReactants() const;
     const std::vector<std::size_t>& getProducts() const;
     const std::string& getRateLaw() const;
     const std::string& getOriginRuleName() const;
+    const std::vector<std::string>& getOriginRuleNames() const;
+    std::string getOriginRuleComment() const;
+    void addOriginRuleName(const std::string& name);
     double getFactor() const;
     void addFactor(double factor);
     const std::optional<Expression>& getRateExpression() const;
     const std::optional<Expression>& getDelayExpression() const;
     bool isNonConsuming() const;
     bool isAbsoluteFlux() const;
+    bool isTotalRate() const;
 
 private:
     std::string label_;
@@ -41,10 +46,12 @@ private:
     std::string rateLaw_;
     double factor_;
     std::string originRuleName_;
+    std::vector<std::string> originRuleNames_;
     std::optional<Expression> rateExpression_;
     std::optional<Expression> delayExpression_;
     bool nonConsuming_;
     bool absoluteFlux_;
+    bool totalRate_;
 };
 
 } // namespace bng::ast

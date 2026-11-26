@@ -1722,8 +1722,25 @@ void loadTfunFiles(engine::OdeIntegrator& integrator, const ast::Model& model, c
     }
 }
 
-std::string simulationPrefix(const ast::Action& action, const std::filesystem::path& sourcePath, std::optional<std::size_t> scanIndex = std::nullopt) {
-    std::string prefix = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+std::string defaultModelPrefix(const ast::Model& model, const std::filesystem::path& sourcePath) {
+    if (!model.getModelName().empty()) {
+        return model.getModelName();
+    }
+    return sourcePath.stem().string();
+}
+
+std::string simulationPrefix(
+    const ast::Action& action,
+    const std::filesystem::path& sourcePath,
+    std::optional<std::size_t> scanIndex = std::nullopt,
+    const ast::Model* model = nullptr) {
+    const std::string fallback = model != nullptr
+        ? defaultModelPrefix(*model, sourcePath)
+        : sourcePath.stem().string();
+    std::string prefix = stripQuotes(readArgument(action, "prefix", fallback));
+    if (prefix.empty()) {
+        prefix = fallback;
+    }
     const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
     if (!suffix.empty()) {
         prefix += "_" + suffix;
@@ -2155,14 +2172,17 @@ void runSimulation(
     if (compiledOptions != nullptr && compiledOptions->checkProductScaleDiagnostic.has_value()) {
         throw std::runtime_error(compiledOptions->checkProductScaleDiagnostic->message);
     }
+    bool checkProductScaleSpecified = false;
     const auto checkProdScaleText = readArgument(action, "check_product_scale", "");
     if (!checkProdScaleText.empty()) {
+        checkProductScaleSpecified = true;
         opts.checkProductScale = parseScalarValue(checkProdScaleText, model);
         if (!std::isfinite(opts.checkProductScale) || opts.checkProductScale < 0.0) {
             throw std::runtime_error(
                 "check_product_scale must be finite and non-negative");
         }
     } else if (compiledOptions != nullptr && compiledOptions->checkProductScale.has_value()) {
+        checkProductScaleSpecified = true;
         opts.checkProductScale = *compiledOptions->checkProductScale;
     }
 
@@ -2278,7 +2298,8 @@ void runSimulation(
             throw std::runtime_error(*decision);
         }
         engine::PsaSimulator simulator(model, network);
-        result = simulator.simulate(opts, poplevel);
+        const bool pScaleChecker = checkProductScaleSpecified ? (opts.checkProductScale != 0.0) : true;
+        result = simulator.simulate(opts, poplevel, pScaleChecker);
     } else {
         // ODE/SSA integration
         engine::OdeIntegrator integrator(model, network);
@@ -2301,7 +2322,7 @@ void runSimulation(
         ? opts.tEnd : result.timePoints.back();
 
     // Write output files
-    const auto prefix = simulationPrefix(action, sourcePath);
+    const auto prefix = simulationPrefix(action, sourcePath, std::nullopt, &model);
     const auto outputPrefix = sourcePath.parent_path() / prefix;
     engine::OdeIntegrator integrator(model, network);
     if (opts.binaryOutput) {
@@ -2356,12 +2377,12 @@ void runSimulation(
         }
     }
 
-    // print_net: write .net file after simulation with final concentrations
+    // print_net: write <prefix>_save.net file after simulation with final concentrations (BNG2 run_network -n parity)
     if (opts.printNet && !result.concentrations.empty()) {
         for (std::size_t i = 0; i < network.species.size() && i < result.concentrations.back().size(); ++i) {
             network.species.get(i).setAmount(result.concentrations.back()[i]);
         }
-        const auto netPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".net");
+        const auto netPath = sourcePath.parent_path() / (prefix + "_save.net");
         io::NetWriter::write(netPath, model, network);
         if (verbose) {
             std::cerr << "[bng_cpp] print_net: wrote " << netPath.string() << "\n";
@@ -2455,6 +2476,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         model.merge(incoming);
         evaluateParametersAndRefresh();
+        generator = engine::NetworkGenerator(model);
+        network.reset();
+        loadedNetData.reset();
     };
 
     // Implicit generation and refresh must keep native events in memory.
@@ -2748,7 +2772,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
     const auto writeCurrentNetwork = [&](const io::NetWriterOptions& options = {}) {
         return writeNetworkAt(
-            sourcePath.parent_path() / (sourcePath.stem().string() + ".net"), options);
+            sourcePath.parent_path() / (defaultModelPrefix(model, sourcePath) + ".net"), options);
     };
 
     std::unique_ptr<NFcore::System> hybridStage;
@@ -2762,7 +2786,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (model.getEventFormatVersion().has_value()) {
             throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
         }
-        const auto prefix = simulationPrefix(action, sourcePath);
+        const auto prefix = simulationPrefix(action, sourcePath, std::nullopt, &model);
         const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
 
         const bool modelUsesPopulationTypes = std::any_of(
@@ -2812,14 +2836,16 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         // Parse simulation parameters using the same defaults as the
         // standalone simulate_nf action.
-        const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));
+        const auto tEndRaw = stripQuotes(readArgument(action, "t_end", ""));
         const auto nSteps = stripQuotes(readArgument(action, "n_steps", "20"));
         const auto sampleTimesText = readArgument(action, "sample_times", "");
         std::vector<double> sampleTimes;
         if (!trim(stripQuotes(sampleTimesText)).empty()) {
             sampleTimes = parseSampleTimes(sampleTimesText, model);
         }
-        const double endTime = parseScalarValue(tEnd, model);
+        const double endTime = tEndRaw.empty()
+            ? (!sampleTimes.empty() ? sampleTimes.back() : 10.0)
+            : parseScalarValue(tEndRaw, model);
         if (!std::isfinite(endTime) || endTime < startTime) {
             throw std::runtime_error(
                 "NFsim 't_end' must be finite and greater than or equal to t_start");
@@ -3299,7 +3325,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // BNG2 exposes readNetwork and readModel as aliases for readFile.
         // Normalize here too so programmatically constructed actions get the
         // same semantics as parsed BNGL sources.
-        if (actionName == "readnetwork" || actionName == "readmodel") {
+        if (actionName == "readnetwork" || actionName == "readmodel" || actionName == "readsbml") {
             actionName = "readfile";
         }
         if (actionName == "simulate_ps") {
@@ -3308,9 +3334,17 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "readfile") {
             hybridStage.reset();
-            const auto filepath = stripQuotes(readArgument(action, "file", ""));
+            auto filepath = stripQuotes(readArgument(action, "file", ""));
+            if (filepath.empty()) {
+                filepath = stripQuotes(readArgument(action, "target",
+                    stripQuotes(readArgument(action, "value", ""))));
+            }
             if (filepath.empty()) {
                 throw std::runtime_error("readFile requires 'file' argument");
+            }
+            const auto basenameArg = stripQuotes(readArgument(action, "basename", ""));
+            if (!basenameArg.empty()) {
+                model.setModelName(basenameArg);
             }
 
             // Determine file type
@@ -3456,7 +3490,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             if (!overwrite) {
                 // Check if .net file already exists; if so, read it instead of regenerating
-                auto netPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".net");
+                auto netPath = sourcePath.parent_path() / (defaultModelPrefix(model, sourcePath) + ".net");
                 if (std::filesystem::exists(netPath)) {
                     auto parseResult = io::NetReader::parse(netPath);
                     if (parseResult.success) {
@@ -4034,7 +4068,29 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "linearparametersensitivity") {
-            ensureNetwork();
+            const auto netFileArg = stripQuotes(readArgument(action, "net_file", ""));
+            if (!netFileArg.empty()) {
+                std::filesystem::path netPath(netFileArg);
+                if (netPath.extension() != ".net") {
+                    netPath += ".net";
+                }
+                if (!netPath.is_absolute()) {
+                    netPath = sourcePath.parent_path() / netPath;
+                }
+                auto parseResult = io::NetReader::parse(netPath);
+                if (!parseResult.success) {
+                    throw std::runtime_error(
+                        "LinearParameterSensitivity failed to read net_file: " + parseResult.error);
+                }
+                for (const auto& [name, value] : parseResult.parameters) {
+                    replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
+                }
+                evaluateParametersAndRefresh();
+                network = networkFromNetData(parseResult, model);
+                loadedNetData = std::move(parseResult);
+            } else {
+                ensureNetwork();
+            }
 
             // Required parameter: t_end
             const auto tEndText = readArgument(action, "t_end", "");
@@ -4054,10 +4110,48 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const bool reEquil = (reEquilText == "1" || reEquilText == "true");
             const double tEquil = parseScalarValue(readArgument(action, "t_equil", "1e6"), model);
 
-            const auto prefix = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            const std::string defaultLpsPrefix = !netFileArg.empty()
+                ? std::filesystem::path(netFileArg).stem().string()
+                : defaultModelPrefix(model, sourcePath);
+            const auto prefix = stripQuotes(readArgument(action, "prefix", defaultLpsPrefix));
             const auto outputDir = sourcePath.parent_path();
 
-            // Save original parameter values
+            // Optional input perturbations (inp_ppert / inp_cpert)
+            auto parsePerturbationPairs = [](const std::string& raw,
+                                             const std::string& namesKey,
+                                             const std::string& valuesKey)
+                -> std::vector<std::pair<std::string, std::string>> {
+                std::vector<std::pair<std::string, std::string>> pairs;
+                if (raw.empty()) return pairs;
+                auto extractBracketList = [&](const std::string& key) -> std::vector<std::string> {
+                    std::vector<std::string> items;
+                    const auto keyPos = raw.find(key);
+                    if (keyPos == std::string::npos) return items;
+                    const auto openPos = raw.find('[', keyPos);
+                    const auto closePos = openPos == std::string::npos ? std::string::npos : raw.find(']', openPos);
+                    if (openPos == std::string::npos || closePos == std::string::npos) return items;
+                    std::stringstream ss(raw.substr(openPos + 1, closePos - openPos - 1));
+                    std::string tok;
+                    while (std::getline(ss, tok, ',')) {
+                        tok = stripQuotes(trim(tok));
+                        if (!tok.empty()) items.push_back(tok);
+                    }
+                    return items;
+                };
+                const auto names = extractBracketList(namesKey);
+                const auto values = extractBracketList(valuesKey);
+                const auto count = std::min(names.size(), values.size());
+                for (std::size_t i = 0; i < count; ++i) {
+                    pairs.emplace_back(names[i], values[i]);
+                }
+                return pairs;
+            };
+            const auto pperts = parsePerturbationPairs(
+                readArgument(action, "inp_ppert", ""), "pnames", "pvalues");
+            const auto cperts = parsePerturbationPairs(
+                readArgument(action, "inp_cpert", ""), "cnames", "cvalues");
+
+            // Save original parameter values BEFORE any input perturbations
             std::vector<std::pair<std::string, double>> originalParamValues;
             for (const auto& param : model.getParameters().all()) {
                 originalParamValues.emplace_back(param.getName(), param.getValue());
@@ -4065,6 +4159,22 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             // Save initial species concentrations
             const auto initialConc = snapshotConcentrations(*network);
+
+            auto applyInputPerturbations = [&]() {
+                if (!pperts.empty()) {
+                    for (const auto& [pName, pVal] : pperts) {
+                        replaceParameter(ast::Parameter(
+                            pName, ast::Expression::number(parseScalarValue(pVal, model))));
+                    }
+                    evaluateParametersAndRefresh();
+                    regeneratePreservingAmounts(generator, implicitNetworkPath(), network);
+                }
+                for (const auto& [cName, cVal] : cperts) {
+                    if (const auto idx = findSpeciesIndex(*network, cName); idx.has_value()) {
+                        network->species.get(*idx).setAmount(parseScalarValue(cVal, model));
+                    }
+                }
+            };
 
             // Helper to build a simulate action with given prefix
             auto makeSimulateAction = [&](const std::string& simPrefix, double tEnd, bool steadyState) -> ast::Action {
@@ -4082,12 +4192,18 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 return simAction;
             };
 
-            // Initial equilibration of the base model if requested
+            // Initial equilibration of the unperturbed base model if requested
             if (initEquil) {
                 std::string equilPrefix = prefix + "_baseequil_" + suffix;
                 auto equilAction = makeSimulateAction(equilPrefix, tEquil, true);
                 runSimulation(model, equilAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                if (!lastSimulationState.empty()) {
+                    restoreConcentrations(*network, lastSimulationState);
+                }
             }
+
+            // Apply input perturbations right before base case simulation (matching BNGAction.pm:2078-2102)
+            applyInputPerturbations();
 
             // Run base case simulation
             {
@@ -4111,20 +4227,27 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
                 const double newValue = paramValue * (1.0 + bump / 100.0);
 
-                // Restore initial concentrations
-                restoreConcentrations(*network, initialConc);
-
-                // Bump the parameter
+                // Restore all original parameters before applying this single-parameter bump
+                for (const auto& [origName, origVal] : originalParamValues) {
+                    replaceParameter(ast::Parameter(origName, ast::Expression::number(origVal)));
+                }
                 replaceParameter(ast::Parameter(paramName, ast::Expression::number(newValue)));
                 evaluateParametersAndRefresh();
                 network = generator.generate(sourcePath);
+                restoreConcentrations(*network, initialConc);
 
                 // Re-equilibrate if requested
                 if (reEquil) {
                     std::string equilPrefix = prefix + "_equil_" + paramName + "_" + suffix;
                     auto equilAction = makeSimulateAction(equilPrefix, tEquil, true);
                     runSimulation(model, equilAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                    if (!lastSimulationState.empty()) {
+                        restoreConcentrations(*network, lastSimulationState);
+                    }
                 }
+
+                // Apply input perturbations right before bumped simulation (matching BNGAction.pm:2146-2170)
+                applyInputPerturbations();
 
                 // Run bumped simulation
                 std::string bumpPrefix = prefix + "_" + paramName + "_" + suffix;
@@ -4171,109 +4294,116 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (parameterName.empty()) {
                 throw std::runtime_error("bifurcate requires parameter argument");
             }
+            if (!model.getParameters().contains(parameterName)) {
+                throw std::runtime_error("bifurcate: unknown parameter: " + parameterName);
+            }
 
-            const auto minValue = parseScalarValue(readArgument(action, "par_min", ""), model);
-            const auto maxValue = parseScalarValue(readArgument(action, "par_max", ""), model);
-            const auto points = static_cast<std::size_t>(std::max(1.0, parseScalarValue(readArgument(action, "n_scan_pts", "1"), model)));
-            const auto logScale = lowercase(stripQuotes(readArgument(action, "log_scale", "0"))) == "1"
-                || lowercase(stripQuotes(readArgument(action, "log_scale", "0"))) == "true";
+            const auto minText = readArgument(action, "par_min", "");
+            const auto maxText = readArgument(action, "par_max", "");
+            const auto pointsText = readArgument(action, "n_scan_pts", "");
+            const bool hasMin = !trim(stripQuotes(minText)).empty();
+            const bool hasMax = !trim(stripQuotes(maxText)).empty();
+            const bool hasPoints = !trim(stripQuotes(pointsText)).empty();
+            const auto explicitValuesText = readArgument(
+                action, "par_scan_vals", readArgument(action, "values", ""));
+            const bool hasExplicitValues =
+                !trim(stripQuotes(explicitValuesText)).empty();
+
+            std::vector<double> scanValues;
+            if (hasMin && hasMax && hasPoints) {
+                const double minValue = parseScalarValue(minText, model);
+                const double maxValue = parseScalarValue(maxText, model);
+                const auto points = parseNonNegativeCount(pointsText, model, "n_scan_pts");
+                if (points < 1) {
+                    throw std::runtime_error("bifurcate requires n_scan_pts >= 1");
+                }
+                const bool logScale = parseBoolean(readArgument(action, "log_scale", "0"));
+                if (logScale && (minValue <= 0.0 || maxValue <= 0.0)) {
+                    throw std::runtime_error("bifurcate with log_scale requires positive par_min and par_max");
+                }
+                scanValues.reserve(points);
+                for (std::size_t i = 0; i < points; ++i) {
+                    const double alpha = points == 1
+                        ? 0.0
+                        : static_cast<double>(i) / static_cast<double>(points - 1);
+                    if (logScale) {
+                        scanValues.push_back(std::exp(
+                            std::log(minValue) + alpha * (std::log(maxValue) - std::log(minValue))));
+                    } else {
+                        scanValues.push_back(minValue + alpha * (maxValue - minValue));
+                    }
+                }
+            } else if (hasExplicitValues) {
+                scanValues = parseScalarList(explicitValuesText, model, "par_scan_vals");
+            } else {
+                throw std::runtime_error("bifurcate requires par_scan_vals or par_min, par_max, and n_scan_pts");
+            }
+            const std::size_t points = scanValues.size();
 
             // Build a simulate action from the bifurcate arguments
             ast::Action simulateAction = action;
             simulateAction.name = "simulate";
             simulateAction.arguments["method"] = readArgument(action, "method", "ode");
+            simulateAction.arguments.erase("suffix");
 
-            const auto baseSuffix = stripQuotes(readArgument(action, "suffix", ""));
-            const auto prefix = simulationPrefix(action, sourcePath);
+            const auto prefix = simulationPrefix(action, sourcePath, std::nullopt, &model);
             const auto outputDir = sourcePath.parent_path();
 
-            // Helper: compute parameter value at scan point i
-            auto computeParamValue = [&](std::size_t i, double pMin, double pMax) -> double {
-                const double alpha = points == 1 ? 0.0 : static_cast<double>(i) / static_cast<double>(points - 1);
-                if (logScale) {
-                    if (pMin <= 0.0 || pMax <= 0.0) {
-                        throw std::runtime_error("bifurcate with log_scale requires positive par_min and par_max");
-                    }
-                    return std::exp(std::log(pMin) + alpha * (std::log(pMax) - std::log(pMin)));
-                }
-                return pMin + alpha * (pMax - pMin);
+            // Save original parameters and initial concentrations for post-scan restoration
+            const auto originalParameters = model.getParameters().all();
+            const auto initialConc = snapshotConcentrations(*network);
+            const auto originalLastState = lastSimulationState;
+            const double originalLastEndTime = lastSimulationEndTime;
+
+            // BNG2 bifurcate carries concentrations continuously across forward points,
+            // across the forward->backward transition, and across backward points (reset_conc=0).
+            auto runBifurcatePoint = [&](double value, const std::string& scanPrefix) {
+                const auto priorConc = snapshotConcentrations(*network);
+                replaceParameter(ast::Parameter(parameterName, ast::Expression::number(value)));
+                evaluateParametersAndRefresh();
+                network = generator.generate(sourcePath);
+                restoreConcentrations(*network, priorConc);
+                writeCurrentNetwork();
+                lastSimulationState.clear();
+                lastSimulationEndTime = 0.0;
+                simulateAction.arguments["prefix"] = scanPrefix;
+                runSimulation(model, simulateAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
             };
 
-            // Save initial concentrations
-            const auto initialConc = snapshotConcentrations(*network);
-
-            // === Forward scan (min -> max) ===
+            // === Forward scan (ascending scanValues) ===
             if (verbose) {
                 std::cerr << "[bng_cpp] Bifurcate: forward scan (" << points << " points)\n";
             }
 
             std::vector<std::string> forwardGdatFiles;
             for (std::size_t i = 0; i < points; ++i) {
-                const double value = computeParamValue(i, minValue, maxValue);
-
-                replaceParameter(ast::Parameter(parameterName, ast::Expression::number(value)));
-                evaluateParametersAndRefresh();
-                network = generator.generate(sourcePath);
-                writeCurrentNetwork();
-
                 std::string scanPrefix = prefix + "_forward_scan" + std::to_string(i + 1);
-                simulateAction.arguments["prefix"] = scanPrefix;
-                runSimulation(model, simulateAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                runBifurcatePoint(scanValues[i], scanPrefix);
                 forwardGdatFiles.push_back((outputDir / (scanPrefix + ".gdat")).string());
             }
 
-            // === Backward scan (max -> min) ===
-            // Restore initial concentrations before backward scan
-            restoreConcentrations(*network, initialConc);
-
+            // === Backward scan (descending scanValues, continuing from forward end state) ===
             if (verbose) {
                 std::cerr << "[bng_cpp] Bifurcate: backward scan (" << points << " points)\n";
             }
 
             std::vector<std::string> backwardGdatFiles;
             for (std::size_t i = 0; i < points; ++i) {
-                // Backward: scan from max to min
-                const double value = computeParamValue(i, maxValue, minValue);
-
-                replaceParameter(ast::Parameter(parameterName, ast::Expression::number(value)));
-                evaluateParametersAndRefresh();
-                network = generator.generate(sourcePath);
-                writeCurrentNetwork();
-
+                const double value = scanValues[points - 1 - i];
                 std::string scanPrefix = prefix + "_backward_scan" + std::to_string(i + 1);
-                simulateAction.arguments["prefix"] = scanPrefix;
-                runSimulation(model, simulateAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                runBifurcatePoint(value, scanPrefix);
                 backwardGdatFiles.push_back((outputDir / (scanPrefix + ".gdat")).string());
             }
 
-            // === Merge forward and backward .gdat files into bifurcation diagram ===
-            // For each scan point, extract the final time point from the .gdat file
-            // and write them into a combined bifurcation .gdat file
-            const auto bifurcationPath = outputDir / (prefix + "_bifurcation.gdat");
-            std::ofstream bifOut(bifurcationPath);
-            if (!bifOut) {
-                throw std::runtime_error("Failed to open " + bifurcationPath.string() + " for writing");
+            // Restore original parameters and initial concentrations
+            for (const auto& parameter : originalParameters) {
+                replaceParameter(parameter);
             }
-
-            // Read header from first forward .gdat file (if available)
-            std::string headerLine;
-            if (!forwardGdatFiles.empty()) {
-                std::ifstream firstFile(forwardGdatFiles[0]);
-                if (firstFile && std::getline(firstFile, headerLine)) {
-                    // Replace "time" with parameter name in the header
-                    bifOut << "#" << std::setw(17) << parameterName;
-                    // Copy observable column headers from the original header
-                    std::istringstream hss(headerLine);
-                    std::string tok;
-                    bool first = true;
-                    while (hss >> tok) {
-                        if (first) { first = false; continue; }  // Skip "#time" or first token
-                        bifOut << " " << std::setw(18) << tok;
-                    }
-                    bifOut << " " << std::setw(18) << "direction";
-                    bifOut << "\n";
-                }
-            }
+            evaluateParametersAndRefresh();
+            network = generator.generate(sourcePath);
+            restoreConcentrations(*network, initialConc);
+            lastSimulationState = originalLastState;
+            lastSimulationEndTime = originalLastEndTime;
 
             // Helper: read the last data line from a .gdat file
             auto readLastLine = [](const std::string& path) -> std::string {
@@ -4287,40 +4417,95 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 return lastLine;
             };
 
-            // Write forward scan final states
-            for (std::size_t i = 0; i < points; ++i) {
-                const double value = computeParamValue(i, minValue, maxValue);
-                const auto lastLine = readLastLine(forwardGdatFiles[i]);
-                if (!lastLine.empty()) {
-                    // Replace time column with parameter value, keep observable columns
-                    std::istringstream lss(lastLine);
-                    std::string timeTok;
-                    lss >> timeTok;  // Skip time value
-                    bifOut << std::setw(18) << std::setprecision(12) << std::scientific << value;
+            auto parseGdatRow = [](const std::string& line) -> std::vector<std::string> {
+                std::istringstream lss(line);
+                std::vector<std::string> cols;
+                std::string tok;
+                bool first = true;
+                while (lss >> tok) {
+                    if (first) { first = false; continue; } // skip time
+                    cols.push_back(tok);
+                }
+                return cols;
+            };
+
+            // Read observable headers from first forward .gdat file
+            std::vector<std::string> obsHeaders;
+            if (!forwardGdatFiles.empty()) {
+                std::ifstream firstFile(forwardGdatFiles[0]);
+                std::string headerLine;
+                if (firstFile && std::getline(firstFile, headerLine)) {
+                    std::istringstream hss(headerLine);
                     std::string tok;
-                    while (lss >> tok) {
-                        bifOut << " " << std::setw(18) << tok;
+                    bool skippedTime = false;
+                    while (hss >> tok) {
+                        if (tok == "#") continue;
+                        if (!skippedTime) {
+                            skippedTime = true;
+                            continue; // skip "#time" or "time"
+                        }
+                        obsHeaders.push_back(tok);
                     }
-                    bifOut << " " << std::setw(18) << 1;  // direction = 1 (forward)
-                    bifOut << "\n";
                 }
             }
 
-            // Write backward scan final states
+            std::vector<std::vector<std::string>> forwardRows(points);
+            std::vector<std::vector<std::string>> backwardRows(points);
             for (std::size_t i = 0; i < points; ++i) {
-                const double value = computeParamValue(i, maxValue, minValue);
-                const auto lastLine = readLastLine(backwardGdatFiles[i]);
-                if (!lastLine.empty()) {
-                    std::istringstream lss(lastLine);
-                    std::string timeTok;
-                    lss >> timeTok;  // Skip time value
-                    bifOut << std::setw(18) << std::setprecision(12) << std::scientific << value;
-                    std::string tok;
-                    while (lss >> tok) {
+                forwardRows[i] = parseGdatRow(readLastLine(forwardGdatFiles[i]));
+                backwardRows[i] = parseGdatRow(readLastLine(backwardGdatFiles[i]));
+            }
+
+            // === Write combined bifurcation .gdat file ===
+            const auto bifurcationPath = outputDir / (prefix + "_bifurcation.gdat");
+            std::ofstream bifOut(bifurcationPath);
+            if (!bifOut) {
+                throw std::runtime_error("Failed to open " + bifurcationPath.string() + " for writing");
+            }
+            if (!obsHeaders.empty()) {
+                bifOut << "#" << std::setw(17) << parameterName;
+                for (const auto& col : obsHeaders) {
+                    bifOut << " " << std::setw(18) << col;
+                }
+                bifOut << " " << std::setw(18) << "direction" << "\n";
+            }
+            for (std::size_t i = 0; i < points; ++i) {
+                if (!forwardRows[i].empty()) {
+                    bifOut << std::setw(18) << std::setprecision(12) << std::scientific << scanValues[i];
+                    for (const auto& tok : forwardRows[i]) {
                         bifOut << " " << std::setw(18) << tok;
                     }
-                    bifOut << " " << std::setw(18) << -1;  // direction = -1 (backward)
-                    bifOut << "\n";
+                    bifOut << " " << std::setw(18) << 1 << "\n";
+                }
+            }
+            for (std::size_t i = 0; i < points; ++i) {
+                if (!backwardRows[i].empty()) {
+                    bifOut << std::setw(18) << std::setprecision(12) << std::scientific << scanValues[points - 1 - i];
+                    for (const auto& tok : backwardRows[i]) {
+                        bifOut << " " << std::setw(18) << tok;
+                    }
+                    bifOut << " " << std::setw(18) << -1 << "\n";
+                }
+            }
+
+            // === Write BNG2-compatible per-observable <prefix>_bifurcation_<obs>.scan files ===
+            for (std::size_t colIdx = 0; colIdx < obsHeaders.size(); ++colIdx) {
+                const auto& obsName = obsHeaders[colIdx];
+                const auto scanPath = outputDir / (prefix + "_bifurcation_" + obsName + ".scan");
+                std::ofstream scanOut(scanPath);
+                if (!scanOut) {
+                    throw std::runtime_error("Failed to open " + scanPath.string() + " for writing");
+                }
+                scanOut << "#" << std::setw(15) << parameterName
+                        << " " << std::setw(16) << (obsName + "_fwd")
+                        << " " << std::setw(16) << (obsName + "_bwd") << "\n";
+                for (std::size_t i = 0; i < points; ++i) {
+                    const std::size_t bwdIdx = points - 1 - i;
+                    if (colIdx < forwardRows[i].size() && colIdx < backwardRows[bwdIdx].size()) {
+                        scanOut << "  " << std::setw(14) << std::setprecision(8) << std::scientific << scanValues[i]
+                                << "  " << std::setw(16) << forwardRows[i][colIdx]
+                                << "  " << std::setw(16) << backwardRows[bwdIdx][colIdx] << "\n";
+                    }
                 }
             }
 
@@ -4537,8 +4722,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "writexml") {
             // Write XML without network (NFsim XML format doesn't require generated network)
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
+            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            if (!suffix.empty()) outName += "_" + suffix;
             const auto xmlContent = io::XmlWriter::write(model, network.has_value() ? &(*network) : nullptr);
-            const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".xml");
+            const auto outputPath = sourcePath.parent_path() / (outName + ".xml");
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");
@@ -4550,13 +4739,21 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        if (actionName == "writebngl" || action.name == "writemodel") {
+        if (actionName == "writebngl" || actionName == "writemodel") {
             ensureNetwork();
             io::BnglWriter::Options opts;
             opts.includeComments = true;
             opts.includeActions = false;
             const auto bnglContent = io::BnglWriter::write(model, &(*network), opts);
-            const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + "_out.bngl");
+            const auto rawPrefix = stripQuotes(readArgument(action, "prefix", ""));
+            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            std::string outName = rawPrefix.empty() ? sourcePath.stem().string() : rawPrefix;
+            if (!suffix.empty()) {
+                outName += "_" + suffix;
+            } else if (rawPrefix.empty()) {
+                outName += "_out";
+            }
+            const auto outputPath = sourcePath.parent_path() / (outName + ".bngl");
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");
@@ -4617,7 +4814,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        if (actionName == "writemfile") {
+        if (actionName == "writemfile" || actionName == "writemfile_all") {
             ensureNetwork();
             io::MatlabWriter::Options mOpts;
             // Parse action arguments for writeMfile options
@@ -4640,10 +4837,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto maxStepText = readArgument(action, "max_step", "");
             if (!maxStepText.empty()) mOpts.maxStep = parseScalarValue(maxStepText, model);
 
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
-            const auto mContent = io::MatlabWriter::write(model, *network, mOpts);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
+            const auto mContent = io::MatlabWriter::write(model, *network, mOpts);
             const auto outputPath = sourcePath.parent_path() / (outName + ".m");
             std::ofstream outFile(outputPath);
             if (!outFile) {
@@ -4652,6 +4850,30 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             outFile << mContent;
             if (verbose) {
                 std::cerr << "[bng_cpp] Wrote MATLAB to " << outputPath << "\n";
+            }
+            if (actionName == "writemfile_all") {
+                const auto basePath = std::filesystem::path(outName);
+                const auto baseDir = sourcePath.parent_path() / basePath.parent_path();
+                const auto filebase = basePath.filename().string();
+                const auto initPath = baseDir / ("initSpecies_" + filebase + ".m");
+                const auto modelPath = baseDir / ("bngModel_" + filebase + ".m");
+                {
+                    std::ofstream initOut(initPath);
+                    if (!initOut) {
+                        throw std::runtime_error("Failed to open " + initPath.string() + " for writing");
+                    }
+                    initOut << io::MatlabWriter::writeInitSpecies(model, *network);
+                }
+                {
+                    std::ofstream modelOut(modelPath);
+                    if (!modelOut) {
+                        throw std::runtime_error("Failed to open " + modelPath.string() + " for writing");
+                    }
+                    modelOut << io::MatlabWriter::writeBngModel(model, *network, filebase);
+                }
+                if (verbose) {
+                    std::cerr << "[bng_cpp] Wrote MATLAB toolbox files to " << initPath << " and " << modelPath << "\n";
+                }
             }
             continue;
         }
@@ -4682,9 +4904,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto sparseText = lowercase(stripQuotes(readArgument(action, "sparse", "0")));
             cppOpts.sparse = (sparseText == "1" || sparseText == "on" || sparseText == "true");
 
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto cppContent = io::CppExportWriter::write(model, *network, cppOpts);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             outName += "_cvode";
             const auto outputPath = sourcePath.parent_path() / (outName + ".h");
@@ -4713,9 +4936,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto rtolText4 = readArgument(action, "rtol", "");
             if (!rtolText4.empty()) pyOpts.rtol = parseScalarValue(rtolText4, model);
 
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto pyContent = io::PythonExportWriter::write(model, *network, pyOpts);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             outName += "_pyode";
             const auto outputPath = sourcePath.parent_path() / (outName + ".py");
@@ -4745,10 +4969,21 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (!rtolText5.empty()) mexOpts.rtol = parseScalarValue(rtolText5, model);
             const auto maxNumStepsText5 = readArgument(action, "max_num_steps", "");
             if (!maxNumStepsText5.empty()) mexOpts.maxNumSteps = static_cast<int>(parseScalarValue(maxNumStepsText5, model));
+            const auto maxErrText5 = readArgument(action, "max_err_test_fails", "");
+            if (!maxErrText5.empty()) mexOpts.maxErrTestFails = static_cast<int>(parseScalarValue(maxErrText5, model));
+            const auto maxConvText5 = readArgument(action, "max_conv_fails", "");
+            if (!maxConvText5.empty()) mexOpts.maxConvFails = static_cast<int>(parseScalarValue(maxConvText5, model));
+            const auto maxStepText5 = readArgument(action, "max_step", "");
+            if (!maxStepText5.empty()) mexOpts.maxStep = parseScalarValue(maxStepText5, model);
+            const auto stiffText5 = lowercase(stripQuotes(readArgument(action, "stiff", "1")));
+            mexOpts.stiff = (stiffText5 != "0" && stiffText5 != "false" && stiffText5 != "off");
+            const auto sparseText5 = lowercase(stripQuotes(readArgument(action, "sparse", "0")));
+            mexOpts.sparse = (sparseText5 == "1" || sparseText5 == "on" || sparseText5 == "true");
 
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto mexContent = io::MexWriter::write(model, *network, mexOpts);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             outName += "_mex";
             const auto outputPath = sourcePath.parent_path() / (outName + ".c");
@@ -4764,6 +4999,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "visualize") {
+            const auto helpText = lowercase(stripQuotes(readArgument(action, "help", "0")));
+            if (helpText == "1" || helpText == "true" || helpText == "on") {
+                std::cout << "graph export help menu: options type=contactmap|regulatory|conventional|compact|reaction_network|ruleviz_pattern|ruleviz_operation|process|rinf|opts, suffix, prefix, help" << std::endl;
+                continue;
+            }
             const auto vizType = lowercase(stripQuotes(readArgument(action, "type", "contactmap")));
             const auto outputFormat = lowercase(stripQuotes(
                 readArgument(action, "outType", readArgument(action, "format", "gml"))));
@@ -4881,7 +5121,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (!suffix.empty()) {
                 fileSuffix += "_" + suffix;
             }
-            const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + fileSuffix + extension);
+            auto vizPrefix = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (vizPrefix.empty()) vizPrefix = sourcePath.stem().string();
+            const auto outputPath = sourcePath.parent_path() / (vizPrefix + fileSuffix + extension);
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");
@@ -4894,11 +5136,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        if (actionName == "writelatex") {
+        if (actionName == "writelatex" || actionName == "writelatexfile") {
             ensureNetwork();
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto latexContent = io::LatexWriter::write(model, *network);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             const auto outputPath = sourcePath.parent_path() / (outName + ".tex");
             std::ofstream outFile(outputPath);
@@ -4914,9 +5157,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "writemdl") {
             ensureNetwork();
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto mdlContent = io::MdlWriter::write(model, *network);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             const auto outputPath = sourcePath.parent_path() / (outName + ".mdl");
             std::ofstream outFile(outputPath);
@@ -4932,6 +5176,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "writessc" || actionName == "writessccfg") {
             ensureNetwork();
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             // BNG2 writes two different artifacts here: `writeSSC` emits a
             // complete .rxn program, while `writeSSCcfg` emits a .cfg holding
@@ -4942,7 +5188,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto sscContent = configOnly
                 ? io::SscWriter::writeConfig(model)
                 : io::SscWriter::write(model, *network);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             const auto outputPath =
                 sourcePath.parent_path() / (outName + (configOnly ? ".cfg" : ".rxn"));
@@ -4958,25 +5203,84 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
+        if (actionName == "readnfspecies") {
+            hybridStage.reset();
+            auto filepath = stripQuotes(readArgument(action, "file", ""));
+            if (filepath.empty()) {
+                filepath = stripQuotes(readArgument(action, "target",
+                    stripQuotes(readArgument(action, "value", ""))));
+            }
+            if (filepath.empty()) {
+                throw std::runtime_error("readNFspecies requires a file path");
+            }
+            std::filesystem::path speciesPath(filepath);
+            if (!speciesPath.is_absolute()) {
+                speciesPath = sourcePath.parent_path() / filepath;
+            }
+            std::ifstream in(speciesPath);
+            if (!in) {
+                throw std::runtime_error("Couldn't read from file " + speciesPath.string());
+            }
+            ensureNetwork();
+            for (std::size_t i = 0; i < network->species.size(); ++i) {
+                network->species.get(i).setAmount(0.0);
+            }
+            std::string line;
+            while (std::getline(in, line)) {
+                const auto hashPos = line.find('#');
+                if (hashPos != std::string::npos) line = line.substr(0, hashPos);
+                line = trim(line);
+                if (line.empty()) continue;
+                std::istringstream iss(line);
+                std::string spStr, countStr;
+                if (!(iss >> spStr >> countStr)) continue;
+                const double amount = parseScalarValue(countStr, model);
+                if (const auto idx = findSpeciesIndex(*network, spStr); idx.has_value()) {
+                    network->species.get(*idx).setAmount(
+                        network->species.get(*idx).getAmount() + amount);
+                }
+            }
+            continue;
+        }
+
+        if (actionName == "codename") {
+            const auto requested = stripQuotes(readArgument(action, "value",
+                stripQuotes(readArgument(action, "target", ""))));
+            if (requested.empty()) {
+                throw std::runtime_error("codename argument is empty.");
+            }
+            throw std::runtime_error(
+                "Requested BioNetGen codename " + requested + ". Active version is .");
+        }
+
         if (actionName == "simulate_protocol") {
             const auto& protocol = model.getSimulationProtocol();
             if (protocol.empty()) {
                 throw std::runtime_error(
                     "simulate_protocol requires a non-empty protocol block");
             }
+            const auto prefixArg = stripQuotes(readArgument(action, "prefix", ""));
+            std::optional<std::filesystem::path> prefixOverride;
+            if (!prefixArg.empty()) {
+                std::filesystem::path p(prefixArg);
+                if (!p.is_absolute()) {
+                    p = sourcePath.parent_path() / p;
+                }
+                prefixOverride = p;
+            }
             if (verbose) {
                 std::cerr << "[bng_cpp] simulate_protocol: dispatching " << protocol.size() << " protocol actions\n";
             }
-            runProtocol(std::nullopt);
+            runProtocol(prefixOverride);
             continue;
         }
 
         if (actionName == "writenetwork" || actionName == "writenet") {
             ensureNetwork();
             auto prefixText = stripQuotes(readArgument(
-                action, "prefix", sourcePath.stem().string()));
+                action, "prefix", defaultModelPrefix(model, sourcePath)));
             if (prefixText.empty()) {
-                prefixText = sourcePath.stem().string();
+                prefixText = defaultModelPrefix(model, sourcePath);
             }
             std::filesystem::path outputPrefix(prefixText);
             if (!outputPrefix.is_absolute()) {

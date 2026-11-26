@@ -2,9 +2,9 @@
   "schema_version": 1,
   "source": {
     "repository": "RuleWorld/bionetgen",
-    "revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+    "revision": "740006ff3cfa0b6d5445e10367c9f2fcd0f75d67",
     "path": "bng2/Perl2/BNGAction.pm",
-    "sha256": "8221eb57929f3c3ed58ae34ef896a34b5e48035d2a0cccd905e9c4601efbeeb4",
+    "sha256": "c081eb0cb550ea50110c5fce242c3b3b0b95cee67a62818fe4c65c2ab0343f07",
     "source_contract": "simulate defaults, validation, dispatch, and returned artifacts at the accepted BNG2 revision"
   },
   "product": {

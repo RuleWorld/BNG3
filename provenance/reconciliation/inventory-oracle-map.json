@@ -4,13 +4,13 @@
   "derived_from": "docs/archive/CAPABILITY_UNION_INVENTORY-pre-release-decisions.md rows 58-73 (reviewed pre-release support boundaries), provenance/upstreams.lock.yml, and selectors present at the audited revision",
   "acceptance_contract": "A declaration is a mapping, not an execution result. A row counts as covered only when an exact-revision release-capability[ID] case result consumes the named oracle and passes. No BNG3-generated expected answer is an oracle.",
   "pins": {
-    "bionetgen": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+    "bionetgen": "740006ff3cfa0b6d5445e10367c9f2fcd0f75d67",
     "nfsim": "d45b7d99cf1905199911a3187edbba585fad56ba",
     "pybionetgen": "28bf351a9bbfc197e19487c26dedda683716bb64"
   },
   "rows": {
     "bngl.ast.model": {
-      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 parser/AST network generation",
+      "oracle": "pinned BNG2@740006ff3cfa0b6d5445e10367c9f2fcd0f75d67 parser/AST network generation",
       "oracle_kind": "external-source",
       "selector": "tests/validation/test_parity_net.py",
       "reviewed_boundary": "supported for grammar/model forms with named tests only"
@@ -34,7 +34,7 @@
       "reviewed_boundary": "supported only for tested expansions; other type features unclassified"
     },
     "nfsim.global-functions.safe-subset": {
-      "oracle": "pinned native NFsim@d45b7d99cf1905199911a3187edbba585fad56ba TFUN/local-function contract plus BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 expression evaluator",
+      "oracle": "pinned native NFsim@d45b7d99cf1905199911a3187edbba585fad56ba TFUN/local-function contract plus BNG2@740006ff3cfa0b6d5445e10367c9f2fcd0f75d67 expression evaluator",
       "oracle_kind": "external-source",
       "selector": "tests/validation/test_parity_expressions.py",
       "reviewed_boundary": "experimental for expanded nested/local/TFUN forms until family-specific parity"
@@ -64,7 +64,7 @@
       "reviewed_boundary": "experimental until independent analytic/native parity closes the stated limitation"
     },
     "io.sbml.structured-bng2": {
-      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 source-generated structured SBML fixture plus independent downstream consumer",
+      "oracle": "pinned BNG2@740006ff3cfa0b6d5445e10367c9f2fcd0f75d67 source-generated structured SBML fixture plus independent downstream consumer",
       "oracle_kind": "external-source",
       "selector": "tests/validation/release/cases/issue-163/contract.json",
       "reviewed_boundary": "compatibility-only for the named dialect and current refusal boundary"
@@ -88,19 +88,19 @@
       "reviewed_boundary": "supported as build/linkage contract only; does not establish cross-domain identity semantics"
     },
     "expression.builtins.shared-table": {
-      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 expression evaluator differential over the shared builtin table",
+      "oracle": "pinned BNG2@740006ff3cfa0b6d5445e10367c9f2fcd0f75d67 expression evaluator differential over the shared builtin table",
       "oracle_kind": "external-source",
       "selector": "tests/validation/test_parity_expressions.py",
       "reviewed_boundary": "supported for tested builtins and meanings only; remaining names/contexts decision required"
     },
     "bngl.actions.setoption": {
-      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 setOption accepted values and resulting execution semantics",
+      "oracle": "pinned BNG2@740006ff3cfa0b6d5445e10367c9f2fcd0f75d67 setOption accepted values and resulting execution semantics",
       "oracle_kind": "external-source",
       "selector": "tests/cpp/test_model_options.cpp",
       "reviewed_boundary": "supported for exact validated option semantics; deprecated spellings pending migration window"
     },
     "bngl.observables.counting-modes": {
-      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 Molecules/Species counting comparison with symmetry and disjoint-pattern fixtures",
+      "oracle": "pinned BNG2@740006ff3cfa0b6d5445e10367c9f2fcd0f75d67 Molecules/Species counting comparison with symmetry and disjoint-pattern fixtures",
       "oracle_kind": "external-source",
       "selector": "tests/validation/test_parity_net.py",
       "reviewed_boundary": "supported only for the two exact algorithms and tested fixture surface"

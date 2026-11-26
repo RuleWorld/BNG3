@@ -181,16 +181,16 @@ def direct_job_from_backend_job(job: BackendHelperJob) -> BngsimDirectJob:
     )
 
 
-def execute_backend_payload(payload: dict[str, Any]):
+def execute_backend_payload(payload: dict[str, Any]) -> dict[str, Any]:
     job = load_backend_job(payload)
     return execute_bngsim_direct_job(direct_job_from_backend_job(job))
 
 
-def serve(*args, **kwargs):
+def serve(socket_path: str) -> int:
     raise BNGSimError(
         "BNG3 does not provide the PyBioNetGen bngsim backend helper server"
     )
 
 
-def main(argv=None):
+def main(argv: list[str] | None = None) -> int:
     raise BNGSimError("BNG3 does not provide the PyBioNetGen bngsim backend helper CLI")

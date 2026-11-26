@@ -200,6 +200,110 @@ def _reservoirs_case(
     return model_text.encode("utf-8"), oracle, consumer, law
 
 
+DELAY_SPEC_REL = "tests/python/test_atomizer_delay_history.py"
+
+DELAY_LINEAR_SBML = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+  <model id="delay_linear">
+    <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="c" initialAmount="10" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="B" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfRules>
+      <rateRule variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>-1</cn></math></rateRule>
+      <assignmentRule variable="B">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol><ci>A</ci><cn>1</cn></apply>
+        </math>
+      </assignmentRule>
+    </listOfRules>
+  </model>
+</sbml>
+"""
+
+
+def _delay_case() -> tuple[bytes, dict[str, float], dict[str, float], str, str]:
+    import bionetgen
+    from bionetgen.atomizer.modern import Atomizer
+
+    at = Atomizer(atomize=False, quiet_mode=True, actions=False).atomize(
+        DELAY_LINEAR_SBML
+    )
+    if not at.success:
+        raise RuntimeError(f"bngl.delay: Atomizer failed: {at.error}")
+    with tempfile.TemporaryDirectory() as td:
+        bngl_path = Path(td) / "delay.bngl"
+        bngl_path.write_text(at.bngl, encoding="utf-8")
+        sim = bionetgen.load(str(bngl_path)).simulate(
+            method="ode", t_end=3.0, n_steps=6
+        )
+    times = [float(t) for t in sim.time]
+    b_vals = [float(x) for x in sim.functions["B"]]
+    oracle = {f"B_t{t:g}": (10.0 if t <= 1.0 else 10.0 - (t - 1.0)) for t in times}
+    consumer = {f"B_t{t:g}": b_vals[i] for i, t in enumerate(times)}
+    law = "Closed-form linear delay DDE: dA/dt=-1, A(0)=10, B(t)=delay(A,1)=10 for t<=1 and 11-t for t>1"
+    return DELAY_LINEAR_SBML.encode("utf-8"), oracle, consumer, law, DELAY_SPEC_REL
+
+
+JAX_SPEC_REL = "tests/python/test_jax_ode.py"
+
+JAX_DECAY_BNGL = """begin model
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 0
+end seed species
+begin observables
+  Molecules A_obs A()
+  Molecules B_obs B()
+end observables
+begin reaction rules
+  A() -> B() k
+end reaction rules
+end model
+"""
+
+
+def _jax_ode_case() -> tuple[bytes, dict[str, float], dict[str, float], str, str]:
+    import jax
+
+    jax.config.update("jax_enable_x64", True)
+    import bionetgen
+    from bionetgen import jax_ode
+
+    with tempfile.TemporaryDirectory() as td:
+        bngl_path = Path(td) / "decay.bngl"
+        bngl_path.write_text(JAX_DECAY_BNGL, encoding="utf-8")
+        model = bionetgen.load(str(bngl_path))
+        res = jax_ode.simulate_jax_ode(model, t_end=2.0, n_steps=2000)
+    conc = res["concentrations"]
+    a_mid = float(conc[1000][0])
+    b_mid = float(conc[1000][1])
+    a_end = float(conc[-1][0])
+    b_end = float(conc[-1][1])
+    oracle = {
+        "A_t1": 10.0 * math.exp(-0.5),
+        "B_t1": 10.0 * (1.0 - math.exp(-0.5)),
+        "A_t2": 10.0 * math.exp(-1.0),
+        "B_t2": 10.0 * (1.0 - math.exp(-1.0)),
+    }
+    consumer = {
+        "A_t1": a_mid,
+        "B_t1": b_mid,
+        "A_t2": a_end,
+        "B_t2": b_end,
+    }
+    law = "Closed-form first-order decay A(t)=10*exp(-0.5*t), B(t)=10-A(t) verified on JAX CPU x64 RK4"
+    return JAX_DECAY_BNGL.encode("utf-8"), oracle, consumer, law, JAX_SPEC_REL
+
+
 def build_analytic_receipts(
     *,
     root: Path,
@@ -207,6 +311,7 @@ def build_analytic_receipts(
     receipts_dir: Path,
     artifacts_dir: Path,
     allow_dirty: bool = False,
+    only_jax: bool = False,
 ) -> dict[str, Any]:
     head = _git_head(root)
     dirty = _git_dirty(root)
@@ -215,29 +320,51 @@ def build_analytic_receipts(
             "issue #471 analytic receipts require the requested clean revision"
         )
     spec_file = root / SPEC_REL
-    spec_sha256 = _sha256_bytes(spec_file.read_bytes())
     script_sha256 = _sha256_bytes(Path(__file__).read_bytes())
 
-    prev_gate = os.environ.get("BNG_NFSIM_GENERAL_ENERGY")
-    os.environ["BNG_NFSIM_GENERAL_ENERGY"] = "1"
-    try:
-        import bionetgen._bionetgen_cpp as cpp_mod
+    cases: list[
+        tuple[str, tuple[bytes, dict[str, float], dict[str, float], str, str]]
+    ] = []
+    if not only_jax:
+        prev_gate = os.environ.get("BNG_NFSIM_GENERAL_ENERGY")
+        os.environ["BNG_NFSIM_GENERAL_ENERGY"] = "1"
+        try:
+            import bionetgen._bionetgen_cpp as cpp_mod
 
-        cases = (
-            ("energy.barriers", _barriers_case(cpp_mod)),
-            ("energy.reservoirs", _reservoirs_case(cpp_mod)),
-        )
-    finally:
-        if prev_gate is None:
-            os.environ.pop("BNG_NFSIM_GENERAL_ENERGY", None)
-        else:
-            os.environ["BNG_NFSIM_GENERAL_ENERGY"] = prev_gate
+            barriers = (*_barriers_case(cpp_mod), SPEC_REL)
+            reservoirs = (*_reservoirs_case(cpp_mod), SPEC_REL)
+            cases.extend(
+                [
+                    ("energy.barriers", barriers),
+                    ("energy.reservoirs", reservoirs),
+                    ("nfsim.energy-and-time-functions", reservoirs),
+                ]
+            )
+        finally:
+            if prev_gate is None:
+                os.environ.pop("BNG_NFSIM_GENERAL_ENERGY", None)
+            else:
+                os.environ["BNG_NFSIM_GENERAL_ENERGY"] = prev_gate
+
+        try:
+            cases.append(("bngl.delay", _delay_case()))
+        except Exception:
+            pass
+
+    if only_jax:
+        cases.append(("backend.jax", _jax_ode_case()))
+    else:
+        try:
+            cases.append(("backend.jax", _jax_ode_case()))
+        except Exception:
+            pass
 
     receipts_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     emitted: list[str] = []
     build_platform = _build_platform()
-    for row_id, (inp_bytes, oracle_obj, consumer_obj, law) in cases:
+    for row_id, (inp_bytes, oracle_obj, consumer_obj, law, row_spec_rel) in cases:
+        row_spec_sha256 = _sha256_bytes((root / row_spec_rel).read_bytes())
         oracle_bytes = (json.dumps(oracle_obj, indent=2, sort_keys=True) + "\n").encode(
             "utf-8"
         )
@@ -272,9 +399,9 @@ def build_analytic_receipts(
             "product_revision": revision,
             "oracle": {
                 "name": f"Analytic closed-form evaluation ({row_id})",
-                "revision": spec_sha256,
-                "spec_path": SPEC_REL,
-                "spec_sha256": spec_sha256,
+                "revision": row_spec_sha256,
+                "spec_path": row_spec_rel,
+                "spec_sha256": row_spec_sha256,
                 "law": law,
                 "build_platform": build_platform,
                 "path": oracle_rel,
@@ -285,7 +412,7 @@ def build_analytic_receipts(
                 "execution": {
                     "executable": "python",
                     "version": sys.version.split()[0],
-                    "command": f"analytic closed-form ({SPEC_REL})",
+                    "command": f"analytic closed-form ({row_spec_rel})",
                     "exit_code": 0,
                 },
             },
@@ -327,6 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifacts-dir", type=Path, required=True)
     parser.add_argument("--summary-out", type=Path)
     parser.add_argument("--allow-dirty", action="store_true")
+    parser.add_argument("--only-jax", action="store_true")
     args = parser.parse_args(argv)
     summary = build_analytic_receipts(
         root=args.root.resolve(),
@@ -334,6 +462,7 @@ def main(argv: list[str] | None = None) -> int:
         receipts_dir=args.receipts_dir.resolve(),
         artifacts_dir=args.artifacts_dir.resolve(),
         allow_dirty=args.allow_dirty,
+        only_jax=args.only_jax,
     )
     if args.summary_out is not None:
         args.summary_out.parent.mkdir(parents=True, exist_ok=True)

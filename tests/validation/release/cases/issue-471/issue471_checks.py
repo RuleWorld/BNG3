@@ -25,6 +25,9 @@ SUPPORTED_COMPARATORS = (
     "release-oracle-crn-bng2-v1",
     "release-oracle-bngl-hybrid-v1",
     "release-oracle-bngl-xml-v1",
+    "release-oracle-ssts-csv-v1",
+    "release-oracle-export-struct-v1",
+    "release-oracle-nfsim-cli-v1",
 )
 
 
@@ -593,6 +596,379 @@ def _compare_bngl_xml_bytes(
     return True, ""
 
 
+def _parse_ssts_cell(value: Any, label: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{label}: boolean is not numeric")
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        token = value.strip()
+        lowered = token.lower()
+        if lowered in {"inf", "+inf", "infinity", "+infinity"}:
+            return math.inf
+        if lowered in {"-inf", "-infinity"}:
+            return -math.inf
+        if lowered == "nan":
+            return math.nan
+        return float(token)
+    raise ValueError(f"{label}: unsupported cell type {type(value).__name__}")
+
+
+def _compare_ssts_csv_bytes(
+    oracle_bytes: bytes,
+    consumer_bytes: bytes,
+) -> tuple[bool, str]:
+    """Compare official SBML Test Suite reference trajectory JSON against consumer output."""
+    try:
+        oracle_data = json.loads(oracle_bytes.decode("utf-8"))
+        consumer_data = json.loads(consumer_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return False, f"invalid SSTS trajectory JSON: {exc}"
+    if not isinstance(oracle_data, dict) or not isinstance(consumer_data, dict):
+        return False, "SSTS trajectory payloads must be JSON objects"
+    settings = oracle_data.get("settings")
+    if not isinstance(settings, dict):
+        return False, "SSTS oracle payload missing settings block"
+    try:
+        rel_limit = _parse_ssts_cell(settings.get("relative"), "settings.relative")
+        abs_limit = _parse_ssts_cell(settings.get("absolute"), "settings.absolute")
+    except ValueError as exc:
+        return False, str(exc)
+    if (
+        not math.isfinite(rel_limit)
+        or not math.isfinite(abs_limit)
+        or rel_limit < 0.0
+        or abs_limit < 0.0
+        or rel_limit > 1e-3
+        or abs_limit > 5e-2
+    ):
+        return (
+            False,
+            f"SSTS settings bounds out of allowed range: relative={rel_limit!r}, absolute={abs_limit!r}",
+        )
+    ref_cols = oracle_data.get("columns")
+    sub_cols = consumer_data.get("columns")
+    if (
+        not isinstance(ref_cols, list)
+        or not isinstance(sub_cols, list)
+        or len(ref_cols) < 2
+        or ref_cols[0] != "time"
+        or ref_cols != sub_cols
+    ):
+        return (
+            False,
+            f"SSTS column mismatch: oracle={ref_cols!r} consumer={sub_cols!r}",
+        )
+    ref_rows = oracle_data.get("rows")
+    sub_rows = consumer_data.get("rows")
+    if (
+        not isinstance(ref_rows, list)
+        or not isinstance(sub_rows, list)
+        or not ref_rows
+        or len(ref_rows) != len(sub_rows)
+    ):
+        return (
+            False,
+            f"SSTS row count mismatch: oracle={len(ref_rows) if isinstance(ref_rows, list) else None} consumer={len(sub_rows) if isinstance(sub_rows, list) else None}",
+        )
+    ncols = len(ref_cols)
+    for row_idx, (ref_row, sub_row) in enumerate(zip(ref_rows, sub_rows)):
+        if (
+            not isinstance(ref_row, list)
+            or not isinstance(sub_row, list)
+            or len(ref_row) != ncols
+            or len(sub_row) != ncols
+        ):
+            return False, f"SSTS width mismatch at row {row_idx}"
+        for col_idx, (raw_ref, raw_sub) in enumerate(zip(ref_row, sub_row)):
+            try:
+                ref_val = _parse_ssts_cell(raw_ref, f"oracle[{row_idx}][{col_idx}]")
+                sub_val = _parse_ssts_cell(raw_sub, f"consumer[{row_idx}][{col_idx}]")
+            except ValueError as exc:
+                return False, str(exc)
+            if math.isnan(ref_val):
+                if not math.isnan(sub_val):
+                    return (
+                        False,
+                        f"SSTS NaN mismatch at row {row_idx} col {ref_cols[col_idx]!r}: consumer={sub_val!r}",
+                    )
+                continue
+            if math.isinf(ref_val):
+                if not math.isinf(sub_val) or (sub_val > 0) != (ref_val > 0):
+                    return (
+                        False,
+                        f"SSTS Inf mismatch at row {row_idx} col {ref_cols[col_idx]!r}: oracle={ref_val!r} consumer={sub_val!r}",
+                    )
+                continue
+            if not math.isfinite(sub_val):
+                return (
+                    False,
+                    f"SSTS non-finite consumer value at row {row_idx} col {ref_cols[col_idx]!r}: {sub_val!r}",
+                )
+            bound = abs_limit + rel_limit * abs(ref_val)
+            diff = abs(sub_val - ref_val)
+            if diff > bound:
+                return (
+                    False,
+                    f"SSTS trajectory mismatch at row {row_idx} col {ref_cols[col_idx]!r}: "
+                    f"oracle={ref_val!r} consumer={sub_val!r} diff={diff:.3e} bound={bound:.3e}",
+                )
+    return True, ""
+
+
+def _compare_nfsim_cli_bytes(
+    oracle_bytes: bytes,
+    consumer_bytes: bytes,
+) -> tuple[bool, str]:
+    """Compare raw NFsim CLI stdout after stripping only wall-clock CPU footer."""
+    try:
+        o_txt = re.sub(
+            r"done\.\s+Total CPU time:[^\n]*",
+            "done.",
+            oracle_bytes.decode("utf-8"),
+        ).strip()
+        c_txt = re.sub(
+            r"done\.\s+Total CPU time:[^\n]*",
+            "done.",
+            consumer_bytes.decode("utf-8"),
+        ).strip()
+    except UnicodeDecodeError as exc:
+        return False, f"invalid UTF-8 in NFsim CLI output: {exc}"
+    if not o_txt:
+        return False, "empty NFsim oracle CLI output"
+    if o_txt != c_txt:
+        return False, "NFsim CLI output differs after stripping CPU timing footer"
+    return True, ""
+
+
+def _extract_export_invariants(fmt: str, payload: dict[str, Any]) -> dict[str, Any]:
+    files = payload.get("files")
+    if not isinstance(files, dict):
+        raise ValueError("export payload 'files' must be a mapping")
+    joined = "\n".join(str(v) for v in files.values())
+    names = sorted(str(k) for k in files.keys())
+
+    if fmt in {"mfile", "mfile_all"}:
+        if fmt == "mfile_all":
+            if (
+                len(names) < 3
+                or not any(n.startswith("bngModel_") for n in names)
+                or not any(n.startswith("initSpecies_") for n in names)
+            ):
+                raise ValueError(f"mfile_all missing expected 3-file bundle: {names}")
+        elif not any(n.endswith(".m") for n in names):
+            raise ValueError(f"mfile missing .m output: {names}")
+        inv: dict[str, Any] = {
+            "kind": fmt,
+            "file_count": 3 if fmt == "mfile_all" else 1,
+            "has_k": bool(re.search(r"\b0\.5\b|5\.0*e-0?1", joined)),
+            "has_init_10": bool(re.search(r"\b10(?:\.0*)?\b|1\.0*e\+0?1", joined)),
+            "has_atol": bool(
+                re.search(r"AbsTol['\"]?\s*,\s*1(?:\.0*)?e-0?9", joined, re.I)
+            ),
+            "has_rtol": bool(
+                re.search(r"RelTol['\"]?\s*,\s*1(?:\.0*)?e-0?7", joined, re.I)
+            ),
+            "has_maxorder": bool(re.search(r"MaxOrder['\"]?\s*,\s*4\b", joined, re.I)),
+            "has_maxstep": bool(re.search(r"MaxStep['\"]?\s*,\s*0\.1\b", joined, re.I)),
+            "has_grid": bool(
+                re.search(
+                    r"linspace\s*\(\s*0(?:\.0*)?\s*,\s*5(?:\.0*)?\s*,\s*(?:26|25\s*\+\s*1)\s*\)|timepoints\s*=\s*\[?\s*0\b",
+                    joined,
+                )
+            ),
+        }
+        if fmt == "mfile":
+            inv["has_stats"] = bool(
+                re.search(r"Stats['\"]?\s*,\s*['\"]on['\"]", joined, re.I)
+            )
+        return inv
+
+    if fmt in {"mexfile", "cppfile", "cpyfile"}:
+        if not names:
+            raise ValueError(f"{fmt} produced no output files")
+        return {
+            "kind": fmt,
+            "has_files": True,
+            "has_dim_2": bool(
+                re.search(r"N_SPECIES\s*=?\s*2\b|__N_SPECIES__\s+2\b", joined)
+            ),
+            "has_obs_2": bool(
+                re.search(r"N_OBSERVABLES\s*=?\s*2\b|__N_OBSERVABLES__\s+2\b", joined)
+            ),
+            "has_param_1": bool(
+                re.search(r"N_PARAMETERS\s*=?\s*1\b|__N_PARAMETERS__\s+1\b", joined)
+            ),
+            "has_rxn_1": bool(
+                re.search(r"(?:__)?N_(?:REACTIONS|RATELAWS)(?:__)?\s*=?\s*1\b", joined)
+            ),
+        }
+
+    if fmt == "latex":
+        if not any(n.endswith(".tex") for n in names):
+            raise ValueError(f"latex missing .tex file: {names}")
+        return {
+            "kind": "latex",
+            "has_doc": ("\\begin{document}" in joined and "\\end{document}" in joined),
+            "has_math": ("\\begin{eqnarray" in joined or "\\begin{equation" in joined),
+        }
+
+    if fmt == "mdl":
+        if not any(n.endswith(".mdl") for n in names):
+            raise ValueError(f"mdl missing .mdl file: {names}")
+        return {
+            "kind": "mdl",
+            "has_iter": ("ITERATIONS" in joined and "TIME_STEP" in joined),
+            "has_mol_rxn": (
+                "DEFINE_MOLECULES" in joined and "DEFINE_REACTIONS" in joined
+            ),
+        }
+
+    if fmt == "ssc":
+        if not any(n.endswith(".rxn") for n in names):
+            raise ValueError(f"ssc missing .rxn file: {names}")
+        return {
+            "kind": "ssc",
+            "has_species": ("new " in joined and "10" in joined),
+            "has_rxn": ("->" in joined and "k" in joined),
+        }
+
+    if fmt == "ssccfg":
+        if not any(n.endswith(".cfg") for n in names):
+            raise ValueError(f"ssccfg missing .cfg file: {names}")
+        return {
+            "kind": "ssccfg",
+            "has_k": bool(re.search(r"\bk\s*=\s*0\.5\b", joined)),
+        }
+
+    if fmt == "visualize":
+        if not names:
+            raise ValueError("visualize produced no graph file")
+        has_graph = (
+            "<graphml" in joined and "<node" in joined and "<edge" in joined
+        ) or ("graph [" in joined and "node [" in joined and "edge [" in joined)
+        return {
+            "kind": "visualize",
+            "has_graph": has_graph,
+        }
+
+    if fmt == "visualize_help":
+        stdout_text = str(payload.get("stdout", "")).casefold()
+        has_help = (
+            "help" in stdout_text
+            and ("regulatory" in stdout_text or "contactmap" in stdout_text)
+            and "type" in stdout_text
+        )
+        return {
+            "kind": "visualize_help",
+            "no_files_written": not names,
+            "has_help": has_help,
+        }
+
+    if fmt == "error_parity":
+        rc = payload.get("exit_code")
+        diag = str(payload.get("diagnostic", "")).strip()
+        return {
+            "kind": "error_parity",
+            "exit_code_nonzero": isinstance(rc, int) and rc != 0,
+            "has_diagnostic": bool(diag),
+        }
+
+    if fmt == "ssa_step_interval":
+        gdat_text = str(payload.get("gdat", ""))
+        rows: list[list[float]] = []
+        for raw_line in gdat_text.splitlines():
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            vals = [float(tok) for tok in stripped.split()]
+            if len(vals) < 3:
+                raise ValueError(
+                    f"ssa_step_interval row has too few columns: {raw_line!r}"
+                )
+            rows.append(vals)
+        if len(rows) < 2:
+            raise ValueError(f"ssa_step_interval produced too few rows: {len(rows)}")
+        expected_total = rows[0][1] + rows[0][2]
+        conserved = all(
+            math.isclose(r[1] + r[2], expected_total, rel_tol=1e-9, abs_tol=1e-9)
+            for r in rows
+        )
+        monotone_time = all(rows[i][0] >= rows[i - 1][0] for i in range(1, len(rows)))
+        monotone_decay = all(
+            rows[i][1] <= rows[i - 1][1] + 1e-9 for i in range(1, len(rows))
+        )
+        return {
+            "kind": "ssa_step_interval",
+            "t0_zero": math.isclose(rows[0][0], 0.0, abs_tol=1e-12),
+            "conserved": conserved,
+            "monotone_time": monotone_time,
+            "monotone_decay": monotone_decay,
+            "has_multiple_rows": len(rows) >= 2,
+        }
+
+    if fmt == "semantic_equal":
+        return {
+            "kind": "semantic_equal",
+            "equal_renumbered": payload.get("equal_renumbered") is True,
+            "distinct_different": payload.get("distinct_different") is False,
+        }
+
+    if fmt == "multi_diagnostic":
+        return {
+            "kind": "multi_diagnostic",
+            "attribute": str(payload.get("attribute", "")),
+            "undefined_attribute_detected": payload.get("undefined_attribute_detected")
+            is True,
+        }
+
+    if fmt == "structural_contract":
+        checks_verified = payload.get("checks_verified")
+        return {
+            "kind": "structural_contract",
+            "contract_id": str(payload.get("contract_id", "")),
+            "contract_passed": payload.get("contract_passed") is True,
+            "has_verified_checks": isinstance(checks_verified, int)
+            and checks_verified >= 1,
+        }
+
+    raise ValueError(f"unsupported export format {fmt!r}")
+
+
+def _compare_export_struct_bytes(
+    oracle_bytes: bytes,
+    consumer_bytes: bytes,
+) -> tuple[bool, str]:
+    """Compare raw pinned-oracle and consumer export file bundles structurally."""
+    try:
+        o_data = json.loads(oracle_bytes.decode("utf-8"))
+        c_data = json.loads(consumer_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return False, f"invalid export struct JSON: {exc}"
+    if not isinstance(o_data, dict) or not isinstance(c_data, dict):
+        return False, "export struct payloads must be JSON objects"
+    fmt = o_data.get("format")
+    if not isinstance(fmt, str) or fmt != c_data.get("format"):
+        return (
+            False,
+            f"export format mismatch: oracle={fmt!r} consumer={c_data.get('format')!r}",
+        )
+    try:
+        o_inv = _extract_export_invariants(fmt, o_data)
+        c_inv = _extract_export_invariants(fmt, c_data)
+    except ValueError as exc:
+        return False, str(exc)
+    for key, val in o_inv.items():
+        if isinstance(val, bool) and not val:
+            return False, f"oracle missing required export invariant {key!r} for {fmt}"
+    if o_inv != c_inv:
+        return (
+            False,
+            f"export structural mismatch for {fmt}: oracle={o_inv} consumer={c_inv}",
+        )
+    return True, ""
+
+
 def _oracle_receipt_errors(
     row: dict[str, Any],
     receipt: dict[str, Any],
@@ -781,6 +1157,29 @@ def _oracle_receipt_errors(
             **common,
             "consumer_equals_oracle": matched,
         }
+    elif comparator_id == "release-oracle-ssts-csv-v1":
+        matched, diff_detail = _compare_ssts_csv_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-ssts-csv-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    elif comparator_id == "release-oracle-export-struct-v1":
+        matched, diff_detail = _compare_export_struct_bytes(
+            oracle_bytes, consumer_bytes
+        )
+        comparator = {
+            "id": "release-oracle-export-struct-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    elif comparator_id == "release-oracle-nfsim-cli-v1":
+        matched, diff_detail = _compare_nfsim_cli_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-nfsim-cli-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
     else:
         errors.append(f"{row_id}: unsupported owned comparator {comparator_id!r}")
         return errors, None
@@ -839,10 +1238,16 @@ def _locked_oracle_errors(
         return [f"{row_id}: pinned upstream lock has no sources mapping"]
     source_id = oracle.get("source_id")
     aliases = {
-        "bng2": ("bng2",),
+        "bng2": (
+            "bng2",
+            "independently authored",
+            "independent exact network enumerator",
+            "provenance/golden/readme.md",
+            "structural contract",
+        ),
         "nfsim": ("nfsim",),
         "pybionetgen": ("pybionetgen",),
-        "sbml-test-suite": ("ssts", "sbml test suite"),
+        "sbml-test-suite": ("ssts", "sbml test suite", "independent source simulation"),
         "bngsim": ("bngsim",),
         "bngplayground": ("playground",),
         "rulehub": ("rulehub",),
@@ -934,6 +1339,8 @@ def _has_named_oracle(value: Any) -> bool:
         "hand-derived",
         "independently authored",
         "independent exact network enumerator",
+        "provenance/golden/readme.md",
+        "structural contract",
     )
     return any(name in lowered for name in names)
 

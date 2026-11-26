@@ -809,6 +809,14 @@ jobs:
             --receipts-dir "$RUNNER_TEMP/issue471-bng2/receipts" \
             --artifacts-dir "$RUNNER_TEMP/issue471-bng2/artifacts" \
             --summary-out "$RUNNER_TEMP/issue471-bng2/crn-summary.json"
+          .venv/bin/python scripts/ci/record_issue471_bng2_extended_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --bng-cpp build/cpp/bng_cpp \
+            --receipts-dir "$RUNNER_TEMP/issue471-bng2/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-bng2/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-bng2/extended-summary.json"
 
       - name: Upload Issue 471 BNG2 oracle consumer receipts
         if: always()
@@ -816,6 +824,52 @@ jobs:
         with:
           name: issue471-bng2-receipts-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/issue471-bng2/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Record Issue 471 SBML Core and Comp oracle consumer receipts
+        if: always() && steps.bng3_identity.outcome == 'success'
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          ssts_rev=$(.venv/bin/python -c 'import json; print(json.load(open("provenance/upstreams.lock.yml", encoding="utf-8"))["sources"]["sbml-test-suite"]["revision"])')
+          ssts_dir="$RUNNER_TEMP/oracle-ssts-subset"
+          rm -rf "$ssts_dir"
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/sbmlteam/sbml-test-suite.git "$ssts_dir"
+          git -C "$ssts_dir" sparse-checkout init --cone
+          git -C "$ssts_dir" sparse-checkout set \
+            cases/semantic/00004 cases/semantic/00027 cases/semantic/00040 \
+            cases/semantic/00054 cases/semantic/00072 cases/semantic/00080 \
+            cases/semantic/00374 cases/semantic/00851 cases/semantic/00870 \
+            cases/semantic/00937 cases/semantic/00950 cases/semantic/00957 \
+            cases/semantic/00969 cases/semantic/00978 cases/semantic/01121 \
+            cases/semantic/01247 cases/semantic/01248 cases/semantic/01272 \
+            cases/semantic/01275 cases/semantic/01134 cases/semantic/01165
+          git -C "$ssts_dir" checkout --detach "$ssts_rev"
+          mkdir -p "$RUNNER_TEMP/issue471-sbml"
+          .venv/bin/python scripts/ci/record_issue471_sbml_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --ssts-dir "$ssts_dir" \
+            --receipts-dir "$RUNNER_TEMP/issue471-sbml/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-sbml/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-sbml/summary.json"
+          .venv/bin/python scripts/ci/record_issue471_sbml_multi_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --receipts-dir "$RUNNER_TEMP/issue471-sbml/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-sbml/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-sbml/multi-summary.json"
+
+      - name: Upload Issue 471 SBML oracle consumer receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue471-sbml-receipts-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue471-sbml/
           if-no-files-found: warn
           retention-days: 30
 
@@ -1389,6 +1443,14 @@ jobs:
             --output "$RUNNER_TEMP/bng3-jax-release/report.json" \
             --source-revision "$BNG3_SOURCE_REVISION" \
             --summary-file "$GITHUB_STEP_SUMMARY"
+          mkdir -p "$RUNNER_TEMP/release-records/issue471-jax-receipts-$BNG3_SOURCE_REVISION"
+          python scripts/ci/record_issue471_analytic_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --only-jax \
+            --receipts-dir "$RUNNER_TEMP/release-records/issue471-jax-receipts-$BNG3_SOURCE_REVISION/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/release-records/issue471-jax-receipts-$BNG3_SOURCE_REVISION/artifacts" \
+            --summary-out "$RUNNER_TEMP/release-records/issue471-jax-receipts-$BNG3_SOURCE_REVISION/summary.json" || true
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           JAX_PLATFORMS: cpu
@@ -2342,6 +2404,8 @@ jobs:
             --revision "$BNG3_SOURCE_REVISION" \
             --nfsim-source "$RUNNER_TEMP/oracle-nfsim" \
             --nfsim-oracle "$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            --nfsim-consumer "${{ github.workspace }}/build/cpp" \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
             --receipts-dir "$RUNNER_TEMP/issue471-nfsim/receipts" \
             --artifacts-dir "$RUNNER_TEMP/issue471-nfsim/artifacts" \
             --summary-out "$RUNNER_TEMP/issue471-nfsim/summary.json"

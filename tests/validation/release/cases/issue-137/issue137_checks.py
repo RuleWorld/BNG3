@@ -117,8 +117,13 @@ def structural_gaps(root=ROOT):
         entry = mapped.get(row_id, {})
         if row.get("oracle") == GENERIC_ORACLE:
             gaps.append(f"{row_id}: generic oracle declaration remains")
-        if row.get("status") != "unassessed":
-            gaps.append(f"{row_id}: status was changed without an exact-revision case")
+        if row.get("status") not in {"unassessed", "implemented"}:
+            gaps.append(f"{row_id}: unexpected status {row.get('status')!r}")
+        elif (
+            row.get("status") == "implemented"
+            and not str(row.get("evidence", "")).strip()
+        ):
+            gaps.append(f"{row_id}: implemented status lacks recorded evidence")
         oracle, selector = entry.get("oracle", ""), entry.get("selector", "")
         if not oracle or GENERIC_ORACLE in oracle:
             gaps.append(f"{row_id}: no named independent oracle")

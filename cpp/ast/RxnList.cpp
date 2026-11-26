@@ -1,6 +1,7 @@
 #include "RxnList.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdlib>
 #include <iostream>
 #include <sstream>
@@ -9,6 +10,22 @@
 namespace bng::ast {
 
 namespace {
+
+bool keepOriginRuleInSignature(const Rxn& reaction) {
+    if (reaction.getRateLaw().find("|local:") != std::string::npos) {
+        return true;
+    }
+    if (const auto& rateExpr = reaction.getRateExpression();
+        rateExpr.has_value() && rateExpr->kind() == ExpressionKind::Function) {
+        std::string lower = rateExpr->name();
+        std::transform(lower.begin(), lower.end(), lower.begin(),
+                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        if (lower == "arrhenius" || lower == "functionproduct") {
+            return true;
+        }
+    }
+    return false;
+}
 
 std::string reactionSignature(const Rxn& reaction) {
     std::ostringstream out;
@@ -32,15 +49,17 @@ std::string reactionSignature(const Rxn& reaction) {
         out << sortedProducts[i];
     }
     out << "@" << reaction.getRateLaw();
+    out << "@totalRate=" << reaction.isTotalRate();
     out << "@absoluteFlux=" << reaction.isAbsoluteFlux();
     if (reaction.getDelayExpression()) {
         out << "@delay=" << reaction.getDelayExpression()->toString()
             << (reaction.isNonConsuming() ? ":nonconsuming" : ":consuming");
     }
-    // Include rule name in signature: BNG2 (Perl) never merges reactions from
-    // different rules, even if they have the same stoichiometry and rate.
-    // Each rule represents a distinct biological process.
-    if (!reaction.getOriginRuleName().empty()) {
+    // Fold byte-identical reactions across rules when their rate laws are
+    // structurally equivalent (matching BNG2 RxnList::add / RateLaw::equivalent,
+    // RuleWorld/bionetgen 3513bca766). Conservatively preserve rule boundaries
+    // for per-rule local contexts, Arrhenius, and FunctionProduct rates.
+    if (keepOriginRuleInSignature(reaction) && !reaction.getOriginRuleName().empty()) {
         out << "#" << reaction.getOriginRuleName();
     }
     return out.str();
@@ -70,6 +89,7 @@ bool RxnList::add(Rxn reaction) {
                       << " rule=" << reaction.getOriginRuleName() << "\n";
         }
         reactions_[existing->second].addFactor(reaction.getFactor());
+        reactions_[existing->second].addOriginRuleName(reaction.getOriginRuleName());
         return false;
     }
     indexBySignature_[signature] = reactions_.size();

@@ -136,7 +136,17 @@ def detect_input_format(file_path, explicit_format=None):
     return detected
 
 
-def classify_bngsim_route(inp, fmt, simulator="auto", method=None, **kwargs):
+def classify_bngsim_route(
+    input_path,
+    fmt,
+    simulator="auto",
+    method=None,
+    bngsim_available=None,
+    bngsim_has_nfsim=None,
+    bngl_actions=None,
+    has_protocol=None,
+    bngsim_has_rulemonkey=None,
+):
     if simulator == "subprocess":
         return BngsimRouteDecision(ROUTE_SUBPROCESS, "subprocess requested", method)
     if fmt in BNGSIM_REQUIRED_FORMATS:
@@ -146,21 +156,64 @@ def classify_bngsim_route(inp, fmt, simulator="auto", method=None, **kwargs):
     return BngsimRouteDecision(ROUTE_DIRECT_BNGSIM, BNGSIM_UNAVAILABLE_REASON, method)
 
 
-def execute_bngsim_direct_job(*args, **kwargs):
+def execute_bngsim_direct_job(job):
     raise BNGSimError(BNGSIM_UNAVAILABLE_REASON)
 
 
-def run_nfsim(*args, **kwargs):
+def run_nfsim(
+    xml_path,
+    output_dir,
+    t_span=None,
+    n_points=None,
+    seed=None,
+    gml=None,
+    model_name=None,
+    param_overrides=None,
+    conc_overrides=None,
+    conc_deltas=None,
+    print_functions=False,
+    nf_params=None,
+):
     raise BNGSimError(BNGSIM_UNAVAILABLE_REASON)
 
 
-def run_with_bngsim(*args, **kwargs):
+def run_with_bngsim(
+    input_path,
+    output_dir,
+    fmt=None,
+    method=None,
+    t_span=None,
+    n_points=None,
+    **sim_kwargs,
+):
     raise BNGSimError(BNGSIM_UNAVAILABLE_REASON)
 
 
-def run_bngl_with_bngsim_backend_hook(*args, **kwargs):
+def run_bngl_with_bngsim_backend_hook(
+    bngl_path,
+    output_dir,
+    bngpath,
+    suppress=False,
+    log_file=None,
+    timeout=None,
+    app=None,
+    bngsim_backend_helper=None,
+    backend_method=None,
+):
     raise BNGSimError(BNGSIM_UNAVAILABLE_REASON)
 
 
-def run_bngl_with_bngsim(*args, **kwargs):
+def run_bngl_with_bngsim(
+    bngl_path,
+    output_dir,
+    bngpath,
+    method=None,
+    t_span=None,
+    n_points=None,
+    suppress=False,
+    log_file=None,
+    timeout=None,
+    app=None,
+    **sim_kwargs,
+):
     raise BNGSimError(BNGSIM_UNAVAILABLE_REASON)

@@ -50,6 +50,17 @@ public:
         const Options& options
     );
 
+    static std::string writeInitSpecies(
+        const ast::Model& model,
+        const engine::GeneratedNetwork& network
+    );
+
+    static std::string writeBngModel(
+        const ast::Model& model,
+        const engine::GeneratedNetwork& network,
+        const std::string& filebase
+    );
+
 private:
     // Observable-to-species weight mapping
     struct ObservableGroup {

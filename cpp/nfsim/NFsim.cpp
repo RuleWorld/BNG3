@@ -623,6 +623,21 @@ System *initSystemFromFlags(map<string,string> argMap, bool verbose)
 
 			if(s!=NULL)
 			{
+				// System owns the RNG used by reaction selection and timing.  Keep
+				// the command-line seed aligned with that per-instance generator;
+				// seeding NFutil's legacy global RNG alone is insufficient.
+				if (argMap.find("seed") != argMap.end()) {
+					int seed = abs(NFinput::parseAsInt(argMap, "seed", 0));
+					s->seedRNG(static_cast<unsigned long>(seed));
+				}
+
+				if (argMap.find("i") != argMap.end()) {
+					double initialTime = NFinput::parseAsDouble(argMap, "i", 0.0);
+					s->setCurrentTime(initialTime);
+					if (verbose) {
+						cout << "\tInitial simulation time (-i) set to: " << initialTime << endl << endl;
+					}
+				}
 				if(verbose) {cout<<endl;}
 
 				//If requested, be sure to output the values of global functions
@@ -1035,6 +1050,11 @@ void printHelp(const string& version)
 	cout<<"  -sim [time]       used to specify the length (in seconds) of a simulation"<<endl;
 	cout<<"                    when running an xml file.  Fractional seconds are valid."<<endl;
 	cout<<"                    for instance, you could use: -sim 525.50"<<endl;
+	cout<<""<<endl;
+	cout<<"  -i [time]         sets the absolute simulation start time (default: 0)."<<endl;
+	cout<<"                    This value is used by time-dependent functions and the"<<endl;
+	cout<<"                    output time column.  Output times remain relative to"<<endl;
+	cout<<"                    the start of the requested simulation."<<endl;
 	cout<<""<<endl;
 	cout<<"  -eq [time]        used to specify the length (in seconds) to equilibrate the"<<endl;
 	cout<<"                    system before running the simulation."<<endl;

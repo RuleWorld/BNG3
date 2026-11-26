@@ -907,3 +907,18 @@ class Operation:
         "Add",
         "Delete",
     ]
+
+    def __init__(self, op_type, op_dict):
+        self.op_type = op_type
+        self.args = {}
+        if op_type in self.valid_ops:
+            for key, val in op_dict.items():
+                if key.startswith("@"):
+                    self.args[key[1:]] = val
+
+    def __str__(self):
+        args_str = ", ".join(f'{k}="{v}"' for k, v in self.args.items())
+        return f"{self.op_type}({args_str})"
+
+    def __repr__(self):
+        return self.__str__()

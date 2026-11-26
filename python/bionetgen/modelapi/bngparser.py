@@ -53,8 +53,10 @@ class BNGParser:
         parse_actions=True,
         generate_network=False,
         suppress=True,
+        verbose=False,
     ) -> None:
         self.to_parse_actions = parse_actions
+        self.verbose = verbose
         self.bngfile = BNGFile(path, generate_network=generate_network, suppress=True)
         self.alist = ActionList()
         self._action_parser_ready = False

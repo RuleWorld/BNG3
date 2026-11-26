@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from scripts.ci.oracle_sources import load_lock, load_oracle_source
 from tests.validation import issue_queue
 
 ROWS = (
@@ -22,7 +23,7 @@ ROWS = (
     "action.simulate.rtol",
 )
 SOURCE_REVISION = "a" * 40
-BNG2_REVISION = "9601746f8884ed19ab2acea49fe87fc4660ace46"
+BNG2_REVISION = load_oracle_source(load_lock(), "bionetgen")["revision"]
 BNG2_SHA256 = "b" * 64
 PRODUCT_SHA256 = "c" * 64
 ORACLE = "pinned BNG2 plus the analytic first-order conversion law; SSA scope is invariant-only"

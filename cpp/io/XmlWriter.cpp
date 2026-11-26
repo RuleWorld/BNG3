@@ -1011,9 +1011,22 @@ std::string expressionForXml(const ast::Expression& expression) {
         return expression.toString();
     case ExpressionKind::Unary:
         return expression.name() + expressionForXml(expression.args().front());
-    case ExpressionKind::Binary:
-        return "(" + expressionForXml(expression.args()[0]) + " " + expression.name() +
-               " " + expressionForXml(expression.args()[1]) + ")";
+    case ExpressionKind::Binary: {
+        std::string lhs = expressionForXml(expression.args()[0]);
+        std::string rhs = expressionForXml(expression.args()[1]);
+        const auto& op = expression.name();
+        if (op == "&&" || op == "||") {
+            const char* xmlOp = (op == "&&") ? " and " : " or ";
+            return "((" + lhs + "!=0)" + xmlOp + "(" + rhs + "!=0))";
+        }
+        if ((op == "^" || op == "**") &&
+            (expression.args()[0].kind() == ExpressionKind::Unary ||
+             (expression.args()[0].kind() == ExpressionKind::Number &&
+              expression.args()[0].numberValue() < 0.0))) {
+            lhs = "(" + lhs + ")";
+        }
+        return "(" + lhs + " " + op + " " + rhs + ")";
+    }
     case ExpressionKind::Function:
     case ExpressionKind::ObservableRef: {
         std::ostringstream output;
@@ -1153,7 +1166,19 @@ bool expandDynamicRateExpression(
                 activeFunctions, rhs, diagnostic)) {
             return false;
         }
-        expanded = "(" + lhs + " " + expression.name() + " " + rhs + ")";
+        const auto& op = expression.name();
+        if (op == "&&" || op == "||") {
+            const char* xmlOp = (op == "&&") ? " and " : " or ";
+            expanded = "((" + lhs + "!=0)" + xmlOp + "(" + rhs + "!=0))";
+            return true;
+        }
+        if ((op == "^" || op == "**") &&
+            (expression.args()[0].kind() == ExpressionKind::Unary ||
+             (expression.args()[0].kind() == ExpressionKind::Number &&
+              expression.args()[0].numberValue() < 0.0))) {
+            lhs = "(" + lhs + ")";
+        }
+        expanded = "(" + lhs + " " + op + " " + rhs + ")";
         return true;
     }
     case ExpressionKind::Function: {
