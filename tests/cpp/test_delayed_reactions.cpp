@@ -17,8 +17,10 @@
 #include "actions/ActionDispatch.hpp"
 #include "io/BnglWriter.hpp"
 #include "io/CppExportWriter.hpp"
+#include "io/MatlabWriter.hpp"
 #include "io/NetWriter.hpp"
 #include "io/NetReader.hpp"
+#include "io/PythonExportWriter.hpp"
 #include "io/SbmlWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
@@ -1087,4 +1089,64 @@ TEST_CASE("continuation applies an explicit species reset to the seed amount") {
           Catch::Approx(10.0 * std::exp(-1.0)).epsilon(1e-5));
     CHECK(result.concentrations.back()[b] ==
           Catch::Approx(10.0 * (1.0 - std::exp(-0.5))).epsilon(1e-5));
+}
+
+TEST_CASE("Python and MATLAB exporters emit exact DDE solvers for constant-delay rules and fail closed on delay() calls") {
+    {
+        auto consuming = parse("A() -> B() 0.5 delay=tau");
+        engine::NetworkGenerator generator(*consuming);
+        const auto network = generator.generateNative();
+        const auto py = io::PythonExportWriter::write(*consuming, network);
+        CHECK_THAT(py, Catch::Matchers::ContainsSubstring("solve_ivp"));
+        CHECK_THAT(py, Catch::Matchers::ContainsSubstring("dydt_dde"));
+        CHECK_THAT(py, Catch::Matchers::ContainsSubstring("calc_lags"));
+        CHECK_THAT(py, Catch::Matchers::ContainsSubstring("_dde_breakpoints"));
+
+        const auto mat = io::MatlabWriter::write(*consuming, network);
+        CHECK_THAT(mat, Catch::Matchers::ContainsSubstring("dde23("));
+        CHECK_THAT(mat, Catch::Matchers::ContainsSubstring("ddeset("));
+        CHECK_THAT(mat, Catch::Matchers::ContainsSubstring("calc_species_deriv_dde"));
+        CHECK_THAT(mat, Catch::Matchers::ContainsSubstring("lags = ["));
+
+        CHECK_THROWS_WITH(engine::FlattenedReactionNetwork::fromModelAndNetwork(*consuming, network),
+                          Catch::Matchers::ContainsSubstring("Delayed reactions are not supported"));
+    }
+    {
+        auto nonconsuming = parse("G() -> G() + M() 0.5 delay=tau NonConsuming");
+        engine::NetworkGenerator generator(*nonconsuming);
+        const auto network = generator.generateNative();
+        const auto py = io::PythonExportWriter::write(*nonconsuming, network);
+        CHECK_THAT(py, Catch::Matchers::ContainsSubstring("dydt_dde"));
+        const auto mat = io::MatlabWriter::write(*nonconsuming, network);
+        CHECK_THAT(mat, Catch::Matchers::ContainsSubstring("dde23("));
+    }
+    {
+        auto exprDelay = parser::parseModel(R"(
+begin model
+begin parameters
+  tau 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules Aobs A()
+end observables
+begin reaction rules
+  A() -> 0 1
+  0 -> B() delay(Aobs, tau)
+end reaction rules
+end model
+)");
+        engine::NetworkGenerator generator(*exprDelay);
+        const auto network = generator.generateNative();
+        CHECK_THROWS_WITH(io::PythonExportWriter::write(*exprDelay, network),
+                          Catch::Matchers::ContainsSubstring("delay(x, tau) expressions are not supported"));
+        CHECK_THROWS_WITH(io::MatlabWriter::write(*exprDelay, network),
+                          Catch::Matchers::ContainsSubstring("delay(x, tau) expressions are not supported"));
+    }
 }

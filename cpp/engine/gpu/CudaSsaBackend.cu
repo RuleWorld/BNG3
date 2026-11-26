@@ -170,17 +170,140 @@ struct __align__(8) Pcg32 {
     }
 };
 
+__device__ __forceinline__ float evalObsCuda(
+    unsigned int g,
+    const unsigned int* __restrict__ obsOffsets,
+    const unsigned int* __restrict__ obsSpecies,
+    const float* __restrict__ obsWeights,
+    const int* __restrict__ y
+) {
+    float sum = 0.0f;
+    const unsigned int start = obsOffsets[g];
+    const unsigned int end = obsOffsets[g + 1];
+    for (unsigned int i = start; i < end; ++i) {
+        sum += obsWeights[i] * static_cast<float>(y[obsSpecies[i]]);
+    }
+    return sum;
+}
+
+__device__ float evalVmCuda(
+    unsigned int vmOffset,
+    unsigned int vmLen,
+    const BatchVmInstr* __restrict__ vmCode,
+    const float* obsCache,
+    const unsigned int* __restrict__ obsOffsets,
+    const unsigned int* __restrict__ obsSpecies,
+    const float* __restrict__ obsWeights,
+    const int* __restrict__ y,
+    bool& ok
+) {
+    float stack[32];
+    unsigned int top = 0u;
+    unsigned int pc = 0u;
+    while (pc < vmLen) {
+        const BatchVmInstr ins = vmCode[vmOffset + pc++];
+        const uint8_t op = ins.op;
+        if (op == 0u) {
+            stack[top++] = ins.value;
+        } else if (op == 1u) {
+            stack[top++] = (ins.index < 64u)
+                ? obsCache[ins.index]
+                : evalObsCuda(ins.index, obsOffsets, obsSpecies, obsWeights, y);
+        } else if (op == 2u) {
+            float b = stack[--top]; stack[top - 1u] += b;
+        } else if (op == 3u) {
+            float b = stack[--top]; stack[top - 1u] -= b;
+        } else if (op == 4u) {
+            float b = stack[--top]; stack[top - 1u] *= b;
+        } else if (op == 5u) {
+            float b = stack[--top];
+            if (b == 0.0f) { ok = false; return 0.0f; }
+            stack[top - 1u] /= b;
+        } else if (op == 6u) {
+            float b = stack[--top]; stack[top - 1u] = powf(stack[top - 1u], b);
+        } else if (op == 7u) {
+            stack[top - 1u] = -stack[top - 1u];
+        } else if (op == 8u) {
+            stack[top - 1u] = expf(stack[top - 1u]);
+        } else if (op == 9u) {
+            stack[top - 1u] = logf(stack[top - 1u]);
+        } else if (op == 10u) {
+            stack[top - 1u] = sqrtf(stack[top - 1u]);
+        } else if (op == 11u) {
+            stack[top - 1u] = sinf(stack[top - 1u]);
+        } else if (op == 12u) {
+            stack[top - 1u] = cosf(stack[top - 1u]);
+        } else if (op == 13u) {
+            stack[top - 1u] = tanf(stack[top - 1u]);
+        } else if (op == 14u) {
+            stack[top - 1u] = fabsf(stack[top - 1u]);
+        } else if (op == 15u) {
+            float b = stack[--top]; stack[top - 1u] = fminf(stack[top - 1u], b);
+        } else if (op == 16u) {
+            float b = stack[--top]; stack[top - 1u] = fmaxf(stack[top - 1u], b);
+        } else if (op == 17u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] < b) ? 1.0f : 0.0f;
+        } else if (op == 18u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] <= b) ? 1.0f : 0.0f;
+        } else if (op == 19u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] > b) ? 1.0f : 0.0f;
+        } else if (op == 20u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] >= b) ? 1.0f : 0.0f;
+        } else if (op == 21u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] == b) ? 1.0f : 0.0f;
+        } else if (op == 22u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] != b) ? 1.0f : 0.0f;
+        } else if (op == 23u) {
+            if (stack[--top] == 0.0f) pc = ins.index;
+        } else if (op == 24u) {
+            pc = ins.index;
+        } else if (op == 25u) {
+            stack[top++] = fmaxf(0.0f, static_cast<float>(y[ins.index]) - ins.value);
+        } else {
+            ok = false;
+            return 0.0f;
+        }
+    }
+    if (top != 1u || !isfinite(stack[0]) || stack[0] < 0.0f) {
+        ok = false;
+        return 0.0f;
+    }
+    return stack[0];
+}
+
 __device__ __forceinline__ float computePropensity(
     unsigned int r,
     const float* __restrict__ rateConstants,
+    const uint8_t* __restrict__ reactionFlags,
+    const unsigned int* __restrict__ rxnVmOffsets,
+    const unsigned int* __restrict__ rxnVmLens,
+    const BatchVmInstr* __restrict__ vmCode,
+    const float* obsCache,
+    const unsigned int* __restrict__ obsOffsets,
+    const unsigned int* __restrict__ obsSpecies,
+    const float* __restrict__ obsWeights,
     const unsigned int* __restrict__ reactantOffsets,
     const unsigned int* __restrict__ reactantSpecies,
     const float* __restrict__ reactantStoichOffsets,
-    const int* __restrict__ y
+    const int* __restrict__ y,
+    bool& ok
 ) {
+    const uint8_t flags = reactionFlags[r];
     float prop = rateConstants[r];
+    if ((flags & 2u) != 0u) {
+        prop = evalVmCuda(rxnVmOffsets[r], rxnVmLens[r], vmCode, obsCache,
+                          obsOffsets, obsSpecies, obsWeights, y, ok);
+        if (!ok) return 0.0f;
+    }
     const unsigned int rStart = reactantOffsets[r];
     const unsigned int rEnd = reactantOffsets[r + 1];
+    if ((flags & 1u) != 0u) {
+        for (unsigned int i = rStart; i < rEnd; ++i) {
+            const int pop = y[reactantSpecies[i]];
+            if (static_cast<float>(pop) <= reactantStoichOffsets[i]) return 0.0f;
+        }
+        return prop;
+    }
     for (unsigned int i = rStart; i < rEnd; ++i) {
         const int pop = y[reactantSpecies[i]];
         const float offset = reactantStoichOffsets[i];
@@ -214,13 +337,7 @@ __device__ void recordObservables(
         (static_cast<size_t>(trajId) * params.numOutputPoints + timeIdx) *
             params.numObservables;
     for (unsigned int g = 0; g < params.numObservables; ++g) {
-        float sum = 0.0f;
-        const unsigned int start = obsOffsets[g];
-        const unsigned int end = obsOffsets[g + 1];
-        for (unsigned int i = start; i < end; ++i) {
-            sum += obsWeights[i] * static_cast<float>(y[obsSpecies[i]]);
-        }
-        obsOut[g] = sum;
+        obsOut[g] = evalObsCuda(g, obsOffsets, obsSpecies, obsWeights, y);
     }
 }
 
@@ -242,7 +359,12 @@ __global__ void cuda_batch_direct_ssa(
     int* __restrict__ trajectoryStates,
     float* __restrict__ trajectoryObservables,
     unsigned int* __restrict__ trajectoryEventCounts,
-    int* __restrict__ trajectorySpecies
+    int* __restrict__ trajectorySpecies,
+    const uint8_t* __restrict__ reactionFlags,
+    const unsigned int* __restrict__ rxnVmOffsets,
+    const unsigned int* __restrict__ rxnVmLens,
+    const BatchVmInstr* __restrict__ vmCode,
+    unsigned int* __restrict__ errorFlags
 ) {
     const unsigned int trajId = blockIdx.x * blockDim.x + threadIdx.x;
     if (trajId >= params.batchSize) return;
@@ -251,6 +373,8 @@ __global__ void cuda_batch_direct_ssa(
     for (unsigned int s = 0; s < params.numSpecies; ++s) {
         y[s] = initialSpecies[s];
     }
+
+    float obsCache[64];
 
     Pcg32 rng;
     rng.init(123456789ULL + params.baseSeed, static_cast<unsigned long long>(trajId));
@@ -280,12 +404,27 @@ __global__ void cuda_batch_direct_ssa(
             break;
         }
 
+        if (params.hasFunctional != 0u) {
+            const unsigned int limit = (params.numObservables < 64u) ? params.numObservables : 64u;
+            for (unsigned int g = 0; g < limit; ++g) {
+                obsCache[g] = evalObsCuda(g, obsOffsets, obsSpecies, obsWeights, y);
+            }
+        }
+
         // Pass 1: compute total propensity
+        bool ok = true;
         float totalPropensity = 0.0f;
         for (unsigned int r = 0; r < params.numReactions; ++r) {
-            totalPropensity += computePropensity(r, rateConstants,
+            totalPropensity += computePropensity(r, rateConstants, reactionFlags,
+                                                 rxnVmOffsets, rxnVmLens, vmCode, obsCache,
+                                                 obsOffsets, obsSpecies, obsWeights,
                                                  reactantOffsets, reactantSpecies,
-                                                 reactantStoichOffsets, y);
+                                                 reactantStoichOffsets, y, ok);
+            if (!ok) {
+                errorFlags[trajId] = 1u;
+                trajectoryEventCounts[trajId] = ssaStepCount;
+                return;
+            }
         }
 
         if (totalPropensity <= 0.0f) {
@@ -317,8 +456,16 @@ __global__ void cuda_batch_direct_ssa(
         float cum = 0.0f;
         unsigned int selected = params.numReactions - 1;
         for (unsigned int r = 0; r < params.numReactions; ++r) {
-            cum += computePropensity(r, rateConstants, reactantOffsets,
-                                     reactantSpecies, reactantStoichOffsets, y);
+            cum += computePropensity(r, rateConstants, reactionFlags,
+                                     rxnVmOffsets, rxnVmLens, vmCode, obsCache,
+                                     obsOffsets, obsSpecies, obsWeights,
+                                     reactantOffsets, reactantSpecies,
+                                     reactantStoichOffsets, y, ok);
+            if (!ok) {
+                errorFlags[trajId] = 1u;
+                trajectoryEventCounts[trajId] = ssaStepCount;
+                return;
+            }
             if (cum >= target) {
                 selected = r;
                 break;
@@ -431,6 +578,8 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     params.tStart = static_cast<float>(options.tStart);
     params.tEnd = static_cast<float>(options.tEnd);
     params.baseSeed = options.baseSeed;
+    params.hasFunctional = net.hasFunctional ? 1u : 0u;
+    params.pad0 = 0u;
 
     const std::size_t stateBytes = checkedCudaBytes(batchSize, numSpecies * sizeof(int32_t));
     const std::size_t obsBytes = checkedCudaBytes(
@@ -438,10 +587,28 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     const std::size_t speciesBytes = checkedCudaBytes(
         checkedCudaBytes(batchSize, numPoints), numSpecies * sizeof(int32_t));
     const std::size_t eventBytes = batchSize * sizeof(uint32_t);
+    const std::size_t errorBytes = batchSize * sizeof(uint32_t);
     const std::size_t timesBytes = numPoints * sizeof(float);
+
+    std::vector<uint8_t> rxnFlags = net.reactionFlags;
+    if (rxnFlags.size() < net.numReactions) {
+        rxnFlags.resize(net.numReactions, 0u);
+    }
+    std::vector<uint32_t> vmOffsets = net.rxnVmOffsets;
+    if (vmOffsets.size() < net.numReactions) {
+        vmOffsets.resize(net.numReactions, 0u);
+    }
+    std::vector<uint32_t> vmLens = net.rxnVmLens;
+    if (vmLens.size() < net.numReactions) {
+        vmLens.resize(net.numReactions, 0u);
+    }
 
     const auto tStartPrep = std::chrono::high_resolution_clock::now();
     CudaBuffer dRateConstants(net.rateConstants.size() * sizeof(float));
+    CudaBuffer dReactionFlags(rxnFlags.size() * sizeof(uint8_t));
+    CudaBuffer dRxnVmOffsets(vmOffsets.size() * sizeof(uint32_t));
+    CudaBuffer dRxnVmLens(vmLens.size() * sizeof(uint32_t));
+    CudaBuffer dVmCode(net.vmCode.size() * sizeof(BatchVmInstr));
     CudaBuffer dReactantOffsets(net.reactantOffsets.size() * sizeof(uint32_t));
     CudaBuffer dReactantSpecies(net.reactantSpecies.size() * sizeof(uint32_t));
     CudaBuffer dReactantStoichOffsets(net.reactantStoichOffsets.size() * sizeof(float));
@@ -458,22 +625,29 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     CudaBuffer dObservables(obsBytes);
     CudaBuffer dEventCounts(eventBytes);
     CudaBuffer dSpeciesHistory(speciesBytes);
+    CudaBuffer dErrorFlags(errorBytes);
     const auto tEndPrep = std::chrono::high_resolution_clock::now();
     metrics.modelPrepTimeMs =
         std::chrono::duration<double, std::milli>(tEndPrep - tStartPrep).count();
 
-    const std::size_t staticBytes = dRateConstants.bytes() + dReactantOffsets.bytes() +
+    const std::size_t staticBytes = dRateConstants.bytes() + dReactionFlags.bytes() +
+        dRxnVmOffsets.bytes() + dRxnVmLens.bytes() + dVmCode.bytes() +
+        dReactantOffsets.bytes() +
         dReactantSpecies.bytes() + dReactantStoichOffsets.bytes() +
         dReactChangeOffsets.bytes() + dReactChangeSpecies.bytes() +
         dProdChangeOffsets.bytes() + dProdChangeSpecies.bytes() + dObsOffsets.bytes() +
         dObsSpecies.bytes() + dObsWeights.bytes() + dInitialSpecies.bytes();
     metrics.memoryUsageBytes =
         staticBytes + dOutputTimes.bytes() + dStates.bytes() + dObservables.bytes() +
-        dSpeciesHistory.bytes() + dEventCounts.bytes();
+        dSpeciesHistory.bytes() + dEventCounts.bytes() + dErrorFlags.bytes();
 
     // Host -> Device
     const auto tStartH2D = std::chrono::high_resolution_clock::now();
     dRateConstants.upload(net.rateConstants.data(), net.rateConstants.size() * sizeof(float));
+    dReactionFlags.upload(rxnFlags.data(), rxnFlags.size() * sizeof(uint8_t));
+    dRxnVmOffsets.upload(vmOffsets.data(), vmOffsets.size() * sizeof(uint32_t));
+    dRxnVmLens.upload(vmLens.data(), vmLens.size() * sizeof(uint32_t));
+    dVmCode.upload(net.vmCode.data(), net.vmCode.size() * sizeof(BatchVmInstr));
     dReactantOffsets.upload(net.reactantOffsets.data(), net.reactantOffsets.size() * sizeof(uint32_t));
     dReactantSpecies.upload(net.reactantSpecies.data(), net.reactantSpecies.size() * sizeof(uint32_t));
     dReactantStoichOffsets.upload(net.reactantStoichOffsets.data(), net.reactantStoichOffsets.size() * sizeof(float));
@@ -486,6 +660,7 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     dObsWeights.upload(net.obsWeights.data(), net.obsWeights.size() * sizeof(float));
     dInitialSpecies.upload(net.initialSpecies.data(), net.initialSpecies.size() * sizeof(int32_t));
     dOutputTimes.upload(outputTimes.data(), timesBytes);
+    checkCuda(cudaMemset(dErrorFlags.get(), 0, errorBytes), "cudaMemset errorFlags failed");
     checkCudaLast("device setup failed");
     const auto tEndH2D = std::chrono::high_resolution_clock::now();
     metrics.hostToDeviceTransferMs =
@@ -513,9 +688,23 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
         static_cast<int*>(dStates.get()),
         static_cast<float*>(dObservables.get()),
         static_cast<unsigned int*>(dEventCounts.get()),
-        static_cast<int*>(dSpeciesHistory.get()));
+        static_cast<int*>(dSpeciesHistory.get()),
+        static_cast<const uint8_t*>(dReactionFlags.get()),
+        static_cast<const unsigned int*>(dRxnVmOffsets.get()),
+        static_cast<const unsigned int*>(dRxnVmLens.get()),
+        static_cast<const BatchVmInstr*>(dVmCode.get()),
+        static_cast<unsigned int*>(dErrorFlags.get()));
     checkCudaLast("kernel launch failed");
     checkCuda(cudaDeviceSynchronize(), "kernel execution failed");
+    std::vector<uint32_t> hErrorFlags(batchSize, 0u);
+    dErrorFlags.download(hErrorFlags.data(), errorBytes);
+    for (std::size_t b = 0; b < batchSize; ++b) {
+        if (hErrorFlags[b] != 0u) {
+            throw std::runtime_error(
+                "CUDA backend: invalid/non-finite functional rate in trajectory " +
+                std::to_string(b));
+        }
+    }
     const auto tEndSim = std::chrono::high_resolution_clock::now();
     metrics.simulationTimeMs =
         std::chrono::duration<double, std::milli>(tEndSim - tStartSim).count();

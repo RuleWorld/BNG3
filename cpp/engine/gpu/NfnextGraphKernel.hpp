@@ -95,6 +95,15 @@ struct alignas(4) GpuRuleAction {
 };
 static_assert(sizeof(GpuRuleAction) == 16);
 
+struct alignas(4) GpuRuleFilter {
+    std::uint32_t termOffset{0};
+    std::uint32_t termCount{0};
+    std::uint16_t reactantNode{0};
+    std::uint8_t include{1};
+    std::uint8_t pad{0};
+};
+static_assert(sizeof(GpuRuleFilter) == 12);
+
 struct alignas(4) GpuGraphRule {
     std::uint32_t matchList0{0};
     std::uint32_t matchList1{0xFFFFFFFFu}; // 0xFFFFFFFFu => unimolecular / single-component
@@ -108,9 +117,12 @@ struct alignas(4) GpuGraphRule {
     std::uint8_t isDynamicRate{0};
     std::uint8_t hasLocalObservable{0};
     std::uint32_t createdCount{0};
-    std::uint32_t pad{0};
+    std::uint32_t filterOffset{0};
+    std::uint16_t filterCount{0};
+    std::uint8_t isTotalRate{0};
+    std::uint8_t pad0{0};
 };
-static_assert(sizeof(GpuGraphRule) == 40);
+static_assert(sizeof(GpuGraphRule) == 44);
 
 struct alignas(4) GpuVmInstr {
     std::uint8_t op{0};
@@ -177,6 +189,7 @@ struct NfnextGraphPlan {
     std::vector<GpuMatchListDef> matchLists;
     std::vector<GpuRuleAction> actions;
     std::vector<GpuGraphRule> rules;
+    std::vector<GpuRuleFilter> ruleFilters;
     std::vector<GpuVmInstr> vmCode;
 
     std::vector<GpuObsPatternNode> obsNodes;
