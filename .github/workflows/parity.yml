@@ -681,12 +681,14 @@ jobs:
             echo 'Backlog snapshot unavailable; issue evidence scope is mapped-only.' >> "$GITHUB_STEP_SUMMARY"
           fi
           corpus_tier=s
+          case_timeout=30
           if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
             corpus_tier=p
+            case_timeout=180
           fi
           .venv/bin/python scripts/validate.py --tier smoke \
             "${issue_args[@]}" \
-            --corpus-tier "$corpus_tier" --report-only --simulate --net-reload \
+            --corpus-tier "$corpus_tier" --case-timeout "$case_timeout" --report-only --simulate --net-reload \
             --bng-cpp build/cpp/bng_cpp \
             --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
             --bng2-network-sha256 "$(sha256sum "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/run_network" | cut -d ' ' -f 1)" \
@@ -2524,6 +2526,11 @@ jobs:
             test_batch_runner \
             test_nfsim_ast_adapter \
             test_nfcore2_native_reader \
+            test_psa_simulator \
+            test_ode_function_index \
+            test_expression_evaluator \
+            test_reaction_rule_expansion \
+            test_xml_writer \
             bng_cpp \
             --parallel 2
 
@@ -2534,7 +2541,7 @@ jobs:
           set -euo pipefail
           ctest --test-dir build --output-on-failure \
             --output-junit "$RUNNER_TEMP/reconciliation-ctest.xml" \
-            -R "^(bng_cpp_action_errors|PatternGraph canonicalization defines the empty graph|bng_cpp parallel mode (isolates model outputs|propagates child failures)|NFsim AST adapter maps bare molecule stoichiometric observables|NFsim XML preserves parameter-backed compartment sizes on update|NFsim preserves issue 109 created molecule compartment inheritance|native-port::direct NFsim refreshes a local rate when its global observable changes)$"
+            -R "^(bng_cpp_action_errors|PatternGraph canonicalization defines the empty graph|bng_cpp parallel mode (isolates model outputs|propagates child failures)|NFsim AST adapter maps bare molecule stoichiometric observables|NFsim AST adapter maps time-backed local TFUN rates|NFsim XML preserves parameter-backed compartment sizes on update|NFsim preserves issue 109 created molecule compartment inheritance|native-port::direct NFsim refreshes a local rate when its global observable changes|OdeIntegrator function index observes a function added after construction|RxnList folds byte-identical reactions across rules with summed statistical factor|XmlWriter serializes logical && and \|\| as space-delimited boolean tests for NFsim|if\(\) treats any nonzero numeric condition as true|Negative power operands are parenthesized when serialized|XmlWriter emits NumberPerQuantityUnit attribute on model|PsaSimulator scales zeroth-order reactions by their product populations)$"
           python -m pytest --noconftest -q \
             tests/validation/test_reconciliation_evidence.py::test_packaging_is_a_default_installed_requirement \
             tests/python/test_legacy_console_streams.py \
