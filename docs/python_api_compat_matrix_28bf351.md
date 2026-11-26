@@ -1,5 +1,7 @@
 # PyBioNetGen 28bf351 API/CLI compatibility matrix (BNG3)
 
+> **Historical working snapshot (PR #695, pre-`v3.0.0a1`).** Retained for provenance; subsequent compatibility alignment landed in PR `#1051` and `#1058`. For current user guidance, see [Migration Guide](migration_guide.md) and [Detailed BNG2 & PyBioNetGen Change Reference](bng2_migration_reference.md).
+
 Pinned reference: `RuleWorld/PyBioNetGen` commit `28bf351a9bbfc197e19487c26dedda683716bb64` (`/tmp/pybionetgen-ref`, source-inspected for behavior contracts).
 
 This is a **working behavior-level matrix** for #171/#172 on PR #695 (branch `codex/python-api-compat`, latest pushed head `ab67a05`). It is **not complete** and does not close #171/#172.

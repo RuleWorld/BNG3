@@ -9,26 +9,43 @@ and performs verification at the end of the pass.
 ### Prerequisites
 
 - Python 3.9+
-- CMake 3.14+
+- CMake 3.15+ (and Ninja recommended)
 - C++17 compiler (GCC 12+, Clang 15+, MSVC 2022+)
 - Git
 
 ### Clone and Build
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/RuleWorld/BNG3.git
 cd BNG3
 
 # Build C++ only (fast iteration on C++ code)
-cmake -B build -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CLI=ON -DBUILD_TESTS=ON
-cmake --build build -j$(nproc)
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=OFF -DBUILD_CLI=ON -DBUILD_TESTS=ON
+cmake --build build
 
 # Run C++ tests
 ctest --test-dir build --output-on-failure
 
-# Build Python package (editable install)
-pip install -e . -v
+# Build Python package (contributor editable install)
+python -m pip install -e . -v
 ```
+
+### Documentation Checks
+
+Whenever you edit `README.md` or files under `docs/`, run the documentation acceptance checker before opening a PR:
+
+```bash
+python tests/validation/release/cases/issue-472/docs_checks.py --docs-root .
+```
+
+## Reporting Issues and Disagreements
+
+File bug reports, compatibility discrepancies, and feature requests at [RuleWorld/BNG3/issues](https://github.com/RuleWorld/BNG3/issues). To help maintainers reproduce the problem quickly, include:
+
+1. **Installation identity:** output of `bionetgen info --detail` (or `bionetgen --version`, wheel filename, or exact `git rev-parse HEAD` commit SHA), operating system, CPU/GPU architecture, and Python version.
+2. **Minimal reproducer:** the smallest `.bngl` or `.xml` input plus the exact CLI command or Python snippet that triggers the problem.
+3. **Backend and seed:** the value of `result.backend` (e.g., `native`, `nfnext`, `nfsim`, `bngsim`, `metal`, `cuda`) and any nonzero `seed` used (remember `seed=0` is non-reproducible).
+4. **Expected vs. observed behavior:** for deterministic/network mismatches, attach both outputs or `.net` files; for stochastic/NFsim disagreements across engines, include ensemble sample size, seed range, and summary statistics (see [Network-Free Simulation](network_free_simulation.md#how-to-reproduce-and-report-a-network-free-disagreement)).
 
 ### Running Tests
 

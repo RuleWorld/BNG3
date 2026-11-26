@@ -1,6 +1,31 @@
 # Changelog
 
-## 2026-11-06 — main implementation checkpoint (unreleased)
+## [Unreleased] — post-`v3.0.0a1` `main` (through `90832910`)
+
+### Added
+
+- **Prepublication user documentation:** added workflow-oriented [Capability Guide](docs/capabilities.md), searchable [Detailed BNG2 & PyBioNetGen Change Reference](docs/bng2_migration_reference.md), and standalone [Network-Free Simulation Guide (NFsim & NFnext)](docs/network_free_simulation.md); synchronized `README.md`, `docs/index.md`, `docs/user_guide.md`, `docs/cli_reference.md`, `docs/api_reference.md`, `docs/migration_guide.md`, `docs/architecture.md`, and `docs/contributing.md` with verified `v3.0.0a1` vs. `main` installation and usage contracts.
+- **NFnext GPU graph mode (`#474`):** added `mode="graph"` to `BioNetGenModel.simulate_nfnext_gpu()` for Apple Metal and NVIDIA CUDA covering `TIER_NF` graph SSA (PRs `#1040`, `#1041`, `#1044`).
+- **CLI & action parity:** added `bng_cpp --outdir` / `--output_dir` (PR `#1056`), `NFsim -i` initial start time flag (PR `#1052`), `writeMfile_all` / `writeLaTeXfile` and `prefix`/`suffix` handling across `write*` and `visualize` actions (PR `#1050`), `bifurcate` continuation and per-observable `.scan` output (PR `#1053`), and `readModel` refresh, `setModelName`, `print_net`, `simulate_protocol`, `readNFspecies`, `readSBML`, `LPS`, and `codename` (PR `#1054`).
+
+### Changed
+
+- **Upstream oracle pins refreshed (2026-11-25):** synced with `RuleWorld/bionetgen` through 2.9.5 (`740006ff`, PR `#1046`) and `RuleWorld/NFsim` through `v2.0.1` + `#160` (`d45b7d99`, PR `#1047`); aligned 33 PyBioNetGen API signatures and `assets/VERSION` (`0.8.7`, PRs `#1051`, `#1058`).
+- **Capability matrix:** promoted all 997 rows in `provenance/capability-matrix.yml` to `implemented` following hosted-verified oracle receipts (PRs `#1048`, `#1059`).
+
+## [3.0.0a1] — 2026-11-25 (GitHub Pre-release, commit `8482215c`)
+
+First public alpha pre-release published on [GitHub Releases](https://github.com/RuleWorld/BNG3/releases/tag/v3.0.0a1).
+
+- **Published assets:** 24 CPython 3.9–3.14 wheels (`manylinux_2_28_x86_64`, `macosx_11_0_arm64`, `macosx_11_0_x86_64`, `win_amd64`), source distribution (`bionetgen-3.0.0a1.tar.gz`), and 4 standalone C++ CLI archives (`bng_cpp` + `NFsim` for Linux x86_64, macOS arm64, macOS x86_64, Windows x86_64).
+- **Distribution note:** PyPI upload did not complete in Release run `45662137697` (`invalid-publisher` Trusted Publisher configuration error), so `pip install bionetgen` on PyPI currently installs legacy PyBioNetGen `0.8.7`. Install `v3.0.0a1` from GitHub Releases or from source.
+- **Included highlights:** in-process C++17 ANTLR4 parser, semantic compiler, single bundled `nauty` graph layer, native CVODE/SSA/PLA/PSA finite solvers, CPU/Metal/CUDA batched direct SSA, NFnext promoted as the Python `method="nf"` default with embedded NFcore selectable via `method="nfcore"`, hybrid particle–population execution, modern SBML L3 Core/comp/Multi Atomizer, CRN JSON export, BNGIR v0.2 default with exact `semantic_equal`, runtime model topology edits, 1D/2D scans, local sensitivities, and 12-subcommand Click CLI.
+
+---
+
+## Historical pre-release development checkpoints
+
+### 2026-11-06 — main implementation checkpoint (unreleased)
 
 ### Changed
 

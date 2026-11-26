@@ -1,212 +1,201 @@
 # BioNetGen 3
 
-**Release scope and final decisions:** [Capability inventory](docs/CAPABILITY_UNION_INVENTORY.md) · [Machine-readable capability matrix](provenance/capability-matrix.yml) · [Maintainer decisions](docs/DECISIONS.md) · [Current issue status and evidence](docs/CURRENT_PROGRESS.md). Every inventory row is a first-release requirement; qualification remains incomplete until its independent acceptance evidence is recorded.
+[![CI](https://github.com/RuleWorld/BNG3/actions/workflows/ci.yml/badge.svg)](https://github.com/RuleWorld/BNG3/actions/workflows/ci.yml)
+[![Cross-tool parity](https://github.com/RuleWorld/BNG3/actions/workflows/parity.yml/badge.svg)](https://github.com/RuleWorld/BNG3/actions/workflows/parity.yml)
+[![Pre-release](https://img.shields.io/github/v/release/RuleWorld/BNG3?include_prereleases&label=pre-release)](https://github.com/RuleWorld/BNG3/releases/tag/v3.0.0a1)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-BioNetGen 3 is a Python-first, in-process rule-based modeling platform for biochemical reaction systems. It parses BNGL directly in C++, simulates with the bundled backend, and exposes models, results, scans, and exports as ordinary Python objects.
+**BioNetGen 3 (BNG3)** is a unified, Python-first C++ platform for rule-based modeling and simulation of biochemical reaction systems. It is built for systems biologists, computational modelers, and tool developers who write models in the BioNetGen Language (BNGL) or import kinetic models from SBML and want in-process network generation, ODE/SSA/PLA/PSA simulation, network-free simulation, parameter scans, sensitivity analysis, and model export without requiring Perl.
 
-The repository is under active convergence work. The live implementation and
-verification state is recorded in [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md);
-the capability inventory defines release scope, final decisions are recorded in `docs/DECISIONS.md`, and the issue acceptance criteria plus exact-main evidence determine completion. See [the documentation index](docs/index.md).
+> **Maturity & distribution status:** The latest published release is the **`v3.0.0a1` alpha pre-release** on [GitHub Releases](https://github.com/RuleWorld/BNG3/releases/tag/v3.0.0a1) (commit `8482215c`). BNG3 is **not yet published on PyPI**: running `pip install bionetgen` today resolves to legacy PyBioNetGen `0.8.7`. See [Installation](#installation) below for verified BNG3 install commands.
 
-## What Is Novel In BNG3
+## How BNG3 Relates to BNG2, PyBioNetGen, and NFsim
 
-BNG3 is a redesign of the BioNetGen user and execution layers around a
-Python-first, in-process architecture. It is more than a new command name:
-the semantic model, graph algorithms, network-free engine, numerical solvers,
-analysis APIs, and interoperability layers are being separated into explicit
-components with typed contracts between them. BNG2 remains an important
-compatibility and semantic reference while BNG3 converges on this architecture.
+BioNetGen 3 consolidates three historically separate RuleWorld projects into one C++/Python codebase ([maintainer decisions](docs/DECISIONS.md)):
 
-| Concern | BNG2 / legacy workflow | BNG3 direction |
-| --- | --- | --- |
-| User interface | Perl actions, generated files, and PyBioNetGen subprocess orchestration | Python objects, a synchronous API, and a unified CLI |
-| Model representation | Parser and action state coupled to legacy execution paths | C++ AST plus a reusable semantic compile stage with typed symbols and diagnostics |
-| Network simulation | External or file-oriented solver workflows | In-process C++ network generation, ODE, SSA, and result objects backed by NumPy |
-| Network-free simulation | NFSim integration commonly treated as a separate executable path | Direct NFcore construction from the canonical AST, with explicit compatibility fallbacks and fail-closed unsupported cases |
-| Rule matching and graphs | Mature legacy graph machinery exposed through older seams | Shared BNGcore graph operations and explicit pattern-lowering boundaries for each backend |
-| Analysis | Manual output-file parsing and repeated command invocation | First-class scans, sensitivities, observable access, data frames, and graph exports |
-| Interoperability | XML and action-based bridges | Versioned BNGIR, typed import/export boundaries, and structured SBML Multi metadata |
-| Validation | Distributed regression scripts and implicit assumptions | Architecture contracts, provenance manifests, parity gates, and an auditable convergence checklist |
+- **BNG2 (`RuleWorld/bionetgen`):** The classic Perl + `run_network` BioNetGen implementation. BNG3 replaces the Perl parser, network generator, and action dispatcher with an in-process C++17 engine while validating network and action semantics against pinned BNG2.
+- **PyBioNetGen (`RuleWorld/PyBioNetGen`):** The legacy Python wrapper around BNG2 (`bionetgen<3` on PyPI). BNG3 adopts the same `bionetgen` package name at version `3.x`, replaces subprocess orchestration with a native Python API (`bionetgen.load()`, `model.simulate()`, NumPy-backed `SimResult`), and retains scoped compatibility entry points for migration.
+- **NFsim (`RuleWorld/NFsim`):** The rule-based network-free stochastic simulator. BNG3 ships both the embedded NFcore engine (plus a standalone `NFsim` binary in CLI archives) and the next-generation **NFnext** engine compiled directly from BNG3's semantic model.
 
-The implementation is intentionally staged. The new architecture does not
-claim that every BNG2 feature has parity yet; unsupported or unproven paths
-are reported explicitly rather than silently changing model semantics. See
-[`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md) for the live evidence
-and [`docs/migration_guide.md`](docs/migration_guide.md) for API changes.
+## Installation
 
-## The Individual BNG3 Parts
+Choose the route that matches your workflow. Python `3.9`–`3.14` is supported for pre-built wheels; the default installation requires no Perl and no compiler.
 
-- **Python API and CLI** — `bionetgen.load()`, model/result objects, scans,
-  sensitivities, visualization, and command-line workflows provide the primary
-  user surface.
-- **Parser and semantic compiler** — the C++ BNGL parser produces the AST;
-  symbol resolution, typed expressions, capabilities, and pattern descriptors
-  form the reusable semantic boundary between source text and execution.
-- **BNGcore graph layer** — canonicalization, graph matching, pattern
-  lowering, and graph exports are shared by network and network-free paths.
-- **Network engine** — native reaction-network generation, ODE, SSA, CVODE,
-  isolated batch execution, and file/API exporters are available through the
-  in-process C++ backend.
-- **NFcore / NFsim path** — the direct network-free adapter maps canonical
-  model constructs into NFcore, including molecule mappings, observables,
-  functions, energy metadata, and rule execution semantics.
-- **NFnext** — the next-generation surface defines NFIR, rule families,
-  dependency scheduling, generic matching, transformations, validation,
-  caching, replay, and batched trajectories as independently testable seams.
-  `BioNetGenModel.simulate_nfnext_gpu()` exposes an explicit, fail-closed
-  Metal batch for one ordinary molecule type with one stateful site and static
-  elementary state-change rules. It does not imply general NFnext GPU support;
-  `bionetgen.gpu_backend_capabilities()` reports the compiled routes and
-  physical-device availability.
-- **Atomizer and SBML Multi** — SBML import and structured Multi metadata are
-  handled in the modern Python atomizer, with unsupported or ambiguous forms
-  kept explicit until independent execution evidence exists.
-- **Analysis and visualization** — results expose NumPy/data-frame access,
-  parameter scans, local sensitivities, contact/regulatory/rule-influence
-  graphs, and notebook-friendly representations.
-- **Compatibility and provenance** — legacy APIs and XML routes remain as
-  scoped transition aids, while schemas, architecture-contract manifests,
-  validation inventories, and documentation record what is implemented,
-  qualified, or still future work.
+### 1. Pre-built Python wheel (`v3.0.0a1` pre-release — recommended)
 
-The architecture and data flow are described in
-[`docs/architecture.md`](docs/architecture.md). The release boundary is
-tracked separately in
-[`docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md`](docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md).
+Download or install the matching wheel directly from the [`v3.0.0a1` GitHub Release](https://github.com/RuleWorld/BNG3/releases/tag/v3.0.0a1). Pre-built wheels are published for CPython **3.9, 3.10, 3.11, 3.12, 3.13, and 3.14** on:
 
-## Install
+| Platform | Wheel tag |
+| --- | --- |
+| Linux (x86_64, glibc >= 2.28) | `manylinux_2_27_x86_64.manylinux_2_28_x86_64` |
+| macOS Apple Silicon (11.0+) | `macosx_11_0_arm64` |
+| macOS Intel (11.0+) | `macosx_11_0_x86_64` |
+| Windows (64-bit) | `win_amd64` |
 
-This checkout is the BNG3 alpha. Install a BNG3 pre-release wheel, or run
-`python -m pip install .` from a BNG3 checkout. The stable package name
-after the release transition is `bionetgen`. Use `bionetgen<3` to stay on
-PyBioNetGen during the transition. The default BNG3 workflow requires no Perl.
-See the [migration guide](docs/migration_guide.md#install-and-choose-a-backend)
-for backend selection and optional dependencies.
+*(Linux `aarch64`, `musllinux`, and 32-bit platforms do not have pre-built `v3.0.0a1` wheels; use the source install below.)*
+
+Example for Python 3.12 on Linux x86_64 (replace `cp312-cp312` and the platform tag to match your interpreter):
+
+```bash
+python -m pip install \
+  https://github.com/RuleWorld/BNG3/releases/download/v3.0.0a1/bionetgen-3.0.0a1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+bionetgen --version
+```
+
+Example for Python 3.12 on macOS Apple Silicon:
+
+```bash
+python -m pip install \
+  https://github.com/RuleWorld/BNG3/releases/download/v3.0.0a1/bionetgen-3.0.0a1-cp312-cp312-macosx_11_0_arm64.whl
+bionetgen --version
+```
+
+> **Staying on PyBioNetGen vs. PyPI availability:** `pip install bionetgen` from PyPI currently installs legacy PyBioNetGen `0.8.7` (not BNG3). Pin `bionetgen<3` to stay on PyBioNetGen explicitly. Once BNG3 wheels are published to PyPI, pre-releases will be installable via `pip install --pre "bionetgen>=3.0.0a1"`.
+
+**Optional extras** (append `[extra]` when installing from a local wheel path or source checkout, e.g. `pip install "bionetgen[plotting] @ <wheel-url>"`):
+
+- `plotting` — `pandas` and `matplotlib` for `result.to_dataframe()`, `result.plot()`, and `bionetgen plot`
+- `notebook` — `ipykernel` and `matplotlib` for running templates created by `bionetgen notebook`
+- `jax` — `jax` and `jaxlib` for optional JAX CPU ODE/SSA backends
+- `full` — adds `python-libsbml`, `sympy`, `networkx`, `seaborn`, `pyyaml`, `lxml`, `xmltodict`, and legacy CLI/Atomizer dependencies for SBML import (`from_sbml` / `bionetgen atomize`) and SymPy ODE export
+- `legacy` — `cement`, `colorlog`, `pyparsing`, `pylru` for legacy PyBioNetGen compatibility modules
+
+### 2. Standalone C++ CLI binaries (`v3.0.0a1` — no Python required)
+
+Pre-built archives containing `bng_cpp` and `NFsim` are attached to the [`v3.0.0a1` GitHub Release](https://github.com/RuleWorld/BNG3/releases/tag/v3.0.0a1) for `linux-x86_64`, `macos-arm64`, `macos-x86_64`, and `windows-x86_64`:
+
+```bash
+curl -LO https://github.com/RuleWorld/BNG3/releases/download/v3.0.0a1/bionetgen-macos-arm64.tar.gz
+tar xzf bionetgen-macos-arm64.tar.gz
+./bionetgen-macos-arm64/bng_cpp --check binding.bngl
+```
+
+### 3. From source (`main` — includes post-`v3.0.0a1` changes)
+
+Requires Python 3.9+, Git, CMake >= 3.15, and a C++17 compiler (GCC 12+, Clang 15+, or MSVC 2022+).
+
+```bash
+git clone https://github.com/RuleWorld/BNG3.git
+cd BNG3
+python -m pip install .
+```
+
+For contributors developing BNG3 locally (editable install and standalone C++ tests), see [docs/contributing.md](docs/contributing.md).
 
 ## Quickstart
 
+Save this self-contained reversible binding model as `binding.bngl` in any working directory (no source checkout required):
+
+```bngl
+begin model
+begin parameters
+  k_on  0.01
+  k_off 0.1
+end parameters
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  A(b) 100
+  B(a) 100
+end seed species
+begin observables
+  Molecules AB     A(b!1).B(a!1)
+  Molecules A_free A(b)
+end observables
+begin reaction rules
+  bind: A(b) + B(a) <-> A(b!1).B(a!1) k_on, k_off
+end reaction rules
+end model
+```
+
+### CLI
+
+```bash
+bionetgen check binding.bngl
+bionetgen run binding.bngl --method ode --t-end 10 --n-steps 20 --output binding.tsv
+```
+
+Expected output from `bionetgen check binding.bngl`:
+
+```text
+OK: .../binding.bngl
+  Parameters:      2
+  Molecule types:  2
+  Seed species:    2
+  Reaction rules:  1
+  Observables:     2
+  Actions:         0
+```
+
+`binding.tsv` contains 21 tab-separated rows (`time`, `AB`, `A_free`) starting at `AB = 0, A_free = 100` and approaching equilibrium (`AB ≈ 72.93, A_free ≈ 27.07` at `t = 10`).
+
+### Python API
+
 ```python
 import bionetgen
 
-model = bionetgen.load("models/simple_system.bngl")
-result = model.simulate(method="ode", t_end=100)
-result.plot()
+model = bionetgen.load("binding.bngl")
+result = model.simulate(method="ode", t_end=10.0, n_steps=20)
+
+print(f"backend={result.backend}, points={len(result.time)}")
+print(f"AB(0)={result.observables['AB'][0]:.2f}, AB(10)={result.observables['AB'][-1]:.2f}")
 ```
 
-## Highlights
+Expected output:
 
-- C++ backend for parsing, network generation, ODE simulation, SSA, NFSim, PLA, and PSA.
-- Parameter scanning in 1D and 2D, with serial or isolated parallel execution.
-- Local sensitivity analysis with finite differences.
-- Jupyter-friendly HTML reprs for models, simulation results, and scan results.
-- SBML import through the atomizer bridge.
-- Programmatic model construction without hand-writing BNGL.
-- Direct export to BNGL, XML, SBML, MATLAB, LaTeX, and graph visualizations.
+```text
+backend=native, points=21
+AB(0)=0.00, AB(10)=72.93
+```
 
-## Migration From PyBioNetGen
+With the `plotting` extra installed, call `result.plot()` or `result.to_dataframe()`. To run the same model network-free with NFnext, pass `method="nf", seed=42`.
 
-If you are upgrading from PyBioNetGen or BNG2, start with [docs/migration_guide.md](docs/migration_guide.md).
+## Documentation
 
-Key differences:
-
-- `bionetgen.load()` replaces `bngmodel()`.
-- `model.simulate()` replaces subprocess-based `bionetgen.run()` workflows.
-- Results are NumPy-backed objects instead of `.gdat` files.
-- Parameter scans and sensitivity analysis are first-class APIs.
-- Perl, cement, distutils, pyparsing, and pylru are no longer required for the default path.
-
-## Performance
-
-Benchmark data is generated by `benchmarks/run_benchmarks.py` and archived by nightly CI.
-
-| Model | C++ Parse | C++ Generate | C++ Simulate | Perl Total | 100-pt Scan |
-| --- | --- | --- | --- | --- | --- |
-| simple_system | see benchmark artifact | see benchmark artifact | see benchmark artifact | see benchmark artifact | see benchmark artifact |
-| egfr_net | see benchmark artifact | see benchmark artifact | see benchmark artifact | see benchmark artifact | see benchmark artifact |
-| fceri_ji | see benchmark artifact | see benchmark artifact | see benchmark artifact | see benchmark artifact | see benchmark artifact |
-
-## API Overview
-
-The primary object is `model`.
-
-| Method | Purpose |
+| Topic | Document |
 | --- | --- |
-| `model.simulate(...)` | Run ODE, SSA, NFSim, PLA, or PSA simulation |
-| `model.generate_network(...)` | Expand the rule set into a reaction network |
-| `model.parameter_scan(...)` | Scan one parameter across a value range |
-| `model.parameter_scan_2d(...)` | Scan two parameters on a grid |
-| `model.sensitivity_analysis(...)` | Compute normalized local sensitivities |
-| `model.contact_map(...)` | Export a contact map graph |
-| `model.regulatory_graph(...)` | Export a regulatory graph |
-| `model.rule_influence_graph(...)` | Export a rule influence graph |
-| `model.reaction_network_graph(...)` | Export a reaction network graph |
-| `model.ruleviz_pattern(...)` | Export a rule pattern graph |
-| `model.ruleviz_operation(...)` | Export a rule operation graph |
-| `model.process_graph(...)` | Export a process graph |
-| `model.sbml_multi(...)` | Export SBML Multi |
-| `model.write_xml(...)` | Export BioNetGen XML |
-| `model.write_bngl(...)` | Export BNGL text |
-| `model.write_sbml(...)` | Export SBML from the generated network |
-| `model.write_matlab(...)` | Export MATLAB code |
-| `model.write_latex(...)` | Export LaTeX output |
+| Full documentation hub | [Documentation Index](docs/index.md) |
+| Step-by-step tutorials | [User Guide](docs/user_guide.md) |
+| What BNG3 supports & boundaries | [Capability Guide](docs/capabilities.md) |
+| Moving from BNG2 or PyBioNetGen | [Migration Guide](docs/migration_guide.md) · [Detailed Change Reference](docs/bng2_migration_reference.md) |
+| Choosing NFsim vs. NFnext | [Network-Free Simulation Guide](docs/network_free_simulation.md) |
+| Command-line interface | [CLI Reference](docs/cli_reference.md) |
+| Python classes & functions | [Python API Reference](docs/api_reference.md) |
+| SBML import boundaries | [SBML Atomizer Limitations](docs/ATOMIZER_LIMITATIONS.md) |
+| Architecture & contributors | [Architecture](docs/architecture.md) · [Contributing](docs/contributing.md) |
 
-Top-level helpers:
+## What BNG3 Includes
 
-```python
-import bionetgen
+- **BNGL parser and semantic compiler (`cpp/parser`, `cpp/compile`):** ANTLR4 C++ parser, symbol resolution, typed rate laws, rule modifiers, physical units ([docs/BNG3_UNITS.md](docs/BNG3_UNITS.md)), and fail-closed capability checks.
+- **Finite-network engine (`cpp/engine`):** In-process C++ network generation (`bng_core` + single bundled `nauty`), SUNDIALS CVODE ODE solver, Gillespie SSA (single-trajectory and CPU/GPU batched ensembles), PLA, PSA, optional BNGsim adapter, and optional JAX CPU backends.
+- **Network-free engines (`cpp/nfnext`, `cpp/nfsim`):** NFnext (default for Python `method="nf"`) compiled directly from `CompiledModel → NFIR`, plus embedded NFcore (`method="nfcore"` and BNGL `simulate_nf` actions). `BioNetGenModel.simulate_nfnext_gpu()` exposes an explicit, fail-closed GPU batch route (single-site unary state-change mode in `v3.0.0a1`; extended with `mode="graph"` on `main` for `TIER_NF`). It does not imply general NFnext GPU support across every BNGL construct; `bionetgen.gpu_backend_capabilities()` reports compiled routes and physical-device availability.
+- **Analysis, visualization, and interchange:** 1D/2D parameter scans, local sensitivity analysis, programmatic `ModelBuilder` and runtime model topology edits, CRN JSON export (`to_crn()`), deterministic BNGIR v0.2 (`to_bngir()` / `semantic_equal()`), modern SBML Atomizer (`from_sbml()`), and exports to BNGL, `.net`, BNG-XML, SBML, SBML Multi, MATLAB, LaTeX, and GraphML.
 
-model = bionetgen.load("models/simple_system.bngl")
-scan = bionetgen.parameter_scan(model, parameter="k", min=0.01, max=10, n_points=20)
-model2 = bionetgen.from_sbml("tests/python/test/test_sbml.xml")
-builder = bionetgen.ModelBuilder("MyModel")
-```
+## Validation, Benchmarks, and Maintainer Records
 
-## CLI
+- **Scope & release policy:** [Capability Union Inventory (997 rows)](docs/CAPABILITY_UNION_INVENTORY.md) · [Machine-Readable Capability Matrix](provenance/capability-matrix.yml) · [Maintainer Decisions](docs/DECISIONS.md)
+- **Live evidence & harness:** [Current Progress](docs/CURRENT_PROGRESS.md) · [CI Parity Gates](docs/CI_PARITY.md) · [Validation Harness](tests/validation/README.md) · [Convergence Checklist](docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md)
+- **Benchmarks:** See [benchmarks/README.md](benchmarks/README.md) for CPU parse, network-generation, ODE, SSA, and Atomizer benchmark scripts and methodology, and [docs/GPU_BATCH_SSA_EVALUATION.md](docs/GPU_BATCH_SSA_EVALUATION.md) for hardware-attributed Metal GPU vs. CPU batched-SSA tables (e.g., `egfr_net` 10,000-trajectory batch on Apple M5 Pro Metal GPU vs. 15-core CPU).
+- **Historical reports:** Archived under [docs/archive/reports/](docs/archive/reports/).
 
-```bash
-bionetgen run MODEL.bngl --method ode --t-end 100
-bionetgen scan MODEL.bngl --parameter k_on --min 0.01 --max 100 --n-points 50
-bionetgen sensitivity MODEL.bngl --parameter k_on --observable AB
-bionetgen visualize MODEL.bngl --type contact_map -o output.graphml
-bionetgen check MODEL.bngl
-bionetgen export MODEL.bngl --format sbml --output model.xml
-```
+## Reporting Problems
 
-See [docs/cli_reference.md](docs/cli_reference.md) for the full command reference.
-
-## Build From Source
-
-```bash
-git clone <repo-url>
-cd BNG3
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-pip install -e .
-```
-
-If you only want the Python package, `pip install -e .` is usually enough; the build system compiles the extension as needed.
-
-## Validation
-
-The full local validation command compares network fixtures with committed
-independent BNG2 references and runs explicit action-output contracts. It must
-finish with 71 passed and zero failures, errors, or skips:
-
-```bash
-python scripts/validate.py --bng-cpp build/cpp/bng_cpp --strict-references \
-  --validation-manifest tests/validation/validation_manifest.json
-```
-
-See [`tests/validation/README.md`](tests/validation/README.md) for the oracle
-boundaries and [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md) for
-current evidence. For what the SBML atomizer does *not* support, and why,
-see [`docs/ATOMIZER_LIMITATIONS.md`](docs/ATOMIZER_LIMITATIONS.md). Historical migration reports are organized under
-[`docs/archive/reports/`](docs/archive/reports/).
+Open an issue at [RuleWorld/BNG3/issues](https://github.com/RuleWorld/BNG3/issues). Include the output of `bionetgen info --detail` (or `bionetgen --version` and your commit/wheel filename), platform and Python version, a minimal `.bngl` or `.xml` reproducer, any random seed and backend selector used, and expected vs. observed output. See [docs/contributing.md#reporting-issues-and-disagreements](docs/contributing.md#reporting-issues-and-disagreements).
 
 ## Citation
 
-Please cite BioNetGen when using the platform in publications. See [docs/index.md](docs/index.md) and the project website for current citation information.
+If you use BioNetGen 3 in published work, please cite the foundational BioNetGen publications (and NFsim or Atomizer when using those capabilities):
+
+- **BioNetGen 2.2:** Harris, L. A., Hogg, J. S., Tapia, J., Sekar, J. A. P., Gupta, S., Korsunsky, I., Arora, A., Barua, D., Sheehan, R. P., & Faeder, J. R. (2016). BioNetGen 2.2: advances in rule-based modeling. *Bioinformatics*, 32(21), 3366–3368. <https://doi.org/10.1093/bioinformatics/btw469>
+- **BioNetGen methodology:** Faeder, J. R., Blinov, M. L., & Hlavacek, W. S. (2009). Rule-based modeling of biochemical systems with BioNetGen. *Methods in Molecular Biology*, 500, 113–167. <https://doi.org/10.1007/978-1-59745-525-1_5>
+- **Original BioNetGen:** Blinov, M. L., Faeder, J. R., Goldstein, B., & Hlavacek, W. S. (2004). BioNetGen: software for rule-based modeling of signal transduction based on the interactions of molecular domains. *Bioinformatics*, 20(17), 3289–3291. <https://doi.org/10.1093/bioinformatics/bth378>
+- **NFsim (network-free simulation):** Sneddon, M. W., Faeder, J. R., & Emonet, T. (2011). Efficient modeling, simulation and coarse-graining of biological complexity with NFsim. *Nature Methods*, 8(2), 177–183. <https://doi.org/10.1038/nmeth.1546>
+- **Atomizer (SBML to BNGL):** Tapia, J.-J., & Faeder, J. R. (2013). The Atomizer: extracting implicit molecular structure from reaction network models. *Proceedings of ACM BCB '13*, 1–10. <https://doi.org/10.1145/2506583.2506688>
+
+Also cite the specific BioNetGen 3 software release tag or commit SHA used (for example, `RuleWorld/BNG3 v3.0.0a1`).
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT License. See [LICENSE](LICENSE).

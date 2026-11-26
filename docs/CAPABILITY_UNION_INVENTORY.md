@@ -1,5 +1,7 @@
 # BNG3 release capability inventory
 
+> **Looking for a user-friendly overview?** Start with the workflow-oriented [Capability Guide](capabilities.md), which summarizes default features, optional backends, SBML boundaries, and `v3.0.0a1` vs. `main` differences and links back to this traceable inventory.
+
 This is the primary scope document for the full capability-union release. It
 covers the user-facing capabilities of canonical BNG2, NFsim and PyBioNetGen,
 BNG3 additions, and SBML Level 3 Core and packages under
@@ -11,10 +13,11 @@ to [#474](https://github.com/RuleWorld/BNG3/issues/474) under decision 17.
 The original discovery baseline is `918a5fb1`. The source pins are in
 [the upstream lock](../provenance/upstreams.lock.yml). Upstream paths refer to
 the named pinned source. The [machine-readable matrix](../provenance/capability-matrix.yml)
-records the same row IDs, checks, issue mappings and status labels. The status review
-below uses BNG3 main at
-[`5f17ce1b`](https://github.com/RuleWorld/BNG3/tree/5f17ce1b9f8636c9002147ff0baef3c6d0464f31)
-on 2026-11-18. The row status reconciliation reviewed main at `33b1590a` after that update. Individual results apply to their cited execution revisions.
+records the same row IDs, checks, issue mappings and status labels. The latest
+status reconciliation on `main` (`90832910`, after PRs #1048 and #1059) records
+all 997 rows as `implemented` in both the matrix and the table below; historical
+dated snapshots from 2026-11-23 and 2026-11-18 are retained below for provenance.
+Individual results apply to their cited execution revisions.
 
 ## Reading the status column
 
@@ -39,13 +42,30 @@ consuming evidence. A declared identity, a collected test and a passing
 independent execution are distinct. See [current progress](CURRENT_PROGRESS.md)
 and the linked release issues for qualification records.
 
-## Inventory reconciliation on 2026-11-23
+## Inventory reconciliation on 2026-11-26 (`main` vs. `v3.0.0a1`)
 
-At `3beac785`, the matrix records 997 distinct rows: 92 implemented,
+- At `main` (`90832910`, after PRs #1048 and #1059), the matrix and table below
+  record **997 distinct rows: 997 `implemented`** (including `backend.gpu`
+  qualified under [#474](https://github.com/RuleWorld/BNG3/issues/474) on Apple
+  Silicon Metal and NVIDIA TITAN V CUDA).
+- At the tagged **`v3.0.0a1` pre-release** (`8482215c`), the same 997-row matrix
+  recorded `92 implemented, 172 partial, 732 unassessed, 1 deferred`; 23 post-tag
+  commits added upstream BNG2 2.9.5 and NFsim v2.0.1 syncs, NFnext GPU graph
+  mode, `bng_cpp --outdir`, `NFsim -i`, action parity fixes, and the hosted-verified
+  row promotions.
+- Known metadata drift retained without rewriting row IDs: some promoted `action.*`
+  rows still contain historical `(implementation to add)` text in their location
+  field even though their implementations landed in PR #1054, and Decision 12 SBML
+  package contracts still lack dedicated matrix rows (tracked below). See
+  [Capability Guide §7](capabilities.md#7-known-inventory-and-ci-discrepancies-reconciliation-audit).
+
+## Historical snapshot — 2026-11-23
+
+At `3beac785` (historical), the matrix recorded 997 distinct rows: 92 implemented,
 172 partial, 732 unassessed, and one deferred. These are inventory labels.
 Each release claim still requires the consuming evidence for its named check.
 
-## Main status review on 2026-11-18
+## Historical snapshot — 2026-11-18
 
 As reviewed on 2026-11-18, the 994 rows include 92 implemented,
 171 partial, 730 unassessed and 1 deferred. The

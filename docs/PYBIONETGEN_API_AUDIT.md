@@ -1,5 +1,7 @@
 # PyBioNetGen API audit against pinned PyBioNetGen 28bf351
 
+> **Historical working audit (pre-`v3.0.0a1`).** This static symbol scan was captured before the compatibility fixes in PRs `#695` and `#1051` landed. For the current user-facing compatibility and migration reference, see [Migration Guide](migration_guide.md) and [Detailed BNG2 & PyBioNetGen Change Reference](bng2_migration_reference.md).
+
 Static comparison of every public module-level function, class and method in pinned PyBioNetGen (`bionetgen/`, excluding the Atomizer and assets) with the same dotted path in BNG3 `python/bionetgen/`. Of 422 upstream symbols, 287 are present with the same signature, 13 are present with a different signature, 1 is present under another path, and 121 are absent.
 
 These counts were measured before the compatibility change that added `BNGFormatError`, `BNGSimError`, the `run` arguments, the `BNGCLI` BNGsim options and the `BNGResult` `ext` and `folder_path` arguments; docs/migration_guide.md describes the current differences. This checks presence and call signatures only, not behavior. A method listed as absent may be inherited from a base class in BNG3 (for example `ParameterBlock.add_item` from `ModelBlock`); the scan looks at each class body only. The differential tests in #171 still have to check behavior.

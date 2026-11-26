@@ -1,76 +1,80 @@
-# Migration Guide
+# Migration Guide: Moving from BNG2 or PyBioNetGen to BNG3
 
-BioNetGen 3 provides an in-process Python API backed by C++. The
-[capability inventory](CAPABILITY_UNION_INVENTORY.md) defines release scope.
-See [current progress](CURRENT_PROGRESS.md) for qualification evidence and
-[the maintainer decisions](DECISIONS.md) for release policy.
+BioNetGen 3 (BNG3) replaces the separate Perl BNG2, standalone NFsim, and PyBioNetGen wrapper workflows with one in-process C++17 engine and Python interface. This guide is task-oriented and treats **BNG2 (`BNG2.pl` / BNGL action files)** and **PyBioNetGen (`bionetgen<3`)** as two distinct migration paths.
+
+For the complete, searchable family-by-family table of every user-visible change (executables, CLI flags, BNGL syntax, actions, solvers, seeds, outputs, Python objects, NFsim, SBML, and platforms), see the **[Detailed BNG2 & PyBioNetGen Change Reference](bng2_migration_reference.md)**. For support boundaries, see the [Capability Guide](capabilities.md); for network-free engine selection, see [Network-Free Simulation (NFsim & NFnext)](network_free_simulation.md).
+
+## Comparison Scope & Pinned Versions
+
+| Software | `v3.0.0a1` pre-release (`8482215c`) | Source `main` (`90832910`) |
+| --- | --- | --- |
+| **BNG2 (`RuleWorld/bionetgen`)** | `9601746f8884ed19ab2acea49fe87fc4660ace46` | `740006ff3cfa0b6d5445e10367c9f2fcd0f75d67` (BioNetGen 2.9.5) |
+| **NFsim (`RuleWorld/NFsim`)** | `8c449bbccc4a0c54586ae562f46f4955e65fe876` | `d45b7d99cf1905199911a3187edbba585fad56ba` (NFsim v2.0.1 + `#160`) |
+| **PyBioNetGen (`RuleWorld/PyBioNetGen`)** | `28bf351a9bbfc197e19487c26dedda683716bb64` (v0.8.7 lineage) | `28bf351a9bbfc197e19487c26dedda683716bb64` (v0.8.7 lineage) |
+
+All pins are recorded in [`provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml), release scope in [CAPABILITY_UNION_INVENTORY.md](CAPABILITY_UNION_INVENTORY.md), policy in [DECISIONS.md](DECISIONS.md), and live qualification evidence in [CURRENT_PROGRESS.md](CURRENT_PROGRESS.md). Changes landed on `main` after `v3.0.0a1` are labeled **(post-`v3.0.0a1` `main`)**.
+
+---
 
 ## Install And Choose A Backend
 
-BNG3 and PyBioNetGen share the distribution name `bionetgen`. To stay on
-PyBioNetGen during the transition, install `bionetgen<3` in a separate
-environment. To evaluate BNG3, install an identified pre-release wheel or
-run `python -m pip install .` from a BNG3 checkout. Once BNG3 is published
-as a stable release, the standard install command is `pip install bionetgen`.
-Check the resolved version with `bionetgen --version`.
+BNG3 and PyBioNetGen share the Python distribution name `bionetgen`:
+
+- **Stay on PyBioNetGen in an existing environment:** pin `pip install "bionetgen<3"`. Today on PyPI, `pip install bionetgen` still resolves to legacy PyBioNetGen `0.8.7` because `v3.0.0a1` is currently distributed via GitHub Releases rather than PyPI.
+- **Install BNG3 `v3.0.0a1` in a separate environment:** install the matching pre-built wheel from [GitHub Releases (`v3.0.0a1`)](https://github.com/RuleWorld/BNG3/releases/tag/v3.0.0a1), download the standalone CLI archive (`bng_cpp` + `NFsim`), or run `python -m pip install .` from a BNG3 checkout. See [README.md#installation](../README.md#installation) for exact platform wheel URLs.
+- **Verify which package is active:** run `bionetgen --version` (`3.0.0a1` for BNG3 vs. `0.8.x` for PyBioNetGen).
 
 | Backend | Selection and qualification |
 | --- | --- |
 | Native finite-network | The default for `ode`, `ssa`, `pla`, and `psa`. |
 | NFnext | The default for `method="nf"` (promoted in #832 after the full pinned-native NFsim and NFcore corpus parity passed; see [#149](https://github.com/RuleWorld/BNG3/issues/149) and `docs/DECISIONS.md` item 4). `method="nfnext"` remains explicitly selectable. |
 | NFcore | Still selectable explicitly with `method="nfcore"` through the common backend interface. |
-| BNGsim | Optional finite-network backend selected with `backend="bngsim"` in a build that includes the adapter. See [ADR 0003](adr/0003-bngsim-canonical-finite-backend.md). |
+| BNGsim | Optional finite-network backend selected with `backend="bngsim"` in a build that includes the adapter (`-DBUILD_BNGSIM_ADAPTER=ON`). See [ADR 0003](adr/0003-bngsim-canonical-finite-backend.md). |
 | JAX CPU | The `jax` extra installs the dependencies for the separate [JAX ODE](../python/bionetgen/jax_ode.py) and [JAX SSA](../python/bionetgen/jax_ssa.py). See [#473](https://github.com/RuleWorld/BNG3/issues/473) for the qualified surface. |
-| Metal and CUDA | Actual device qualification is tracked separately in [#474](https://github.com/RuleWorld/BNG3/issues/474). |
+| Metal and CUDA | Actual device qualification is tracked separately in [#474](https://github.com/RuleWorld/BNG3/issues/474) (`backend.gpu`; Metal and CUDA qualified separately for finite batch SSA and bounded NFnext GPU). |
 
-The method names in this table apply to Python's `model.simulate()`. In
-native BNGL action files, `simulate({method=>"nf"})` and `simulate_nf()`
-currently execute NFcore.
+The method names in this table apply to Python's `model.simulate()`. In native BNGL action files (`model.execute()`, `bionetgen execute`, `bng_cpp`), `simulate({method=>"nf"})` and `simulate_nf()` currently execute NFcore. See [Network-Free Simulation (NFsim & NFnext)](network_free_simulation.md).
 
-Install the `plotting` extra for plotting and dataframe access, `notebook`
-for a notebook kernel, and `full` for the SBML and SymPy integrations.
+Install the `plotting` extra for `to_dataframe()` and plotting, `notebook` for a notebook kernel, `jax` for JAX CPU solvers, `legacy` for legacy Cement/pyparsing/pylru modules, and `full` for SBML (`python-libsbml`) and SymPy integrations.
 
+---
 
-## Compatibility Overview
+## Two Migration Tracks at a Glance
 
-| Task | PyBioNetGen / BNG2 | BioNetGen 3 |
+### Track A: Migrating from BNG2 (`BNG2.pl` and BNGL Action Files)
+
+Most `.bngl` model files parse and run without modification. The main changes are executable names, default execution style, and explicit diagnostics:
+
+| BNG2 (`BNG2.pl`) | BNG3 Equivalent | Key Difference |
+| --- | --- | --- |
+| `BNG2.pl model.bngl` | `bng_cpp model.bngl` or `bionetgen execute model.bngl` | In-process C++17 parser, network generator, and solvers; no Perl required. |
+| `BNG2.pl --outdir out model.bngl` | `bng_cpp --outdir out model.bngl` **(post-`v3.0.0a1` `main`)** or `bionetgen run -i model.bngl -o out` | `bionetgen run -i ... -o out` works in both `v3.0.0a1` and `main`; `bng_cpp --outdir` was added after `v3.0.0a1`. |
+| `BNG2.pl --check model.bngl` | `bng_cpp --check model.bngl` or `bionetgen check model.bngl` | Parses and validates syntax/blocks without running actions. |
+| `BNG2.pl --xml model.bngl` | `bionetgen export model.bngl -f xml -o model.xml` | Explicit format and output path. |
+| `NFsim -xml model.xml -sim 10 -oSteps 20` | `NFsim -xml model.xml -sim 10 -oSteps 20` (bundled CLI archive) or `model.simulate(method="nf", t_end=10, n_steps=20)` | Bundled `NFsim` binary retains classic flags; Python `method="nf"` runs NFnext directly from `CompiledModel` without XML. |
+| Action-driven parameter scans (`parameter_scan`, `bifurcate`) | Still run via `bng_cpp` / `bionetgen execute`, or use `model.parameter_scan(...)` / `bionetgen scan` | Python/CLI scans return structured arrays/CSVs directly without manual `.scan` file parsing. |
+
+### Track B: Migrating from PyBioNetGen (`bionetgen<3`)
+
+| Task | PyBioNetGen (`0.8.x`) | BioNetGen 3 (`3.x`) |
 | --- | --- | --- |
 | Load model | `bng = bionetgen.bngmodel("m.bngl")` | `model = bionetgen.load("m.bngl")` |
-| Simulate | `bionetgen.run("m.bngl")` | `model.simulate(method="ode")` |
-| Read observables | Parse `.gdat` or `.cdat` output | `result.observables["X"]` |
-| Parameter scan | Loop over `bionetgen.run()` calls | `model.parameter_scan(...)` |
+| Simulate (in-memory) | `res = bionetgen.run("m.bngl")` (wrote files, returned `BNGResult`) | `result = model.simulate(method="ode")` or `bionetgen.run("m.bngl")` (returns `SimResult`) |
+| Run declared BNGL actions to disk | `res = bionetgen.run("m.bngl", out="results")` | `files = bionetgen.run("m.bngl", out="results")` (returns `BNGResult`) |
+| Read observables | `res[0]["AB"]` / parse `.gdat` | `result.observables["AB"]` (NumPy array) |
+| Parameter scan | Loop over `bionetgen.run()` calls | `model.parameter_scan(...)` / `model.parameter_scan_2d(...)` |
 | Sensitivity analysis | Manual finite differences | `model.sensitivity_analysis(...)` |
-| NFSim | External NFSim binary | `model.simulate(method="nf")` |
-| Access parameters | XML-parsed dicts | `model.parameters` list of objects |
-| Export SBML | `writesbml` action | `model.write_sbml("out.xml")` |
-| Build models | Hand-written BNGL only | `ModelBuilder` API |
-| Import SBML | Atomizer CLI | `bionetgen.from_sbml("model.xml")` |
+| NFsim | External NFsim binary via subprocess | `model.simulate(method="nf")` (NFnext) or `method="nfcore"` |
+| Access parameters | XML-parsed dicts on `bngmodel` | `model.parameters` list of typed objects (`get_parameter` / `set_parameter`) |
+| Edit model topology | Mutate `bngmodel` blocks | `model.add_parameter`, `add_reaction_rule`, `set_seed_species_amount`, etc., or `ModelBuilder` |
+| Export SBML | `writeSBML()` action | `model.write_sbml("out.xml")` / `bionetgen export` |
+| Import SBML | `bionetgen atomize` CLI | `bionetgen.from_sbml("model.xml", atomize=True)` or `bionetgen atomize` |
 
-The compatibility file runner supports `simulator="auto"`, `"native"`, and
-`"subprocess"`. A non-`None` `timeout`, or an explicit subprocess selection,
-runs the same native parser and executor in a separate process. The deadline
-includes worker startup and native execution; expiry raises
-`subprocess.TimeoutExpired`. Declared actions, method/time overrides, and
-output-point normalization use the same common runner in both routes.
-`timeout=None` with the default simulator keeps direct execution.
+---
 
 ## Python and CLI Run Contracts
 
-`bionetgen.run()` supports two explicit call styles. With no output argument
-specified, it uses the modern in-memory API and returns a `SimResult`; its
-default method is ODE with `t_end=100` and `n_steps=100`. The modern method and
-grid can also be positional: `bionetgen.run("model.bngl", "ssa", 20, 200)`.
-The dispatcher uses `*args` plus keyword-only `method`, `t_end`, and `n_steps`
-so it can preserve legacy positional output-directory calls. An explicit
-`None`, a path-like second positional argument, or a string that is not one of
-`ode`, `ssa`, `nf`, `pla`, or `psa`, selects the file runner and returns
-`BNGResult`; use `out=` when a directory's string name could be mistaken for a
-method. After a positional output path, remaining positionals retain the
-PyBioNetGen order: `suppress`,
-`timeout`, `simulator`, `format`, `method`, `t_span`, and `n_points`.
-Timeouts use the bounded native worker described above. Invalid keyword
-methods raise `ValueError`, and duplicate positional/keyword values raise
-`TypeError`.
+`bionetgen.run()` supports two explicit call styles. With no output argument specified, it uses the modern in-memory API and returns a `SimResult`; its default method is ODE with `t_end=100` and `n_steps=100`. The modern method and grid can also be positional: `bionetgen.run("model.bngl", "ssa", 20, 200)`. The dispatcher uses `*args` plus keyword-only `method`, `t_end`, and `n_steps` so it can preserve legacy positional output-directory calls. An explicit `None`, a path-like second positional argument, or a string that is not one of `ode`, `ssa`, `nf`, `pla`, or `psa`, selects the file runner and returns `BNGResult`; use `out=` when a directory's string name could be mistaken for a method. After a positional output path, remaining positionals retain the PyBioNetGen order: `suppress`, `timeout`, `simulator`, `format`, `method`, `t_span`, and `n_points`. Invalid keyword methods raise `ValueError`, and duplicate positional/keyword values raise `TypeError`.
 
 ```python
 # Modern single-simulation result, defaulting to ODE, 0..100, 100 steps.
@@ -80,52 +84,147 @@ result = bionetgen.run("model.bngl")
 files = bionetgen.run("model.bngl", out="results")
 ```
 
-In the file runner, an explicit `method=` selects one modern simulation and
-writes one `.gdat` result. Time-only options preserve the model's declared
-actions, ordering, and non-simulation side effects. The same absolute
-`t_start`/`t_end` and step count are applied to each direct simulation action;
-`t_span=(start, end)` sets both times, and `n_points=N` means `N-1` steps plus
-both endpoints. A lone time or step option changes only that part of each
-action's existing grid. This is the BNG3 compatibility contract; it does not
-claim PyBioNetGen parity for time-grid forwarding. Combining a time override
-with an action's `sample_times` or truthy `continue` option raises
-`NotImplementedError` before the output directory is created. Solver-specific
-options such as `rtol`, `atol`, `seed`, `pla_config`, and `psa_poplevel` require
-an explicit modern `method=` override; action-preserving calls reject them
-rather than dropping them.
+The compatibility file runner supports `simulator="auto"`, `"native"`, and `"subprocess"`. A non-`None` `timeout`, or an explicit subprocess selection, runs the same native parser and executor in a separate process; expiry raises `subprocess.TimeoutExpired`. `timeout=None` with the default simulator keeps direct in-process execution.
 
-The CLI keeps the same distinction. `bionetgen run MODEL --method ssa ...` writes a
-tab-separated table for one selected simulation. `bionetgen run --input MODEL`
-executes the model's actions into an output directory; explicit time options
-modify the action grid while preserving actions. Supplying `--method` with
-`--input` opts into a single modern simulation; solver-specific options are
-accepted there. The five modern methods
-(`ode`, `ssa`, `nf`, `pla`, and `psa`) are contract-tested through the Python
-API and positional-model CLI. The notebook command clears saved execution
-outputs from its templates. Its model-specific example uses
-`bionetgen.load(...).simulate()` and `SimResult.plot()`; the built-in example
-uses the file-runner result's `gdats` mapping. Install `bionetgen[notebook]`
-for an IPython kernel and Matplotlib before running either template in a
-Jupyter frontend. The frontend itself is not included in that extra.
+In the file runner, an explicit `method=` selects one modern simulation and writes one `.gdat` result. Time-only options preserve the model's declared actions, ordering, and non-simulation side effects: `t_start`/`t_end` and step count apply to each direct simulation action (`t_span=(start, end)` sets both times, and `n_points=N` means `N-1` steps plus both endpoints). Combining a time override with an action's `sample_times` or truthy `continue` option raises `NotImplementedError` before the output directory is created. Solver-specific options (`rtol`, `atol`, `seed`, `pla_config`, `psa_poplevel`) require an explicit modern `method=` override; action-preserving calls reject them rather than dropping them.
 
-The maintained integration surface includes `from_sbml` and `sbml_to_bngl`,
-the optional SymPy ODE export, and the legacy
-`sim_getter(..., sim_type="libRR")` adapter. SBML import and SymPy ODE export
-require `python-libsbml` and `sympy`, respectively; both are included in
-`bionetgen[full]`. The RoadRunner adapter remains optional. Install its
-separate PyPI dependency with `python -m pip install libroadrunner` (the
-import module is named `roadrunner`); when that module is absent, the adapter
-raises an `ImportError` that names the dependency. `sim_getter` accepts SBML
-through either `model_file` or `model_str`; `.simulate(...)` returns
-RoadRunner's time-course matrix. The file-runner rejects
-`simulator="bngsim"`; BNG3's `backend="bngsim"` belongs to its separate native
-finite-network API and does not reproduce PyBioNetGen's optional Python
-`bngsim` routing contract. BNG3 does not expose a PySB adapter.
+The CLI keeps the same distinction:
 
-## Before And After
+- `bionetgen run MODEL --method ssa ...` writes a tab-separated table for one selected simulation.
+- `bionetgen run --input MODEL -o DIR` executes the model's declared actions into an output directory (`DIR`); explicit time options modify the action grid while preserving actions. Supplying `--method` with `--input` opts into a single modern simulation.
+- `--log`, `--timeout`, and `--no-bngsim` are supported on both positional `MODEL` and `--input` workflows using the bounded native worker (`--format bngl` is accepted; other formats require conversion first).
 
-Save the BNGL in [Parameter Scans](#parameter-scans) as `model.bngl` and
-run these examples from its directory.
+The maintained integration surface also includes `from_sbml` and `sbml_to_bngl` (requires `python-libsbml`), optional SymPy ODE export (`sympy`), and the legacy `sim_getter(..., sim_type="libRR")` adapter (`python -m pip install libroadrunner`; import module `roadrunner`). The file runner rejects `simulator="bngsim"` (use `model.simulate(..., backend="bngsim")` instead). BNG3 does not expose a PySB adapter.
+
+---
+
+## Tested Workflow Migration Recipes
+
+### Recipe 1: Migrating a BNG2 Action-File Workflow (`BNG2.pl` → BNG3)
+
+Suppose your lab currently runs an action-bearing `.bngl` file (`decay_actions.bngl`):
+
+```bngl
+begin model
+begin parameters
+  k 0.1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 100
+end seed species
+begin observables
+  Molecules A_total A()
+end observables
+begin reaction rules
+  decay: A() -> 0 k
+end reaction rules
+end model
+
+begin actions
+  generate_network({overwrite=>1})
+  simulate({method=>"ode",t_end=>2,n_steps=>10})
+end actions
+```
+
+**Before (BNG2):**
+
+```bash
+BNG2.pl --outdir bng2_out decay_actions.bngl
+# Inspect bng2_out/decay_actions.net and bng2_out/decay_actions.gdat
+```
+
+**After (BNG3 — preserve `.net`/`.gdat`/`.cdat` files):**
+
+```bash
+# Works in v3.0.0a1 and main:
+bionetgen run --input decay_actions.bngl --output bng3_out
+
+# Or with standalone C++ binary (no Python needed; --outdir added post-v3.0.0a1 on main):
+bng_cpp --outdir bng3_out decay_actions.bngl
+```
+
+**After (BNG3 — modern Python API, no intermediate files):**
+
+```python
+import bionetgen
+
+model = bionetgen.load("decay_actions.bngl")
+result = model.simulate(method="ode", t_end=2.0, n_steps=10)
+print(result.time[-1], result.observables["A_total"][-1])
+# Analytic law: 100 * exp(-0.1 * 2) = 81.87307531
+```
+
+### Recipe 2: Migrating a PyBioNetGen File-Output Script (`BNGResult` → `SimResult`)
+
+**Before (PyBioNetGen `0.8.x` — relies on `bionetgen.run()` returning `BNGResult` and writing `.gdat`):**
+
+```python
+import bionetgen
+
+res = bionetgen.run("decay_actions.bngl", out="pybng_out")
+gdat = res[0]  # numpy structured array loaded from decay_actions.gdat
+print(gdat["time"][-1], gdat["A_total"][-1])
+```
+
+**After (BNG3 — minimal-diff transition keeping `BNGResult` and `.gdat` files):**
+
+```python
+import bionetgen
+
+# Pass out= (or a positional directory) to keep the BNGResult file-runner contract:
+res = bionetgen.run("decay_actions.bngl", out="bng3_out")
+gdat = res[0]  # also accessible via res.gdats["decay_actions"]
+print(gdat["time"][-1], gdat["A_total"][-1])
+```
+
+**After (BNG3 — recommended in-memory `SimResult` API):**
+
+```python
+import bionetgen
+
+result = bionetgen.run("decay_actions.bngl", method="ode", t_end=2.0, n_steps=10)
+print(result.time[-1], result.observables["A_total"][-1])
+```
+
+### Recipe 3: Migrating a Network-Free Workflow & Understanding Seed Comparisons
+
+**Before (BNG2 + standalone NFsim):**
+
+```bash
+BNG2.pl --xml model.bngl
+NFsim -xml model.xml -sim 2.0 -oSteps 10 -seed 172 -o model_nf.gdat
+```
+
+**After (BNG3 — Python API, NFnext default vs. explicit NFcore):**
+
+```python
+import bionetgen
+
+model = bionetgen.load("model.bngl")
+
+# Default Python network-free engine: NFnext (compiled directly from CompiledModel, no XML)
+res_nfnext = model.simulate(method="nf", t_end=2.0, n_steps=10, seed=172)
+print(res_nfnext.backend, res_nfnext.observables["A_total"][-1])  # backend == "nfnext"
+
+# Explicit embedded NFcore (supports NFsim-specific equilibrate and traversal_limit / -utl)
+res_nfcore = model.simulate(method="nfcore", t_end=2.0, n_steps=10, seed=172, traversal_limit=3)
+print(res_nfcore.backend, res_nfcore.observables["A_total"][-1])  # backend == "nfsim"
+```
+
+**How to compare stochastic outputs across engines:**
+
+- **Same engine, same nonzero seed:** Pathwise identical (`res1 == res2`). Never use `seed=0` for reproducibility—`seed=0` draws from `std::random_device` in both BNG2/NFsim and BNG3.
+- **Direct NFcore (`method="nfcore"`) vs. pinned standalone `NFsim`:** Pathwise comparison with the same seed is valid only when model construction and reaction-channel draw ordering match (for example, single-channel or aligned direct/XML models).
+- **NFnext (`method="nf"`) vs. NFcore or standalone `NFsim`:** NFnext uses its own compiled NFIR rule representation and RNG stream ordering, so identical seeds do **not** produce identical sample paths. Validate agreement **statistically** over an ensemble of independent nonzero seeds (comparing observable means, confidence bands, and empirical CDFs/KS or chi-square tests) alongside exact conservation/stoichiometric **invariants**.
+
+---
+
+## Before And After (Verified Installed-Wheel Snippets)
+
+Save the BNGL in [Parameter Scans](#parameter-scans) as `model.bngl` and run these examples from its directory. Every snippet in this section is executed verbatim by `tests/python/test_migration_guide_installed_example.py` against the installed wheel.
 
 ### Load A Model
 
@@ -188,12 +287,7 @@ end reaction rules
 end model
 ```
 
-The mass-action law for `A() -> 0` is `A(t) = A0 * exp(-k * t)`. With
-`A0 = 100` and `t_end = 2.0`, the requested rates `0.1` and `1.0` give the
-endpoints `100 * exp(-0.2) ≈ 81.873075` and `100 * exp(-2) ≈ 13.533528`.
-`ScanResult.parameter_values` records the rate used by each simulation in
-request order, `parameter_name` names the scanned parameter, and `final()`
-returns one endpoint per value in that same order.
+The mass-action law for `A() -> 0` is `A(t) = A0 * exp(-k * t)`. With `A0 = 100` and `t_end = 2.0`, the requested rates `0.1` and `1.0` give the endpoints `100 * exp(-0.2) ≈ 81.873075` and `100 * exp(-2) ≈ 13.533528`. `ScanResult.parameter_values` records the rate used by each simulation in request order, `parameter_name` names the scanned parameter, and `final()` returns one endpoint per value in that same order.
 
 ```python
 import bionetgen
@@ -209,12 +303,7 @@ print(scan.parameter_name, scan.parameter_values)
 print(scan.final("A_total"))
 ```
 
-The old workflow looped over `bionetgen.run()` calls, edited the parameter and
-parsed one output file per rate. BNG3 applies each value to the named parameter
-directly and the result keeps the value-to-endpoint association. This example
-is executed verbatim by `tests/python/test_migration_guide_installed_example.py`
-against the installed wheel. Cross-package trajectory equivalence is not
-claimed; see the compatibility limits below.
+The old workflow looped over `bionetgen.run()` calls, edited the parameter and parsed one output file per rate. BNG3 applies each value to the named parameter directly and the result keeps the value-to-endpoint association.
 
 ### Sensitivity Analysis
 
@@ -305,130 +394,39 @@ network = Network("decay.net")
 network.write_model("decay_copy.net")
 ```
 
-## PyBioNetGen API Differences
+---
 
-The migration reference is PyBioNetGen revision
-`28bf351a9bbfc197e19487c26dedda683716bb64`, the accepted pin in
-[`provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml). The mapping
-below separates workflows exercised by BNG3 tests from replacements and
-unqualified areas. The tests verify BNG3 behavior; they do not establish that
-the same models produce the same trajectories or side effects in both packages.
+## PyBioNetGen Compatibility Boundaries
 
-| Common workflow | BNG3 entry point | Evidence and limit |
-| --- | --- | --- |
-| Load a BNGL file and simulate it | `bionetgen.load(path).simulate(...)` | Executable migration example in `tests/python/test_migration_workflows.py`; tested on the BNG3 engine. |
-| Run a single simulation from a file | `bionetgen.run(path, method=..., t_end=..., n_steps=...)` | `tests/python/test_compatibility_contract.py` exercises supported methods, results, and dispatch. The modern API returns `SimResult`, not the old file result. |
-| Run declared model actions into an output directory | `bionetgen.run(path, out=...)` | BNG3 compatibility tests exercise generated `.xml`, `.net`, `.gdat`, and `.cdat` outputs and action preservation. This uses BNG3's in-process runner; it does not promise PyBioNetGen backend or time-grid parity. |
-| Inspect simulation results | `SimResult.time`, `.observables`, `.to_dataframe()` | The migration workflow test checks the documented fields and dataframe shape. |
-| Scan a parameter | `model.parameter_scan(...)` | The installed-example test executes the guide's two-rate decay scan and checks its analytic endpoints; cross-package scan equivalence is not established. |
-| Build a model in Python | `ModelBuilder` | A construction and simulation smoke test exists; full equivalence to direct edits of PyBioNetGen's block model is not established. |
-| Import SBML | `bionetgen.from_sbml(path, atomize=True)` | The migration test covers one simple SBML model. It is not evidence for all SBML Core or package semantics; see the SBML qualification records. |
-| Use the command line | `bionetgen run`, `bionetgen check`, `bionetgen export`, and other BNG3 commands | The migration test checks CLI version/help, and compatibility tests cover notebook generation. The old CLI option inventory is not fully mapped or parity-tested. |
+The migration reference is PyBioNetGen `28bf351a9bbfc197e19487c26dedda683716bb64` ([`provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml)). For the complete symbol-by-symbol breakdown, see [Detailed BNG2 & PyBioNetGen Change Reference](bng2_migration_reference.md).
 
-CI's `pybionetgen-compat` job checks selected root exports and runner parameters
-from the locked source, then runs `tests/python/test_compatibility_contract.py`
-against the installed BNG3 package. `tests/python/test_migration_workflows.py`
-executes the examples above against BNG3. The wheel job also runs
-`tests/python/test_migration_guide_installed_example.py`, which executes
-the examples in this guide against the installed package and console script.
-It checks the decay trajectory, scan endpoints, sensitivity, and interchange
-behavior for the example model. These checks do not import both
-packages and compare all 4.7 inventory rows, do not validate every legacy
-module or CLI option, and do not qualify every workflow listed here as
-source-semantic parity.
+- **Retained compatibility modules:** `bionetgen.bngmodel`, `bionetgen.BNGResult`, `bionetgen.network.network.Network`, `bionetgen.sim_getter` (RoadRunner via optional `libroadrunner`), `bionetgen.simulator.csimulator`, `bionetgen.core.exc` (`BNGError`, `BNGFormatError`, `BNGSimError`), and lazy SymPy helpers (`SympyOdes`, `export_sympy_odes`, `extract_odes_from_mexfile`) remain importable.
+- **`modelapi.runner.run`:** Accepts `simulator`, `format`, `method`, `t_span`, `n_points`, and `timeout` (using the native worker for subprocess/timeout); retains PyBioNetGen's `n_points + 1` output row convention for single-simulation overrides.
+- **BNGsim differences:** PyBioNetGen's Python `simulator="bngsim"` routing and `bngsim_parameter_scan` helpers are not reproduced by the file runner. Use `model.simulate(..., backend="bngsim")` in a build with `-DBUILD_BNGSIM_ADAPTER=ON`.
+- **Removed default dependencies:** Perl, `cement`, `distutils`, `pyparsing`, and `pylru` are no longer required for the default path (`cement`/`colorlog`/`pyparsing`/`pylru` are in the optional `bionetgen[legacy]` extra).
+- **Optional Perl fallback:** Setting `BIONETGEN_USE_PERL=1` (with `BNGPATH` pointing to a BNG2 installation) routes Python `bionetgen.run(path)` and `bionetgen.load(path).execute()` through Perl as a temporary transition aid. `bionetgen run MODEL` CLI is unavailable in that mode.
 
-The pinned PyBioNetGen `run` accepts `simulator`, `format`, `method`, `t_span`,
-and `n_points`. Its `simulator="bngsim"` and `simulator="subprocess"` choices
-select distinct upstream routes. BNG3's `bionetgen.run(path, out=...)` is a
-separate compatibility entry point: it supports `simulator="auto"`,
-`"native"`, and `"subprocess"` with BNGL input. Non-`None` timeouts are enforced
-through a native worker; the PyBioNetGen Python `bngsim` route remains
-unimplemented. An explicit `method` requests
-one BNG3 simulation; time-grid-only overrides preserve declared direct
-simulation actions subject to the limits above. These BNG3 contracts are tested
-locally, but have not been differentially checked against the pinned runner.
+---
 
-For single-simulation overrides, modelapi.runner.run also accepts an explicit
-subprocess selection or a timeout. It returns the same SimResult fields,
-including concentrations, exported functions, array dtypes, and backend
-metadata, through the native worker. Its n_points value retains the pinned
-modelapi step-count convention (n_points + 1 output rows). An explicit out
-with these overrides remains unsupported.
+## Practical Lab Migration Checklist
 
-The run command accepts --log, --timeout, and --no-bngsim for both positional
-models and --input workflows. These controls use the same native worker;
---no-bngsim selects native execution in a separate process. A positional model
-still requests one simulation and writes a single output file, while --input
-preserves declared actions and writes a result directory. --format bngl is
-accepted; other input formats require conversion first. Logs retain worker
-output and error diagnostics, including partial output on a timeout.
+Before switching routine production or publication jobs from BNG2 / PyBioNetGen to BNG3:
 
-Other API boundaries:
+1. **Pin and preserve your legacy environment.** Create a separate environment for BNG3 instead of upgrading in place. Pin `bionetgen<3` (e.g., `bionetgen==0.8.7`) and record your existing `BNG2.pl` and `NFsim` versions/paths so you can always reproduce legacy outputs.
+2. **Select 3–5 representative lab models.** Pick models covering the features your group relies on: finite network generation (compartments, functions, `TotalRate`, `DeleteMolecules`), ODE/SSA continuations (`continue=>1`, `setParameter`, `setConcentration`), parameter scans, network-free models, and any SBML imports or MATLAB/SBML exports.
+3. **Verify syntax and generated networks first.** Run `bionetgen check model.bngl` and compare generated `.net` files (`bionetgen export model.bngl -f net -o bng3.net`) against BNG2 `.net` output (checking species count, reaction count, statistical factors, and observable groups—remember canonical species ordering may differ while the graph-isomorphic network matches).
+4. **Compare deterministic trajectories (ODE).** Run your legacy pipeline and BNG3 on the exact same `t_start`, `t_end`, `n_steps`/`sample_times`, `rtol`, and `atol`. Check maximum relative and absolute observable differences across the full time grid.
+5. **Compare stochastic / network-free models with the right criterion.**
+   - Pass explicit nonzero seeds (`seed != 0`).
+   - Use **ensemble statistical comparison** (mean, variance, empirical CDF across e.g. 50–200+ seeds) when comparing BNG3 NFnext (`method="nf"`) against standalone NFsim or BNG2 SSA.
+   - If you rely on NFsim-specific `-utl` or `equilibrate`, test `method="nfcore"` with `traversal_limit` / `equilibrate`.
+6. **Audit script contracts and working directories.**
+   - Check every `bionetgen.run(path)` call: add `out="results_dir"` if your script expects `.gdat`/`.cdat` files and `BNGResult`, or migrate to `SimResult` (`result.time`, `result.observables[...]`).
+   - Check output file naming (`prefix`/`suffix` and `--outdir`) and note any features that require `main` vs. `v3.0.0a1`.
+7. **Isolate any discrepancy before changing tolerances.** Reduce to the smallest `.bngl` reproducer, confirm whether the difference is in parsing, `.net` generation, solver defaults, or seed semantics, and open an issue on [RuleWorld/BNG3/issues](https://github.com/RuleWorld/BNG3/issues) with both outputs attached.
 
-- PyBioNetGen's BNGsim helper, bridge, and parameter-scan modules do not have
-  module-for-module replacements. `BioNetGenModel.simulate` exposes a BNGsim
-  backend, while `model.parameter_scan` does not expose a backend selector.
-  The legacy compatibility runner does not route via PyBioNetGen's
-  `simulator="bngsim"` choice. These are distinct workflows and their parity
-  remains unqualified.
-- The legacy `bionetgen.simulator.csimulator` classes are available for
-  import. The compile-to-C workflow requires a C compiler and the legacy
-  toolchain. The `sim_getter` convenience API selects the RoadRunner
-  adapter. Use `model.simulate()` for the native BNG3 defaults.
-- The legacy `bionetgen.network.network.Network` class reads and writes
-  `.net` files for inspection and editing. The migration example exercises
-  one exported network. Full installed differential coverage remains part
-  of [#171](https://github.com/RuleWorld/BNG3/issues/171).
-- `BNGFormatError` and `BNGSimError` are available in `bionetgen.core.exc`.
-
-## Removed Dependencies
-
-The default path no longer depends on:
-
-- Perl
-- cement
-- distutils
-- pyparsing
-- pylru
-
-Optional legacy compatibility still exists behind `BIONETGEN_USE_PERL=1`, but the new API does not require it.
-
-## Breaking Changes
-
-- `bngmodel()` is replaced by `load()` as the recommended model-loading API.
-- Single-simulation calls return in-memory `SimResult` objects; the action-preserving
-  file runner continues to write files and returns a compatibility-style `BNGResult`.
-- `model.actions` is a structured list of action objects, not a parsed dict.
-- `execute()` is now a method on `BioNetGenModel`.
-- The default simulation path is C++-backed and synchronous.
-- Notebook rendering uses `_repr_html_()` rather than a custom notebook wrapper.
-
-## Migration Checklist
-
-1. Replace `bngmodel(path)` with `load(path)`.
-2. Replace subprocess-based simulations with `model.simulate()`.
-3. Replace `.gdat` parsing with `SimResult` accessors.
-4. Replace scan loops with `model.parameter_scan()`.
-5. Replace manual SBML translation with `from_sbml()`.
-6. Replace hand-written BNGL assembly with `ModelBuilder` where practical.
-
-## Notes On Legacy Mode
-
-If you must keep the old Perl workflow for a while, set:
-
-```bash
-export BIONETGEN_USE_PERL=1
-```
-
-This is a transition aid, not the recommended long-term path.
-
+---
 
 ## Repository Maintenance
 
-The [maintainer decision](DECISIONS.md) designates
-[RuleWorld/BNG3](https://github.com/RuleWorld/BNG3) as the successor to the
-BioNetGen, NFsim, and PyBioNetGen repositories. Report BNG3 bugs and submit
-changes in BNG3. At the transition, the predecessor repositories retire from
-maintenance. Their source history remains available and their accepted
-revisions remain pinned as independent references in
-[`provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml).
+Per [Maintainer Decisions](DECISIONS.md), [RuleWorld/BNG3](https://github.com/RuleWorld/BNG3) is the successor to `RuleWorld/bionetgen`, `RuleWorld/NFsim`, and `RuleWorld/PyBioNetGen`. Report BNG3 bugs and submit changes in `RuleWorld/BNG3`. The predecessor repositories remain pinned as independent reference oracles in [`provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml).

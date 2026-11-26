@@ -36,7 +36,8 @@ cpp/bindings/             ← pybind11 binding layer
     ├──► cpp/io/          ← Writers (XML, SBML, .net, MATLAB, LaTeX, ...)
     ├──► cpp/actions/     ← ActionDispatch (execute model actions)
     ├──► cpp/cli/         ← Isolated parallel batch orchestration
-    └──► cpp/nfsim/       ← NFSim network-free engine
+    ├──► cpp/nfsim/       ← Embedded NFcore / standalone NFsim engine
+    └──► cpp/nfnext/      ← NFnext (NFIR compiler + network-free CPU/GPU engine)
 ```
 
 ## Data Flow
@@ -119,7 +120,26 @@ migration.
 
 The NFcore2 semantic expansion now carries finite graph expressions through matching and model-image serialization, resolves named local/DOR expression bindings, validates parent-linked compartment ancestry, and applies atomic species-carrying moves plus fail-closed conditional deletion. Native parser surfaces that require richer automorphisms, observable/function-scope evaluation, volume-aware transport, or unproven deletion spellings remain explicit compatibility fallbacks.
 
-### Network-Free Path
+### Network-Free Paths (NFnext and Embedded NFcore)
+
+BNG3 provides two in-process network-free paths (see [Network-Free Simulation](network_free_simulation.md) for the user-facing decision table):
+
+1. **NFnext (default for Python `model.simulate(method="nf")` and `bionetgen run -m nf`):**
+
+```
+.bngl file → ANTLR4 Parser → ast::Model → compile::CompiledModel
+                                                    │
+                                                    ▼
+                                     nfnext::lowerFromBioNetGen() → NFIR
+                                                    │
+                                                    ▼
+                                     NFnext CPU executor (or fail-closed GPU batch)
+                                                    │
+                                                    ▼
+                                     Observable counts → numpy arrays (backend="nfnext")
+```
+
+2. **Embedded NFcore (explicit `method="nfcore"` in Python, BNGL `simulate_nf` / `simulate({method=>"nf"})` actions, and standalone `NFsim` binary):**
 
 ```
 .bngl file → ANTLR4 Parser → ast::Model
@@ -131,7 +151,7 @@ The NFcore2 semantic expansion now carries finite graph expressions through matc
                          System::sim() [Gillespie SSA on molecule instances]
                                    │
                                    ▼
-                              Observable counts → numpy arrays
+                              Observable counts → numpy arrays (backend="nfsim")
 ```
 
 ## C++ Libraries
@@ -179,10 +199,10 @@ python/bionetgen/
 └── network/            # Network representation (retained)
 ```
 
-## NFSim Integration Strategy
+## NFSim and NFnext Integration Strategy
 
-The default NFSim route now constructs `NFcore::System` directly from the
-canonical AST:
+- **Python `method="nf"` and `method="nfnext"`** lower `CompiledModel` directly into `NFIR` (`cpp/nfnext/src/from_bng.cpp`) with no XML serialization and execute in NFnext (`SimResult.backend == "nfnext"`). See [Network-Free Simulation](network_free_simulation.md).
+- **Embedded NFcore (`method="nfcore"` and BNGL `simulate_nf` actions)** constructs `NFcore::System` directly from the canonical AST/compiled model by default:
 
 1. BNG C++ parses BNGL → `ast::Model`
 2. `NFinput::buildSystemFromAst()` maps parameters, molecule types, species,
@@ -191,13 +211,12 @@ canonical AST:
    Python `traversal_limit`/action `utl` value is honored)
 4. `System::prepareForSimulation()` and `System::stepTo()` run the network-free
    simulation
-5. Observable values are copied into NumPy arrays
+5. Observable values are copied into NumPy arrays (`SimResult.backend == "nfsim"`)
 
 The explicit `NFcore2::lowerPatternToNFsim` adapter is the value-pattern seam
-for the direct path. The in-memory XML initializer remains an explicit
-compatibility fallback and a shadow-comparison oracle while direct parity is
-qualified. The on-disk XML
-initializer is a last-resort compatibility path for legacy models. Direct
+for the direct NFcore path (`NFcore2` itself is unlinked from the default build per [DECISIONS.md](DECISIONS.md) item 4). The in-memory XML initializer remains an explicit
+compatibility fallback (`BNG_NFSIM_ALLOW_XML_FALLBACK=1`) and shadow-comparison oracle. The on-disk XML
+initializer is used by the standalone `NFsim -xml` CLI binary. Direct
 construction is fail-closed: unsupported AST constructs do not silently change
 semantics by falling back unless the caller opts into XML compatibility.
 Validation records `construction_path` and requires the direct leg to report
@@ -273,12 +292,7 @@ remains the historical evaluation record.
 
 ### BNGIR document boundary
 
-Python exposes deterministic, source-free BNGIR JSON v0.1 for the semantic
-model and a separately scoped action protocol. The schema is versioned under
-`provenance/schemas/bngir-0.1.schema.json`; generated networks, solver state,
-and caches are excluded. Deserialization reconstructs supported model-only
-documents and fails closed for population-map reconstruction or unsupported
-protocol forms.
+Python exposes deterministic, source-free BNGIR JSON (`to_bngir()` / `from_bngir()` / `semantic_equal()`), with **v0.2 as the public default** backed by `bng::compile::CompiledModel` and **v0.1** retained for wire compatibility (`provenance/schemas/bngir-0.1.schema.json` and `bngir-0.2.schema.json`). Generated networks, solver state, and caches are excluded. Exact process equality compares models up to consistent molecule/site/state renaming and raises `EqualityUndecided` rather than returning `False` when undecidable (see [DECISIONS.md](DECISIONS.md) item 6 and [docs/design/semantic-equal-design.md](design/semantic-equal-design.md)).
 
 ## Memory Management
 

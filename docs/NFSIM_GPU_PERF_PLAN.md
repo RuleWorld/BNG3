@@ -1,5 +1,7 @@
 # PR 27 comprehensive plan: faster NFsim (CPU + GPU)
 
+> **Historical design plan (branch `plan/nfsim-gpu-perf`, pre-`v3.0.0a1`).** Retained for design provenance; `NFcore2` was subsequently unlinked from the default build and `method="nf"` in Python now routes to **NFnext** (see [DECISIONS.md](DECISIONS.md) item 4 and [Network-Free Simulation](network_free_simulation.md)).
+
 Branch: `plan/nfsim-gpu-perf` (from PR 26 head `22ded21`).
 Goal: make network-free simulation meaningfully faster — CPU event-loop
 wins first (they ship regardless), ensemble parallelism second (reliable N×),
