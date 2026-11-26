@@ -3538,10 +3538,10 @@ def _native_conjunction_expression(
     # root finder can miss the opening edge of such a window.  The native SSA
     # scheduler solves affine time crossings analytically and handles them
     # directly.
-    if (
-        str(context.method or "ode").lower() not in {"ssa", "stochastic"}
-        and _native_is_clock_window(str(trigger or ""), context)
-    ):
+    if str(context.method or "ode").lower() not in {
+        "ssa",
+        "stochastic",
+    } and _native_is_clock_window(str(trigger or ""), context):
         return None
     rendered: List[str] = []
     for term in terms:
@@ -9430,10 +9430,7 @@ def synthesize_event_actions(
                 if not any(ev.trigger_persistent is False for ev in tier_events):
                     continue
                 tier_targets = [
-                    {
-                        standardize_name(_event_assignment(a)[0])
-                        for a in ev.assignments
-                    }
+                    {standardize_name(_event_assignment(a)[0]) for a in ev.assignments}
                     for ev in tier_events
                 ]
                 tier_reads = [

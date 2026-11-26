@@ -2862,7 +2862,10 @@ def _piecewise_switch_plan(
         return None
     pos_term, neg_term = pos_active[0], neg_active[0]
     participants = {reactant_id, product_id}
-    if not (set(pos_term.species_ids) <= participants and set(neg_term.species_ids) <= participants):
+    if not (
+        set(pos_term.species_ids) <= participants
+        and set(neg_term.species_ids) <= participants
+    ):
         return None
     pos_powers = dict(pos_term.species)
     neg_powers = dict(neg_term.species)

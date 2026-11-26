@@ -39,8 +39,6 @@ from .events import (
     parse_time_threshold,
     synthesize_event_actions,
     lower_native_events,
-    _lower_native_event,
-    _native_is_clock_window,
     _native_fixed_trigger_instant,
 )
 from .rate_rule_constants import (
@@ -1041,7 +1039,9 @@ def _expand_calls_with_lookup(
     return result
 
 
-_LAST_EXTEND_LOOKUP: Tuple[Optional[Tuple[int, int]], Dict[str, Tuple[List[str], str]]] = (
+_LAST_EXTEND_LOOKUP: Tuple[
+    Optional[Tuple[int, int]], Dict[str, Tuple[List[str], str]]
+] = (
     None,
     {},
 )
@@ -1068,7 +1068,9 @@ def _function_definition_lookup(
                 lookup.setdefault(str(function_id), entry)
         else:
             body = str(_definition_field(definition, "math", "") or "")
-            formal_arguments = list(_definition_field(definition, "arguments", []) or [])
+            formal_arguments = list(
+                _definition_field(definition, "arguments", []) or []
+            )
             lookup[str(function_id)] = (formal_arguments, body)
     if include_names:
         _LAST_EXTEND_LOOKUP = (cache_key, lookup)
@@ -2701,8 +2703,7 @@ def _rate_for_reaction(
     )
     classification_tokens_lower = {token.lower() for token in classification_tokens}
     classification_calls_lower = {
-        match.group(1).lower()
-        for match in _CALL_SITE_RE.finditer(classification_math)
+        match.group(1).lower() for match in _CALL_SITE_RE.finditer(classification_math)
     }
 
     def references_species_in_classification(species_id: str) -> bool:
@@ -6127,7 +6128,11 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
         seen_deps: Set[str] = set()
         for token in tokens:
             dependency = alias_to_var.get(token)
-            if dependency is not None and dependency != name and dependency not in seen_deps:
+            if (
+                dependency is not None
+                and dependency != name
+                and dependency not in seen_deps
+            ):
                 seen_deps.add(dependency)
         for dependency in by_name:
             if dependency in seen_deps:
@@ -12831,9 +12836,7 @@ def generate_bngl(
                     and standardize_name(str(rule.variable))
                     not in synthetic_rate_rule_variables
                     and standardize_name(str(rule.variable))
-                    not in {
-                        standardize_name(str(sp_id)) for sp_id in model.species
-                    }
+                    not in {standardize_name(str(sp_id)) for sp_id in model.species}
                     for rule in model.rules
                 )
                 else None

@@ -81,7 +81,10 @@ def test_stochastic_state_triggered_reset_event_lowers_and_executes(tmp_path):
     )
     assert result.success, result.error
     assert "begin bng3_events version 1" in result.bngl
-    assert "state-triggered SBML events require stochastic jump scheduling" not in result.bngl
+    assert (
+        "state-triggered SBML events require stochastic jump scheduling"
+        not in result.bngl
+    )
     assert not any(w.get("severity") == "dropped" for w in result.import_warnings)
 
     sim = _load_bngl(tmp_path, "stoch_reset.bngl", result.bngl).simulate(
@@ -285,11 +288,17 @@ def test_periodic_rate_rule_clock_with_truncated_distrib_draws(tmp_path):
     assert samples.std() > 0.2
 
 
-def test_competing_nonpersistent_equal_priority_pairs_with_discrete_sum_trigger(tmp_path):
+def test_competing_nonpersistent_equal_priority_pairs_with_discrete_sum_trigger(
+    tmp_path,
+):
     n_pairs = 24
     params = ['<parameter id="trig" value="1" constant="true"/>']
-    params.extend(f'<parameter id="A{i}" value="0" constant="false"/>' for i in range(n_pairs))
-    params.extend(f'<parameter id="B{i}" value="0" constant="false"/>' for i in range(n_pairs))
+    params.extend(
+        f'<parameter id="A{i}" value="0" constant="false"/>' for i in range(n_pairs)
+    )
+    params.extend(
+        f'<parameter id="B{i}" value="0" constant="false"/>' for i in range(n_pairs)
+    )
     params.append('<parameter id="Asum" constant="false"/>')
     params.append('<parameter id="Bsum" constant="false"/>')
     params.append('<parameter id="flagged" value="0" constant="false"/>')
@@ -446,7 +455,9 @@ def test_piecewise_switching_fast_reaction_reduces_exactly(
 # ---------------------------------------------------------------------------
 
 
-def _synthetic_function_heavy_sbml(n_species: int, n_functions: int, n_reactions: int) -> str:
+def _synthetic_function_heavy_sbml(
+    n_species: int, n_functions: int, n_reactions: int
+) -> str:
     base_count = max(1, n_functions // 4)
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
@@ -473,7 +484,9 @@ def _synthetic_function_heavy_sbml(n_species: int, n_functions: int, n_reactions
                 "</lambda></math></functionDefinition>"
             )
     parts.append("    </listOfFunctionDefinitions>")
-    parts.append('    <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>')
+    parts.append(
+        '    <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>'
+    )
     parts.append("    <listOfSpecies>")
     for i in range(n_species):
         parts.append(
@@ -505,13 +518,17 @@ def _synthetic_function_heavy_sbml(n_species: int, n_functions: int, n_reactions
 
 
 def test_large_function_heavy_sbml_atomizes_fast_and_deterministically(tmp_path):
-    xml = _synthetic_function_heavy_sbml(n_species=160, n_functions=160, n_reactions=240)
+    xml = _synthetic_function_heavy_sbml(
+        n_species=160, n_functions=160, n_reactions=240
+    )
     t0 = time.perf_counter()
     result = _atomize(xml)
     elapsed = time.perf_counter() - t0
     assert result.success, result.error
     # Previously quadratic (>20 s for this size); must stay well under 5 s.
-    assert elapsed < 5.0, f"Atomizer took {elapsed:.2f}s on 240-reaction nested-function model"
+    assert (
+        elapsed < 5.0
+    ), f"Atomizer took {elapsed:.2f}s on 240-reaction nested-function model"
     assert "fn_0(" not in result.bngl and "fn_40(" not in result.bngl
 
     # Verify PYTHONHASHSEED-invariance across distinct hash seeds.
@@ -550,7 +567,9 @@ def test_nested_function_inlining_matches_independent_roadrunner(tmp_path):
     rr = roadrunner.RoadRunner(xml)
     rr.integrator.relative_tolerance = 1e-10
     rr.integrator.absolute_tolerance = 1e-12
-    expected = rr.simulate(0.0, 2.0, 21, selections=["time", *(f"S_{i}" for i in range(6))])
+    expected = rr.simulate(
+        0.0, 2.0, 21, selections=["time", *(f"S_{i}" for i in range(6))]
+    )
     for i in range(6):
         np.testing.assert_allclose(
             sim.observables[f"S_{i}_amt"], expected[:, i + 1], rtol=1e-6, atol=1e-8
