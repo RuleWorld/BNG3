@@ -157,3 +157,18 @@ def test_pybionetgen_oracle_token_does_not_require_bionetgen_pin():
     report["references"] = {"pybionetgen": report["references"]["pybionetgen"]}
     gaps = checks.coverage_gaps([report], REVISION)
     assert all(not gap.startswith("pybionetgen.api-cli-atomizer:") for gap in gaps)
+
+
+def test_implemented_row_without_evidence_is_rejected(tmp_path):
+    root = tmp_path / "repo"
+    _copy_inventory_root(root)
+    matrix_path = root / "provenance/capability-matrix.yml"
+    matrix = json.loads(matrix_path.read_text())
+    for row in matrix["rows"]:
+        if row["id"] == checks.ROW_IDS[0]:
+            row["status"] = "implemented"
+            row["evidence"] = ""
+            break
+    matrix_path.write_text(json.dumps(matrix, indent=2) + "\n")
+    gaps = checks.structural_gaps(root)
+    assert any("lacks recorded evidence" in gap for gap in gaps)
