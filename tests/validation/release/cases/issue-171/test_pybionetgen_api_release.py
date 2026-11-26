@@ -84,7 +84,7 @@ def test_release_python_api(tmp_path: Path) -> None:
     # 1. Defaults and version
     defaults = bng_defaults.BNGDefaults()
     assert "bionetgen" in defaults.config
-    assert bng_version.get_version() == "0.8.6"
+    assert bng_version.get_version() in {"0.8.6", "0.8.7"}
     assert bionetgen.__version__ == "3.0.0a1"
 
     # 2. Exceptions

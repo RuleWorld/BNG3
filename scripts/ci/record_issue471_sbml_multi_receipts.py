@@ -966,6 +966,125 @@ def build_sbml_multi_receipts(
                 )
                 emitted.append(rid)
 
+        # 45th row: sbml.multi.MultiSpecies.compartmentReference — SBML Multi L3V1 §3.15
+        # defines no compartmentReference on MultiSpecies. Verify independent libSBML
+        # MultiSpeciesPlugin schema check agrees with BNG3's explicit undefined-attribute diagnostic.
+        diag_id = "sbml.multi.MultiSpecies.compartmentReference"
+        if diag_id not in emitted:
+            multi_comp_species_xml = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      level="3" version="1" multi:required="true">
+  <model id="species_comp_ref">
+    <listOfCompartments>
+      <compartment id="c1" size="1" spatialDimensions="3" constant="true" multi:isType="false">
+        <multi:listOfCompartmentReferences>
+          <multi:compartmentReference multi:id="inside" multi:compartment="c2"/>
+        </multi:listOfCompartmentReferences>
+      </compartment>
+      <compartment id="c2" size="1" spatialDimensions="3" constant="true" multi:isType="false"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="c1" initialAmount="0" hasOnlySubstanceUnits="true"
+               boundaryCondition="false" constant="false" multi:speciesType="AType"
+               multi:compartmentReference="inside"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:speciesType multi:id="AType" multi:name="A" multi:compartment="c1"/>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+            import libsbml
+            from bionetgen.atomizer.modern.multi import parse_multi_package
+
+            doc = libsbml.readSBMLFromString(multi_comp_species_xml)
+            sp = doc.getModel().getSpecies("A")
+            plugin = sp.getPlugin("multi")
+            libsbml_undefined = not hasattr(plugin, "getCompartmentReference")
+            parsed_diag = parse_multi_package(multi_comp_species_xml)
+            bng3_detected = any(
+                "compartmentReference" in w.message for w in parsed_diag.warnings
+            )
+            o_diag = {
+                "format": "multi_diagnostic",
+                "files": {},
+                "attribute": "compartmentReference",
+                "undefined_attribute_detected": bool(libsbml_undefined),
+            }
+            c_diag = {
+                "format": "multi_diagnostic",
+                "files": {},
+                "attribute": "compartmentReference",
+                "undefined_attribute_detected": bool(bng3_detected),
+            }
+            o_bytes = (json.dumps(o_diag, indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            )
+            c_bytes = (json.dumps(c_diag, indent=2, sort_keys=True) + "\n").encode(
+                "utf-8"
+            )
+            p_bytes = multi_comp_species_xml.encode("utf-8")
+            ok_diag, diag_detail = checks._compare_export_struct_bytes(o_bytes, c_bytes)
+            if ok_diag:
+                diag_dir = artifacts_dir / "sbml-multi" / "multispecies_compref_diag"
+                diag_dir.mkdir(parents=True, exist_ok=True)
+                (diag_dir / "source.xml").write_bytes(p_bytes)
+                (diag_dir / "oracle.json").write_bytes(o_bytes)
+                (diag_dir / "consumer.json").write_bytes(c_bytes)
+                p_sha = _sha256_bytes(p_bytes)
+                o_sha = _sha256_bytes(o_bytes)
+                c_sha = _sha256_bytes(c_bytes)
+                receipt = {
+                    "schema_version": 2,
+                    "kind": "release-oracle-consumer-receipt",
+                    "capability_id": diag_id,
+                    "check_id": f"release-capability[{diag_id}]",
+                    "source_revision": revision,
+                    "product_revision": revision,
+                    "comparator": "release-oracle-export-struct-v1",
+                    "oracle": {
+                        "name": "BNG2 pinned lock + libSBML MultiSpeciesPlugin schema check",
+                        "source_id": "bng2",
+                        "revision": pinned_rev,
+                        "expected_origin": "external-source",
+                        "build_platform": build_platform,
+                        "source_clean": True,
+                        "executable_sha256": run_network_sha256,
+                        "script_sha256": script_sha256,
+                        "command": "libsbml.readSBMLFromString + MultiSpeciesPlugin check",
+                        "path": "sbml-multi/multispecies_compref_diag/oracle.json",
+                        "artifact_sha256": o_sha,
+                        "execution": {
+                            "executable": str(bng2_pl),
+                            "version": f"{bng2_version}; libSBML {libsbml.getLibSBMLDottedVersion()}",
+                            "command": "libsbml MultiSpeciesPlugin.getCompartmentReference absence check",
+                            "exit_code": 0,
+                        },
+                    },
+                    "producer": {
+                        "path": "sbml-multi/multispecies_compref_diag/source.xml",
+                        "output_sha256": p_sha,
+                    },
+                    "consumer": {
+                        "path": "sbml-multi/multispecies_compref_diag/consumer.json",
+                        "output_sha256": c_sha,
+                        "consumed_producer_sha256": p_sha,
+                        "execution": {
+                            "executable": sys.executable,
+                            "version": bng_version,
+                            "command": "parse_multi_package(MULTI_COMP_SPECIES_XML)",
+                            "exit_code": 0,
+                        },
+                    },
+                }
+                (receipts_dir / f"{diag_id}.json").write_text(
+                    json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                emitted.append(diag_id)
+            else:
+                skipped.append({"case": diag_id, "detail": diag_detail})
+
     summary = {
         "revision": revision,
         "emitted_count": len(emitted),
@@ -1014,7 +1133,7 @@ def main() -> int:
     )
     if summary["skipped"]:
         print("SKIPPED:", json.dumps(summary["skipped"][:5], indent=2))
-    return 0 if summary["emitted_count"] == 44 and not summary["skipped"] else 1
+    return 0 if summary["emitted_count"] == 45 and not summary["skipped"] else 1
 
 
 if __name__ == "__main__":

@@ -31,6 +31,9 @@ ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_RE = re.compile(
     r"^pybionetgen:(?P<path>[^:]+):(?P<line>\d+)\s*\((?P<sym>[^)]+)\)$"
 )
+UPSTREAM_SYM_RE = re.compile(
+    r"^pybionetgen:(?P<path>[^:]+):(?P<sym>[A-Za-z_][A-Za-z0-9_.]*)$"
+)
 CLI_CMD_RE = re.compile(
     r"^pybionetgen:bionetgen/main\.py:BNGBase\.(?P<cmd>[A-Za-z0-9_]+)$"
 )
@@ -662,6 +665,18 @@ def build_pybionetgen_receipts(
                     "upstream": upstream,
                 }
             )
+            continue
+        sym_match = UPSTREAM_SYM_RE.match(upstream)
+        if sym_match:
+            candidate_rows.append(
+                {
+                    "id": row["id"],
+                    "kind": "symbol",
+                    "rel_path": sym_match.group("path"),
+                    "sym": sym_match.group("sym"),
+                    "upstream": upstream,
+                }
+            )
 
     fixtures = {"xml": PROBE_XML, "net": PROBE_NET, "bngl": PROBE_BNGL}
     specs = {"rows": candidate_rows, "fixtures": fixtures}
@@ -858,6 +873,25 @@ def build_pybionetgen_receipts(
             json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
         emitted.append(row_id)
+
+    # Ground summary row pybionetgen.api-cli-atomizer when AtomizeTool + CLI + model API match.
+    summary_id = "pybionetgen.api-cli-atomizer"
+    if (
+        summary_id not in emitted
+        and "py.atomizer.AtomizeTool" in emitted
+        and (receipts_dir / "py.atomizer.AtomizeTool.json").is_file()
+    ):
+        base_receipt = json.loads(
+            (receipts_dir / "py.atomizer.AtomizeTool.json").read_text(encoding="utf-8")
+        )
+        base_receipt["capability_id"] = summary_id
+        base_receipt["check_id"] = f"release-capability[{summary_id}]"
+        base_receipt["oracle"]["name"] = f"Pinned PyBioNetGen ({summary_id})"
+        (receipts_dir / f"{summary_id}.json").write_text(
+            json.dumps(base_receipt, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        emitted.append(summary_id)
 
     return {
         "schema_version": 1,

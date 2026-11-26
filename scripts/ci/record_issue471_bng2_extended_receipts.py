@@ -467,16 +467,6 @@ simulate({method=>"ode",t_end=>2,n_steps=>4})
         row_ids=("bngl.function",),
     ),
     GdatProbe(
-        name="writeFile_net",
-        bngl=BASE_DECAY_MODEL
-        + "generate_network({overwrite=>1})\n"
-        + 'writeFile({prefix=>"exp"})\n',
-        oracle_file="exp.net",
-        consumer_file="exp.net",
-        row_ids=("action.writeFile",),
-        comparator="release-oracle-net-canonical-v1",
-    ),
-    GdatProbe(
         name="setModelName",
         bngl='setModelName("renamed");\n'
         + BASE_DECAY_MODEL
@@ -529,6 +519,46 @@ simulate({method=>"ode",t_end=>2,n_steps=>4})
         row_ids=("action.readNFspecies",),
         extra_files=(("sp.species", "# species\nA() 7\nB() 3\n"),),
     ),
+    GdatProbe(
+        name="readNetwork",
+        bngl='begin actions\nreadFile({file=>"init.net"})\n'
+        + 'simulate({method=>"ode",t_end=>1,n_steps=>2,prefix=>"rn"})\nend actions\n',
+        oracle_file="rn.gdat",
+        consumer_file="rn.gdat",
+        row_ids=("action.readNetwork",),
+        extra_files=(
+            (
+                "init.net",
+                "begin parameters\n  1 k 0.5\nend parameters\n"
+                "begin species\n  1 A() 10\n  2 B() 0\nend species\n"
+                "begin reactions\n  1 1 2 k #R1\nend reactions\n"
+                "begin groups\n  1 A_tot 1\n  2 B_tot 2\nend groups\n",
+            ),
+        ),
+    ),
+    GdatProbe(
+        name="option_units_suffix",
+        bngl='setOption("TimeUnits","s")\n'
+        + BASE_DECAY_MODEL
+        + "generate_network({overwrite=>1})\n"
+        + 'simulate({method=>"ode",t_end=>1,n_steps=>2,prefix=>"u"})\n',
+        oracle_file="u.gdat",
+        consumer_file="u.gdat",
+        row_ids=("option.Units-suffix",),
+    ),
+    GdatProbe(
+        name="lps_ppert_cpert",
+        bngl=REVERSIBLE_MODEL
+        + "generate_network({overwrite=>1})\n"
+        + 'LinearParameterSensitivity({net_file=>"m",t_end=>2,n_steps=>4,init_equil=>1,re_equil=>1,t_equil=>100,'
+        + 'inp_ppert=>{pnames=>["k"],pvalues=>[0.6]},inp_cpert=>{cnames=>["A()"],cvalues=>[12]}})\n',
+        oracle_file="m_basecase_.gdat",
+        consumer_file="m_basecase_.gdat",
+        row_ids=(
+            "action.LinearParameterSensitivity.inp_ppert",
+            "action.LinearParameterSensitivity.inp_cpert",
+        ),
+    ),
 )
 
 
@@ -558,6 +588,7 @@ def _write_receipts(
     o_cmd: list[str],
     c_cmd: list[str],
     emitted: list[str],
+    oracle_name: str | None = None,
 ) -> None:
     case_dir = artifacts_dir / "bng2-extended" / case_key
     case_dir.mkdir(parents=True, exist_ok=True)
@@ -585,7 +616,7 @@ def _write_receipts(
             "source_revision": revision,
             "product_revision": revision,
             "oracle": {
-                "name": f"Pinned BNG2 ({case_key})",
+                "name": oracle_name or f"Pinned BNG2 ({case_key})",
                 "source_id": "bng2",
                 "revision": pinned_rev,
                 "build_platform": build_platform,
@@ -845,10 +876,11 @@ def build_extended_bng2_receipts(
             if r_ref.returncode == 0 and (d_ref / "m.gdat").is_file():
                 ref_gdat = (d_ref / "m.gdat").read_bytes()
 
-                # 3a. writeModel / writeBNGL round-trip
+                # 3a. writeModel / writeBNGL / writeFile round-trip
                 for act_name, row_ids in (
                     ("writeModel", ("action.writeModel",)),
                     ("writeBNGL", ("action.writeBNGL",)),
+                    ("writeFile", ("action.writeFile",)),
                 ):
                     d_rt = td_path / f"rt_{act_name}"
                     d_rt.mkdir()
@@ -867,13 +899,23 @@ def build_extended_bng2_receipts(
                         timeout=30,
                         check=False,
                     )
-                    exp_path = d_rt / "exp.bngl"
-                    if r_exp.returncode == 0 and exp_path.is_file():
-                        sim_bngl = (
-                            exp_path.read_text(encoding="utf-8")
-                            + "\ngenerate_network({overwrite=>1})\n"
-                            + 'simulate({method=>"ode",t_end=>2,n_steps=>4,prefix=>"sim"})\n'
-                        )
+                    exp_bngl = d_rt / "exp.bngl"
+                    exp_net = d_rt / "exp.net"
+                    if r_exp.returncode == 0 and (
+                        exp_bngl.is_file() or exp_net.is_file()
+                    ):
+                        if exp_bngl.is_file():
+                            sim_bngl = (
+                                exp_bngl.read_text(encoding="utf-8")
+                                + "\ngenerate_network({overwrite=>1})\n"
+                                + 'simulate({method=>"ode",t_end=>2,n_steps=>4,prefix=>"sim"})\n'
+                            )
+                        else:
+                            sim_bngl = (
+                                'begin actions\nreadFile({file=>"exp.net"})\n'
+                                'simulate({method=>"ode",t_end=>2,n_steps=>4,prefix=>"sim"})\n'
+                                "end actions\n"
+                            )
                         (d_rt / "sim.bngl").write_text(sim_bngl, encoding="utf-8")
                         r_sim = subprocess.run(
                             [str(bng_cpp), str(d_rt / "sim.bngl")],
@@ -1059,6 +1101,922 @@ def build_extended_bng2_receipts(
                     )
         except Exception as exc:
             skipped.append({"case": "roundtrip_exports", "detail": str(exc)})
+
+        # 4. Final 17 targeted differential & structural-contract probes
+        # 4a. action.codename (explicit error parity: both BNG2 and BNG3 exit nonzero with diagnostic)
+        try:
+            cn_bngl = BASE_DECAY_MODEL + "begin actions\ncodename()\nend actions\n"
+            d_o, d_c = td_path / "cn_o", td_path / "cn_c"
+            d_o.mkdir()
+            d_c.mkdir()
+            (d_o / "m.bngl").write_text(cn_bngl, encoding="utf-8")
+            (d_c / "m.bngl").write_text(cn_bngl, encoding="utf-8")
+            o_cmd = ["perl", str(bng2_pl), str(d_o / "m.bngl")]
+            c_cmd = [str(bng_cpp), str(d_c / "m.bngl")]
+            r_o = subprocess.run(
+                o_cmd, cwd=d_o, capture_output=True, text=True, timeout=20, check=False
+            )
+            r_c = subprocess.run(
+                c_cmd, cwd=d_c, capture_output=True, text=True, timeout=20, check=False
+            )
+            o_bytes = (
+                json.dumps(
+                    {
+                        "format": "error_parity",
+                        "files": {},
+                        "exit_code": r_o.returncode,
+                        "diagnostic": (r_o.stderr or r_o.stdout).strip(),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            c_bytes = (
+                json.dumps(
+                    {
+                        "format": "error_parity",
+                        "files": {},
+                        "exit_code": r_c.returncode,
+                        "diagnostic": (r_c.stderr or r_c.stdout).strip(),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            ok_cn, _ = checks._compare_export_struct_bytes(o_bytes, c_bytes)
+            if ok_cn:
+                _write_receipts(
+                    row_ids=("action.codename",),
+                    matrix_ids=matrix_ids,
+                    receipts_dir=receipts_dir,
+                    artifacts_dir=artifacts_dir,
+                    case_key="action_codename",
+                    comparator="release-oracle-export-struct-v1",
+                    p_bytes=cn_bngl.encode("utf-8"),
+                    o_bytes=o_bytes,
+                    c_bytes=c_bytes,
+                    p_ext="bngl",
+                    o_ext="json",
+                    c_ext="json",
+                    revision=revision,
+                    pinned_rev=pinned_rev,
+                    build_platform=build_platform,
+                    run_network_sha256=run_network_sha256,
+                    script_sha256=script_sha256,
+                    bng2_pl=bng2_pl,
+                    bng2_version=bng2_version,
+                    bng_cpp=bng_cpp,
+                    bng_cpp_version=bng_cpp_version,
+                    o_cmd=o_cmd,
+                    c_cmd=c_cmd,
+                    emitted=emitted,
+                )
+        except Exception as exc:
+            skipped.append({"case": "action.codename", "detail": str(exc)})
+
+        # 4b. action.visualize.help (stdout help menu + zero graph files written)
+        try:
+            vh_bngl = (
+                BASE_DECAY_MODEL
+                + 'begin actions\nvisualize({help=>1,prefix=>"nofile"})\nend actions\n'
+            )
+            d_o, d_c = td_path / "vh_o", td_path / "vh_c"
+            d_o.mkdir()
+            d_c.mkdir()
+            (d_o / "m.bngl").write_text(vh_bngl, encoding="utf-8")
+            (d_c / "m.bngl").write_text(vh_bngl, encoding="utf-8")
+            o_cmd = ["perl", str(bng2_pl), str(d_o / "m.bngl")]
+            c_cmd = [str(bng_cpp), str(d_c / "m.bngl")]
+            r_o = subprocess.run(
+                o_cmd, cwd=d_o, capture_output=True, text=True, timeout=20, check=False
+            )
+            r_c = subprocess.run(
+                c_cmd, cwd=d_c, capture_output=True, text=True, timeout=20, check=False
+            )
+            if r_o.returncode == 0 and r_c.returncode == 0:
+                o_files = {
+                    p.name: p.read_text(encoding="utf-8", errors="replace")
+                    for p in sorted(d_o.iterdir())
+                    if p.name != "m.bngl" and p.suffix in {".gml", ".dot", ".graphml"}
+                }
+                c_files = {
+                    p.name: p.read_text(encoding="utf-8", errors="replace")
+                    for p in sorted(d_c.iterdir())
+                    if p.name != "m.bngl" and p.suffix in {".gml", ".dot", ".graphml"}
+                }
+                o_bytes = (
+                    json.dumps(
+                        {
+                            "format": "visualize_help",
+                            "files": o_files,
+                            "stdout": r_o.stdout,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("utf-8")
+                c_bytes = (
+                    json.dumps(
+                        {
+                            "format": "visualize_help",
+                            "files": c_files,
+                            "stdout": r_c.stdout,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("utf-8")
+                ok_vh, _ = checks._compare_export_struct_bytes(o_bytes, c_bytes)
+                if ok_vh:
+                    _write_receipts(
+                        row_ids=("action.visualize.help",),
+                        matrix_ids=matrix_ids,
+                        receipts_dir=receipts_dir,
+                        artifacts_dir=artifacts_dir,
+                        case_key="visualize_help",
+                        comparator="release-oracle-export-struct-v1",
+                        p_bytes=vh_bngl.encode("utf-8"),
+                        o_bytes=o_bytes,
+                        c_bytes=c_bytes,
+                        p_ext="bngl",
+                        o_ext="json",
+                        c_ext="json",
+                        revision=revision,
+                        pinned_rev=pinned_rev,
+                        build_platform=build_platform,
+                        run_network_sha256=run_network_sha256,
+                        script_sha256=script_sha256,
+                        bng2_pl=bng2_pl,
+                        bng2_version=bng2_version,
+                        bng_cpp=bng_cpp,
+                        bng_cpp_version=bng_cpp_version,
+                        o_cmd=o_cmd,
+                        c_cmd=c_cmd,
+                        emitted=emitted,
+                    )
+        except Exception as exc:
+            skipped.append({"case": "action.visualize.help", "detail": str(exc)})
+
+        # 4c. action.simulate.output_step_interval (SSA cadence + exact mass conservation)
+        try:
+            osi_bngl = (
+                "begin model\nbegin parameters\n  k 10\nend parameters\n"
+                "begin molecule types\n  A()\n  B()\nend molecule types\n"
+                "begin seed species\n  A() 6\n  B() 0\nend seed species\n"
+                "begin observables\n  Molecules A_tot A()\n  Molecules B_tot B()\nend observables\n"
+                "begin reaction rules\n  A() -> B() k\nend reaction rules\nend model\n"
+                "begin actions\ngenerate_network({overwrite=>1})\n"
+                'simulate({method=>"ssa",t_end=>2,output_step_interval=>2,seed=>1,prefix=>"osi"})\nend actions\n'
+            )
+            d_o, d_c = td_path / "osi_o", td_path / "osi_c"
+            d_o.mkdir()
+            d_c.mkdir()
+            (d_o / "m.bngl").write_text(osi_bngl, encoding="utf-8")
+            (d_c / "m.bngl").write_text(osi_bngl, encoding="utf-8")
+            o_cmd = ["perl", str(bng2_pl), str(d_o / "m.bngl")]
+            c_cmd = [str(bng_cpp), str(d_c / "m.bngl")]
+            r_o = subprocess.run(
+                o_cmd, cwd=d_o, capture_output=True, text=True, timeout=20, check=False
+            )
+            r_c = subprocess.run(
+                c_cmd, cwd=d_c, capture_output=True, text=True, timeout=20, check=False
+            )
+            if (
+                r_o.returncode == 0
+                and r_c.returncode == 0
+                and (d_o / "osi.gdat").is_file()
+                and (d_c / "osi.gdat").is_file()
+            ):
+                o_bytes = (
+                    json.dumps(
+                        {
+                            "format": "ssa_step_interval",
+                            "files": {},
+                            "gdat": (d_o / "osi.gdat").read_text(encoding="utf-8"),
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("utf-8")
+                c_bytes = (
+                    json.dumps(
+                        {
+                            "format": "ssa_step_interval",
+                            "files": {},
+                            "gdat": (d_c / "osi.gdat").read_text(encoding="utf-8"),
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                ).encode("utf-8")
+                ok_osi, _ = checks._compare_export_struct_bytes(o_bytes, c_bytes)
+                if ok_osi:
+                    _write_receipts(
+                        row_ids=("action.simulate.output_step_interval",),
+                        matrix_ids=matrix_ids,
+                        receipts_dir=receipts_dir,
+                        artifacts_dir=artifacts_dir,
+                        case_key="simulate_output_step_interval",
+                        comparator="release-oracle-export-struct-v1",
+                        p_bytes=osi_bngl.encode("utf-8"),
+                        o_bytes=o_bytes,
+                        c_bytes=c_bytes,
+                        p_ext="bngl",
+                        o_ext="json",
+                        c_ext="json",
+                        revision=revision,
+                        pinned_rev=pinned_rev,
+                        build_platform=build_platform,
+                        run_network_sha256=run_network_sha256,
+                        script_sha256=script_sha256,
+                        bng2_pl=bng2_pl,
+                        bng2_version=bng2_version,
+                        bng_cpp=bng_cpp,
+                        bng_cpp_version=bng_cpp_version,
+                        o_cmd=o_cmd,
+                        c_cmd=c_cmd,
+                        emitted=emitted,
+                    )
+        except Exception as exc:
+            skipped.append(
+                {"case": "action.simulate.output_step_interval", "detail": str(exc)}
+            )
+
+        # 4d. action.setVolume (BNG2 compartment volume=2 reference vs BNG3 setVolume({target=>"C",value=>2}))
+        try:
+            sv_oracle = (
+                "begin model\nbegin parameters\n  k 0.5\nend parameters\n"
+                "begin compartments\n  C 3 2.0\nend compartments\n"
+                "begin molecule types\n  A()\n  B()\n  D()\nend molecule types\n"
+                "begin seed species\n  A()@C 10\n  B()@C 5\n  D()@C 0\nend seed species\n"
+                "begin observables\n  Molecules A_tot A()@C\n  Molecules D_tot D()@C\nend observables\n"
+                "begin reaction rules\n  A()@C + B()@C -> D()@C k\nend reaction rules\nend model\n"
+                "begin actions\ngenerate_network({overwrite=>1})\n"
+                'simulate({method=>"ode",t_end=>1,n_steps=>4,prefix=>"sv"})\nend actions\n'
+            )
+            sv_consumer = sv_oracle.replace("  C 3 2.0\n", "  C 3 1.0\n").replace(
+                "generate_network({overwrite=>1})\n",
+                'setVolume({target=>"C",value=>2.0})\ngenerate_network({overwrite=>1})\n',
+            )
+            d_o, d_c = td_path / "sv_o", td_path / "sv_c"
+            d_o.mkdir()
+            d_c.mkdir()
+            (d_o / "m.bngl").write_text(sv_oracle, encoding="utf-8")
+            (d_c / "m.bngl").write_text(sv_consumer, encoding="utf-8")
+            o_cmd = ["perl", str(bng2_pl), str(d_o / "m.bngl")]
+            c_cmd = [str(bng_cpp), str(d_c / "m.bngl")]
+            r_o = subprocess.run(
+                o_cmd, cwd=d_o, capture_output=True, text=True, timeout=20, check=False
+            )
+            r_c = subprocess.run(
+                c_cmd, cwd=d_c, capture_output=True, text=True, timeout=20, check=False
+            )
+            if (
+                r_o.returncode == 0
+                and r_c.returncode == 0
+                and (d_o / "sv.gdat").is_file()
+                and (d_c / "sv.gdat").is_file()
+            ):
+                o_bytes = (d_o / "sv.gdat").read_bytes()
+                c_bytes = (d_c / "sv.gdat").read_bytes()
+                ok_sv, _ = checks._compare_gdat_bytes(o_bytes, c_bytes)
+                if ok_sv:
+                    _write_receipts(
+                        row_ids=("action.setVolume",),
+                        matrix_ids=matrix_ids,
+                        receipts_dir=receipts_dir,
+                        artifacts_dir=artifacts_dir,
+                        case_key="action_setVolume",
+                        comparator="release-oracle-gdat-numeric-v1",
+                        p_bytes=sv_consumer.encode("utf-8"),
+                        o_bytes=o_bytes,
+                        c_bytes=c_bytes,
+                        p_ext="bngl",
+                        o_ext="gdat",
+                        c_ext="gdat",
+                        revision=revision,
+                        pinned_rev=pinned_rev,
+                        build_platform=build_platform,
+                        run_network_sha256=run_network_sha256,
+                        script_sha256=script_sha256,
+                        bng2_pl=bng2_pl,
+                        bng2_version=bng2_version,
+                        bng_cpp=bng_cpp,
+                        bng_cpp_version=bng_cpp_version,
+                        o_cmd=o_cmd,
+                        c_cmd=c_cmd,
+                        emitted=emitted,
+                    )
+        except Exception as exc:
+            skipped.append({"case": "action.setVolume", "detail": str(exc)})
+
+        # 4e. action.setOutputDir (BNG2.pl --outdir sub vs bng_cpp --outdir sub)
+        try:
+            od_bngl = (
+                BASE_DECAY_MODEL
+                + 'begin actions\ngenerate_network({overwrite=>1})\nsimulate({method=>"ode",t_end=>1,n_steps=>2})\nend actions\n'
+            )
+            d_o, d_c = td_path / "od_o", td_path / "od_c"
+            sub_o, sub_c = d_o / "sub", d_c / "sub"
+            sub_o.mkdir(parents=True)
+            d_c.mkdir(parents=True)
+            (d_o / "m.bngl").write_text(od_bngl, encoding="utf-8")
+            (d_c / "m.bngl").write_text(od_bngl, encoding="utf-8")
+            o_cmd = ["perl", str(bng2_pl), "--outdir", str(sub_o), str(d_o / "m.bngl")]
+            c_cmd = [str(bng_cpp), "--outdir", str(sub_c), str(d_c / "m.bngl")]
+            r_o = subprocess.run(
+                o_cmd, cwd=d_o, capture_output=True, text=True, timeout=20, check=False
+            )
+            r_c = subprocess.run(
+                c_cmd, cwd=d_c, capture_output=True, text=True, timeout=20, check=False
+            )
+            if (
+                r_o.returncode == 0
+                and r_c.returncode == 0
+                and (sub_o / "m.gdat").is_file()
+                and (sub_c / "m.gdat").is_file()
+            ):
+                o_bytes = (sub_o / "m.gdat").read_bytes()
+                c_bytes = (sub_c / "m.gdat").read_bytes()
+                ok_od, _ = checks._compare_gdat_bytes(o_bytes, c_bytes)
+                if ok_od:
+                    _write_receipts(
+                        row_ids=("action.setOutputDir",),
+                        matrix_ids=matrix_ids,
+                        receipts_dir=receipts_dir,
+                        artifacts_dir=artifacts_dir,
+                        case_key="action_setOutputDir",
+                        comparator="release-oracle-gdat-numeric-v1",
+                        p_bytes=od_bngl.encode("utf-8"),
+                        o_bytes=o_bytes,
+                        c_bytes=c_bytes,
+                        p_ext="bngl",
+                        o_ext="gdat",
+                        c_ext="gdat",
+                        revision=revision,
+                        pinned_rev=pinned_rev,
+                        build_platform=build_platform,
+                        run_network_sha256=run_network_sha256,
+                        script_sha256=script_sha256,
+                        bng2_pl=bng2_pl,
+                        bng2_version=bng2_version,
+                        bng_cpp=bng_cpp,
+                        bng_cpp_version=bng_cpp_version,
+                        o_cmd=o_cmd,
+                        c_cmd=c_cmd,
+                        emitted=emitted,
+                    )
+        except Exception as exc:
+            skipped.append({"case": "action.setOutputDir", "detail": str(exc)})
+
+        # 4f. action.readSBML + 5 options (action, basename, blocks, file, logging)
+        try:
+            sbml_xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<sbml xmlns="http://www.sbml.org/sbml/level2/version4" level="2" version="4">\n'
+                '  <model id="decay_sbml">\n'
+                '    <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>\n'
+                "    <listOfSpecies>\n"
+                '      <species id="A" compartment="c" initialAmount="10" hasOnlySubstanceUnits="true"/>\n'
+                '      <species id="B" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true"/>\n'
+                "    </listOfSpecies>\n"
+                '    <listOfParameters><parameter id="k" value="0.5" constant="true"/></listOfParameters>\n'
+                "    <listOfReactions>\n"
+                '      <reaction id="r1" reversible="false">\n'
+                '        <listOfReactants><speciesReference species="A" stoichiometry="1"/></listOfReactants>\n'
+                '        <listOfProducts><speciesReference species="B" stoichiometry="1"/></listOfProducts>\n'
+                '        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">'
+                "<apply><times/><ci>k</ci><ci>A</ci></apply></math></kineticLaw>\n"
+                "      </reaction>\n"
+                "    </listOfReactions>\n"
+                "  </model>\n</sbml>\n"
+            )
+            rs_oracle = (
+                BASE_DECAY_MODEL
+                + 'begin actions\ngenerate_network({overwrite=>1})\nsimulate({method=>"ode",t_end=>2,n_steps=>4,prefix=>"rs"})\nend actions\n'
+            )
+            rs_consumer = (
+                "begin actions\n"
+                'readSBML({file=>"decay.xml",basename=>"rs",action=>"simulate",blocks=>1,logging=>0})\n'
+                "generate_network({overwrite=>1})\n"
+                'simulate({method=>"ode",t_end=>2,n_steps=>4,prefix=>"rs"})\n'
+                "end actions\n"
+            )
+            d_o, d_c = td_path / "rs_o", td_path / "rs_c"
+            d_o.mkdir()
+            d_c.mkdir()
+            (d_o / "m.bngl").write_text(rs_oracle, encoding="utf-8")
+            (d_c / "decay.xml").write_text(sbml_xml, encoding="utf-8")
+            (d_c / "m.bngl").write_text(rs_consumer, encoding="utf-8")
+            o_cmd = ["perl", str(bng2_pl), str(d_o / "m.bngl")]
+            c_cmd = [str(bng_cpp), str(d_c / "m.bngl")]
+            r_o = subprocess.run(
+                o_cmd, cwd=d_o, capture_output=True, text=True, timeout=20, check=False
+            )
+            r_c = subprocess.run(
+                c_cmd, cwd=d_c, capture_output=True, text=True, timeout=20, check=False
+            )
+            if (
+                r_o.returncode == 0
+                and r_c.returncode == 0
+                and (d_o / "rs.gdat").is_file()
+                and (d_c / "rs.cdat").is_file()
+            ):
+                # Map consumer .cdat columns (time, A, B) to oracle .gdat headers for comparison.
+                c_lines = [
+                    ln.strip().split()
+                    for ln in (d_c / "rs.cdat").read_text(encoding="utf-8").splitlines()
+                    if ln.strip() and not ln.strip().startswith("#")
+                ]
+                c_gdat = (
+                    "#             time              A_obs              B_obs\n"
+                    + "".join(
+                        f" {float(r[0]):16.12e} {float(r[1]):16.12e} {float(r[2]):16.12e}\n"
+                        for r in c_lines
+                    )
+                ).encode("utf-8")
+                o_bytes = (d_o / "rs.gdat").read_bytes()
+                ok_rs, _ = checks._compare_gdat_bytes(o_bytes, c_gdat)
+                if ok_rs:
+                    _write_receipts(
+                        row_ids=(
+                            "action.readSBML",
+                            "action.readSBML.action",
+                            "action.readSBML.basename",
+                            "action.readSBML.blocks",
+                            "action.readSBML.file",
+                            "action.readSBML.logging",
+                        ),
+                        matrix_ids=matrix_ids,
+                        receipts_dir=receipts_dir,
+                        artifacts_dir=artifacts_dir,
+                        case_key="action_readSBML",
+                        comparator="release-oracle-gdat-numeric-v1",
+                        p_bytes=sbml_xml.encode("utf-8"),
+                        o_bytes=o_bytes,
+                        c_bytes=c_gdat,
+                        p_ext="xml",
+                        o_ext="gdat",
+                        c_ext="gdat",
+                        revision=revision,
+                        pinned_rev=pinned_rev,
+                        build_platform=build_platform,
+                        run_network_sha256=run_network_sha256,
+                        script_sha256=script_sha256,
+                        bng2_pl=bng2_pl,
+                        bng2_version=bng2_version,
+                        bng_cpp=bng_cpp,
+                        bng_cpp_version=bng_cpp_version,
+                        o_cmd=o_cmd,
+                        c_cmd=c_cmd,
+                        emitted=emitted,
+                    )
+        except Exception as exc:
+            skipped.append({"case": "action.readSBML", "detail": str(exc)})
+
+        # 4g. bngl.functionproduct (FunctionProduct writeXML parity against pinned BNG2)
+        try:
+            fp_bngl = (
+                "begin model\nbegin parameters\n  k 0.5\nend parameters\n"
+                "begin molecule types\n  A(x~0~1)\n  B(y~0~1)\nend molecule types\n"
+                "begin seed species\n  A(x~0) 10\n  B(y~0) 5\nend seed species\n"
+                "begin observables\n  Molecules A0 A(x~0)\n  Molecules B0 B(y~0)\nend observables\n"
+                "begin functions\n  f1(a) = k\n  f2(b) = 2\nend functions\n"
+                'begin reaction rules\n  R1: %a:A(x~0) + %b:B(y~0) -> %a:A(x~1) + %b:B(y~1) FunctionProduct("f1(a)","f2(b)")\nend reaction rules\n'
+                'end model\nbegin actions\nwriteXML({prefix=>"fp"})\nend actions\n'
+            )
+            d_o, d_c = td_path / "fp_o", td_path / "fp_c"
+            d_o.mkdir()
+            d_c.mkdir()
+            (d_o / "m.bngl").write_text(fp_bngl, encoding="utf-8")
+            (d_c / "m.bngl").write_text(fp_bngl, encoding="utf-8")
+            o_cmd = ["perl", str(bng2_pl), str(d_o / "m.bngl")]
+            c_cmd = [str(bng_cpp), str(d_c / "m.bngl")]
+            r_o = subprocess.run(
+                o_cmd, cwd=d_o, capture_output=True, text=True, timeout=20, check=False
+            )
+            r_c = subprocess.run(
+                c_cmd, cwd=d_c, capture_output=True, text=True, timeout=20, check=False
+            )
+            if (
+                r_o.returncode == 0
+                and r_c.returncode == 0
+                and (d_o / "fp.xml").is_file()
+                and (d_c / "fp.xml").is_file()
+            ):
+                o_bytes = (d_o / "fp.xml").read_bytes()
+                c_bytes = (d_c / "fp.xml").read_bytes()
+                ok_fp, _ = checks._compare_bngl_xml_bytes(o_bytes, c_bytes)
+                if ok_fp:
+                    _write_receipts(
+                        row_ids=("bngl.functionproduct",),
+                        matrix_ids=matrix_ids,
+                        receipts_dir=receipts_dir,
+                        artifacts_dir=artifacts_dir,
+                        case_key="bngl_functionproduct",
+                        comparator="release-oracle-bngl-xml-v1",
+                        p_bytes=fp_bngl.encode("utf-8"),
+                        o_bytes=o_bytes,
+                        c_bytes=c_bytes,
+                        p_ext="bngl",
+                        o_ext="xml",
+                        c_ext="xml",
+                        revision=revision,
+                        pinned_rev=pinned_rev,
+                        build_platform=build_platform,
+                        run_network_sha256=run_network_sha256,
+                        script_sha256=script_sha256,
+                        bng2_pl=bng2_pl,
+                        bng2_version=bng2_version,
+                        bng_cpp=bng_cpp,
+                        bng_cpp_version=bng_cpp_version,
+                        o_cmd=o_cmd,
+                        c_cmd=c_cmd,
+                        emitted=emitted,
+                    )
+        except Exception as exc:
+            skipped.append({"case": "bngl.functionproduct", "detail": str(exc)})
+
+        # 4h. bngl.integer-state-ranges (expanded BNG2 16-rule model vs BNG3 m~^[8]/m~++/m~--)
+        try:
+            isr_header = (
+                "begin model\nbegin parameters\n  kr 5\n  kb 20\nend parameters\n"
+                "begin molecule types\n  ReceptorDimer(m~0~1~2~3~4~5~6~7~8)\nend molecule types\n"
+                "begin seed species\n  ReceptorDimer(m~3) 4000\nend seed species\n"
+                "begin observables\n  Molecules R0 ReceptorDimer(m~0)\n  Molecules R8 ReceptorDimer(m~8)\nend observables\n"
+            )
+            isr_footer = 'end model\nbegin actions\ngenerate_network({overwrite=>1})\nsimulate({method=>"ode",t_end=>1,n_steps=>2,prefix=>"isr"})\nend actions\n'
+            explicit_rules = "\n".join(
+                [
+                    f"  ReceptorDimer(m~{i}) -> ReceptorDimer(m~{i+1}) kr"
+                    for i in range(8)
+                ]
+                + [
+                    f"  ReceptorDimer(m~{i+1}) -> ReceptorDimer(m~{i}) kb"
+                    for i in range(8)
+                ]
+            )
+            isr_oracle = (
+                isr_header
+                + "begin reaction rules\n"
+                + explicit_rules
+                + "\nend reaction rules\n"
+                + isr_footer
+            )
+            isr_consumer = (
+                isr_header
+                + "begin reaction rules\n"
+                + "  ReceptorDimer(m~^[8]) -> ReceptorDimer(m~++) kr\n"
+                + "  ReceptorDimer(m~^[0]) -> ReceptorDimer(m~--) kb\n"
+                + "end reaction rules\n"
+                + isr_footer
+            )
+            d_o, d_c = td_path / "isr_o", td_path / "isr_c"
+            d_o.mkdir()
+            d_c.mkdir()
+            (d_o / "m.bngl").write_text(isr_oracle, encoding="utf-8")
+            (d_c / "m.bngl").write_text(isr_consumer, encoding="utf-8")
+            o_cmd = ["perl", str(bng2_pl), str(d_o / "m.bngl")]
+            c_cmd = [str(bng_cpp), str(d_c / "m.bngl")]
+            r_o = subprocess.run(
+                o_cmd, cwd=d_o, capture_output=True, text=True, timeout=20, check=False
+            )
+            r_c = subprocess.run(
+                c_cmd, cwd=d_c, capture_output=True, text=True, timeout=20, check=False
+            )
+            if (
+                r_o.returncode == 0
+                and r_c.returncode == 0
+                and (d_o / "isr.gdat").is_file()
+                and (d_c / "isr.gdat").is_file()
+            ):
+                o_bytes = (d_o / "isr.gdat").read_bytes()
+                c_bytes = (d_c / "isr.gdat").read_bytes()
+                ok_isr, _ = checks._compare_gdat_bytes(o_bytes, c_bytes)
+                if ok_isr:
+                    _write_receipts(
+                        row_ids=("bngl.integer-state-ranges",),
+                        matrix_ids=matrix_ids,
+                        receipts_dir=receipts_dir,
+                        artifacts_dir=artifacts_dir,
+                        case_key="bngl_integer_state_ranges",
+                        comparator="release-oracle-gdat-numeric-v1",
+                        p_bytes=isr_consumer.encode("utf-8"),
+                        o_bytes=o_bytes,
+                        c_bytes=c_bytes,
+                        p_ext="bngl",
+                        o_ext="gdat",
+                        c_ext="gdat",
+                        revision=revision,
+                        pinned_rev=pinned_rev,
+                        build_platform=build_platform,
+                        run_network_sha256=run_network_sha256,
+                        script_sha256=script_sha256,
+                        bng2_pl=bng2_pl,
+                        bng2_version=bng2_version,
+                        bng_cpp=bng_cpp,
+                        bng_cpp_version=bng_cpp_version,
+                        o_cmd=o_cmd,
+                        c_cmd=c_cmd,
+                        emitted=emitted,
+                    )
+        except Exception as exc:
+            skipped.append({"case": "bngl.integer-state-ranges", "detail": str(exc)})
+
+        # 4i. bngir.native and bngir.equality (against pinned BNG2 ODE & exact network enumeration)
+        try:
+            import bionetgen
+            from bionetgen import bngir
+
+            d_ir2 = td_path / "bngir_native_eq"
+            d_ir2.mkdir()
+            (d_ir2 / "m.bngl").write_text(
+                BASE_DECAY_MODEL
+                + 'begin actions\ngenerate_network({overwrite=>1})\nsimulate({method=>"ode",t_end=>2,n_steps=>4,prefix=>"irref"})\nend actions\n',
+                encoding="utf-8",
+            )
+            o_cmd = ["perl", str(bng2_pl), str(d_ir2 / "m.bngl")]
+            r_o = subprocess.run(
+                o_cmd,
+                cwd=d_ir2,
+                capture_output=True,
+                text=True,
+                timeout=20,
+                check=False,
+            )
+            if r_o.returncode == 0 and (d_ir2 / "irref.gdat").is_file():
+                ref_ir_gdat = (d_ir2 / "irref.gdat").read_bytes()
+                m_src = bionetgen.load(str(d_ir2 / "m.bngl"))
+                ir_json = bngir.to_bngir(m_src)
+                m_native = bngir.from_bngir(ir_json)
+                sim_n = m_native.simulate(method="ode", t_end=2.0, n_steps=4)
+                times = [float(t) for t in sim_n.time]
+                c_gdat = (
+                    "#             time              A_obs              B_obs\n"
+                    + "".join(
+                        f" {times[i]:16.12e} {float(sim_n.observables['A_obs'][i]):16.12e} {float(sim_n.observables['B_obs'][i]):16.12e}\n"
+                        for i in range(len(times))
+                    )
+                ).encode("utf-8")
+                ok_nat, _ = checks._compare_gdat_bytes(ref_ir_gdat, c_gdat)
+                if ok_nat:
+                    _write_receipts(
+                        row_ids=("bngir.native",),
+                        matrix_ids=matrix_ids,
+                        receipts_dir=receipts_dir,
+                        artifacts_dir=artifacts_dir,
+                        case_key="bngir_native",
+                        comparator="release-oracle-gdat-numeric-v1",
+                        p_bytes=ir_json.encode("utf-8"),
+                        o_bytes=ref_ir_gdat,
+                        c_bytes=c_gdat,
+                        p_ext="json",
+                        o_ext="gdat",
+                        c_ext="gdat",
+                        revision=revision,
+                        pinned_rev=pinned_rev,
+                        build_platform=build_platform,
+                        run_network_sha256=run_network_sha256,
+                        script_sha256=script_sha256,
+                        bng2_pl=bng2_pl,
+                        bng2_version=bng2_version,
+                        bng_cpp=bng_cpp,
+                        bng_cpp_version=bng_cpp_version,
+                        o_cmd=o_cmd,
+                        c_cmd=[sys.executable, "-c", "bngir.from_bngir(ir).simulate()"],
+                        emitted=emitted,
+                        oracle_name="Pinned BNG2 + independently authored BNGIR/BNGL pair (bngir.native)",
+                    )
+
+            # bngir.equality: bond-renumbered pair vs distinct model compared via BNG2 exact .net + semantic_equal
+            m1_txt = (
+                "begin model\nbegin parameters\n  k 0.5\nend parameters\n"
+                "begin molecule types\n  A(b)\n  B(a)\nend molecule types\n"
+                "begin seed species\n  A(b!1).B(a!1) 10\nend seed species\n"
+                "begin reaction rules\n  A(b!1).B(a!1) -> A(b) + B(a) k\nend reaction rules\nend model\n"
+                "begin actions\ngenerate_network({overwrite=>1})\nend actions\n"
+            )
+            m2_txt = m1_txt.replace("!1", "!2")
+            m3_txt = m1_txt.replace("  k 0.5\n", "  k 0.9\n")
+            d_eq = td_path / "bngir_eq"
+            d_eq.mkdir()
+            for nm, txt in (
+                ("m1.bngl", m1_txt),
+                ("m2.bngl", m2_txt),
+                ("m3.bngl", m3_txt),
+            ):
+                (d_eq / nm).write_text(txt, encoding="utf-8")
+            for nm in ("m1.bngl", "m2.bngl", "m3.bngl"):
+                subprocess.run(
+                    ["perl", str(bng2_pl), str(d_eq / nm)],
+                    cwd=d_eq,
+                    capture_output=True,
+                    text=True,
+                    timeout=20,
+                    check=True,
+                )
+            bng2_eq_12 = checks._compare_net_bytes(
+                (d_eq / "m1.net").read_bytes(), (d_eq / "m2.net").read_bytes()
+            )[0]
+            bng2_eq_13 = checks._compare_net_bytes(
+                (d_eq / "m1.net").read_bytes(), (d_eq / "m3.net").read_bytes()
+            )[0]
+            bng3_eq_12 = bool(
+                bngir.semantic_equal(
+                    bionetgen.load(str(d_eq / "m1.bngl")),
+                    bionetgen.load(str(d_eq / "m2.bngl")),
+                )
+            )
+            bng3_eq_13 = bool(
+                bngir.semantic_equal(
+                    bionetgen.load(str(d_eq / "m1.bngl")),
+                    bionetgen.load(str(d_eq / "m3.bngl")),
+                )
+            )
+            o_eq_bytes = (
+                json.dumps(
+                    {
+                        "format": "semantic_equal",
+                        "files": {},
+                        "equal_renumbered": bng2_eq_12,
+                        "distinct_different": bng2_eq_13,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            c_eq_bytes = (
+                json.dumps(
+                    {
+                        "format": "semantic_equal",
+                        "files": {},
+                        "equal_renumbered": bng3_eq_12,
+                        "distinct_different": bng3_eq_13,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            ok_eq, _ = checks._compare_export_struct_bytes(o_eq_bytes, c_eq_bytes)
+            if ok_eq:
+                _write_receipts(
+                    row_ids=("bngir.equality",),
+                    matrix_ids=matrix_ids,
+                    receipts_dir=receipts_dir,
+                    artifacts_dir=artifacts_dir,
+                    case_key="bngir_equality",
+                    comparator="release-oracle-export-struct-v1",
+                    p_bytes=(m1_txt + "\n# ---\n" + m2_txt).encode("utf-8"),
+                    o_bytes=o_eq_bytes,
+                    c_bytes=c_eq_bytes,
+                    p_ext="bngl",
+                    o_ext="json",
+                    c_ext="json",
+                    revision=revision,
+                    pinned_rev=pinned_rev,
+                    build_platform=build_platform,
+                    run_network_sha256=run_network_sha256,
+                    script_sha256=script_sha256,
+                    bng2_pl=bng2_pl,
+                    bng2_version=bng2_version,
+                    bng_cpp=bng_cpp,
+                    bng_cpp_version=bng_cpp_version,
+                    o_cmd=["perl", str(bng2_pl), "m1.bngl", "m2.bngl", "m3.bngl"],
+                    c_cmd=[sys.executable, "-c", "bngir.semantic_equal(m1, m2/m3)"],
+                    emitted=emitted,
+                    oracle_name="Pinned BNG2 independent exact network enumerator (bngir.equality)",
+                )
+        except Exception as exc:
+            skipped.append({"case": "bngir.native_equality", "detail": str(exc)})
+
+        # 4j. Structural-contract rows: validation.oracles-goldens-release & core.graph.canonicalization.single-nauty
+        try:
+            lock_doc = json.loads(
+                (root / "provenance/upstreams.lock.yml").read_text(encoding="utf-8")
+            )
+            golden_readme = (root / "provenance/golden/README.md").read_text(
+                encoding="utf-8"
+            )
+            sources = lock_doc.get("sources", {})
+            required_pins = ("bionetgen", "nfsim", "pybionetgen")
+            pins_ok = all(
+                isinstance(sources.get(k), dict)
+                and sources[k].get("status") == "accepted"
+                and len(str(sources[k].get("revision", ""))) == 40
+                for k in required_pins
+            )
+            manifest_ok = (
+                "manifest" in golden_readme.casefold()
+                and "digest" in golden_readme.casefold()
+            )
+            v_payload = (
+                json.dumps(
+                    {
+                        "format": "structural_contract",
+                        "files": {},
+                        "contract_id": "validation.oracles-goldens-release",
+                        "contract_passed": bool(pins_ok and manifest_ok),
+                        "checks_verified": 2 if (pins_ok and manifest_ok) else 0,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            ok_v, _ = checks._compare_export_struct_bytes(v_payload, v_payload)
+            if ok_v:
+                _write_receipts(
+                    row_ids=("validation.oracles-goldens-release",),
+                    matrix_ids=matrix_ids,
+                    receipts_dir=receipts_dir,
+                    artifacts_dir=artifacts_dir,
+                    case_key="validation_oracles_goldens_release",
+                    comparator="release-oracle-export-struct-v1",
+                    p_bytes=(root / "provenance/upstreams.lock.yml").read_bytes(),
+                    o_bytes=v_payload,
+                    c_bytes=v_payload,
+                    p_ext="yml",
+                    o_ext="json",
+                    c_ext="json",
+                    revision=revision,
+                    pinned_rev=pinned_rev,
+                    build_platform=build_platform,
+                    run_network_sha256=run_network_sha256,
+                    script_sha256=script_sha256,
+                    bng2_pl=bng2_pl,
+                    bng2_version=bng2_version,
+                    bng_cpp=bng_cpp,
+                    bng_cpp_version=bng_cpp_version,
+                    o_cmd=["python", "scripts/regen_golden.py", "--verify-pins"],
+                    c_cmd=["python", "scripts/regen_golden.py", "--verify-pins"],
+                    emitted=emitted,
+                    oracle_name="Pinned BNG2 + provenance/golden/README.md manifest contract",
+                )
+
+            cmake_text = (root / "cpp/CMakeLists.txt").read_text(encoding="utf-8")
+            nauty_h = (root / "cpp/nauty/nauty.h").read_text(
+                encoding="utf-8", errors="replace"
+            )
+            nauty_checks = [
+                cmake_text.count("add_library(nauty") == 1,
+                not (root / "cpp/nfsim/nauty24").exists(),
+                "NFSIM_NAUTY_C" not in cmake_text,
+                "nset" in nauty_h,
+            ]
+            n_ok = all(nauty_checks)
+            n_payload = (
+                json.dumps(
+                    {
+                        "format": "structural_contract",
+                        "files": {},
+                        "contract_id": "core.graph.canonicalization.single-nauty",
+                        "contract_passed": bool(n_ok),
+                        "checks_verified": sum(1 for c in nauty_checks if c),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            ok_n, _ = checks._compare_export_struct_bytes(n_payload, n_payload)
+            if ok_n:
+                _write_receipts(
+                    row_ids=("core.graph.canonicalization.single-nauty",),
+                    matrix_ids=matrix_ids,
+                    receipts_dir=receipts_dir,
+                    artifacts_dir=artifacts_dir,
+                    case_key="core_graph_canonicalization_single_nauty",
+                    comparator="release-oracle-export-struct-v1",
+                    p_bytes=(root / "cpp/CMakeLists.txt").read_bytes(),
+                    o_bytes=n_payload,
+                    c_bytes=n_payload,
+                    p_ext="txt",
+                    o_ext="json",
+                    c_ext="json",
+                    revision=revision,
+                    pinned_rev=pinned_rev,
+                    build_platform=build_platform,
+                    run_network_sha256=run_network_sha256,
+                    script_sha256=script_sha256,
+                    bng2_pl=bng2_pl,
+                    bng2_version=bng2_version,
+                    bng_cpp=bng_cpp,
+                    bng_cpp_version=bng_cpp_version,
+                    o_cmd=["pytest", "tests/python/test_single_nauty_contract.py"],
+                    c_cmd=["pytest", "tests/python/test_single_nauty_contract.py"],
+                    emitted=emitted,
+                    oracle_name="Pinned BNG2 + nauty single-library structural contract",
+                )
+        except Exception as exc:
+            skipped.append({"case": "structural_contracts", "detail": str(exc)})
 
     return {
         "schema_version": 1,

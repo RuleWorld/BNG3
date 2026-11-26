@@ -246,6 +246,64 @@ def _delay_case() -> tuple[bytes, dict[str, float], dict[str, float], str, str]:
     return DELAY_LINEAR_SBML.encode("utf-8"), oracle, consumer, law, DELAY_SPEC_REL
 
 
+JAX_SPEC_REL = "tests/python/test_jax_ode.py"
+
+JAX_DECAY_BNGL = """begin model
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+  B() 0
+end seed species
+begin observables
+  Molecules A_obs A()
+  Molecules B_obs B()
+end observables
+begin reaction rules
+  A() -> B() k
+end reaction rules
+end model
+"""
+
+
+def _jax_ode_case() -> tuple[bytes, dict[str, float], dict[str, float], str, str]:
+    import jax
+
+    jax.config.update("jax_enable_x64", True)
+    import bionetgen
+    from bionetgen import jax_ode
+
+    with tempfile.TemporaryDirectory() as td:
+        bngl_path = Path(td) / "decay.bngl"
+        bngl_path.write_text(JAX_DECAY_BNGL, encoding="utf-8")
+        model = bionetgen.load(str(bngl_path))
+        res = jax_ode.simulate_jax_ode(model, t_end=2.0, n_steps=2000)
+    conc = res["concentrations"]
+    a_mid = float(conc[1000][0])
+    b_mid = float(conc[1000][1])
+    a_end = float(conc[-1][0])
+    b_end = float(conc[-1][1])
+    oracle = {
+        "A_t1": 10.0 * math.exp(-0.5),
+        "B_t1": 10.0 * (1.0 - math.exp(-0.5)),
+        "A_t2": 10.0 * math.exp(-1.0),
+        "B_t2": 10.0 * (1.0 - math.exp(-1.0)),
+    }
+    consumer = {
+        "A_t1": a_mid,
+        "B_t1": b_mid,
+        "A_t2": a_end,
+        "B_t2": b_end,
+    }
+    law = "Closed-form first-order decay A(t)=10*exp(-0.5*t), B(t)=10-A(t) verified on JAX CPU x64 RK4"
+    return JAX_DECAY_BNGL.encode("utf-8"), oracle, consumer, law, JAX_SPEC_REL
+
+
 def build_analytic_receipts(
     *,
     root: Path,
@@ -253,6 +311,7 @@ def build_analytic_receipts(
     receipts_dir: Path,
     artifacts_dir: Path,
     allow_dirty: bool = False,
+    only_jax: bool = False,
 ) -> dict[str, Any]:
     head = _git_head(root)
     dirty = _git_dirty(root)
@@ -263,28 +322,42 @@ def build_analytic_receipts(
     spec_file = root / SPEC_REL
     script_sha256 = _sha256_bytes(Path(__file__).read_bytes())
 
-    prev_gate = os.environ.get("BNG_NFSIM_GENERAL_ENERGY")
-    os.environ["BNG_NFSIM_GENERAL_ENERGY"] = "1"
-    try:
-        import bionetgen._bionetgen_cpp as cpp_mod
+    cases: list[
+        tuple[str, tuple[bytes, dict[str, float], dict[str, float], str, str]]
+    ] = []
+    if not only_jax:
+        prev_gate = os.environ.get("BNG_NFSIM_GENERAL_ENERGY")
+        os.environ["BNG_NFSIM_GENERAL_ENERGY"] = "1"
+        try:
+            import bionetgen._bionetgen_cpp as cpp_mod
 
-        barriers = (*_barriers_case(cpp_mod), SPEC_REL)
-        reservoirs = (*_reservoirs_case(cpp_mod), SPEC_REL)
-        cases = [
-            ("energy.barriers", barriers),
-            ("energy.reservoirs", reservoirs),
-            ("nfsim.energy-and-time-functions", reservoirs),
-        ]
-    finally:
-        if prev_gate is None:
-            os.environ.pop("BNG_NFSIM_GENERAL_ENERGY", None)
-        else:
-            os.environ["BNG_NFSIM_GENERAL_ENERGY"] = prev_gate
+            barriers = (*_barriers_case(cpp_mod), SPEC_REL)
+            reservoirs = (*_reservoirs_case(cpp_mod), SPEC_REL)
+            cases.extend(
+                [
+                    ("energy.barriers", barriers),
+                    ("energy.reservoirs", reservoirs),
+                    ("nfsim.energy-and-time-functions", reservoirs),
+                ]
+            )
+        finally:
+            if prev_gate is None:
+                os.environ.pop("BNG_NFSIM_GENERAL_ENERGY", None)
+            else:
+                os.environ["BNG_NFSIM_GENERAL_ENERGY"] = prev_gate
 
-    try:
-        cases.append(("bngl.delay", _delay_case()))
-    except Exception:
-        pass
+        try:
+            cases.append(("bngl.delay", _delay_case()))
+        except Exception:
+            pass
+
+    if only_jax:
+        cases.append(("backend.jax", _jax_ode_case()))
+    else:
+        try:
+            cases.append(("backend.jax", _jax_ode_case()))
+        except Exception:
+            pass
 
     receipts_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -381,6 +454,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--artifacts-dir", type=Path, required=True)
     parser.add_argument("--summary-out", type=Path)
     parser.add_argument("--allow-dirty", action="store_true")
+    parser.add_argument("--only-jax", action="store_true")
     args = parser.parse_args(argv)
     summary = build_analytic_receipts(
         root=args.root.resolve(),
@@ -388,6 +462,7 @@ def main(argv: list[str] | None = None) -> int:
         receipts_dir=args.receipts_dir.resolve(),
         artifacts_dir=args.artifacts_dir.resolve(),
         allow_dirty=args.allow_dirty,
+        only_jax=args.only_jax,
     )
     if args.summary_out is not None:
         args.summary_out.parent.mkdir(parents=True, exist_ok=True)
