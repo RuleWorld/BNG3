@@ -109,7 +109,7 @@ class CSimWrapper:
 
 
 class CSimulator(BNGSimulator):
-    def __init__(self, model_input, generate_network=False):
+    def __init__(self, model_file, generate_network=False):
         try:
             import bionetgen
             from bionetgen.core.defaults import BNGDefaults
@@ -121,18 +121,18 @@ class CSimulator(BNGSimulator):
             conf = BNGDefaults().config.get("bionetgen", {})
         except Exception:
             conf = {}
-        if isinstance(model_input, str):
+        if isinstance(model_file, str):
             self.model = bionetgen.bngmodel(
-                model_input, generate_network=generate_network
+                model_file, generate_network=generate_network
             )
-        elif isinstance(model_input, bionetgen.bngmodel):
+        elif isinstance(model_file, bionetgen.bngmodel):
             raise BNGCompileError(
-                model_input,
+                model_file,
                 "CSimulator compilation is not supported in BNG3's native environment",
             )
         else:
             raise BNGFormatError(
-                message=f"CSimulator model input must be a BNGL path or bngmodel instance, got {type(model_input).__name__}"
+                message=f"CSimulator model input must be a BNGL path or bngmodel instance, got {type(model_file).__name__}"
             )
         self.compiler = _new_ccompiler()
         cvode_include = conf.get("cvode_include") if hasattr(conf, "get") else None

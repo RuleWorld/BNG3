@@ -607,7 +607,7 @@ def run_inprocess_scan(
     output_dir,
     bngpath,
     request,
-    output_name,
+    model_name,
     suppress=False,
     log_file=None,
     timeout=None,
@@ -623,7 +623,7 @@ def run_inprocess_scan(
             output_dir,
             bngpath,
             request,
-            output_name,
+            model_name,
             suppress=suppress,
             log_file=log_file,
             timeout=timeout,
@@ -634,7 +634,7 @@ def run_inprocess_scan(
         output_dir,
         bngpath,
         request,
-        output_name,
+        model_name,
         suppress=suppress,
         log_file=log_file,
         timeout=timeout,
@@ -647,7 +647,7 @@ def run_parameter_scan_with_bngsim(
     output_dir,
     bngpath,
     request,
-    output_name,
+    model_name,
     suppress=False,
     log_file=None,
     timeout=None,
@@ -672,7 +672,7 @@ def run_parameter_scan_with_bngsim(
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
-    basename = request.prefix or output_name
+    basename = request.prefix or model_name
     basename += "_" + (request.suffix or request.parameter)
     work_dir = os.path.join(output_dir, basename)
     scan_path = os.path.join(output_dir, basename + ".scan")
@@ -681,7 +681,7 @@ def run_parameter_scan_with_bngsim(
     try:
         net_path = _generate_network(
             bngl_path,
-            output_name,
+            model_name,
             bngpath,
             gen_dir,
             _run_bngl_subprocess,
@@ -725,7 +725,7 @@ def run_bifurcate_with_bngsim(
     output_dir,
     bngpath,
     request,
-    output_name,
+    model_name,
     suppress=False,
     log_file=None,
     timeout=None,
@@ -754,7 +754,7 @@ def run_bifurcate_with_bngsim(
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
-    prefix = request.prefix or output_name
+    prefix = request.prefix or model_name
     if request.suffix:
         prefix += "_" + request.suffix
     fwd_base = prefix + "_forward"
@@ -764,7 +764,7 @@ def run_bifurcate_with_bngsim(
     try:
         net_path = _generate_network(
             bngl_path,
-            output_name,
+            model_name,
             bngpath,
             gen_dir,
             _run_bngl_subprocess,

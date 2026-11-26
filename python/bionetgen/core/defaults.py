@@ -73,6 +73,10 @@ class BNGDefaults:
         whether the C++ backend extension is available
     """
 
+    @property
+    def has_cpp_backend(self) -> bool:
+        return _has_cpp_backend()
+
     def __init__(self):
         # determine what bng we are using
         system = platform.system()
@@ -87,7 +91,6 @@ class BNGDefaults:
         # set attributes
         self.system = system
         self.bng_name = bng_name
-        self.has_cpp_backend = _has_cpp_backend()
         # configuration defaults
         if init_defaults is None:
             CONFIG = {"bionetgen": {}}

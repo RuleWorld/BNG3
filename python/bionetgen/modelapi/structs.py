@@ -301,7 +301,7 @@ class Action(ModelObj):
         action arguments as keys and their values as values
     """
 
-    def __init__(self, action_type=None, action_args={}) -> None:
+    def __init__(self, action_type=None, action_args=None) -> None:
         super().__init__()
         AList = ActionList()
         self.normal_types = AList.normal_types
@@ -311,7 +311,7 @@ class Action(ModelObj):
         # Set initial values
         self.name = action_type
         self.type = action_type
-        self.args = action_args
+        self.args = {} if action_args is None else action_args
         AList.validate_action(self.type, self.args)
 
     def gen_string(self) -> str:

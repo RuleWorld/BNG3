@@ -76,9 +76,9 @@ def get_default_bng_path():
     return getattr(defaults, "bng_path", None) if defaults is not None else None
 
 
-def get_default_app(argv=None):
+def get_default_app():
     """Construct a default Cement app instance for PyBioNetGen compatibility."""
-    return BioNetGen(argv=argv) if argv is not None else BioNetGen()
+    return BioNetGen()
 
 
 # require version argparse action
@@ -235,6 +235,49 @@ class BNGBase(cement.Controller):
                     "default": 0,
                     "type": int,
                     "dest": "traceback_depth",
+                },
+            ),
+            (
+                ["--format"],
+                {
+                    "help": "Explicit input format: bngl, net, sbml, bng-xml, antimony. "
+                    "If omitted, auto-detected from file extension and content.",
+                    "default": None,
+                    "type": str,
+                    "dest": "format",
+                },
+            ),
+            (
+                ["--no-bngsim"],
+                {
+                    "help": "Force subprocess path (BNG2.pl/run_network/NFsim) "
+                    "even when BNGsim is available.",
+                    "default": False,
+                    "action": "store_true",
+                    "dest": "no_bngsim",
+                },
+            ),
+            (
+                ["--method"],
+                {
+                    "help": "Optional simulation method override: ode, ssa, psa, nf. "
+                    "For BNGL inputs, omit this to preserve the model's "
+                    "simulate_* actions when routing through BNGsim. "
+                    "For direct BioNetGen XML inputs, only nf is supported.",
+                    "default": None,
+                    "type": str,
+                    "dest": "method",
+                },
+            ),
+            (
+                ["--timeout"],
+                {
+                    "help": "Optional timeout in seconds for the BNG2.pl preprocessing "
+                    "or subprocess execution step. Applies to BNGL inputs, including "
+                    "the hybrid BNGsim path.",
+                    "default": None,
+                    "type": int,
+                    "dest": "timeout",
                 },
             ),
         ],

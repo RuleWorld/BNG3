@@ -93,11 +93,11 @@ class NetworkCompartment(NetworkObj):
 
 
 class NetworkGroup(NetworkObj):
-    def __init__(self, gid, name, members=None, comment=""):
+    def __init__(self, gid, name, members=[], comment=""):
         super().__init__()
         self.line_label = gid
         self.name = name
-        self.members = [] if members is None else members
+        self.members = members
         self.comment = comment
 
     def gen_string(self) -> str:
@@ -131,41 +131,39 @@ class NetworkFunction(NetworkObj):
 
 class NetworkReaction(NetworkObj):
     def __init__(
-        self, rid, reactants=None, products=None, rate_constant=None, comment=None
-    ):
+        self, rid, reactants=[], products=[], rate_constant=None, comment=None
+    ) -> None:
         super().__init__()
         self.line_label = rid
-        self.reactants = [] if reactants is None else reactants
-        self.products = [] if products is None else products
+        self.reactants = reactants
+        self.products = products
         self.rate_constant = rate_constant
         self.comment = comment
 
-    def gen_string(self) -> str:
+    def gen_string(self):
         react = ",".join(str(x) for x in self.reactants)
         prod = ",".join(str(x) for x in self.products)
         return "{} {} {}".format(react, prod, self.rate_constant)
 
 
 class NetworkEnergyPattern(NetworkObj):
-    def __init__(self, pid, pattern, expr, comment=""):
+    def __init__(self, name, pattern, expression):
         super().__init__()
-        self.line_label = pid
+        self.name = name
         self.pattern = pattern
-        self.expr = expr
-        self.comment = comment
+        self.expression = expression
 
     def gen_string(self) -> str:
-        return "{} {}".format(self.pattern, self.expr)
+        return "{} {}".format(self.pattern, self.expression)
 
 
 class NetworkPopulationMap(NetworkObj):
-    def __init__(self, mid, species, struct, rate, comment=""):
+    def __init__(self, name, struct_species, pop_species, rate):
         super().__init__()
-        self.line_label = mid
-        self.species = species
-        self.struct = struct
+        self.name = name
+        self.struct_species = struct_species
+        self.pop_species = pop_species
         self.rate = rate
-        self.comment = comment
 
     def gen_string(self) -> str:
-        return "{} {} {}".format(self.species, self.struct, self.rate)
+        return "{} -> {} {}".format(self.struct_species, self.pop_species, self.rate)

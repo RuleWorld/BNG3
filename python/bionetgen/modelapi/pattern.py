@@ -58,9 +58,14 @@ class Pattern:
     """
 
     def __init__(
-        self, molecules=[], bonds=None, compartment=None, label=None, canonicalize=False
+        self,
+        molecules=None,
+        bonds=None,
+        compartment=None,
+        label=None,
+        canonicalize=False,
     ):
-        self.molecules = molecules
+        self.molecules = [] if molecules is None else molecules
         self._bonds = bonds
         self.compartment = compartment
         self.label = label
@@ -409,9 +414,9 @@ class Molecule:
         (for molecule types) "states"
     """
 
-    def __init__(self, name="0", components=[], compartment=None, label=None):
+    def __init__(self, name="0", components=None, compartment=None, label=None):
         self._name = name
-        self._components = components
+        self._components = [] if components is None else components
         self._compartment = compartment
         self._label = label
         self.canonical_order = None
@@ -568,10 +573,10 @@ class Molecule:
         comp_obj.states = states
         self.components.append(comp_obj)
 
-    def add_component(self, name, state=None, states=[]):
+    def add_component(self, name, state=None, states=None):
         # TODO: Add built-in logic here
         # print("Warning: Logical checks are not complete")
-        self._add_component(name, state, states)
+        self._add_component(name, state, [] if states is None else states)
 
 
 class Component:
