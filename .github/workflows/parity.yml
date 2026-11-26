@@ -2396,7 +2396,7 @@ jobs:
             --revision "$BNG3_SOURCE_REVISION" \
             --nfsim-source "$RUNNER_TEMP/oracle-nfsim" \
             --nfsim-oracle "$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
-            --nfsim-consumer build/cpp/NFsim \
+            --nfsim-consumer "${{ github.workspace }}/build/cpp" \
             --receipts-dir "$RUNNER_TEMP/issue471-nfsim/receipts" \
             --artifacts-dir "$RUNNER_TEMP/issue471-nfsim/artifacts" \
             --summary-out "$RUNNER_TEMP/issue471-nfsim/summary.json"

@@ -444,7 +444,14 @@ def build_nfsim_receipts(
             emitted.append(probe.row_id)
 
         # Emit remaining nf.option.* CLI probes when BNG3's compiled NFsim CLI is supplied.
-        if nfsim_consumer is not None and nfsim_consumer.is_file():
+        if nfsim_consumer is not None and nfsim_consumer.is_dir():
+            exe_name = "NFsim.exe" if sys.platform == "win32" else "NFsim"
+            nfsim_consumer = nfsim_consumer / exe_name
+        if (
+            nfsim_consumer is not None
+            and nfsim_consumer.is_file()
+            and nfsim_consumer.resolve() != nfsim_oracle.resolve()
+        ):
             consumer_version = _version_line(nfsim_consumer)
             for cprobe in CLI_OPTION_PROBES:
                 if cprobe.row_id not in all_matrix_ids or cprobe.row_id in emitted:
