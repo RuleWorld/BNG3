@@ -135,10 +135,14 @@ public:
         // the rule molecularity.  Built-in nonlinear rate laws remain
         // unknown until their backend-specific contracts are modeled.
         for (const auto& rule : model_.getReactionRules()) {
-            const auto molecularity = rule.getReactantPatterns().size();
-            const auto expected = expectedRateUnit(molecularity, "mole");
-            if (!expected.has_value()) continue;
-            for (const auto& rate : rule.getRates()) {
+            const auto& rates = rule.getRates();
+            for (std::size_t rateIndex = 0; rateIndex < rates.size(); ++rateIndex) {
+                const auto& rate = rates[rateIndex];
+                const auto molecularity = (rule.isBidirectional() && rateIndex == 1)
+                    ? rule.getProductPatterns().size()
+                    : rule.getReactantPatterns().size();
+                const auto expected = expectedRateUnit(molecularity, "mole");
+                if (!expected.has_value()) continue;
                 const auto inferred = expressionUnit(rate, rule.getRuleName());
                 if (inferred.unit.has_value()) {
                     result_.inferredExpressions[rate.toString()] = *inferred.unit;

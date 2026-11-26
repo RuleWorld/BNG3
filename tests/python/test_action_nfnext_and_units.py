@@ -352,7 +352,8 @@ end model
     def test_trimolecular_and_bidirectional_compound_rate_physical_units(
         self, tmp_path: Path
     ):
-        # Reversible binding with compound parameter kon = koff / KD (docs/BNG3_UNITS.md idiom):
+        # Asymmetric bidirectional binding (<->) with compound parameter kon = koff / KD:
+        # Forward molecularity = 2 (kon in nM^-1 s^-1), reverse molecularity = 1 (koff in s^-1).
         # KD = 100 nM = 1e-7 M, koff = 1.0 s^-1 => kon = 1e7 M^-1 s^-1.
         # In V = 1 fL with N_A = 6.02214076e23: kon_count = 1e7 / 6.02214076e8 = 0.0166053886 item^-1 s^-1.
         compound_src = """begin model
@@ -382,8 +383,7 @@ end model
     Molecules Bound A(b!1)@cell.B(a!1)@cell
   end observables
   begin reaction rules
-    bind: A(b)@cell + B(a)@cell -> A(b!1)@cell.B(a!1)@cell kon
-    unbind: A(b!1)@cell.B(a!1)@cell -> A(b)@cell + B(a)@cell koff
+    bind: A(b)@cell + B(a)@cell <-> A(b!1)@cell.B(a!1)@cell kon, koff
   end reaction rules
 end model
 """
@@ -404,6 +404,20 @@ end model
                 for i in range(60)
             ]
             assert abs(float(np.mean(vals)) - ode_bound) < 3.0
+
+        # Asymmetric bidirectional rule with mismatched reverse rate unit (bimolecular rate for
+        # unimolecular reverse direction) must fail closed during unit analysis.
+        bad_rev_path = tmp_path / "bad_rev_bidir_units.bngl"
+        bad_rev_path.write_text(
+            compound_src.replace("kon, koff", "kon, kon"), encoding="utf-8"
+        )
+        bad_rev_model = bionetgen.load(str(bad_rev_path))
+        with pytest.raises(RuntimeError, match="molecularity 1"):
+            bad_rev_model.simulate(method="ode", t_end=1.0, n_steps=1)
+        with pytest.raises(RuntimeError, match="valid typed model"):
+            bad_rev_model.simulate(method="nfcore", t_end=1.0, n_steps=1)
+        with pytest.raises(RuntimeError, match="semantic errors"):
+            bad_rev_model.simulate(method="nfnext", t_end=1.0, n_steps=1)
 
         # Bidirectional rule (<->) with physical-unit forward and reverse rates:
         # A + B <-> C + D with kfwd = 2*krev so equilibrium has C/(A+C) = sqrt(2)/(1+sqrt(2)).
