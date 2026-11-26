@@ -31,6 +31,13 @@ ROOT = Path(__file__).resolve().parents[2]
 UPSTREAM_RE = re.compile(
     r"^pybionetgen:(?P<path>[^:]+):(?P<line>\d+)\s*\((?P<sym>[^)]+)\)$"
 )
+CLI_CMD_RE = re.compile(
+    r"^pybionetgen:bionetgen/main\.py:BNGBase\.(?P<cmd>[A-Za-z0-9_]+)$"
+)
+CLI_OPTION_UPSTREAM = "pybionetgen:bionetgen/main.py:BNGBase argument decorators"
+ATOMIZER_OPTION_UPSTREAM = (
+    "pybionetgen:bionetgen/atomizer/sbmlTranslator.py:defineConsole"
+)
 
 PROBE_XML = """<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3" level="3" version="1">
@@ -205,6 +212,7 @@ PROBE_BNGL = (
 )
 
 _WORKER = r"""
+import ast
 import importlib
 import inspect
 import json
@@ -294,6 +302,123 @@ with tempfile.TemporaryDirectory() as td:
     except Exception as exc:
         subsystem_behavior["defaults"] = {"error": f"{type(exc).__name__}: {exc}"}
 
+    cli_info = {"commands": {}, "options": {}, "atomizer_options": {}}
+    try:
+        import bionetgen as _bng_root
+        import bionetgen.main as _bng_main
+
+        main_file = pathlib.Path(_bng_main.__file__).resolve()
+        main_tree = ast.parse(main_file.read_text(encoding="utf-8"))
+        bng_base = getattr(_bng_main, "BNGBase", None)
+        for node in ast.walk(main_tree):
+            if isinstance(node, ast.ClassDef) and node.name == "BNGBase":
+                for item in node.body:
+                    if isinstance(item, ast.ClassDef) and item.name == "Meta":
+                        for stmt in item.body:
+                            if isinstance(stmt, ast.Assign) and any(
+                                isinstance(t, ast.Name) and t.id == "arguments"
+                                for t in stmt.targets
+                            ) and isinstance(stmt.value, ast.List):
+                                for elt in stmt.value.elts:
+                                    if (
+                                        isinstance(elt, ast.Tuple)
+                                        and elt.elts
+                                        and isinstance(elt.elts[0], ast.List)
+                                    ):
+                                        flags = sorted(
+                                            c.value
+                                            for c in elt.elts[0].elts
+                                            if isinstance(c, ast.Constant)
+                                            and isinstance(c.value, str)
+                                        )
+                                        for flag in flags:
+                                            if flag.startswith("--"):
+                                                opt_name = flag[2:]
+                                                cli_info["options"].setdefault(
+                                                    opt_name, []
+                                                ).append(
+                                                    {
+                                                        "command": "Meta",
+                                                        "flags": flags,
+                                                    }
+                                                )
+                        continue
+                    if not isinstance(item, ast.FunctionDef):
+                        continue
+                    groups = []
+                    for dec in item.decorator_list:
+                        if not isinstance(dec, ast.Call):
+                            continue
+                        for kw in dec.keywords:
+                            if kw.arg != "arguments" or not isinstance(
+                                kw.value, ast.List
+                            ):
+                                continue
+                            for elt in kw.value.elts:
+                                if (
+                                    isinstance(elt, ast.Tuple)
+                                    and elt.elts
+                                    and isinstance(elt.elts[0], ast.List)
+                                ):
+                                    flags = sorted(
+                                        c.value
+                                        for c in elt.elts[0].elts
+                                        if isinstance(c, ast.Constant)
+                                        and isinstance(c.value, str)
+                                    )
+                                    if flags:
+                                        groups.append(flags)
+                    if groups or (
+                        bng_base is not None
+                        and callable(getattr(bng_base, item.name, None))
+                    ):
+                        sorted_groups = sorted(groups)
+                        cli_info["commands"][item.name] = {
+                            "callable": bool(
+                                bng_base is not None
+                                and callable(getattr(bng_base, item.name, None))
+                            ),
+                            "argument_groups": sorted_groups,
+                        }
+                        for grp in sorted_groups:
+                            for flag in grp:
+                                if flag.startswith("--"):
+                                    opt_name = flag[2:]
+                                    cli_info["options"].setdefault(opt_name, []).append(
+                                        {"command": item.name, "flags": grp}
+                                    )
+        for opt_name in list(cli_info["options"]):
+            cli_info["options"][opt_name] = sorted(
+                cli_info["options"][opt_name],
+                key=lambda e: (e["command"], e["flags"]),
+            )
+
+        st_file = (
+            pathlib.Path(_bng_root.__file__).resolve().parent
+            / "atomizer"
+            / "sbmlTranslator.py"
+        )
+        if st_file.is_file():
+            st_tree = ast.parse(st_file.read_text(encoding="utf-8"))
+            for node in ast.walk(st_tree):
+                if (
+                    isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "add_argument"
+                ):
+                    flags = sorted(
+                        arg.value
+                        for arg in node.args
+                        if isinstance(arg, ast.Constant)
+                        and isinstance(arg.value, str)
+                        and arg.value.startswith("-")
+                    )
+                    for flag in flags:
+                        if flag.startswith("--"):
+                            cli_info["atomizer_options"][flag[2:]] = flags
+    except Exception as exc:
+        cli_info["error"] = f"{type(exc).__name__}: {exc}"
+
     def resolve_symbol(rel_path: str, sym: str):
         mod_name = rel_path.removesuffix(".py").replace("/", ".")
         if mod_name.endswith(".__init__"):
@@ -348,17 +473,72 @@ with tempfile.TemporaryDirectory() as td:
     rows_out = {}
     for row in specs["rows"]:
         rid = row["id"]
+        kind = row.get("kind", "symbol")
         try:
-            mod_name, obj = resolve_symbol(row["rel_path"], row["sym"])
-            payload = {
-                "id": rid,
-                "module": mod_name,
-                "symbol": row["sym"],
-                "contract": describe_symbol(obj),
-            }
-            beh = behavior_for_row(rid)
-            if beh is not None:
-                payload["behavior"] = beh
+            if kind == "cli_command":
+                cmd_name = row["sym"].split(".")[-1]
+                if "error" in cli_info:
+                    raise RuntimeError(cli_info["error"])
+                entry = cli_info["commands"].get(cmd_name)
+                if not entry or not entry.get("callable"):
+                    raise AttributeError(f"missing BNGBase.{cmd_name}")
+                payload = {
+                    "id": rid,
+                    "module": "bionetgen.main",
+                    "symbol": row["sym"],
+                    "contract": {
+                        "kind": "cli_command",
+                        "callable": True,
+                        "argument_groups": entry["argument_groups"],
+                    },
+                }
+            elif kind == "cli_option":
+                opt_name = rid.removeprefix("py.cli.option.")
+                if "error" in cli_info:
+                    raise RuntimeError(cli_info["error"])
+                bindings = cli_info["options"].get(opt_name)
+                if not bindings:
+                    raise KeyError(f"missing BNGBase CLI option --{opt_name}")
+                payload = {
+                    "id": rid,
+                    "module": "bionetgen.main",
+                    "symbol": f"--{opt_name}",
+                    "contract": {
+                        "kind": "cli_option",
+                        "option": f"--{opt_name}",
+                        "bindings": bindings,
+                    },
+                }
+            elif kind == "atomizer_option":
+                opt_name = rid.removeprefix("py.cli.option.")
+                if "error" in cli_info:
+                    raise RuntimeError(cli_info["error"])
+                flags = cli_info["atomizer_options"].get(opt_name)
+                if not flags:
+                    raise KeyError(
+                        f"missing sbmlTranslator.defineConsole option --{opt_name}"
+                    )
+                payload = {
+                    "id": rid,
+                    "module": "bionetgen.atomizer.sbmlTranslator",
+                    "symbol": f"--{opt_name}",
+                    "contract": {
+                        "kind": "atomizer_option",
+                        "option": f"--{opt_name}",
+                        "flags": flags,
+                    },
+                }
+            else:
+                mod_name, obj = resolve_symbol(row["rel_path"], row["sym"])
+                payload = {
+                    "id": rid,
+                    "module": mod_name,
+                    "symbol": row["sym"],
+                    "contract": describe_symbol(obj),
+                }
+                beh = behavior_for_row(rid)
+                if beh is not None:
+                    payload["behavior"] = beh
             rows_out[rid] = {"ok": True, "payload": payload}
         except Exception as exc:
             rows_out[rid] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -436,16 +616,52 @@ def build_pybionetgen_receipts(
         if not upstream.startswith("pybionetgen:"):
             continue
         match = UPSTREAM_RE.match(upstream)
-        if not match:
+        if match:
+            candidate_rows.append(
+                {
+                    "id": row["id"],
+                    "kind": "symbol",
+                    "rel_path": match.group("path"),
+                    "sym": match.group("sym"),
+                    "upstream": upstream,
+                }
+            )
             continue
-        candidate_rows.append(
-            {
-                "id": row["id"],
-                "rel_path": match.group("path"),
-                "sym": match.group("sym"),
-                "upstream": upstream,
-            }
-        )
+        cli_cmd = CLI_CMD_RE.match(upstream)
+        if cli_cmd:
+            candidate_rows.append(
+                {
+                    "id": row["id"],
+                    "kind": "cli_command",
+                    "rel_path": "bionetgen/main.py",
+                    "sym": f"BNGBase.{cli_cmd.group('cmd')}",
+                    "upstream": upstream,
+                }
+            )
+            continue
+        if upstream == CLI_OPTION_UPSTREAM and row["id"].startswith("py.cli.option."):
+            candidate_rows.append(
+                {
+                    "id": row["id"],
+                    "kind": "cli_option",
+                    "rel_path": "bionetgen/main.py",
+                    "sym": f"--{row['id'].removeprefix('py.cli.option.')}",
+                    "upstream": upstream,
+                }
+            )
+            continue
+        if upstream == ATOMIZER_OPTION_UPSTREAM and row["id"].startswith(
+            "py.cli.option."
+        ):
+            candidate_rows.append(
+                {
+                    "id": row["id"],
+                    "kind": "atomizer_option",
+                    "rel_path": "bionetgen/atomizer/sbmlTranslator.py",
+                    "sym": f"--{row['id'].removeprefix('py.cli.option.')}",
+                    "upstream": upstream,
+                }
+            )
 
     fixtures = {"xml": PROBE_XML, "net": PROBE_NET, "bngl": PROBE_BNGL}
     specs = {"rows": candidate_rows, "fixtures": fixtures}
