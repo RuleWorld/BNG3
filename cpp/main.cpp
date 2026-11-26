@@ -12,6 +12,10 @@
 #include "console/Console.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
+#ifndef BNG3_VERSION_STRING
+#define BNG3_VERSION_STRING "3.0.0a1"
+#endif
+
 namespace {
 
 struct ParseResult {
@@ -85,7 +89,7 @@ int main(int argc, char** argv) {
             continue;
         }
         if (arg == "--version") {
-            std::cout << "bng_cpp version 4.0\n";
+            std::cout << "bng_cpp version " << BNG3_VERSION_STRING << "\n";
             return 0;
         }
         if (arg == "--console" || arg == "-i") {

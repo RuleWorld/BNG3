@@ -143,5 +143,5 @@ model natively (`python/bionetgen/bngir.py:1411-1425`), that v0.1 still
 rejects population maps, and that no C++-level BNGIR contract test exists.
 
 See [architecture.md](../architecture.md),
-[BNG3_HANDOFF_PORT_STATUS.md](../BNG3_HANDOFF_PORT_STATUS.md), and the
+[BNG3_HANDOFF_PORT_STATUS.md](../archive/plans/BNG3_HANDOFF_PORT_STATUS.md), and the
 convergence checklist for current evidence and open gates.

@@ -2,7 +2,7 @@
 
 # Bounded release reconciliation — 2026-10-19
 
-Audit baseline: `9af03d79d48c7488a1ffe98ced270053b27478bd` (`origin/main`, refreshed using authenticated `gh` and `git fetch`). All 43 live open issues are reconciled below. This is an acceptance audit and proposed release scope, not release approval. The machine-readable companion is [release-audit-2026-10-19.json](../../release-audit-2026-10-19.json); it preserves exact live acceptance sentences, body hashes, named demonstrated/remaining obligations, source pointers, oracle identities and artifact metadata.
+Audit baseline: `9af03d79d48c7488a1ffe98ced270053b27478bd` (`origin/main`, refreshed using authenticated `gh` and `git fetch`). All 43 live open issues are reconciled below. This is an acceptance audit and proposed release scope, not release approval. The machine-readable companion is [release-audit-2026-10-19.json](release-audit-2026-10-19.json); it preserves exact live acceptance sentences, body hashes, named demonstrated/remaining obligations, source pointers, oracle identities and artifact metadata.
 
 [PR #310](https://github.com/RuleWorld/BNG3/pull/310), head `58ea3e6f6041ed4a0d548ebb92e1de3f21dfe433`, owns native BNGIR multi-pattern reconstruction and the native NFsim count-rate comparison normalization. Its local results and pending hosted checks are not main acceptance evidence. Subsequent #311 commit `4e3eb3d7d58384b57dc22e0c8e82f153a9b87121` also applies the CI Black target version to `tests/python/test_atomizer_copy_regressions.py`: this formatting-only file is the sole overlap. Keep that already-published repair; do not copy #310's product/normalization changes into #311.
 

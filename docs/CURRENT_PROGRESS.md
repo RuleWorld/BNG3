@@ -150,7 +150,7 @@ locally and its SHA-256 (`caf0ad15…`) matches `provenance/upstreams.lock.yml`.
 This does not close #147/#148. The full pinned-native corpus comparison and
 the exact-main receipt gate remain unmet, and NFcore remains the `method="nf"`
 default per DECISIONS item 4. The staged plan is in
-`docs/NFNEXT_DYNAMIC_RUNTIME_PLAN.md`.
+`docs/archive/plans/NFNEXT_DYNAMIC_RUNTIME_PLAN.md`.
 
 ## Recent closure audit — 2026-11-14
 

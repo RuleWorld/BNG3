@@ -4,14 +4,20 @@
 
 ### Added
 
-- **Prepublication user documentation:** added workflow-oriented [Capability Guide](docs/capabilities.md), searchable [Detailed BNG2 & PyBioNetGen Change Reference](docs/bng2_migration_reference.md), and standalone [Network-Free Simulation Guide (NFsim & NFnext)](docs/network_free_simulation.md); synchronized `README.md`, `docs/index.md`, `docs/user_guide.md`, `docs/cli_reference.md`, `docs/api_reference.md`, `docs/migration_guide.md`, `docs/architecture.md`, and `docs/contributing.md` with verified `v3.0.0a1` vs. `main` installation and usage contracts.
+- **Prepublication user documentation & licensing:** added workflow-oriented [Capability Guide](docs/capabilities.md), searchable [Detailed BNG2 & PyBioNetGen Change Reference](docs/bng2_migration_reference.md), standalone [Network-Free Simulation Guide (NFsim & NFnext)](docs/network_free_simulation.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) (bundled alongside `LICENSE` in release CLI archives); synchronized `README.md`, `docs/index.md`, `docs/user_guide.md`, `docs/cli_reference.md`, `docs/api_reference.md`, `docs/migration_guide.md`, `docs/architecture.md`, and `docs/contributing.md` with verified `v3.0.0a1` vs. `main` installation and usage contracts.
 - **NFnext GPU graph mode (`#474`):** added `mode="graph"` to `BioNetGenModel.simulate_nfnext_gpu()` for Apple Metal and NVIDIA CUDA covering `TIER_NF` graph SSA (PRs `#1040`, `#1041`, `#1044`).
 - **CLI & action parity:** added `bng_cpp --outdir` / `--output_dir` (PR `#1056`), `NFsim -i` initial start time flag (PR `#1052`), `writeMfile_all` / `writeLaTeXfile` and `prefix`/`suffix` handling across `write*` and `visualize` actions (PR `#1050`), `bifurcate` continuation and per-observable `.scan` output (PR `#1053`), and `readModel` refresh, `setModelName`, `print_net`, `simulate_protocol`, `readNFspecies`, `readSBML`, `LPS`, and `codename` (PR `#1054`).
 
 ### Changed
 
+- **Repository housekeeping & archival:** archived the retired NFcore2 prototype engine from `cpp/nfsim/NFcore2/` to `legacy/nfcore2/` (moving active `nfsim_pattern_lowering.{hh,cpp}` to `cpp/nfsim/NFinput/` and gating `bng_nfcore2` behind `BUILD_TESTS=ON`), archived superseded plans/reports/handoffs under `docs/archive/`, aligned stale pre-`#832` doc-check regexes and `(implementation to add)` inventory location strings, and excluded non-build repo directories from Python source distributions (`pyproject.toml`).
 - **Upstream oracle pins refreshed (2026-11-25):** synced with `RuleWorld/bionetgen` through 2.9.5 (`740006ff`, PR `#1046`) and `RuleWorld/NFsim` through `v2.0.1` + `#160` (`d45b7d99`, PR `#1047`); aligned 33 PyBioNetGen API signatures and `assets/VERSION` (`0.8.7`, PRs `#1051`, `#1058`).
 - **Capability matrix:** promoted all 997 rows in `provenance/capability-matrix.yml` to `implemented` following hosted-verified oracle receipts (PRs `#1048`, `#1059`).
+
+### Fixed
+
+- **Direct-path NFsim time-indexed `TFUN` parity:** propagated `addTimeTable`, `addFunctionReference`, and `useTimeTablesReadBy` in the direct compiled/AST NFsim adapters so time-indexed `TFUN` breakpoint stepping and linear ramp integration match the XML NFsim path (`test_tfun_validation`).
+- **`bng_cpp --version`:** replaced the hardcoded `"bng_cpp version 4.0"` string with `BNG3_VERSION_STRING` (`3.0.0a1`).
 
 ## [3.0.0a1] — 2026-11-25 (GitHub Pre-release, commit `8482215c`)
 

@@ -15,7 +15,7 @@ BioNetGen 3 includes two in-process network-free engines—**NFnext** and embedd
 | **Embedded NFcore** | The classic NFsim core embedded in `_bionetgen_cpp` and `bng_cpp` (`cpp/nfsim/`) | **Direct construction** from AST/`CompiledModel` (`construction_path="direct"`) by default; optional in-memory XML fallback (`BNG_NFSIM_ALLOW_XML_FALLBACK=1`) | Selected explicitly in Python via `method="nfcore"` (reports `result.backend == "nfsim"`). Also executed by BNGL action blocks (`simulate_nf()` and `simulate({method=>"nf"})`). |
 | **NFnext** | BNG3's next-generation network-free engine (`cpp/nfnext/`) | Direct lowering **`CompiledModel → NFIR`** (no XML serialization) | Selected automatically by Python `model.simulate(method="nf")`, `bionetgen.run(..., method="nf")`, and `bionetgen run MODEL -m nf`, or explicitly via `method="nfnext"` (reports `result.backend == "nfnext"`). Also provides an explicit, fail-closed GPU batch path (`model.simulate_nfnext_gpu()`). |
 
-> **What happened to `NFcore2`?** `NFcore2` was an earlier prototype that was unlinked from the default build and consolidated into NFnext per [Maintainer Decisions](DECISIONS.md) item 4 (`#149`). Passing `method="nfcore2"` raises a `ValueError` directing you to `method="nf"` / `"nfnext"` or `method="nfcore"`. The pattern-lowering helper `NFcore2::lowerPatternToNFsim` is retained internally for NFcore input.
+> **What happened to `NFcore2`?** `NFcore2` was an earlier prototype that was unlinked from the default build, consolidated into NFnext per [Maintainer Decisions](DECISIONS.md) item 4 (`#149`), and archived under `legacy/nfcore2/` (test-only `BUILD_TESTS=ON`). Passing `method="nfcore2"` raises a `ValueError` directing you to `method="nf"` / `"nfnext"` or `method="nfcore"`. The active pattern-lowering helper `NFcore2::lowerPatternToNFsim` lives in `cpp/nfsim/NFinput/nfsim_pattern_lowering.{hh,cpp}` for NFcore input.
 
 ### Construction Paths and Why They Matter
 
@@ -226,7 +226,7 @@ print("Ensemble mean AP:", gpu_res.observables["AP"].mean(axis=0))
 
 ## 5. What Comes Next for NFnext and NFsim
 
-Grounded in [Maintainer Decisions](DECISIONS.md), the historical [NFnext Dynamic-Rate Runtime Plan](NFNEXT_DYNAMIC_RUNTIME_PLAN.md), the [NFsim Performance Plan](NFSIM_GPU_PERF_PLAN.md), and current `main` (`90832910`), here is the clear separation between what has shipped, what is on `main`, and what remains planned:
+Grounded in [Maintainer Decisions](DECISIONS.md), the historical [NFnext Dynamic-Rate Runtime Plan](archive/plans/NFNEXT_DYNAMIC_RUNTIME_PLAN.md), the [NFsim Performance Plan](archive/plans/NFSIM_GPU_PERF_PLAN.md), and current `main` (`90832910`), here is the clear separation between what has shipped, what is on `main`, and what remains planned:
 
 - **Shipped in `v3.0.0a1` (`8482215c`):**
   - NFnext promoted as the Python `method="nf"` default (`#832`, `#149`) after passing `TIER_NF` parity (`#148`), including dynamic observable rates, dynamic energy expressions, and simple dynamic population-map rates (`#147`).
@@ -239,7 +239,7 @@ Grounded in [Maintainer Decisions](DECISIONS.md), the historical [NFnext Dynamic
 - **Planned next milestones (not yet shipped):**
   1. **Action-block routing & parity:** Extend BNGL action dispatch (`simulate_nf` / `simulate({method=>"nf"})`) to support explicit NFnext/NFcore selection once NFnext covers the remaining action-level options (`equilibrate`, `utl`, `.rnf` interoperability, and Tier-P scheduled corpus diagnostics).
   2. **General hybrid & population-map coverage:** Broaden NFnext's executable population-map and dynamic-threshold coverage beyond the currently lowerable simple shapes without relaxing fail-closed diagnostics (`#150`).
-  3. **CPU ensemble & specialized rule-family throughput:** Expand compile-once/many-trajectory CPU ensembles and rule-family / scaffold / polymer optimizations (`DECISIONS.md` NFnext consolidation step 5; [NFSIM_GPU_PERF_PLAN.md](NFSIM_GPU_PERF_PLAN.md)).
+  3. **CPU ensemble & specialized rule-family throughput:** Expand compile-once/many-trajectory CPU ensembles and rule-family / scaffold / polymer optimizations (`DECISIONS.md` NFnext consolidation step 5; [NFSIM_GPU_PERF_PLAN.md](archive/plans/NFSIM_GPU_PERF_PLAN.md)).
   4. **GPU scope expansion:** Any widening of `simulate_nfnext_gpu` beyond its documented `mode="unary"` / `mode="graph"` (`TIER_NF`) boundaries requires separate fail-closed lowering plus actual-device statistical parity receipts for each GPU backend (Metal and CUDA independently).
   5. **Criteria for any future default change:** No backend default changes (such as switching BNGL action `simulate_nf` from NFcore to NFnext, or promoting any GPU route) without exact-main independent parity against pinned native NFsim and analytic laws across the affected corpus, zero silent fallbacks, and updated user documentation.
 
@@ -247,7 +247,7 @@ Grounded in [Maintainer Decisions](DECISIONS.md), the historical [NFnext Dynamic
 
 - [Architecture Overview](architecture.md) — C++ libraries, `CompiledModel`, NFcore, and NFnext seams
 - [Maintainer Decisions](DECISIONS.md) — Final policies (items 4, 5, 7, 8, 16, 17)
-- [NFnext Dynamic-Rate Runtime Plan](NFNEXT_DYNAMIC_RUNTIME_PLAN.md) — Historical staged plan for dynamic energy & population maps
-- [NFsim Performance Plan](NFSIM_GPU_PERF_PLAN.md) — Historical CPU/ensemble/GPU performance design
+- [NFnext Dynamic-Rate Runtime Plan](archive/plans/NFNEXT_DYNAMIC_RUNTIME_PLAN.md) — Historical staged plan for dynamic energy & population maps
+- [NFsim Performance Plan](archive/plans/NFSIM_GPU_PERF_PLAN.md) — Historical CPU/ensemble/GPU performance design
 - [GPU Batch SSA Evaluation](GPU_BATCH_SSA_EVALUATION.md) — Finite-network Metal/CUDA batch SSA evaluation and hardware measurements
 - [Nonequilibrium Energy](nonequilibrium_energy.md) — Experimental barrier patterns and driven reservoirs

@@ -101,7 +101,23 @@ Changelog = "https://github.com/RuleWorld/BNG3/blob/main/CHANGELOG.md"
 
 [tool.scikit-build]
 wheel.packages = ["python/bionetgen"]
-sdist.exclude = ["bng3-offline-bundle/**"]
+sdist.exclude = [
+    "bng3-offline-bundle/**",
+    ".github/**",
+    "analysis/**",
+    "bench/**",
+    "benchmarks/**",
+    "docs/**",
+    "formal/**",
+    "lane-status.json",
+    "legacy/**",
+    "provenance/**",
+    "scripts/**",
+    "tasks/**",
+    "tests/**",
+    "tools/**",
+    "verify/**",
+]
 cmake.version = ">=3.15"
 cmake.args = ["-DBUILD_TESTS=OFF", "-DBUILD_CLI=OFF"]
 cmake.build-type = "Release"

@@ -894,7 +894,7 @@ end actions
 
 
 def test_slice_inventory_allowlist_files():
-    """Verify the 43 allowlisted compatibility files in ast_compat_allowlist.txt exist and are tracked."""
+    """Verify the allowlisted compatibility files in ast_compat_allowlist.txt exist and are tracked."""
     allowlist_path = (
         REPO_ROOT / "provenance" / "architecture" / "ast_compat_allowlist.txt"
     )
@@ -904,7 +904,7 @@ def test_slice_inventory_allowlist_files():
         for line in allowlist_path.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
-    assert len(lines) == 43, f"Expected 43 compatibility files, got {len(lines)}"
+    assert len(lines) == 42, f"Expected 42 compatibility files, got {len(lines)}"
     for entry in lines:
         target = REPO_ROOT / entry
         assert target.is_file(), f"Allowlist entry {entry} does not exist at {target}"

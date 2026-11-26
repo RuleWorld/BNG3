@@ -198,4 +198,4 @@ Also cite the specific BioNetGen 3 software release tag or commit SHA used (for 
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT License. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
