@@ -4144,21 +4144,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 readArgument(action, "inp_ppert", ""), "pnames", "pvalues");
             const auto cperts = parsePerturbationPairs(
                 readArgument(action, "inp_cpert", ""), "cnames", "cvalues");
-            for (const auto& [pName, pVal] : pperts) {
-                replaceParameter(ast::Parameter(
-                    pName, ast::Expression::number(parseScalarValue(pVal, model))));
-            }
-            if (!pperts.empty()) {
-                evaluateParametersAndRefresh();
-                network = generator.generate(sourcePath);
-            }
-            for (const auto& [cName, cVal] : cperts) {
-                if (const auto idx = findSpeciesIndex(*network, cName); idx.has_value()) {
-                    network->species.get(*idx).setAmount(parseScalarValue(cVal, model));
-                }
-            }
 
-            // Save original parameter values
+            // Save original parameter values BEFORE any input perturbations
             std::vector<std::pair<std::string, double>> originalParamValues;
             for (const auto& param : model.getParameters().all()) {
                 originalParamValues.emplace_back(param.getName(), param.getValue());
@@ -4166,6 +4153,22 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             // Save initial species concentrations
             const auto initialConc = snapshotConcentrations(*network);
+
+            auto applyInputPerturbations = [&]() {
+                if (!pperts.empty()) {
+                    for (const auto& [pName, pVal] : pperts) {
+                        replaceParameter(ast::Parameter(
+                            pName, ast::Expression::number(parseScalarValue(pVal, model))));
+                    }
+                    evaluateParametersAndRefresh();
+                    regeneratePreservingAmounts(generator, implicitNetworkPath(), network);
+                }
+                for (const auto& [cName, cVal] : cperts) {
+                    if (const auto idx = findSpeciesIndex(*network, cName); idx.has_value()) {
+                        network->species.get(*idx).setAmount(parseScalarValue(cVal, model));
+                    }
+                }
+            };
 
             // Helper to build a simulate action with given prefix
             auto makeSimulateAction = [&](const std::string& simPrefix, double tEnd, bool steadyState) -> ast::Action {
@@ -4183,12 +4186,18 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 return simAction;
             };
 
-            // Initial equilibration of the base model if requested
+            // Initial equilibration of the unperturbed base model if requested
             if (initEquil) {
                 std::string equilPrefix = prefix + "_baseequil_" + suffix;
                 auto equilAction = makeSimulateAction(equilPrefix, tEquil, true);
                 runSimulation(model, equilAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                if (!lastSimulationState.empty()) {
+                    restoreConcentrations(*network, lastSimulationState);
+                }
             }
+
+            // Apply input perturbations right before base case simulation (matching BNGAction.pm:2078-2102)
+            applyInputPerturbations();
 
             // Run base case simulation
             {
@@ -4212,20 +4221,27 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
                 const double newValue = paramValue * (1.0 + bump / 100.0);
 
-                // Restore initial concentrations
-                restoreConcentrations(*network, initialConc);
-
-                // Bump the parameter
+                // Restore all original parameters before applying this single-parameter bump
+                for (const auto& [origName, origVal] : originalParamValues) {
+                    replaceParameter(ast::Parameter(origName, ast::Expression::number(origVal)));
+                }
                 replaceParameter(ast::Parameter(paramName, ast::Expression::number(newValue)));
                 evaluateParametersAndRefresh();
                 network = generator.generate(sourcePath);
+                restoreConcentrations(*network, initialConc);
 
                 // Re-equilibrate if requested
                 if (reEquil) {
                     std::string equilPrefix = prefix + "_equil_" + paramName + "_" + suffix;
                     auto equilAction = makeSimulateAction(equilPrefix, tEquil, true);
                     runSimulation(model, equilAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                    if (!lastSimulationState.empty()) {
+                        restoreConcentrations(*network, lastSimulationState);
+                    }
                 }
+
+                // Apply input perturbations right before bumped simulation (matching BNGAction.pm:2146-2170)
+                applyInputPerturbations();
 
                 // Run bumped simulation
                 std::string bumpPrefix = prefix + "_" + paramName + "_" + suffix;
