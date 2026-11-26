@@ -162,7 +162,11 @@ def _run_native_bngl(bng_cpp, name, text, work):
 
 
 def _parse_gdat_rows(path):
-    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     header = lines[0].lstrip("#").split()
     rows = []
     for line in lines[1:]:
@@ -240,7 +244,9 @@ end model
 generate_network({overwrite=>1})
 writeXML()
 """
-    res, native_dir = _run_native_bngl(bng_cpp, "localfcn_xml", text, tmp_path / "native")
+    res, native_dir = _run_native_bngl(
+        bng_cpp, "localfcn_xml", text, tmp_path / "native"
+    )
     assert res.returncode == 0, f"{res.stdout}\n{res.stderr}"
     xml_text = (native_dir / "localfcn_xml.xml").read_text(encoding="utf-8")
     assert '<Function id="rateFlipUp"' in xml_text
@@ -488,7 +494,10 @@ end actions
     retained_dir = tmp_path / "retained"
     retained_dir.mkdir()
     staged = retained_dir / "issue_348.bngl"
-    staged.write_text(text.replace('simulate({method=>"ode",t_end=>5,n_steps=>5})\n', ""), encoding="utf-8")
+    staged.write_text(
+        text.replace('simulate({method=>"ode",t_end=>5,n_steps=>5})\n', ""),
+        encoding="utf-8",
+    )
     perl_res = subprocess.run(
         ["perl", str(ROOT / "legacy/perl/BNG2.pl"), str(staged)],
         cwd=retained_dir,
@@ -498,7 +507,9 @@ end actions
         check=False,
     )
     assert perl_res.returncode == 0, f"{perl_res.stdout}\n{perl_res.stderr}"
-    assert 'NumberPerQuantityUnit="2"' in (retained_dir / "issue_348.xml").read_text(encoding="utf-8")
+    assert 'NumberPerQuantityUnit="2"' in (retained_dir / "issue_348.xml").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_issue_357_parallel_parameter_scan_short_batch_and_error(bng_cpp, tmp_path):
@@ -525,19 +536,33 @@ generate_network({overwrite=>1})
     serial_text = (
         base_model
         + 'parameter_scan({method=>"ode",parameter=>"k",par_min=>0.1,par_max=>1.0,'
-        + 'n_scan_pts=>5,t_end=>1,n_steps=>5,reset_conc=>1})\n'
+        + "n_scan_pts=>5,t_end=>1,n_steps=>5,reset_conc=>1})\n"
     )
     parallel_text = (
         base_model
         + 'parameter_scan({method=>"ode",parameter=>"k",par_min=>0.1,par_max=>1.0,'
-        + 'n_scan_pts=>5,t_end=>1,n_steps=>5,reset_conc=>1,parallel=>1,num_cores=>3})\n'
+        + "n_scan_pts=>5,t_end=>1,n_steps=>5,reset_conc=>1,parallel=>1,num_cores=>3})\n"
     )
-    s_res, s_dir = _run_native_bngl(bng_cpp, "scan_serial", serial_text, tmp_path / "serial")
-    p_res, p_dir = _run_native_bngl(bng_cpp, "scan_parallel", parallel_text, tmp_path / "parallel")
+    s_res, s_dir = _run_native_bngl(
+        bng_cpp, "scan_serial", serial_text, tmp_path / "serial"
+    )
+    p_res, p_dir = _run_native_bngl(
+        bng_cpp, "scan_parallel", parallel_text, tmp_path / "parallel"
+    )
     assert s_res.returncode == 0, f"{s_res.stdout}\n{s_res.stderr}"
     assert p_res.returncode == 0, f"{p_res.stdout}\n{p_res.stderr}"
-    s_lines = [l.strip() for l in (s_dir / "scan_serial_k.scan").read_text(encoding="utf-8").splitlines() if l.strip()]
-    p_lines = [l.strip() for l in (p_dir / "scan_parallel_k.scan").read_text(encoding="utf-8").splitlines() if l.strip()]
+    s_lines = [
+        l.strip()
+        for l in (s_dir / "scan_serial_k.scan").read_text(encoding="utf-8").splitlines()
+        if l.strip()
+    ]
+    p_lines = [
+        l.strip()
+        for l in (p_dir / "scan_parallel_k.scan")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if l.strip()
+    ]
     assert len(p_lines) == 6  # header + 5 points
     assert p_lines == s_lines
 
