@@ -86,6 +86,57 @@ visualize({type=>"contactmap",prefix=>"custom_viz",suffix=>"s1"})
     assert "initSpecies_custom_mall_s2" in bng_model_text
 
 
-def test_visualize_help_exits_without_writing_graph(tmp_path: Path):
+def test_visualize_help_exits_without_writing_graph(tmp_path: Path, capfd):
     out = _exec_bngl(tmp_path, 'visualize({help=>1,prefix=>"nofile"})\n')
+    captured = capfd.readouterr()
     assert not list(out.glob("nofile*"))
+    assert "help" in captured.out.lower()
+    assert "regulatory" in captured.out.lower()
+
+
+def test_bng_cpp_outdir_routes_outputs_to_target_directory(tmp_path: Path):
+    import shutil
+    import subprocess
+
+    bng_cpp = shutil.which("bng_cpp")
+    if bng_cpp is None:
+        cand = Path(__file__).resolve().parents[2] / "build" / "cpp" / "bng_cpp"
+        if cand.is_file():
+            bng_cpp = str(cand)
+    if bng_cpp is None:
+        return
+
+    src_dir = tmp_path / "src"
+    out_dir = tmp_path / "out_sub"
+    src_dir.mkdir()
+    model_path = src_dir / "decay.bngl"
+    model_path.write_text(
+        BASE_MODEL
+        + 'generate_network({overwrite=>1})\nsimulate({method=>"ode",t_end=>1,n_steps=>2})\n',
+        encoding="utf-8",
+    )
+    proc = subprocess.run(
+        [bng_cpp, "--outdir", str(out_dir), str(model_path)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert (out_dir / "decay.net").is_file()
+    assert (out_dir / "decay.gdat").is_file()
+    assert not (src_dir / "decay.gdat").exists()
+
+
+def test_simulate_nf_sample_times_defaults_t_end_to_last_sample(tmp_path: Path):
+    out = _exec_bngl(
+        tmp_path,
+        'simulate_nf({sample_times=>[0.25,0.75,1.0],seed=>1,prefix=>"st"})\n',
+    )
+    gdat = (out / "st.gdat").read_text(encoding="utf-8")
+    rows = [
+        line.split()
+        for line in gdat.splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    assert [float(row[0]) for row in rows] == [0.25, 0.75, 1.0]

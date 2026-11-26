@@ -2812,14 +2812,16 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         // Parse simulation parameters using the same defaults as the
         // standalone simulate_nf action.
-        const auto tEnd = stripQuotes(readArgument(action, "t_end", "10"));
+        const auto tEndRaw = stripQuotes(readArgument(action, "t_end", ""));
         const auto nSteps = stripQuotes(readArgument(action, "n_steps", "20"));
         const auto sampleTimesText = readArgument(action, "sample_times", "");
         std::vector<double> sampleTimes;
         if (!trim(stripQuotes(sampleTimesText)).empty()) {
             sampleTimes = parseSampleTimes(sampleTimesText, model);
         }
-        const double endTime = parseScalarValue(tEnd, model);
+        const double endTime = tEndRaw.empty()
+            ? (!sampleTimes.empty() ? sampleTimes.back() : 10.0)
+            : parseScalarValue(tEndRaw, model);
         if (!std::isfinite(endTime) || endTime < startTime) {
             throw std::runtime_error(
                 "NFsim 't_end' must be finite and greater than or equal to t_start");
@@ -4816,9 +4818,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "visualize") {
             const auto helpText = lowercase(stripQuotes(readArgument(action, "help", "0")));
             if (helpText == "1" || helpText == "true" || helpText == "on") {
-                if (verbose) {
-                    std::cerr << "[bng_cpp] graph export help: type=contactmap|regulatory|reaction_network|ruleviz_pattern|ruleviz_operation|process|rinf|opts, suffix, prefix, help\n";
-                }
+                std::cout << "graph export help menu: options type=contactmap|regulatory|conventional|compact|reaction_network|ruleviz_pattern|ruleviz_operation|process|rinf|opts, suffix, prefix, help" << std::endl;
                 continue;
             }
             const auto vizType = lowercase(stripQuotes(readArgument(action, "type", "contactmap")));
