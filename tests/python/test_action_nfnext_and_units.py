@@ -57,8 +57,7 @@ end model
     ):
         bngl = tmp_path / "act_nfnext.bngl"
         bngl.write_text(
-            self.MODEL_BODY
-            + """begin actions
+            self.MODEL_BODY + """begin actions
     simulate({method=>"nfnext", prefix=>"nfnext_out", t_end=>3, n_steps=>6, seed=>42, verbose=>1})
 end actions
 """,
@@ -83,8 +82,7 @@ end actions
     ):
         bngl = tmp_path / "act_nfcore.bngl"
         bngl.write_text(
-            self.MODEL_BODY
-            + """begin actions
+            self.MODEL_BODY + """begin actions
     simulate({method=>"nfcore", prefix=>"nfcore_out", t_end=>2, n_steps=>4, seed=>7, utl=>2, equil=>0.5, verbose=>1})
 end actions
 """,
@@ -104,8 +102,7 @@ end actions
     ):
         clean_bngl = tmp_path / "act_nf_clean.bngl"
         clean_bngl.write_text(
-            self.MODEL_BODY
-            + """begin actions
+            self.MODEL_BODY + """begin actions
     simulate({method=>"nf", prefix=>"clean_nf", t_end=>2, n_steps=>4, seed=>11, verbose=>1})
 end actions
 """,
@@ -119,8 +116,7 @@ end actions
 
         nfcore_opt_bngl = tmp_path / "act_nf_equil.bngl"
         nfcore_opt_bngl.write_text(
-            self.MODEL_BODY
-            + """begin actions
+            self.MODEL_BODY + """begin actions
     simulate({method=>"nf", prefix=>"equil_nf", t_end=>2, n_steps=>4, seed=>11, equil=>0.2, verbose=>1})
 end actions
 """,
@@ -133,8 +129,7 @@ end actions
     def test_simulate_nf_explicit_engine_selector(self, tmp_path: Path, capfd):
         bngl = tmp_path / "simnf_engine.bngl"
         bngl.write_text(
-            self.MODEL_BODY
-            + """begin actions
+            self.MODEL_BODY + """begin actions
     simulate_nf({engine=>"nfnext", prefix=>"simnf_next", t_end=>1, n_steps=>2, seed=>5, verbose=>1})
     simulate_nf({engine=>"nfcore", prefix=>"simnf_core", t_end=>1, n_steps=>2, seed=>5, verbose=>1})
 end actions
@@ -153,8 +148,7 @@ end actions
     ):
         cont_bngl = tmp_path / "nfnext_cont.bngl"
         cont_bngl.write_text(
-            self.MODEL_BODY
-            + """begin actions
+            self.MODEL_BODY + """begin actions
     simulate({method=>"nfnext", prefix=>"phase1", t_end=>1, n_steps=>2, seed=>10})
     setParameter("kf", 0.0)
     simulate({method=>"nfnext", prefix=>"phase2", continue=>1, t_end=>3, n_steps=>2, seed=>11})
@@ -172,8 +166,7 @@ end actions
 
         scan_bngl = tmp_path / "nfnext_scan.bngl"
         scan_bngl.write_text(
-            self.MODEL_BODY
-            + """begin actions
+            self.MODEL_BODY + """begin actions
     parameter_scan({method=>"nfnext", parameter=>"kf", par_scan_vals=>[0.5, 2.0], t_end=>1, n_steps=>2, seed=>3})
 end actions
 """,
@@ -280,9 +273,9 @@ end model
                 for i in range(n_runs)
             ]
             mean = float(np.mean(vals))
-            assert abs(mean - expected) <= 4.5 * se, (
-                f"{method} minute-basis mean {mean} disagreed with ODE/analytic {expected}"
-            )
+            assert (
+                abs(mean - expected) <= 4.5 * se
+            ), f"{method} minute-basis mean {mean} disagreed with ODE/analytic {expected}"
             # Wrong (unconverted k=30 s^-1) would be ~0, >100 sigma away.
             assert mean > 40.0
 
@@ -626,7 +619,9 @@ end model
         bound = sum(
             1
             for i in range(n_runs)
-            if cpp.simulate_nfnext(m, [0.0, T], seed=5000 + i)["observables"]["Bound"][-1]
+            if cpp.simulate_nfnext(m, [0.0, T], seed=5000 + i)["observables"]["Bound"][
+                -1
+            ]
             > 0.5
         )
         se = math.sqrt(expected * (1.0 - expected) / n_runs)
