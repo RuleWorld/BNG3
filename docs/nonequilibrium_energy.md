@@ -221,86 +221,84 @@ export.
 
 ## Validation state
 
-Be precise about what "verified" means here. There is no network access in the
-authoring environment, so the full FetchContent build (Catch2, ANTLR4 runtime,
-SUNDIALS, pybind11, ExprTk) was never run. Nothing below has been linked into
-`bng_cpp` or executed through a real parse.
+All components listed in the architecture table above — including
+`cpp/parser/BNGAstVisitor.cpp`, `cpp/compile/energy/BarrierCompiler.cpp`,
+`cpp/io/NetWriter.cpp`, `cpp/io/EnergyExportGuard.cpp`,
+`cpp/nfsim/NFinput/NFinput.cpp`,
+`cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp`, and the Python
+bindings / `bngir.py` — are built, linked into `bng_cpp` and the Python
+extension, and tested in the default CMake/CTest and CI builds (BNG3 uses its
+shared expression engine rather than ExprTk).
 
-### Executed and passing
+### Wired C++ contract and unit tests (`tests/energy/`)
 
-Run by `tests/energy/standalone/run_checks.sh`, which needs only a C++17
-compiler:
+`CMakeLists.txt` includes `tests/energy/` by default, registering
+`test_energy_compiler_contracts` (`energy::` CTest prefix),
+`test_energy_compiler_original` (`energy-original::` prefix), and
+`energy_validation_harness` (`tests/energy/tests/python`), in addition to the
+compiler-only `tests/energy/standalone/run_checks.sh` checks. The promoted
+default C++ test sources (`tests/energy/cmake/energy_tests.cmake`) execute
+against the real ANTLR parser, AST, compiled model, and writers:
 
+- real BNGL parsing of `begin barrier patterns` and `driven_by()`, barrier
+  removal from the ordinary rule list, rule renumbering, and label preservation
+  (`tests/energy/tests/cpp/future_barrier_driving_syntax.cpp`);
+- surface-syntax normalization, comment/identifier-boundary safety, nested-paren
+  work expressions, continuation-line numbering, and `BnglWriter` round-trip
+  (`tests/energy/tests/cpp/test_thermo_source_normalization.cpp`);
+- post-parse lowering in `ThermoModelFinalize`, cross-convention equivalence
+  between `networkArrheniusRate` and `drivenArrheniusRate`, reverse-direction
+  work negation, and all fail-closed paths
+  (`tests/energy/tests/cpp/test_thermo_model_finalize.cpp`);
+- `BarrierTable` reversal symmetry, canonical reaction-center key round-trip
+  and malformed-key rejection, `BarrierCompiler` reaction-center extraction,
+  compact-path barrier folding, and `drivenArrheniusRate`
+  (`tests/energy/tests/cpp/test_barrier_and_driven_energy.cpp`);
 - cycle rank, gauge degrees of freedom, cycle affinity, state-potential
-  reconstruction, and equilibrium compatibility, including barrier invariance
-  of `k_f / k_r` and sign reversal of a driven edge's affinity;
-- determinism of the analysis under state and edge insertion order (an earlier
-  formulation let the cycle-affinity sign depend on it), plus parallel edges,
-  self-loops, inconsistent parallel edges and the empty graph;
-- reversal symmetry, accumulation, neutral-zero lookup, non-finite rejection
-  and negative (catalytic) barriers in `BarrierTable`;
-- canonical reaction-center key round-trip, and rejection of 14 malformed key
-  forms including non-canonical half ordering;
-- agreement between `drivenArrheniusRate` and `ThermodynamicRate::rates()`;
-- exactness of folding a barrier into the compact base rate, which is what
-  licenses keeping barrier-only rules on the fast path;
-- the BNGL writer/normalizer round-trip contract for barrier blocks and
-  `driven_by()`;
-- the export guard: acceptance of ordinary and empty models, rejection of
-  energy patterns, barrier patterns, reservoir work and a bare Arrhenius rate
-  law, case-insensitive and reverse-slot detection, construct-ordering in the
-  message, and non-overreach into unrelated rate-law families;
-- **cross-convention equivalence**: a 300-combination sweep over phi, dG, W and
-  B showing `networkArrheniusRate` and `drivenArrheniusRate` describe identical
-  kinetics, and a demonstration that the reverse-direction work negation is
-  load-bearing (omitting it changes every driven reverse rate);
-- the accepted and rejected surface syntax, including comment safety,
-  identifier-boundary safety, nested-paren work expressions, placement
-  independence of the driving-work index, and line-number preservation across
-  backslash continuations;
-- the post-parse lowering in `ThermoModelFinalize`: barrier/ordinary
-  partitioning, driving-work attachment by ordinary-rule index across an
-  interleaved barrier rule, rule renumbering, barrier ordering by index, label
-  reattachment, and all eight fail-closed paths.
+  reconstruction, insertion-order determinism, and equilibrium compatibility
+  (`tests/energy/tests/cpp/future_thermodynamic_constraints.cpp`);
+- fail-closed kinetics export guards in `io::requireNoEnergySemantics()`
+  (`tests/energy/tests/cpp/test_energy_export_guard.cpp`).
 
-### Type-checked only
+### Independent release qualification (`tests/validation/release/cases/issue-177/`)
 
-These compile against the real headers (`-fsyntax-only`) but were never run:
-`BarrierPattern`, `Model`, `ReactionRule`, `Capabilities`, `CompiledRule`,
-`CompiledModel`, `SymbolTable`, `BarrierCompiler`, `XmlWriter`, `BnglWriter`,
-`energyPattern`, `NFinput_energy`, `NFinput_fromCompiled`,
-`NFinput_reactions_fromCompiled`, and the four Catch2 test files that do not
-need a parse. `bngir.py` parses but its barrier path was never executed, since
-that needs the compiled extension module.
+Issue [#177](https://github.com/RuleWorld/BNG3/issues/177) qualified both
+inventory rows (`energy.barriers` and `energy.reservoirs`; merged in PR #651,
+commit `1a20420e`, and executed in `.github/workflows/ci.yml` under
+*Validate independent issue-177 barrier and reservoir energy laws*, passing in
+hosted CI run `45812432339` at `90832910`):
 
-`BarrierCompiler` deserves specific mention: its reaction-center extraction
-walks real pattern graphs, but `PatternGraph` can only be built through
-`PatternGraphBuilder`, which takes ANTLR parse contexts. So the graph-diff
-classification — including the compound-rewrite and molecule-creation
-rejections — is type-checked but **not executed**. That is the largest
-remaining gap in this work.
+- **`release-barrier-energy`** (`tests/validation/release/cases/issue-177/test_barrier_energy.py`):
+  verifies analytic forward/reverse Arrhenius rates in generated `.net` output,
+  exact barrier cancellation in `k_f / k_r`, detailed-balance cycle identities,
+  catalytic (`B < 0`) vs. obstructive (`B > 0`) kinetics, reversal symmetry,
+  direct NFsim execution with barriers, gate-disabled fail-closed refusal,
+  invalid declaration rejection, and negative mutation controls.
+- **`release-reservoir-energy`** (`tests/validation/release/cases/issue-177/test_reservoir_energy.py`):
+  verifies shifted detailed balance under driving work, cycle affinity
+  `sum(W_e)`, end-to-end nonequilibrium steady-state (NESS) distributions and
+  nonzero steady-state cycle current against independent Matrix Tree /
+  King-Altman analytic laws, driven protocol monotonicity, direct NFsim
+  execution, fail-closed gate/export guards, malformed annotation rejection,
+  and negative mutation controls.
+- **`release-capability-coverage-177`**: verifies full coverage of the
+  assigned `energy.barriers` and `energy.reservoirs` capability rows.
 
-### Not checked at all
+### Opt-in boundary and remaining scope
 
-Four translation units need the real ANTLR4 runtime and could not even be
-type-checked:
+`BNG_NFSIM_GENERAL_ENERGY=1` remains **opt-in (gated off by default)**. No
+external simulator (neither canonical BNG2 nor canonical NFsim) implements
+barrier patterns or driving reservoirs, so cross-simulator differential parity
+against an independent external engine cannot be produced; current
+qualification relies on independently derived analytic thermodynamic/kinetic
+laws and internal cross-path checks. In addition, the optional
+`BNG_ENABLE_FUTURE_ENERGY_CONTRACTS` CMake target in
+`tests/energy/cmake/energy_tests.cmake` (which holds legacy handoff contracts
+such as `future_direct_xml_energy_parity.cpp` and
+`future_energy_serialization_roundtrip.cpp`) remains off by default.
 
-- `cpp/parser/BNGAstVisitor.cpp` (normalization hook, option decoding, and the
-  delegation to `ThermoModelFinalize`)
-- `cpp/io/NetWriter.cpp` (barrier/work lookup and the call into
-  `networkArrheniusRate`; the rate math itself is swept above, but the wiring
-  that feeds it is not)
-- `cpp/nfsim/NFinput/NFinput.cpp` (XML `drivingWork` read)
-- `tests/energy/tests/cpp/future_barrier_driving_syntax.cpp` (needs a parse)
+To run the C++ energy contract suite locally in a configured build:
 
-### Still owed
-
-- end-to-end trajectory behavior for a driven cycle;
-- differential agreement between the direct-NFsim and compatibility-XML paths
-  for barrier and driven rules;
-- execution of the barrier reaction-center extraction against parsed graphs;
-- any comparison against native NFsim, which does not implement these features
-  and therefore cannot serve as an oracle for them.
-
-The first command to run in a networked environment is
-`cmake -B build -G Ninja && cmake --build build && ctest --test-dir build -R "energy::"`.
+```bash
+cmake -B build -G Ninja && cmake --build build && ctest --test-dir build -R "^energy" --output-on-failure
+```

@@ -5,8 +5,8 @@
 > records the required fallback. It is test-backed: every row has a owning
 > test or a `TODO` ticket.
 
-**Last audited:** 2026-10-08
-**Capability source:** `cpp/engine/BngsimAdapter.cpp` (always compiled)
+**Last audited:** 2026-11-26 (`origin/main` at `90832910`)
+**Capability source:** `cpp/engine/BngsimAdapter.cpp` (always compiled) and runtime solver-option guards in `cpp/engine/BngsimBackend.cpp` (compiled when `BNG3_HAS_BNGSIM_ADAPTER` is enabled)
 **Network adapter:** `cpp/engine/BngsimAdapter.cpp` (`buildBngsimNetwork` is optional)
 **Pinned BNGsim:** `49dc939035f5a272da663f8c9586e3c9f0e1c041` (see `provenance/upstreams.lock.yml`)
 **Default backend:** `native`; `bngsim` is an explicitly selected optional backend for faithfully lowerable models (see ADR 0003 and `DECISIONS.md`)
@@ -29,16 +29,22 @@ Rejection is **fail-closed**: the adapter throws before solver construction with
 | Molecules observable (pattern-weighted, incl. bond `!+`, compartment filter) | supported | yes (entries with weight) | `… preserves BNGL observable matching semantics` |
 | Species observable | supported | yes | same |
 | Observables with quantifiers (`>`, `<`, `>=`, `<=`, `==`, `!=`) | supported (shared Ullmann logic) | yes | implicit via observable path |
-| Inline TFUN `TFUN([x],[y], time)` | supported | yes (`add_inline_table_function_spec`) | `… maps inline TFUN` |
-| Absolute-path TFUN `TFUN('/abs/path', time)` | supported | yes (`add_table_function_spec`) | `… maps absolute-file TFUN` |
+| Inline TFUN `TFUN([x],[y], time)` | supported | yes (`add_inline_table_function_spec`) | `… maps inline TFUN function rates` |
+| Absolute-path TFUN `TFUN('/abs/path', time)` | supported | yes (`add_table_function_spec`) | `… maps absolute-file TFUN function rates` |
 | Species ordering, parameter values, ICs (constant flag), reaction reactants/products, stoichiometry, statistical factor | supported | yes | `… maps … without .net serialization` (checks `species()[0].name`, `stat_factor`, `n_species` etc.) |
 | `time` / `t` counter mapping to BNGsim `time` | supported | yes | inline TFUN path |
-| Observables / parameters as TFUN counter | supported (via `bngsimTableCounterName`) | yes | - |
+| Observables / parameters as TFUN counter | supported (via `bngsimTableCounterName`) | yes | — |
+| ODE tolerances and step cap (`rtol`, `atol`, `max_step`) | supported (`BngsimBackend.cpp`) | yes (`SolverOptions`) | `… preserves native steady-state stopping semantics` |
+| ODE `steady_state` with positive finite `steady_state_tol` on non-empty species sets | supported (`BngsimBackend.cpp`) | yes (`SolverOptions::steady_state*`) | `… preserves native steady-state stopping semantics` |
+| Seeded SSA (`method="ssa"`, `seed`, uniform grid or explicit `sample_times`) | supported (`BngsimBackend.cpp`) | yes (`SsaSimulator::run`) | `… rejects controls it cannot represent` (`explicit sample times supersede event interval`) |
 
-## Rejected today (fallback required)
+## Rejected today — model lowering (`cpp/engine/BngsimAdapter.cpp`)
 
 | Feature | Adapter message | Type | BNGsim supports it? | Work needed | Fallback | Test |
 |---|---|---|---|---|---|---|
+| Native SBML/BNGL events (`model.getEventFormatVersion().has_value()`) | `native events are unsupported` | B/C | no — BNGsim `NetworkModel` has no continuous event-root runtime | Keep fail-closed or bridge if BNGsim gains events | yes → native | covered via `checkBngsimLowering` (`BngsimAdapter.cpp:333`) |
+| Delayed reactions (`rule.getDelayExpression()` / `rxn.getDelayExpression()`) | `delayed reactions require the native DDE method-of-steps solver` | B/C | no — BNGsim has no DDE solver | Keep fail-closed (`requireNoDelayedSemantics`) | yes → native | covered via `checkBngsimLowering` (`BngsimAdapter.cpp:336-356`) |
+| `delay()` expressions (in rule rates, functions, or reaction rates) | `delay() expressions require the native DDE method-of-steps solver` | B/C | no — BNGsim has no DDE history buffer | Keep fail-closed (`expressionUsesDelay` / `containsDelayCall`) | yes → native | covered via `checkBngsimLowering` (`BngsimAdapter.cpp:357-392`) |
 | Compartments (`begin compartments`) | `compartments require a volume-aware bridge` | B | investigate — BNGsim `NetworkModel` currently has no compartment-volume API | Typed volume-aware bridge; decide whether BNGsim gains compartment support or BNG3 folds volumes into effective rates where static | yes → native | `test_bngsim_adapter.cpp: … rejects unsupported semantic surfaces` (compartment case) |
 | Energy patterns (`begin energy patterns`) | `energy patterns require an eBNGL rate bridge` | C | likely not a BNGsim concern — rates should be compiled to effective finite rates before the boundary | Compile into generated rates where mathematically valid (Sekar expansion or `EnergyRxnClass`); reject otherwise | yes | add `test_bngsim_adapter` case for energy pattern |
 | Barrier patterns (`begin barrier patterns`) | `barrier patterns require an eBNGL rate bridge` | C | same | same | yes | same |
@@ -48,17 +54,30 @@ Rejection is **fail-closed**: the adapter throws before solver construction with
 | Actions other than `generate_network` | `action execution requires a protocol bridge` (per-name) | C | same | same | yes | add |
 | Local function arguments (`function foo(x) = …`) | `function arguments require a local-function bridge` | A/B | investigate — BNGsim functions are zero-arg rate laws today | Adapter gap if BNGsim gains args; otherwise needs per-reaction derived param lowering | yes | add (requires model with `f(x) = …`) |
 | Relative TFUN path (`TFUN('forcing.dat', time)` without provenance) | `relative table path requires source-directory provenance` | A | yes (absolute ok) | Propagate `source_path` / `LoweringContext` so relative paths resolve | yes until fixed | `… rejects relative TFUN provenance` |
-| Non-reference rate expression (`X() -> 0 k*X`, i.e. not a direct param or function) | `is not a direct parameter or function reference` | A | maybe — BNGsim has bounded `Functional` but arbitrary expression would need validation | Allow supported expression subset via function wrapping or expression lowering | yes until expanded | `… fails closed on non-reference rate expressions` |
-| Species index out of range | `species index out of range` | — | — | Invariant violation (network generation bug) | throw | checked in `checkedBngsimIndices` |
-| Species index exceeds BNGsim `int` range | `species index exceeds BNGsim int range` | B | BNGsim uses `int` indices | Document limit; fallback for >2^31 species is academic | yes (throw) | — |
+| Non-reference rate expression (`X() -> 0 k*2`, i.e. not a direct param or function) | `is not a direct parameter or function reference` | A | maybe — BNGsim has bounded `Functional` but arbitrary expression would need validation | Allow supported expression subset via function wrapping or expression lowering | yes until expanded | `… fails closed on non-reference rate expressions` |
+| Species index out of range | `species index out of range` | — | — | Guard (invariant violation) | throw | checked in `checkedBngsimIndices` |
+| Species index exceeds BNGsim `int` range (reactions or observables) | `species index exceeds BNGsim int range` / `species index exceeds int range` | B | BNGsim uses `int` indices | Document limit; fallback for >2^31 species is academic | yes (throw) | — |
 | Observable with unsupported type (not `Molecules`/`Species`) | `unsupported observable type` | A/B | BNGsim only exposes those two | Add other types if BNGsim gains them | yes | — |
-| Observable pattern parse failure | `could not parse pattern` | A | — | Improve diagnostics; fail-closed is correct | throw | — |
+| Observable pattern parse or build failure | `could not parse pattern` / `could not build observable pattern` | A | — | Guard; fail-closed is correct | throw | — |
 | TFUN with empty counter name | `empty counter name` | — | — | Guard | throw | — |
 | TFUN counter not time/param/observable | `counter must be time or a named parameter/observable` | A | investigate | Support more counters if BNGsim does | throw | — |
 | Malformed unary/binary/TFUN expression | `malformed … expression` | — | — | Guard | throw | — |
 | Unknown expression kind | `unknown expression kind` | — | — | Guard | throw | — |
-| Parameter value non-finite | `value is not finite` | — | — | Guard | throw | — |
+| Parameter value non-finite or evaluation error | `value is not finite` / parameter evaluation error | — | — | Guard | throw | — |
 | Supported TFUN counters / interpolation | `counter must be …` branch already covers; interpolation method forwarded via `tableMethod()` | A | BNGsim supports at least `linear`; others tbd | Enumerate BNGsim's `InterpolationMethod` set | throw if unsupported | — |
+
+## Rejected today — runtime solver options (`cpp/engine/BngsimBackend.cpp`)
+
+| Option / control | Backend message | Scope | Fallback | Test |
+|---|---|---|---|---|
+| `stop_if` | `BNGsim adapter rejected stop_if: native (event) stop expressions are not supported` | ODE & SSA | yes → native | `test_bngsim_adapter.cpp: BNGsim ODE rejects unqualified native-only options` & `BNGsim SSA rejects controls it cannot represent` |
+| `sparse=true` | `BNGsim adapter rejected sparse: BNG3 GMRES selection is not equivalent to BNGsim KLU selection` | ODE | yes → native | `BNGsim ODE rejects unqualified native-only options` (`sparse solver request`) |
+| `check_product_scale > 0` | `BNGsim adapter rejected check_product_scale: native threshold warnings are not emitted by BNGsim` | ODE | yes → native | `BNGsim ODE rejects unqualified native-only options` (`product-scale warning`) |
+| `steady_state=true` with empty species set | `BNGsim adapter rejected steady_state: empty-state steady-state truncation differs…` | ODE | yes → native | `BNGsim ODE rejects unqualified native-only options` (`empty species set`) |
+| `steady_state=true` with non-positive / non-finite `steady_state_tol` | `BNGsim adapter rejected steady_state_tol: a finite positive tolerance is required to match native semantics` | ODE | yes → native | `BNGsim ODE rejects unqualified native-only options` (`non-positive steady-state tolerance`) |
+| `sample_times` length mismatch | `BNGsim adapter rejected sample_times: BNGsim TimeSpec does not support explicit sample times in this build` | ODE | yes → native | guard in `simulateOdeViaBngsim` |
+| `max_sim_steps > 0` | `BNGsim adapter rejected max_sim_steps: BNGsim SSA has no reaction-event cap` | SSA | yes → native | `BNGsim SSA rejects controls it cannot represent` (`maximum reaction events`) |
+| `output_step_interval > 0` without `sample_times` | `BNGsim adapter rejected output_step_interval: event-indexed output is not represented by TimeSpec` | SSA | yes → native | `BNGsim SSA rejects controls it cannot represent` (`event interval without explicit sample times`) |
 
 Notes:
 

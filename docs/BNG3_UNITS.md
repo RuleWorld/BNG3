@@ -85,8 +85,39 @@ The current backend capability boundary is explicit:
 
 * native network, ODE, PLA and PSA lowering supports the validated
   concentration/count and elementary-rate paths;
-* the direct NFsim adapter reports physical units as unsupported until its
-  count-rate bridge is independently integrated and validated;
+* direct compiled NFsim supports a validated static elementary physical-rate
+  bridge (`cpp/compile/Capabilities.cpp`, `nfSimPhysicalUnitBridgeRejection`,
+  and `cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp`; independently
+  qualified in `tests/validation/release/cases/issue-151/test_physical_units.py`
+  for issue [#151](https://github.com/RuleWorld/BNG3/issues/151), PR #642,
+  `6c3b0985`). Specifically, direct NFsim reports `Feature::Units` as
+  `ExactLowering` when the compiled model is valid, all seeds are unit-free
+  item counts, `timeUnits` (required explicitly for reactant-bearing rules)
+  resolves to `second`, and every rule is unidirectional with a complete
+  elementary expression rate law whose resolved rate is a direct numeric
+  literal or direct constant numeric parameter carrying a typed physical unit
+  convertible via `units::stochasticRateFactor` (using positive
+  `NumberPerQuantityUnit` when a mole/item bridge is required) to a finite
+  non-negative count rate across:
+  * zero-order synthesis with product molecules in one explicit positive static
+    declared 3D compartment;
+  * unimolecular rules (one single-molecule non-population reactant to one
+    single-molecule non-population product, including cross-compartment
+    transport when compartments are declared and both source and product have
+    positive static declared 3D volumes);
+  * heterobimolecular rules (two distinct single-molecule non-population
+    reactant types to one single-molecule non-population product in one shared
+    explicit positive static declared 3D compartment, with
+    `concentration^-1/time` rate units).
+  Converted rates factor volume and `NumberPerQuantityUnit` exactly once
+  (`volumeConversionFactor = 1.0`), avoiding double-scaling with NFsim's legacy
+  compartment scaling;
+* direct NFsim fails closed (`Unsupported`) for unit-bearing seed species
+  amounts, non-second `timeUnits`, bidirectional rules, homobimolecular
+  (repeated reactant molecule type) physical rules, population molecule types,
+  multi-molecule patterns or higher-order molecularities, compound parameter
+  expressions or aliases, dynamic/unresolved/time-dependent rate parameters,
+  and missing, non-positive, non-3D, or time-dependent compartment volumes;
 * unknown functions, dynamic seed quantities, missing compartment context and
   unsupported imported unit terms are diagnostics or hard failures, not
   implicit dimensionless values.
