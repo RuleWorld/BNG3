@@ -1296,6 +1296,9 @@ bool addDynamicCompiledRateFunction(
         diagnostic = "failed to register generated compiled reaction-rate composite";
         return false;
     }
+    for (const auto& callee : functionsCalled) {
+        system.addFunctionReference(name, callee);
+    }
     composite = candidate.release();
     composite->finalizeInitialization(&system);
     if (usesTime && tables.empty()) {
@@ -1783,6 +1786,8 @@ NFcore::ReactionClass* makeReactionForRate(
         }
         std::vector<std::string> firstArguments{productFirst.argument};
         std::vector<std::string> secondArguments{productSecond.argument};
+        system.useTimeTablesReadBy(productFirst.function->name);
+        system.useTimeTablesReadBy(productSecond.function->name);
         transformations->finalize();
         return new NFcore::DOR2RxnClass(
             reactionName, 1.0, "", transformations, first, second,
@@ -1803,6 +1808,7 @@ NFcore::ReactionClass* makeReactionForRate(
                                    *transformations, diagnostic))
             return nullptr;
         std::vector<std::string> arguments{localOperand.argument};
+        system.useTimeTablesReadBy(localOperand.function->name);
         transformations->finalize();
         return new NFcore::DORRxnClass(
             reactionName, 1.0, "", transformations, composite, arguments, &system);
@@ -1844,10 +1850,14 @@ NFcore::ReactionClass* makeReactionForRate(
             diagnostic = "could not register compiled scoped rate function";
             return nullptr;
         }
+        for (const auto& callee : scopedRate.functionNames) {
+            system.addFunctionReference(compositeName, callee);
+        }
         // Model functions were finalized before reaction construction.  This
         // generated composite is intentionally late-bound and must be finalized
         // exactly once here before DORRxnClass starts using it.
         composite->finalizeInitialization(&system);
+        system.useTimeTablesReadBy(compositeName);
         transformations->finalize();
         return new NFcore::DORRxnClass(
             reactionName, 1.0, "", transformations, composite,
@@ -1860,10 +1870,12 @@ NFcore::ReactionClass* makeReactionForRate(
             bng::compile::FunctionId::fromDenseIndex(expression.symbol->index));
         if (function != nullptr) {
             if (auto* global = system.getGlobalFunctionByName(function->name)) {
+                system.useTimeTablesReadBy(function->name);
                 transformations->finalize();
                 return new NFcore::FunctionalRxnClass(reactionName, global, transformations, &system);
             }
             if (auto* composite = system.getCompositeFunctionByName(function->name)) {
+                system.useTimeTablesReadBy(function->name);
                 transformations->finalize();
                 return new NFcore::FunctionalRxnClass(reactionName, composite, transformations, &system);
             }
@@ -1895,17 +1907,20 @@ NFcore::ReactionClass* makeReactionForRate(
     }
     transformations->finalize();
     if (dynamicGlobal != nullptr) {
+        system.useTimeTablesReadBy(dynamicGlobal->getName());
         return new NFcore::FunctionalRxnClass(
             reactionName, dynamicGlobal, transformations, &system);
     }
     if (dynamicComposite != nullptr) {
         if (dynamicLocalArguments.empty()) {
+            system.useTimeTablesReadBy(dynamicComposite->getName());
             return new NFcore::FunctionalRxnClass(
                 reactionName, dynamicComposite, transformations, &system);
         }
         if (rejectIncompatibleTotalRate(rule, "local functions", diagnostic, semanticRejection)) {
             return nullptr;
         }
+        system.useTimeTablesReadBy(dynamicComposite->getName());
         auto* reaction = new NFcore::DORRxnClass(
             reactionName, 1.0, "", transformations, dynamicComposite,
             dynamicLocalArguments, &system);
