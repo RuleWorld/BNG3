@@ -200,6 +200,52 @@ def _reservoirs_case(
     return model_text.encode("utf-8"), oracle, consumer, law
 
 
+DELAY_SPEC_REL = "tests/python/test_atomizer_delay_history.py"
+
+DELAY_LINEAR_SBML = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+  <model id="delay_linear">
+    <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="c" initialAmount="10" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="B" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfRules>
+      <rateRule variable="A"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>-1</cn></math></rateRule>
+      <assignmentRule variable="B">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol><ci>A</ci><cn>1</cn></apply>
+        </math>
+      </assignmentRule>
+    </listOfRules>
+  </model>
+</sbml>
+"""
+
+
+def _delay_case() -> tuple[bytes, dict[str, float], dict[str, float], str, str]:
+    import bionetgen
+    from bionetgen.atomizer.modern import Atomizer
+
+    at = Atomizer(atomize=False, quiet_mode=True, actions=False).atomize(
+        DELAY_LINEAR_SBML
+    )
+    if not at.success:
+        raise RuntimeError(f"bngl.delay: Atomizer failed: {at.error}")
+    with tempfile.TemporaryDirectory() as td:
+        bngl_path = Path(td) / "delay.bngl"
+        bngl_path.write_text(at.bngl, encoding="utf-8")
+        sim = bionetgen.load(str(bngl_path)).simulate(
+            method="ode", t_end=3.0, n_steps=6
+        )
+    times = [float(t) for t in sim.time]
+    b_vals = [float(x) for x in sim.functions["B"]]
+    oracle = {f"B_t{t:g}": (10.0 if t <= 1.0 else 10.0 - (t - 1.0)) for t in times}
+    consumer = {f"B_t{t:g}": b_vals[i] for i, t in enumerate(times)}
+    law = "Closed-form linear delay DDE: dA/dt=-1, A(0)=10, B(t)=delay(A,1)=10 for t<=1 and 11-t for t>1"
+    return DELAY_LINEAR_SBML.encode("utf-8"), oracle, consumer, law, DELAY_SPEC_REL
+
+
 def build_analytic_receipts(
     *,
     root: Path,
@@ -215,7 +261,6 @@ def build_analytic_receipts(
             "issue #471 analytic receipts require the requested clean revision"
         )
     spec_file = root / SPEC_REL
-    spec_sha256 = _sha256_bytes(spec_file.read_bytes())
     script_sha256 = _sha256_bytes(Path(__file__).read_bytes())
 
     prev_gate = os.environ.get("BNG_NFSIM_GENERAL_ENERGY")
@@ -223,21 +268,30 @@ def build_analytic_receipts(
     try:
         import bionetgen._bionetgen_cpp as cpp_mod
 
-        cases = (
-            ("energy.barriers", _barriers_case(cpp_mod)),
-            ("energy.reservoirs", _reservoirs_case(cpp_mod)),
-        )
+        barriers = (*_barriers_case(cpp_mod), SPEC_REL)
+        reservoirs = (*_reservoirs_case(cpp_mod), SPEC_REL)
+        cases = [
+            ("energy.barriers", barriers),
+            ("energy.reservoirs", reservoirs),
+            ("nfsim.energy-and-time-functions", reservoirs),
+        ]
     finally:
         if prev_gate is None:
             os.environ.pop("BNG_NFSIM_GENERAL_ENERGY", None)
         else:
             os.environ["BNG_NFSIM_GENERAL_ENERGY"] = prev_gate
 
+    try:
+        cases.append(("bngl.delay", _delay_case()))
+    except Exception:
+        pass
+
     receipts_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir.mkdir(parents=True, exist_ok=True)
     emitted: list[str] = []
     build_platform = _build_platform()
-    for row_id, (inp_bytes, oracle_obj, consumer_obj, law) in cases:
+    for row_id, (inp_bytes, oracle_obj, consumer_obj, law, row_spec_rel) in cases:
+        row_spec_sha256 = _sha256_bytes((root / row_spec_rel).read_bytes())
         oracle_bytes = (json.dumps(oracle_obj, indent=2, sort_keys=True) + "\n").encode(
             "utf-8"
         )
@@ -272,9 +326,9 @@ def build_analytic_receipts(
             "product_revision": revision,
             "oracle": {
                 "name": f"Analytic closed-form evaluation ({row_id})",
-                "revision": spec_sha256,
-                "spec_path": SPEC_REL,
-                "spec_sha256": spec_sha256,
+                "revision": row_spec_sha256,
+                "spec_path": row_spec_rel,
+                "spec_sha256": row_spec_sha256,
                 "law": law,
                 "build_platform": build_platform,
                 "path": oracle_rel,
@@ -285,7 +339,7 @@ def build_analytic_receipts(
                 "execution": {
                     "executable": "python",
                     "version": sys.version.split()[0],
-                    "command": f"analytic closed-form ({SPEC_REL})",
+                    "command": f"analytic closed-form ({row_spec_rel})",
                     "exit_code": 0,
                 },
             },

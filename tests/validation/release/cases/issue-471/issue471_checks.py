@@ -26,6 +26,8 @@ SUPPORTED_COMPARATORS = (
     "release-oracle-bngl-hybrid-v1",
     "release-oracle-bngl-xml-v1",
     "release-oracle-ssts-csv-v1",
+    "release-oracle-export-struct-v1",
+    "release-oracle-nfsim-cli-v1",
 )
 
 
@@ -714,6 +716,179 @@ def _compare_ssts_csv_bytes(
     return True, ""
 
 
+def _compare_nfsim_cli_bytes(
+    oracle_bytes: bytes,
+    consumer_bytes: bytes,
+) -> tuple[bool, str]:
+    """Compare raw NFsim CLI stdout after stripping only wall-clock CPU footer."""
+    try:
+        o_txt = re.sub(
+            r"done\.\s+Total CPU time:[^\n]*",
+            "done.",
+            oracle_bytes.decode("utf-8"),
+        ).strip()
+        c_txt = re.sub(
+            r"done\.\s+Total CPU time:[^\n]*",
+            "done.",
+            consumer_bytes.decode("utf-8"),
+        ).strip()
+    except UnicodeDecodeError as exc:
+        return False, f"invalid UTF-8 in NFsim CLI output: {exc}"
+    if not o_txt:
+        return False, "empty NFsim oracle CLI output"
+    if o_txt != c_txt:
+        return False, "NFsim CLI output differs after stripping CPU timing footer"
+    return True, ""
+
+
+def _extract_export_invariants(fmt: str, payload: dict[str, Any]) -> dict[str, Any]:
+    files = payload.get("files")
+    if not isinstance(files, dict):
+        raise ValueError("export payload 'files' must be a mapping")
+    joined = "\n".join(str(v) for v in files.values())
+    names = sorted(str(k) for k in files.keys())
+
+    if fmt in {"mfile", "mfile_all"}:
+        if fmt == "mfile_all":
+            if (
+                len(names) < 3
+                or not any(n.startswith("bngModel_") for n in names)
+                or not any(n.startswith("initSpecies_") for n in names)
+            ):
+                raise ValueError(f"mfile_all missing expected 3-file bundle: {names}")
+        elif not any(n.endswith(".m") for n in names):
+            raise ValueError(f"mfile missing .m output: {names}")
+        inv: dict[str, Any] = {
+            "kind": fmt,
+            "file_count": 3 if fmt == "mfile_all" else 1,
+            "has_k": bool(re.search(r"\b0\.5\b|5\.0*e-0?1", joined)),
+            "has_init_10": bool(re.search(r"\b10(?:\.0*)?\b|1\.0*e\+0?1", joined)),
+            "has_atol": bool(
+                re.search(r"AbsTol['\"]?\s*,\s*1(?:\.0*)?e-0?9", joined, re.I)
+            ),
+            "has_rtol": bool(
+                re.search(r"RelTol['\"]?\s*,\s*1(?:\.0*)?e-0?7", joined, re.I)
+            ),
+            "has_maxorder": bool(re.search(r"MaxOrder['\"]?\s*,\s*4\b", joined, re.I)),
+            "has_maxstep": bool(re.search(r"MaxStep['\"]?\s*,\s*0\.1\b", joined, re.I)),
+            "has_grid": bool(
+                re.search(
+                    r"linspace\s*\(\s*0(?:\.0*)?\s*,\s*5(?:\.0*)?\s*,\s*(?:26|25\s*\+\s*1)\s*\)|timepoints\s*=\s*\[?\s*0\b",
+                    joined,
+                )
+            ),
+        }
+        if fmt == "mfile":
+            inv["has_stats"] = bool(
+                re.search(r"Stats['\"]?\s*,\s*['\"]on['\"]", joined, re.I)
+            )
+        return inv
+
+    if fmt in {"mexfile", "cppfile", "cpyfile"}:
+        if not names:
+            raise ValueError(f"{fmt} produced no output files")
+        return {
+            "kind": fmt,
+            "has_files": True,
+            "has_dim_2": bool(
+                re.search(r"N_SPECIES\s*=?\s*2\b|__N_SPECIES__\s+2\b", joined)
+            ),
+            "has_obs_2": bool(
+                re.search(r"N_OBSERVABLES\s*=?\s*2\b|__N_OBSERVABLES__\s+2\b", joined)
+            ),
+            "has_param_1": bool(
+                re.search(r"N_PARAMETERS\s*=?\s*1\b|__N_PARAMETERS__\s+1\b", joined)
+            ),
+            "has_rxn_1": bool(
+                re.search(r"(?:__)?N_(?:REACTIONS|RATELAWS)(?:__)?\s*=?\s*1\b", joined)
+            ),
+        }
+
+    if fmt == "latex":
+        if not any(n.endswith(".tex") for n in names):
+            raise ValueError(f"latex missing .tex file: {names}")
+        return {
+            "kind": "latex",
+            "has_doc": ("\\begin{document}" in joined and "\\end{document}" in joined),
+            "has_math": ("\\begin{eqnarray" in joined or "\\begin{equation" in joined),
+        }
+
+    if fmt == "mdl":
+        if not any(n.endswith(".mdl") for n in names):
+            raise ValueError(f"mdl missing .mdl file: {names}")
+        return {
+            "kind": "mdl",
+            "has_iter": ("ITERATIONS" in joined and "TIME_STEP" in joined),
+            "has_mol_rxn": (
+                "DEFINE_MOLECULES" in joined and "DEFINE_REACTIONS" in joined
+            ),
+        }
+
+    if fmt == "ssc":
+        if not any(n.endswith(".rxn") for n in names):
+            raise ValueError(f"ssc missing .rxn file: {names}")
+        return {
+            "kind": "ssc",
+            "has_species": ("new " in joined and "10" in joined),
+            "has_rxn": ("->" in joined and "k" in joined),
+        }
+
+    if fmt == "ssccfg":
+        if not any(n.endswith(".cfg") for n in names):
+            raise ValueError(f"ssccfg missing .cfg file: {names}")
+        return {
+            "kind": "ssccfg",
+            "has_k": bool(re.search(r"\bk\s*=\s*0\.5\b", joined)),
+        }
+
+    if fmt == "visualize":
+        if not names:
+            raise ValueError("visualize produced no graph file")
+        has_graph = (
+            "<graphml" in joined and "<node" in joined and "<edge" in joined
+        ) or ("graph [" in joined and "node [" in joined and "edge [" in joined)
+        return {
+            "kind": "visualize",
+            "has_graph": has_graph,
+        }
+
+    raise ValueError(f"unsupported export format {fmt!r}")
+
+
+def _compare_export_struct_bytes(
+    oracle_bytes: bytes,
+    consumer_bytes: bytes,
+) -> tuple[bool, str]:
+    """Compare raw pinned-oracle and consumer export file bundles structurally."""
+    try:
+        o_data = json.loads(oracle_bytes.decode("utf-8"))
+        c_data = json.loads(consumer_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return False, f"invalid export struct JSON: {exc}"
+    if not isinstance(o_data, dict) or not isinstance(c_data, dict):
+        return False, "export struct payloads must be JSON objects"
+    fmt = o_data.get("format")
+    if not isinstance(fmt, str) or fmt != c_data.get("format"):
+        return (
+            False,
+            f"export format mismatch: oracle={fmt!r} consumer={c_data.get('format')!r}",
+        )
+    try:
+        o_inv = _extract_export_invariants(fmt, o_data)
+        c_inv = _extract_export_invariants(fmt, c_data)
+    except ValueError as exc:
+        return False, str(exc)
+    for key, val in o_inv.items():
+        if isinstance(val, bool) and not val:
+            return False, f"oracle missing required export invariant {key!r} for {fmt}"
+    if o_inv != c_inv:
+        return (
+            False,
+            f"export structural mismatch for {fmt}: oracle={o_inv} consumer={c_inv}",
+        )
+    return True, ""
+
+
 def _oracle_receipt_errors(
     row: dict[str, Any],
     receipt: dict[str, Any],
@@ -906,6 +1081,22 @@ def _oracle_receipt_errors(
         matched, diff_detail = _compare_ssts_csv_bytes(oracle_bytes, consumer_bytes)
         comparator = {
             "id": "release-oracle-ssts-csv-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    elif comparator_id == "release-oracle-export-struct-v1":
+        matched, diff_detail = _compare_export_struct_bytes(
+            oracle_bytes, consumer_bytes
+        )
+        comparator = {
+            "id": "release-oracle-export-struct-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    elif comparator_id == "release-oracle-nfsim-cli-v1":
+        matched, diff_detail = _compare_nfsim_cli_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-nfsim-cli-v1",
             **common,
             "consumer_equals_oracle": matched,
         }

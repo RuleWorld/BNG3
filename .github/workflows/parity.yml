@@ -809,6 +809,14 @@ jobs:
             --receipts-dir "$RUNNER_TEMP/issue471-bng2/receipts" \
             --artifacts-dir "$RUNNER_TEMP/issue471-bng2/artifacts" \
             --summary-out "$RUNNER_TEMP/issue471-bng2/crn-summary.json"
+          .venv/bin/python scripts/ci/record_issue471_bng2_extended_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --bng-cpp build/cpp/bng_cpp \
+            --receipts-dir "$RUNNER_TEMP/issue471-bng2/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-bng2/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-bng2/extended-summary.json"
 
       - name: Upload Issue 471 BNG2 oracle consumer receipts
         if: always()
@@ -848,6 +856,13 @@ jobs:
             --receipts-dir "$RUNNER_TEMP/issue471-sbml/receipts" \
             --artifacts-dir "$RUNNER_TEMP/issue471-sbml/artifacts" \
             --summary-out "$RUNNER_TEMP/issue471-sbml/summary.json"
+          .venv/bin/python scripts/ci/record_issue471_sbml_multi_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --receipts-dir "$RUNNER_TEMP/issue471-sbml/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-sbml/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-sbml/multi-summary.json"
 
       - name: Upload Issue 471 SBML oracle consumer receipts
         if: always()
@@ -2381,6 +2396,7 @@ jobs:
             --revision "$BNG3_SOURCE_REVISION" \
             --nfsim-source "$RUNNER_TEMP/oracle-nfsim" \
             --nfsim-oracle "$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            --nfsim-consumer build/cpp/NFsim \
             --receipts-dir "$RUNNER_TEMP/issue471-nfsim/receipts" \
             --artifacts-dir "$RUNNER_TEMP/issue471-nfsim/artifacts" \
             --summary-out "$RUNNER_TEMP/issue471-nfsim/summary.json"
