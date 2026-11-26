@@ -866,6 +866,7 @@ bool configureDirectTableFunction(
             return false;
         }
         composite->addFunctionPointer(counterFunction);
+        system->addFunctionReference(composite->getName(), name);
         return true;
     };
 
@@ -891,6 +892,16 @@ bool configureDirectTableFunction(
         if (global != nullptr) global->setCounterFromTime(system);
         else if (composite != nullptr) composite->setCounterFromTime(system);
         else local->setCounterFromTime(system);
+        system->setHasTimeDependentFunctions(true);
+        const auto& tfunXs = global != nullptr
+                                 ? global->getTfunXs()
+                                 : (composite != nullptr ? composite->getTfunXs()
+                                                         : local->getTfunXs());
+        const std::string funcName = global != nullptr
+                                         ? global->getName()
+                                         : (composite != nullptr ? composite->getName()
+                                                                 : local->getName());
+        system->addTimeTable(funcName, tfunXs, table.tableMethod() == "linear");
         return true;
     }
 
@@ -1838,6 +1849,9 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                       << function->getName() << "'\n";
             return false;
         }
+        for (const auto& callee : functionsCalled) {
+            s->addFunctionReference(function->getName(), callee);
+        }
         if (expressionUsesTime(function->getExpression())) {
             composite->setCounterFromTime(s);
             s->setHasTimeDependentFunctions(true);
@@ -1911,6 +1925,9 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
                       << function->getName() << "'\n";
             return false;
         }
+        for (const auto& callee : functionsCalled) {
+            s->addFunctionReference(function->getName(), callee);
+        }
         if (expressionUsesTime(function->getExpression())) {
             composite->setCounterFromTime(s);
             s->setHasTimeDependentFunctions(true);
@@ -1972,6 +1989,9 @@ bool addFunctionsFromAst(const bng::ast::Model& model, System* s,
             std::cerr << "[nfsim/ast] failed to register composite function '"
                       << function.name << "'\n";
             return false;
+        }
+        for (const auto& callee : functionsCalled) {
+            s->addFunctionReference(function.name, callee);
         }
         if (function.usesTime) {
             composite->setCounterFromTime(s);
@@ -3340,9 +3360,11 @@ SymmetricReactionExpansionResult addSymmetricStateChangeReactionRulesFromAst(
                 rule.getRuleName() + "_sym" + std::to_string(reactionOrdinal + 1);
             ReactionClass* reaction = nullptr;
             if (dynamicGlobal != nullptr) {
+                system->useTimeTablesReadBy(dynamicGlobal->getName());
                 reaction = new FunctionalRxnClass(
                     reactionName, dynamicGlobal, transformationSet, system);
             } else if (dynamicComposite != nullptr) {
+                system->useTimeTablesReadBy(dynamicComposite->getName());
                 reaction = new FunctionalRxnClass(
                     reactionName, dynamicComposite, transformationSet, system);
             } else {
@@ -3545,9 +3567,11 @@ SymmetricReactionExpansionResult addSymmetricBondReactionRulesFromAst(
                 rule.getRuleName() + "_sym" + std::to_string(reactionOrdinal + 1);
             ReactionClass* reaction = nullptr;
             if (dynamicGlobal != nullptr) {
+                system->useTimeTablesReadBy(dynamicGlobal->getName());
                 reaction = new FunctionalRxnClass(
                     reactionName, dynamicGlobal, transformationSet, system);
             } else if (dynamicComposite != nullptr) {
+                system->useTimeTablesReadBy(dynamicComposite->getName());
                 reaction = new FunctionalRxnClass(
                     reactionName, dynamicComposite, transformationSet, system);
             } else {
@@ -3729,6 +3753,9 @@ bool addDynamicReactionRateFunction(
         if (!system->addCompositeFunction(candidate.get())) {
             diagnostic = "failed to register generated dynamic reaction-rate composite";
             return false;
+        }
+        for (const auto& callee : functionsCalled) {
+            system->addFunctionReference(name, callee);
         }
         composite = candidate.release();
         composite->finalizeInitialization(system);
@@ -5780,6 +5807,8 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            s->useTimeTablesReadBy(functionProductOperand1.name);
+            s->useTimeTablesReadBy(functionProductOperand2.name);
             transformationSet->finalize();
             reaction = new DOR2RxnClass(
                 rule.getRuleName(), 1.0, "", transformationSet, composite1, composite2,
@@ -5792,6 +5821,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 delete transformationSet;
                 return false;
             }
+            s->useTimeTablesReadBy(rate.name());
             transformationSet->finalize();
             reaction = new DORRxnClass(
                 rule.getRuleName(), 1.0, "", transformationSet, composite,
@@ -5809,9 +5839,11 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             }
             transformationSet->finalize();
             if (global != nullptr) {
+                s->useTimeTablesReadBy(rate.name());
                 reaction = new FunctionalRxnClass(
                     rule.getRuleName(), global, transformationSet, s);
             } else if (composite != nullptr) {
+                s->useTimeTablesReadBy(rate.name());
                 reaction = new FunctionalRxnClass(
                     rule.getRuleName(), composite, transformationSet, s);
             } else {
@@ -5865,9 +5897,11 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 }
                 transformationSet->finalize();
                 if (dynamicGlobal != nullptr) {
+                    s->useTimeTablesReadBy(dynamicGlobal->getName());
                     reaction = new FunctionalRxnClass(
                         rule.getRuleName(), dynamicGlobal, transformationSet, s);
                 } else if (dynamicComposite != nullptr) {
+                    s->useTimeTablesReadBy(dynamicComposite->getName());
                     if (dynamicLocalFunctionArguments.empty()) {
                         reaction = new FunctionalRxnClass(
                             rule.getRuleName(), dynamicComposite, transformationSet, s);

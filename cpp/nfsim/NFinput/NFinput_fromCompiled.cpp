@@ -434,6 +434,15 @@ bool configureTableFunction(
         else if (composite) composite->setCounterFromTime(system);
         else local->setCounterFromTime(system);
         system->setHasTimeDependentFunctions(true);
+        const auto& tfunXs = global != nullptr
+                                 ? global->getTfunXs()
+                                 : (composite != nullptr ? composite->getTfunXs()
+                                                         : local->getTfunXs());
+        const std::string funcName = global != nullptr
+                                         ? global->getName()
+                                         : (composite != nullptr ? composite->getName()
+                                                                 : local->getName());
+        system->addTimeTable(funcName, tfunXs, table.tableMethod == "linear");
         return true;
     }
     if (counter.kind == Kind::ParameterRef && counter.symbol.has_value()) {
@@ -471,6 +480,7 @@ bool configureTableFunction(
             return false;
         }
         composite->addFunctionPointer(function);
+        system->addFunctionReference(composite->getName(), functionDecl->name);
         return true;
     }
     diagnostic = "unsupported TFUN counter in compiled expression";
@@ -1407,6 +1417,9 @@ bool addFunctionsFromCompiled(const bng::compile::CompiledModel& model,
                     }
                 }
                 if (!system->addCompositeFunction(composite)) { delete composite; return false; }
+                for (const auto& callee : functionsCalled) {
+                    system->addFunctionReference(it->function->name, callee);
+                }
                 if (it->deps.usesTime && it->tables.empty()) {
                     composite->setCounterFromTime(system);
                     system->setHasTimeDependentFunctions(true);
@@ -1457,6 +1470,9 @@ bool addFunctionsFromCompiled(const bng::compile::CompiledModel& model,
             }
         }
         if (!system->addCompositeFunction(composite)) { delete composite; return false; }
+        for (const auto& callee : functionsCalled) {
+            system->addFunctionReference(function->name, callee);
+        }
         if (deps.usesTime && tables.empty()) {
             composite->setCounterFromTime(system);
             system->setHasTimeDependentFunctions(true);
