@@ -323,3 +323,51 @@ end reaction rules
     // standard error sqrt(10 / 1024) ~ 0.1.
     CHECK(total / trajectories == Catch::Approx(10.0).margin(0.5));
 }
+
+TEST_CASE("PsaSimulator scales zeroth-order reactions by their product populations",
+          "[PsaSimulator][issue-358]") {
+    // Regression for RuleWorld/bionetgen #358: 0 -> A with k_syn = 1e5 and
+    // A -> 0 with k_deg = 1 has exact mean A(2) = 1e5 * (1 - exp(-2)) = 86466.47.
+    // With poplevel = 100 and check_product_scale = false, 0 -> A must still
+    // scale by its product A (so it finishes rapidly and matches the exact mean).
+    auto model = bng::parser::parseModel(R"BNGL(
+begin parameters
+    k_syn 100000
+    k_deg 1
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 0
+end seed species
+begin observables
+    Molecules Atot A()
+end observables
+begin reaction rules
+    0 -> A() k_syn
+    A() -> 0 k_deg
+end reaction rules
+)BNGL");
+    REQUIRE(model != nullptr);
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    bng::engine::PsaSimulator simulator(*model, network);
+
+    bng::engine::OdeOptions options;
+    options.method = "psa";
+    options.tEnd = 2.0;
+    options.nSteps = 2;
+
+    constexpr std::size_t trajectories = 40;
+    double total = 0.0;
+    for (std::uint64_t seed = 1; seed <= trajectories; ++seed) {
+        options.seed = seed;
+        const auto result = simulator.simulate(options, 100.0, false);
+        REQUIRE(result.observables.size() == 3);
+        total += result.observables.back()[0];
+    }
+    const double mean = total / static_cast<double>(trajectories);
+    const double exact = 100000.0 * (1.0 - std::exp(-2.0));
+    CHECK(mean == Catch::Approx(exact).margin(5000.0));
+}

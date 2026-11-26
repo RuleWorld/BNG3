@@ -33,12 +33,12 @@
     "bionetgen": {
       "repository": "https://github.com/RuleWorld/bionetgen.git",
       "branch": "master",
-      "revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+      "revision": "740006ff3cfa0b6d5445e10367c9f2fcd0f75d67",
       "role": "reconciliation-source-and-bng2-oracle-lineage",
       "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
-        "checked_at": "2026-10-08"
+        "checked_at": "2026-11-25"
       }
     },
     "nfsim": {
@@ -124,7 +124,7 @@
       "source": "bionetgen",
       "status": "locked",
       "build_recipe": "PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin make -C bng2/Network3 -f Makefile.cmake --jobs=1 (AppleClang 21.0.0.21000334, macOS arm64).",
-      "artifact_digest": "sha256:9f39d22ebdad7aefc38f8ceddf287799f0f262ed0e914b42b1f7cb640a7ffa39"
+      "artifact_digest": "sha256:1216a4e98e5e298ed32d8dc190b33ee34c9a2edb4abb390a7da6b5f59e6a2273"
     },
     "nfsim": {
       "source": "nfsim",

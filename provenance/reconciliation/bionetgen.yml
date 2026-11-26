@@ -3,7 +3,7 @@
   "schema_version": 1,
   "source": "bionetgen",
   "represented_revision": "e0a5c6d9e6c4730f66102e48d0d0a598337083e7",
-  "cutoff_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+  "cutoff_revision": "740006ff3cfa0b6d5445e10367c9f2fcd0f75d67",
   "owner": "akutuva21",
   "entries": [
     {
@@ -292,6 +292,302 @@
       "reviewer": "Codex technical reconciliation; maintainer review pending",
       "rationale": "The retained Perl check compares the complete generated network for the pinned energy_example1 model after staging network generation and removing the version metadata check from both inputs. It covers the shared normalization variable on this route (bngl.arrhenius). The corresponding pytest case is shared-arrhenius-normalization. The native check compares all unscaled network rates and verifies both serialized compartment conversion coefficients against the source formula at each writer’s declared precision.",
       "issue": "#340"
+    },
+    {
+      "source_revision": "431c51772a43c5ba60cd48ad69d555abeec47634",
+      "capability": "Consolidate OdeIntegrator lookup optimizations in upstream C++ branch",
+      "classification": "superseded-by-bng3",
+      "bng3_reference": "cpp/engine/OdeIntegrator.cpp",
+      "tests": [
+        "tests/cpp/test_ode_function_index.cpp::OdeIntegrator function index observes a function added after construction"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "BNG3's native cpp/engine/OdeIntegrator.cpp has already superseded the experimental C++ OdeIntegrator snapshot merged into RuleWorld/bionetgen via PR #345."
+    },
+    {
+      "source_revision": "8726b30b94c081d5f0ce8b8d38338e27be1b38fc",
+      "capability": "Merge pull request #516 from akutuva21/codex/odeintegrator-bolt-consolidated-20260914",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording upstream branch history; the substantive parent commit is classified individually."
+    },
+    {
+      "source_revision": "3513bca766a35de82b883c147174734d316858ba",
+      "capability": "Fold byte-identical reactions across rules in RxnList::add",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/ast/Rxn.hpp; cpp/ast/Rxn.cpp; cpp/ast/RxnList.cpp; cpp/ast/ReactionRule.cpp; cpp/io/NetWriter.cpp; legacy/perl/Perl2/RxnList.pm; legacy/perl/Perl2/RateLaw.pm; legacy/perl/Perl2/Function.pm",
+      "tests": [
+        "tests/cpp/test_reaction_rule_expansion.cpp::RxnList folds byte-identical reactions across rules with summed statistical factor",
+        "tests/validation/test_reconciliation_bng2.py::test_cross_rule_duplicate_reaction_merge"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Native RxnList::add now merges byte-identical reactions across distinct rules with structurally equivalent rate laws (summing statistical factors and emitting #_R1,_R2 in NetWriter), while conservatively preserving boundaries for local contexts, Arrhenius, and FunctionProduct. Retained legacy/perl restores RateLaw::equivalent and Function::equivalent."
+    },
+    {
+      "source_revision": "87405a8a6f2a7681b825b84283b3129e9df4609c",
+      "capability": "Merge branch 'RuleWorld:master' into master",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording upstream branch history; substantive changes are classified individually."
+    },
+    {
+      "source_revision": "0bbb15c17f5841d45f74ac4d7d3a040760e861b4",
+      "capability": "Merge pull request #345 from akutuva21/master",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #345; its parent commits are classified individually."
+    },
+    {
+      "source_revision": "78ef08563fff8c8e7640bb8102d1d34a73fa4f66",
+      "capability": "Restore elimination of unused local-function arguments (fixes NFsim XML crash)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/io/XmlWriter.cpp; legacy/perl/Perl2/Function.pm",
+      "tests": [
+        "tests/validation/test_reconciliation_bng2.py::test_local_function_xml_export_does_not_crash",
+        "tests/validation/test_reconciliation_bng2.py::test_retained_perl_multiarg_local_function_arg_elimination"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream PR #351 reverted a Perl-only regression (bcf1938) where deleting unused-argument elimination in Function::evaluate_local left molecule pointer strings on local-function call expressions and crashed writeXML for NFsim, and fixed an off-by-one loop lookup ($fcn->Args vs $local_fcn->Args) for multi-argument local functions. BNG3's native C++ XmlWriter serializes AST Function definitions without Perl's in-place evaluate_local mutation and never suffered the crash; BNG3's retained legacy/perl/Perl2/Function.pm still kept unused-argument elimination and now incorporates the $local_fcn->Args fix. Upstream CI NFsim download changes are source-repository CI only.",
+      "issue": "#351"
+    },
+    {
+      "source_revision": "cafcc3e90f42fb60f7aa44941b4e79c2b9a658eb",
+      "capability": "CI: install Cygwin with cygwin/cygwin-install-action",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Source-repository Windows/Cygwin CI workflow maintenance; does not apply to BNG3."
+    },
+    {
+      "source_revision": "558dcb789e240d8155d41ab7418bbde71d92be28",
+      "capability": "Write && and || to the NFsim XML as logical tests with spaces (#343)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/io/XmlWriter.cpp; cpp/nfsim/NFfunction/nfsim_funcparser.h; legacy/perl/Perl2/Expression.pm",
+      "tests": [
+        "tests/cpp/test_xml_writer.cpp::XmlWriter serializes logical && and || as space-delimited boolean tests for NFsim",
+        "tests/validation/test_reconciliation_bng2.py::test_issue_343_logical_operators_in_xml"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Native XmlWriter and retained legacy/perl Expression::toXML now emit && and || as spaced boolean tests ((a!=0) and (b!=0)) / ((a!=0) or (b!=0)) compatible with native NFsim's muParser 1.x, and BNG3's embedded NFsim parser (nfsim_funcparser.h) accepts both symbolic (&&/||) and spaced word (and/or) logical operators.",
+      "issue": "#343"
+    },
+    {
+      "source_revision": "2f33a6063a2bae631a2ba260d28f3db95de1f785",
+      "capability": "Treat any nonzero condition in if() as true (#342)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/ast/Expression.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfnext/src/from_bng.cpp",
+      "tests": [
+        "tests/cpp/test_expression_evaluator.cpp::if() treats any nonzero numeric condition as true",
+        "tests/validation/test_reconciliation_bng2.py::test_issue_342_if_nonzero_truthiness"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "BNG3's shared expression evaluator (cpp/ast/Expression.cpp), ODE/SSA/PSA engines, NFsim, and NFnext already test condition != 0.0 rather than > 0.5.",
+      "issue": "#342"
+    },
+    {
+      "source_revision": "7d786fcc9e83dd4a37a28036fa5f976e8619391d",
+      "capability": "Write a negative number operand in parentheses (#341)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/ast/Expression.cpp; cpp/io/XmlWriter.cpp; legacy/perl/Perl2/Expression.pm",
+      "tests": [
+        "tests/cpp/test_expression_evaluator.cpp::Negative power operands are parenthesized when serialized",
+        "tests/validation/test_reconciliation_bng2.py::test_issue_341_negative_power_parentheses"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Native Expression::renderExpression and XmlWriter now parenthesize unary or negative-number bases of exponentiation (^ and **) so exported .net, .xml, and .m files preserve (-2)^k semantics across BNG3, run_network, NFsim, and MATLAB; retained legacy/perl Expression.pm matches upstream.",
+      "issue": "#341"
+    },
+    {
+      "source_revision": "7304ad10651e8fe9084d9b9a90dd085572cf2840",
+      "capability": "Write NumberPerQuantityUnit to the XML for NFsim (#348)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/io/XmlWriter.cpp; cpp/nfsim/NFinput/NFinput.cpp; legacy/perl/Perl2/BNGOutput.pm",
+      "tests": [
+        "tests/cpp/test_xml_writer.cpp::XmlWriter emits NumberPerQuantityUnit attribute on model",
+        "tests/validation/test_reconciliation_bng2.py::test_issue_348_number_per_quantity_unit_xml"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Native XmlWriter already emits NumberPerQuantityUnit on <model> and NFsim/NFnext consume it; retained legacy/perl BNGOutput::toXML now also emits NumberPerQuantityUnit.",
+      "issue": "#348"
+    },
+    {
+      "source_revision": "ac6ed8835cd491ffed52208cab0b2ba4139e7e90",
+      "capability": "Merge pull request #350 from RuleWorld/ci/cygwin-install-action",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #350; its parent commit is classified individually."
+    },
+    {
+      "source_revision": "cdd3ad4d7fcf15e9dc2cdb3a2e19370784a28363",
+      "capability": "Merge pull request #351 from RuleWorld/fix/local-function-xml-crash",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #351; its parent commit is classified individually."
+    },
+    {
+      "source_revision": "471b1317c5b344cc7ea1c01143e5e92b7201fc53",
+      "capability": "Merge pull request #352 from RuleWorld/fix/341-parenthesize-negative-numbers",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #352; its parent commit is classified individually."
+    },
+    {
+      "source_revision": "2ba6cd131786d06ade9dbc774a2aa7ec153c7287",
+      "capability": "Merge pull request #353 from RuleWorld/fix/342-if-nonzero-is-true",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #353; its parent commit is classified individually."
+    },
+    {
+      "source_revision": "1afc4499b138c0386cf4e0f67866621bf190c38a",
+      "capability": "Merge pull request #354 from RuleWorld/fix/343-logical-operators-in-nfsim-xml",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #354; its parent commit is classified individually."
+    },
+    {
+      "source_revision": "71f9d8ea8f471d6e09235a032433e3debf6e8fed",
+      "capability": "Merge pull request #355 from RuleWorld/fix/348-number-per-quantity-unit-in-xml",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #355; its parent commit is classified individually."
+    },
+    {
+      "source_revision": "75d5e8e5e45dda003a9cafccac86957a3eef5527",
+      "capability": "Prepare BioNetGen 2.9.4",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream release version, CHANGES.txt, and bundle packaging metadata for BioNetGen 2.9.4."
+    },
+    {
+      "source_revision": "b920fe05626b702c350346650d2be3927fa315ac",
+      "capability": "CHANGES: link the compartment hand-off known issue to nfsim#159",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream release notes documentation only."
+    },
+    {
+      "source_revision": "297c8ade23982e9ee92c4f061112ee57e3e48209",
+      "capability": "Fix parallel parameter_scan last batch bounds and child error propagation (#357)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/actions/ActionDispatch.cpp; legacy/perl/Perl2/BNGAction.pm",
+      "tests": [
+        "tests/validation/test_reconciliation_bng2.py::test_issue_357_parallel_parameter_scan_short_batch_and_error"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Native ActionDispatch parameter_scan already clamps the final parallel batch to scanValues.size(), terminates forked children with _exit(1) on failure, and throws in the parent when any worker exits non-zero. Retained legacy/perl BNGAction::parameter_scan now incorporates the same fixes.",
+      "issue": "#357"
+    },
+    {
+      "source_revision": "bb93ea18f2314ce1b34efa6f60ec7676df9a02d2",
+      "capability": "CHANGES: add the parallel parameter_scan fix (#357)",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream release notes documentation only."
+    },
+    {
+      "source_revision": "0a670ad2bafd7d210c44d3c17e78648d4cf9d4f2",
+      "capability": "Merge pull request #357 from RuleWorld/fix/parallel-parameter-scan",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #357; its parent commit is classified individually."
+    },
+    {
+      "source_revision": "61fe43007c4789440b0ae250aaf496c33a574e3e",
+      "capability": "Merge pull request #356 from RuleWorld/prep/release-2.9.4",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording BioNetGen 2.9.4 release prep; parent commits are classified individually."
+    },
+    {
+      "source_revision": "96117e47bf409eb15588246f6b2eeb0c66f0572d",
+      "capability": "Scale zeroth-order PSA reactions by their product populations (#358)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/engine/PsaSimulator.cpp; cpp/actions/ActionDispatch.cpp",
+      "tests": [
+        "tests/cpp/test_psa_simulator.cpp::PsaSimulator scales zeroth-order reactions by their product populations",
+        "tests/validation/test_reconciliation_bng2.py::test_issue_358_psa_zeroth_order_product_scaling"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Native PsaSimulator now computes psaScaling() for both reactant-bearing and zeroth-order reactions (scaling reactantless reactions by their products regardless of check_product_scale), tracks product dependencies in createUpdateLists(), and passes explicit check_product_scale from ActionDispatch.",
+      "issue": "#358"
+    },
+    {
+      "source_revision": "f1aa2c9c69f733bab372a0c881fac81d1d27eccc",
+      "capability": "Drop the check that an Arrhenius activation energy is independent of energy patterns (#360)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/io/NetWriter.cpp; cpp/compile/CompiledRateLaw.cpp; legacy/perl/Perl2/RateLaw.pm",
+      "tests": [
+        "tests/validation/test_reconciliation_bng2.py::test_issue_360_arrhenius_actE_depends_on_Gf"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Native BNG3 accepts Arrhenius activation energies written in terms of energy-pattern free energies (e.g. Ea0 = -ln(kf) - phi*Gf) without restricting them; retained legacy/perl RateLaw::validate now drops the independence rejection check to match BioNetGen 2.9.5.",
+      "issue": "#360"
+    },
+    {
+      "source_revision": "4fb19195f8787b40c2d5a87a22f78c22df8681e3",
+      "capability": "Prepare BioNetGen 2.9.5",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream release version, CHANGES.txt, and bundle metadata for BioNetGen 2.9.5."
+    },
+    {
+      "source_revision": "67871dd4e44fdfa47d422ce9af3d775ad314c5e4",
+      "capability": "Merge pull request #359 from RuleWorld/fix/psa-zeroth-order",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #359; its parent commit is classified individually."
+    },
+    {
+      "source_revision": "24ecdb1bb1f8b5fc1b2d1ee0b2292d2a30c4dc46",
+      "capability": "Merge pull request #362 from RuleWorld/fix/360-arrhenius-actE",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording PR #362; its parent commit is classified individually."
+    },
+    {
+      "source_revision": "740006ff3cfa0b6d5445e10367c9f2fcd0f75d67",
+      "capability": "Merge pull request #363 from RuleWorld/prep/release-2.9.5",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/bionetgen.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Merge commit recording BioNetGen 2.9.5 release prep; parent commits are classified individually."
     }
   ]
 }

@@ -2403,3 +2403,30 @@ end actions
     CHECK(network.species.size() == 1);
     CHECK(network.reactions.size() == 0);
 }
+
+TEST_CASE("RxnList folds byte-identical reactions across rules with summed statistical factor") {
+    auto model = parseModel(R"(
+begin model
+begin parameters
+  k 0.1
+end parameters
+begin molecule types
+  Mol(state~U~P)
+end molecule types
+begin seed species
+  Mol(state~U) 1000
+end seed species
+begin reaction rules
+  Mol(state~U) -> Mol(state~P) k
+  Mol(state)   -> Mol(state~P) k
+end reaction rules
+end model
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generate({});
+    REQUIRE(network.reactions.size() == 1);
+    const auto& rxn = network.reactions.all().front();
+    CHECK(rxn.getFactor() == 2.0);
+    CHECK(rxn.getOriginRuleComment() == "R1,R2");
+}

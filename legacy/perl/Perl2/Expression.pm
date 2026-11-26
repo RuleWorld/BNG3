@@ -1598,6 +1598,9 @@ sub toString
     {
         # if number, print the numerical value!
         $string = $expr->Arglist->[0];
+        # A negative number that is an operand must keep its sign attached:
+        # (-2)^k, not -2^k, which every reader takes as -(2^k) (issue #341).
+        if ( $level  and  $string =~ /^-/ ) {  $string = '(' . $string . ')';  }
         #print "NUM=$string\n";
     }
     elsif ( $type eq 'VAR' )
@@ -1735,6 +1738,8 @@ sub toXML
     {
         # if number, print the numerical value!
         $string = $expr->Arglist->[0];
+        # keep a negative operand's sign attached: (-2)^k (issue #341)
+        if ( $level  and  $string =~ /^-/ ) {  $string = '(' . $string . ')';  }
     }
     elsif ( $type eq 'VAR' )
     {
@@ -1793,8 +1798,12 @@ sub toXML
         $xml_type = '&gt;'   if $type eq '>';
         $xml_type = '&lt;='  if $type eq '<=';
         $xml_type = '&gt;='  if $type eq '>=';
-        $xml_type = 'and'    if $type eq '&&';
-        $xml_type = 'or'     if $type eq '||';
+        # NFsim's parser reads 'and'/'or' as bitwise operators on integers
+        # and needs spaces around them, so each operand of && and || is
+        # written as a truth value: a && b -> (a!=0) and (b!=0) (issue #343)
+        my $logical = ( $type eq '&&'  or  $type eq '||' );
+        $xml_type = ' and '  if $type eq '&&';
+        $xml_type = ' or '   if $type eq '||';
 
         if ( $expand )
         {
@@ -1803,6 +1812,7 @@ sub toXML
             {
                 push @sarr, $e->toXML( $plist, $level+1, $expand );
             }
+            @sarr = map { '(' . $_ . '!=0)' } @sarr  if $logical;
             if ( $#sarr > 0 )
             {   $string = join( $xml_type, @sarr );   }
             else
@@ -1819,6 +1829,7 @@ sub toXML
             foreach my $e ( @{ $expr->Arglist } ) {
                 push @sarr, $e->toXML( $plist, $level + 1 );
             }
+            @sarr = map { '(' . $_ . '!=0)' } @sarr  if $logical;
             if ( $#sarr > 0 )
             {
                 $string = join( $xml_type, @sarr );
@@ -2039,6 +2050,8 @@ sub toMatlabString
     if ( $type eq 'NUM' )
     {
         $string = $expr->Arglist->[0];
+        # keep a negative operand's sign attached: (-2)^k (issue #341)
+        if ( $level  and  $string =~ /^-/ ) {  $string = '(' . $string . ')';  }
     }
     elsif ( $type eq 'VAR' )
     {   
@@ -2479,14 +2492,16 @@ sub getVariables
     elsif ( $type eq 'VAR' )
     {
         my ($param, $err) = $plist->lookup( $expr->Arglist->[0] );
-        if ($err) { die $err };    # Shouldn't be an undefined variable name here
-        if ( defined $param->Type )
-        {   # add parameter name to type hash
-            $rethash->{$param->Type}->{$param->Name} = $param;
-        }
-        else
-        {   # this parameter has undefined type!
-            $rethash->{'UNDEF'}->{$param->Name} = $param;
+        if ($param)
+        {
+            if ( defined $param->Type )
+            {   # add parameter name to type hash
+                $rethash->{$param->Type}->{$param->Name} = $param;
+            }
+            else
+            {   # this parameter has undefined type!
+                $rethash->{'UNDEF'}->{$param->Name} = $param;
+            }
         }
     }
     elsif ( $type eq 'FunctionCall' )

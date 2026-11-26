@@ -2001,6 +2001,13 @@ std::size_t ReactionRule::expandRule(
                 for (const auto& l : productLabels) s += l + ";";
                 return s;
             }();
+            const bool hasTotalRate = std::any_of(
+                modifiers_.begin(), modifiers_.end(), [](const std::string& mod) {
+                    std::string lower = mod;
+                    std::transform(lower.begin(), lower.end(), lower.begin(),
+                                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    return lower == "totalrate";
+                });
             rxnList.add(Rxn(
                 label,
                 {},  // empty reactants
@@ -2009,7 +2016,7 @@ std::size_t ReactionRule::expandRule(
                 1.0,
                 ruleName_,
                 rates_.empty() ? std::nullopt : std::optional<Expression>(rates_.front()),
-                delayExpression_, nonConsuming_, absoluteFlux_));
+                delayExpression_, nonConsuming_, absoluteFlux_, hasTotalRate));
             return 1;
         }
         return 0;
@@ -3422,6 +3429,13 @@ bool ReactionRule::buildReaction(
     rateLawStr += "|local:" + productLocalRateContext;
   }
 
+  const bool hasTotalRate = std::any_of(
+      modifiers_.begin(), modifiers_.end(), [](const std::string& mod) {
+          std::string lower = mod;
+          std::transform(lower.begin(), lower.end(), lower.begin(),
+                         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+          return lower == "totalrate";
+      });
   const std::string label = reactionLabel(*this, reactantIndices, productLabels);
     const bool added = rxnList.add(Rxn(
         label,
@@ -3431,7 +3445,7 @@ bool ReactionRule::buildReaction(
         factor,
         ruleName_,
         rates_.empty() ? std::nullopt : std::optional<Expression>(rates_.front()),
-        delayExpression_, nonConsuming_, absoluteFlux_));
+        delayExpression_, nonConsuming_, absoluteFlux_, hasTotalRate));
     return added;
 }
 

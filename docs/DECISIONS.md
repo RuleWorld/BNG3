@@ -57,10 +57,12 @@ Owner: **@akutuva21**. These decisions were made by the maintainer in the Phase 
 
 | Source | Revision |
 |---|---|
-| RuleWorld/bionetgen | `9601746f8884ed19ab2acea49fe87fc4660ace46` |
+| RuleWorld/bionetgen | `740006ff3cfa0b6d5445e10367c9f2fcd0f75d67` |
 | RuleWorld/NFsim | `8c449bbccc4a0c54586ae562f46f4955e65fe876` |
 | RuleWorld/PyBioNetGen | `28bf351a9bbfc197e19487c26dedda683716bb64` |
 
 The maintainer requested the NFsim source and oracle refresh on 2026-11-18. The new pin is the NFsim `master` snapshot used to build the native oracle. The upstream release tag remains v1.14.3.
+
+The maintainer requested the BioNetGen source and oracle refresh on 2026-11-25. The new pin advances `RuleWorld/bionetgen` from `9601746f8884ed19ab2acea49fe87fc4660ace46` to `740006ff3cfa0b6d5445e10367c9f2fcd0f75d67` (BioNetGen 2.9.5), reconciling all 29 upstream commits in `provenance/reconciliation/bionetgen.yml`.
 
 All other existing lock entries retain their recorded values and are accepted too. Acceptance of a provenance input is distinct from a claim that BNG3 has passed a comparison against it. This review audits BNG3 `918a5fb1`; it does not silently replace the lock's historical baseline with that commit.

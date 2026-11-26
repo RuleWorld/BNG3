@@ -329,11 +329,17 @@ void PsaSimulator::createUpdateLists() {
     // This mirrors create_update_lists() from network.cpp.
 
     // Step 1: Build species-to-reaction maps.
-    // asReactant[species] = set of reactions that have this species as a reactant.
+    // asReactant[species] = reactions that have this species as a reactant.
+    // asProduct[species]  = reactions that have this species as a product
+    //   (needed for PSA scaling of zeroth-order reactions and pScaleChecker).
     std::vector<std::set<std::size_t>> asReactant(nSpecies_);
+    std::vector<std::set<std::size_t>> asProduct(nSpecies_);
     for (std::size_t r = 0; r < nReactions_; ++r) {
         for (const auto idx : compiledRxns_[r].reactantIndices) {
             asReactant[idx].insert(r);
+        }
+        for (const auto idx : compiledRxns_[r].productIndices) {
+            asProduct[idx].insert(r);
         }
     }
 
@@ -348,9 +354,15 @@ void PsaSimulator::createUpdateLists() {
             for (const auto depR : asReactant[idx]) {
                 depRxns.insert(depR);
             }
+            for (const auto depR : asProduct[idx]) {
+                depRxns.insert(depR);
+            }
         }
         for (const auto idx : compiledRxns_[r].productIndices) {
             for (const auto depR : asReactant[idx]) {
+                depRxns.insert(depR);
+            }
+            for (const auto depR : asProduct[idx]) {
                 depRxns.insert(depR);
             }
         }
@@ -358,6 +370,42 @@ void PsaSimulator::createUpdateLists() {
         rxnUpdateRxn_[r].assign(depRxns.begin(), depRxns.end());
     }
 }
+
+namespace {
+
+/* Scaling factor of a reaction for the partial scaling algorithm (PSA):
+ * floor(Nmin/poplevel), where Nmin is the smallest population among the
+ * reaction's reactants (and its products, if pScaleChecker is set), and 1 if
+ * any of those populations is below 2*poplevel (Lin, Feng & Hlavacek, J Chem
+ * Phys 150:244101, 2019, Eq. 9). A reaction with no reactants, such as 0 -> A,
+ * is scaled by its products whether or not pScaleChecker is set; one with no
+ * reactants and no products is not scaled. Matches bionetgen #358. */
+double psaScaling(const std::vector<std::size_t>& reactants,
+                  const std::vector<std::size_t>& products,
+                  const std::vector<double>& state,
+                  double poplevel,
+                  bool pScaleChecker) {
+    const double upperBound = 2.0 * poplevel;
+    double tempPop = -1.0;
+
+    for (const auto ri : reactants) {
+        const double x = state[ri];
+        if (x < upperBound) return 1.0;
+        if (tempPop < 0.0 || x < tempPop) tempPop = x;
+    }
+    if (pScaleChecker || reactants.empty()) {
+        for (const auto pi : products) {
+            const double x = state[pi];
+            if (x < upperBound) return 1.0;
+            if (tempPop < 0.0 || x < tempPop) tempPop = x;
+        }
+    }
+    if (tempPop < 0.0) return 1.0;
+    const double scaling = std::floor(tempPop / poplevel);
+    return scaling < 1.0 ? 1.0 : scaling;
+}
+
+} // anonymous namespace
 
 double PsaSimulator::rxnRateScaled(std::size_t rxnIdx,
                                      const std::vector<double>& state,
@@ -391,8 +439,8 @@ double PsaSimulator::rxnRateScaled(std::size_t rxnIdx,
 
     double rate = rxn.statFactor * rxn.rateConstant;
 
-    // If poplevel <= 0 or no reactants, use standard SSA propensity
-    if (poplevel <= 0.0 || nReactants == 0) {
+    // If poplevel <= 0, use standard SSA propensity (unscaled)
+    if (poplevel <= 0.0) {
         scaling = 1.0;
         // Standard discrete propensity: rate * prod(X[r] - n_offset)
         double n = 0.0;
@@ -408,54 +456,13 @@ double PsaSimulator::rxnRateScaled(std::size_t rxnIdx,
     }
 
     // PSA scaling computation (discrete case with poplevel > 0)
-    // Mirrors network.cpp lines 2686-2737
-    const double upperBound = 2.0 * poplevel;
-    double tempPop = 1.0;
-    double scalingExp = 0.0;
-
-    // Determine tempPop = minimum "effective" population among reactants
-    if (nReactants > 0) {
-        if (state[reactants[0]] < upperBound) {
-            tempPop = poplevel;
-        } else {
-            tempPop = state[reactants[0]];
-            for (std::size_t i = 1; i < nReactants; ++i) {
-                if (state[reactants[i]] < upperBound) {
-                    tempPop = poplevel;
-                    break;
-                } else {
-                    if (state[reactants[i]] < tempPop) {
-                        tempPop = state[reactants[i]];
-                    }
-                }
-            }
-            // Check products too if pScaleChecker enabled
-            if (pScaleChecker && tempPop >= upperBound) {
-                for (std::size_t i = 0; i < products.size(); ++i) {
-                    if (state[products[i]] < upperBound) {
-                        tempPop = poplevel;
-                        break;
-                    } else {
-                        if (state[products[i]] < tempPop) {
-                            tempPop = state[products[i]];
-                        }
-                    }
-                }
-            }
-        }
-
-        scaling = std::floor(tempPop / poplevel);
-        if (scaling < 1.0) {
-            scaling = 1.0;
-        }
-    } else {
-        // No reactants (zeroth-order): scaling = poplevel
-        // Matches: iScaling = poplevel in the else branch of network.cpp
-        scaling = poplevel;
-    }
+    // Mirrors network.cpp psa_scaling() (bionetgen #358)
+    scaling = psaScaling(reactants, products, state, poplevel, pScaleChecker);
 
     // Compute scaled propensity: rate * prod((X[r]/s - n)) * s^(nReactants-1)
-    // Mirrors network.cpp lines 2726-2737
+    // For zeroth-order reactions (nReactants == 0), scalingExp == 0 so this
+    // divides the rate by scaling while firing adds scaling molecules.
+    double scalingExp = 0.0;
     double n = 0.0;
     for (std::size_t i = 0; i < nReactants; ++i) {
         scalingExp += 1.0;

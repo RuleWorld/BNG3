@@ -637,3 +637,77 @@ end model
     CHECK(xml.find("compartment=\"cell:M_A\"") == std::string::npos);
     CHECK(xml.find("name=\"\"") == std::string::npos);
 }
+
+TEST_CASE("XmlWriter serializes logical && and || as space-delimited boolean tests for NFsim") {
+    const std::string xml = writeXml(R"(
+begin model
+begin parameters
+    kA 2
+    kB 0
+    kD 0.7
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules Atot A()
+end observables
+begin functions
+    fAnd() = kA && kB
+    fOr()  = kA || kB
+    fObs() = Atot && kA
+    fCmp() = if(kD > 0.5 && kA > 1, kA, kB)
+    fNeg() = (-2)^kA
+end functions
+begin reaction rules
+    A() -> 0 0.1
+end reaction rules
+end model
+)");
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Expression>((kA!=0) and (kB!=0))</Expression>"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Expression>((kA!=0) or (kB!=0))</Expression>"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Expression>((Atot!=0) and (kA!=0))</Expression>"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Expression>if((((kD &gt; 0.5)!=0) and ((kA &gt; 1)!=0)),kA,kB)</Expression>"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Expression>((-2) ^ kA)</Expression>"));
+    CHECK(xml.find("&amp;&amp;") == std::string::npos);
+    CHECK(xml.find("||") == std::string::npos);
+}
+
+TEST_CASE("XmlWriter emits NumberPerQuantityUnit attribute on model") {
+    const std::string xml = writeXml(R"(
+setOption("NumberPerQuantityUnit",2)
+begin model
+begin parameters
+    kf 0.01
+    kr 0.1
+end parameters
+begin compartments
+    EC 3 1
+end compartments
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b)@EC 300
+    B(a)@EC 300
+end seed species
+begin observables
+    Molecules AB A(b!1).B(a!1)
+end observables
+begin reaction rules
+    A(b)@EC + B(a)@EC <-> A(b!1)@EC.B(a!1)@EC kf, kr
+end reaction rules
+end model
+)");
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "NumberPerQuantityUnit=\"2\""));
+}
