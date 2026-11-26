@@ -625,6 +625,16 @@ namespace NFcore
 
 			void setHasTimeDependentFunctions(bool val) { hasTimeDependentFunctions = val; }
 			bool getHasTimeDependentFunctions() const { return hasTimeDependentFunctions; }
+			void addFunctionReference(const string& caller, const string& callee) {
+				functionReferences[caller].push_back(callee);
+			}
+			/* Tables (TFUN) indexed by time.  A table changes its value at its
+			   breakpoints whether or not a reaction fires, so for each table a
+			   rate law reads, the simulation loops stop at its breakpoints, and
+			   where a linear one ramps, integrate the propensity (#142). */
+			void addTimeTable(const string& name, const vector<double>& xs, bool linear);
+			bool functionReadsTimeTable(const string& name) const;
+			void useTimeTablesReadBy(const string& functionName);
 
 			int getMolObsCount(int moleculeTypeIndex, int observableIndex) const;
 			Observable * getObservableByName(const string& obsName);
@@ -668,6 +678,7 @@ namespace NFcore
 
 			ReactionClass *getReaction(int rIndex) { return allReactions.at(rIndex); };
 			vector <ReactionClass *> getAllReactions () { return allReactions; };
+			int getNumOfReactions() const { return (int)allReactions.size(); };
 			const vector <ReactionClass *> &getAllReactionsRef () const { return allReactions; };
 			ReactionClass * getReactionByName(string name);
 
@@ -915,15 +926,13 @@ namespace NFcore
 			void printAllParameters();
 
             // RNG management for thread-safe, deterministic simulations.
-            // Current NFsim keeps legacy global draws for molecule/mapping
-            // selection, so preserve that source split in a second
-            // per-System stream without reintroducing shared global state.
+            // Every draw in a simulation comes from this System's single
+            // generator (issues #124, #125).
             void seedRNG(unsigned long seed) {
                 rng_.seed(seed);
-                mapping_rng_.seed(seed);
             }
             NfsimRNG& getRNG() { return rng_; }
-            NfsimRNG& getMappingRNG() { return mapping_rng_; }
+            NfsimRNG& getMappingRNG() { return rng_; }
 
 			// Opt-in instrumentation for profiling irregular reaction work.
 			void enableProfiling(const string &outputPath) { profiler.enable(outputPath); }
@@ -1128,13 +1137,24 @@ namespace NFcore
 		    bool outputEventCounter; /*< set to true to output the cumulative number of events at each output step */
 
 			bool hasTimeDependentFunctions;
+			map<string, vector<string> > functionReferences; /* function -> functions it references */
+			set<string> functionsReachedFrom(const string& name) const;
+			struct TimeTable { vector<double> xs; bool linear; bool read; };
+			map<string, TimeTable> timeTables; /* every table indexed by time, by function name */
+			vector<double> timeBreakpoints; /* sorted, distinct: the breakpoints of the tables rate laws read */
+			vector< pair<double,double> > linearTimeRamps; /* the first and last breakpoint of each linear one */
+			double nextTimeBreakpoint(double t) const;
+			double timeTablePanelCap(double t, double nextBreak) const;
+			double timeTablePropensityAt(double t);
+			double nextTimeTableFiring(double &hazardLeft, double tLim, double readEnd, double hmax);
+			bool advanceTimeTables(double tStop);
 		    bool anyRxnTagged; /*< sets whether any reaction is tagged for output when it fires */
 		    bool connectivityFlag; /* Whether to infer and use reaction connectivity  for updating molecule rxn membership*/
-		    bool trackConnected; /* Whether to track connected reactions after each reaction firing. Useful for debugging */
-		    bool printConnected; /* Whether to print connected reactions at the beginning of the simulation. Useful for debugging */
+		    bool trackConnected = false; /* Whether to track connected reactions after each reaction firing. Useful for debugging */
+		    bool printConnected = false; /* Whether to print connected reactions at the beginning of the simulation. Useful for debugging */
 			bool outputMoleculeTypesFile; /* Output molecule types (default: false) */
 			bool outputRxnFiringCountsFile; /* Output reaction firing counts (default: false) */
-		    bool trackRxnNumber; /* Whether to track reaction numbers instead of names for minimizing file size */
+		    bool trackRxnNumber = false; /* Whether to track reaction numbers instead of names for minimizing file size */
 		    double lastRxnTime; /* Time when the last reaction was fired */
 			bool reactionTrackingEnabled = false; /* tells if reaction tracking is on, for rxnlog argument */
 
@@ -1192,6 +1212,8 @@ namespace NFcore
 			ReactionClass * nextReaction;  /*< keeps track of the next reaction to fire */
 			bool pendingEventValid = false; /*< cached waiting-time draw across output boundaries */
 			double pendingEventTime = 0.0; /*< absolute time of the cached event */
+			double pendingEventHazard = 0.0; /*< where a linear time table ramps, the cached draw's hazard still to spend */
+			double timeTablePanel = 0.0; /*< the last integration panel's length there; 0 starts at the cap */
 			// max CPU time for simulation
 			double max_cpu_time;
 
@@ -1204,6 +1226,7 @@ namespace NFcore
 			void invalidatePendingEvent() {
 				pendingEventValid = false;
 				pendingEventTime = 0.0;
+				pendingEventHazard = 0.0;
 			}
 
 
@@ -1266,10 +1289,6 @@ namespace NFcore
 
             // Per-instance random number generator for thread safety
             NfsimRNG rng_;
-
-            // Source-compatible stream for legacy molecule/mapping selection
-            // draws that remain separate from the System reaction stream.
-            NfsimRNG mapping_rng_;
 
 			NFsimProfile profiler;
 
@@ -2760,6 +2779,30 @@ namespace NFcore
 				return (reactantIndex < n_reactants) ? contextCountsPerComplex[reactantIndex] : false;
 			}
 
+			/* How many of this reaction's matches for reactant `reactantIndex`
+			 * lie in the complex that holds molecule m; see deletesWholeComplex. */
+			int countMatchesInComplex(unsigned int reactantIndex, Molecule *m);
+
+			/* The list or tree that holds the matches of reactant r. */
+			virtual ReactantContainer *getReactantContainer(unsigned int r) const { return 0; }
+
+			/* NFinput splits a rule with a symmetric component in its reaction
+			 * centre into one reaction per permutation (name_sym1, _sym2, ...).
+			 * Each holds its own share of the matches of a reactant whose
+			 * components it permutes, so fire() counts such a reactant over the
+			 * permutations that differ from this one in that reactant alone:
+			 * siblings[k] lists them for reactant k (this reaction not among
+			 * them). */
+			void setPermutationSiblings(const vector < vector <ReactionClass *> > &siblings) {
+				permutationSiblings = siblings;
+			}
+
+			/* Whether fire() may thin a reactant counted once per match back to
+			 * once per complex (see deletesWholeComplex).  Thinning gives each
+			 * complex the rate of one match only when the rate law is linear in
+			 * the reactant's count; a Michaelis-Menten law is not. */
+			virtual bool canThinToOncePerComplex() const { return true; }
+
 
 			void setRxnId(int rxnId) { this->rxnId = rxnId; };
 			int getRxnId() const { return rxnId; };
@@ -2929,6 +2972,24 @@ namespace NFcore
 
 			/* flag for pure context reactants counted once per complex */
 			bool *contextCountsPerComplex;
+
+			/* True for a reactant the rule deletes as a whole species (a Delete
+			 * with no DeleteMolecules), which removes the complex its match sits
+			 * in.  fire() thins a pick of it or a MatchOnce reactant back to once
+			 * per complex. */
+			bool *deletesWholeComplex;
+
+			/* Per reactant, the other reactions NFinput made from this one's
+			 * rule that permute only that reactant; see setPermutationSiblings(). */
+			vector < vector <ReactionClass *> > permutationSiblings;
+
+			/* Whether fire() thins a pick of reactant r to once per complex: it
+			 * is deleted whole or carries MatchOnce, and is not already counted
+			 * per complex (contextCountsPerComplex) or a population. */
+			bool thinsToOncePerComplex(unsigned int r) const {
+				return (deletesWholeComplex[r] || matchOncePerReactant[r]) &&
+						!contextCountsPerComplex[r] && !isPopulationType[r];
+			}
 
 			/* if population reactants are identical, this is the discrete
 			 * count correction for calculating the ratelaw

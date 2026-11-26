@@ -695,6 +695,104 @@ bool registerProductMolecularity(
     return true;
 }
 
+bool placeCompiledProductPatterns(
+    const CompiledRuleDirection& direction,
+    const MoleculeMap& mappings,
+    const std::vector<std::vector<NFcore::TemplateMolecule*>>& templates,
+    NFcore::TransformationSet& transformations) {
+    if (direction.productPatterns.size() < 2 || mappings.empty()) return true;
+
+    using ProdKey = std::pair<std::size_t, std::size_t>;
+    std::map<ProdKey, PatternMoleculeRef> sourceOfProduct;
+    for (const auto& [prodRef, reactRef] : mappings) {
+        sourceOfProduct.emplace(ProdKey{prodRef.patternIndex, prodRef.moleculeIndex}, reactRef);
+    }
+
+    std::vector<ProdKey> productMolecules;
+    std::map<ProdKey, ProdKey> partParent, groupParent;
+    for (std::size_t p = 0; p < direction.productPatterns.size(); ++p) {
+        const auto& pattern = direction.productPatterns[p];
+        for (std::size_t m = 0; m < pattern.molecules().size(); ++m) {
+            ProdKey key{p, m};
+            productMolecules.push_back(key);
+            partParent[key] = key;
+            groupParent[key] = key;
+        }
+    }
+    auto findRoot = [](std::map<ProdKey, ProdKey>& parent, ProdKey x) {
+        while (parent[x] != x) x = parent[x];
+        return x;
+    };
+    const auto productBonds = patternBondGroups(direction.productPatterns, PatternSide::Product);
+    for (const auto& [key, endpoints] : productBonds) {
+        (void)key;
+        if (endpoints.size() != 2) continue;
+        ProdKey m1{endpoints[0].ref.patternIndex, endpoints[0].ref.moleculeIndex};
+        ProdKey m2{endpoints[1].ref.patternIndex, endpoints[1].ref.moleculeIndex};
+        auto g1 = findRoot(groupParent, m1), g2 = findRoot(groupParent, m2);
+        if (g1 != g2) groupParent[g2] = g1;
+        if (sourceOfProduct.count(m1) && sourceOfProduct.count(m2)) {
+            auto p1 = findRoot(partParent, m1), p2 = findRoot(partParent, m2);
+            if (p1 != p2) partParent[p2] = p1;
+        }
+    }
+
+    std::set<std::size_t> touched;
+    for (const auto& mutation : direction.mutations) {
+        if (mutation.kind == MutationKind::DeleteBond || mutation.kind == MutationKind::AddBond) {
+            touched.insert(mutation.source.patternIndex);
+            touched.insert(mutation.partner.patternIndex);
+        } else if (mutation.kind == MutationKind::DeleteMolecule) {
+            touched.insert(mutation.molecule.patternIndex);
+        }
+    }
+
+    std::map<ProdKey, int> groupNumber;
+    std::set<ProdKey> partsDone;
+    for (std::size_t m = 0; m < productMolecules.size(); ++m) {
+        const auto& prodKey = productMolecules[m];
+        if (!sourceOfProduct.count(prodKey)) continue;
+        const auto part = findRoot(partParent, prodKey);
+        if (!partsDone.insert(part).second) continue;
+
+        std::vector<PatternMoleculeRef> members;
+        std::set<std::size_t> memberPatterns;
+        for (std::size_t k = m; k < productMolecules.size(); ++k) {
+            if (!sourceOfProduct.count(productMolecules[k])) continue;
+            if (findRoot(partParent, productMolecules[k]) != part) continue;
+            const auto& source = sourceOfProduct.at(productMolecules[k]);
+            members.push_back(source);
+            memberPatterns.insert(source.patternIndex);
+        }
+        if (memberPatterns.size() == 1) {
+            const auto r = *memberPatterns.begin();
+            if (!touched.count(r) && members.size() == templates.at(r).size()) continue;
+        }
+
+        NFcore::TemplateMolecule* placedTemplate = nullptr;
+        for (const auto& source : members) {
+            auto* tm = templates.at(source.patternIndex).at(source.moleculeIndex);
+            if (tm == nullptr || tm->getMoleculeType()->isPopulationType()) continue;
+            if (tm->getN_mapGenerators() > 0) {
+                placedTemplate = tm;
+                break;
+            }
+        }
+        if (placedTemplate == nullptr) continue;
+
+        const auto group = findRoot(groupParent, prodKey);
+        if (!groupNumber.count(group)) {
+            const int next = static_cast<int>(groupNumber.size());
+            groupNumber[group] = next;
+        }
+        if (!transformations.addProductPlacement(
+                placedTemplate, static_cast<int>(prodKey.first), groupNumber[group])) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool renderExpression(const CompiledModel& model,
                       const ResolvedExpression& expression,
                       std::string& result,
@@ -2407,6 +2505,13 @@ bool lowerDirection(const CompiledModel& model,
                                          : NFcore::TransformationFactory::DELETE_MOLECULES);
             if (!ok) { delete transformations; return false; }
         }
+    }
+
+    if (blockSameComplexBinding &&
+        !placeCompiledProductPatterns(direction, moleculeMappings, templates, *transformations)) {
+        diagnostic = "could not register product pattern placements";
+        delete transformations;
+        return false;
     }
 
     auto* reaction = makeReactionForRate(model, rule, direction,

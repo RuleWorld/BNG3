@@ -970,6 +970,198 @@ static bool productPatternsCanForm(Element *pRxnRule)
 }
 
 
+// The root of x in a union-find kept as a map from each element to its parent.
+static string unionFindRoot(map <string,string> &parent, const string &x)
+{
+	string root = x;
+	while (parent[root] != root) root = parent[root];
+	return root;
+}
+
+
+// For a rule with several product patterns, places molecules of its reactant
+// patterns in its product patterns (TransformationSet::addProductPlacement), so
+// that checkMolecularity() can require "+" between every two product patterns
+// and "." within each (#132).
+template <class Element>
+static bool placeProductPatterns(Element *pRxnRule, map <string,TemplateMolecule *> &reactantTemplates,
+		TransformationSet *ts)
+{
+	if (pRxnRule == NULL || ts->getNumProductPatterns() < 2) return true;
+	Element *pListOfReactantPatterns = pRxnRule->FirstChildElement("ListOfReactantPatterns");
+	Element *pListOfProductPatterns = pRxnRule->FirstChildElement("ListOfProductPatterns");
+	Element *pMap = pRxnRule->FirstChildElement("Map");
+	if (pListOfReactantPatterns == NULL || pListOfProductPatterns == NULL || pMap == NULL) return true;
+
+	map <string,int> reactantPatternOfMolecule;
+	map <string,string> moleculeOfReactantComponent;
+	vector < vector <string> > moleculesOfReactantPattern;
+	for (Element *pReactant = pListOfReactantPatterns->FirstChildElement("ReactantPattern");
+			pReactant != NULL; pReactant = pReactant->NextSiblingElement("ReactantPattern"))
+	{
+		vector <string> molecules;
+		Element *pListOfMols = pReactant->FirstChildElement("ListOfMolecules");
+		for (Element *pMol = pListOfMols ? pListOfMols->FirstChildElement("Molecule") : NULL;
+				pMol != NULL; pMol = pMol->NextSiblingElement("Molecule"))
+		{
+			const char *molId = pMol->Attribute("id");
+			if (molId == NULL) continue;
+			reactantPatternOfMolecule[molId] = (int)moleculesOfReactantPattern.size();
+			molecules.push_back(molId);
+			Element *pListOfComps = pMol->FirstChildElement("ListOfComponents");
+			for (Element *pComp = pListOfComps ? pListOfComps->FirstChildElement("Component") : NULL;
+					pComp != NULL; pComp = pComp->NextSiblingElement("Component"))
+			{
+				const char *compId = pComp->Attribute("id");
+				if (compId != NULL) moleculeOfReactantComponent[compId] = molId;
+			}
+		}
+		moleculesOfReactantPattern.push_back(molecules);
+	}
+
+	map <string,string> sourceOfProductMolecule;
+	for (Element *pItem = pMap->FirstChildElement("MapItem");
+			pItem != NULL; pItem = pItem->NextSiblingElement("MapItem"))
+	{
+		const char *source = pItem->Attribute("sourceID");
+		const char *target = pItem->Attribute("targetID");
+		if (source == NULL || target == NULL) continue;
+		if (reactantPatternOfMolecule.find(source) == reactantPatternOfMolecule.end()) continue;
+		sourceOfProductMolecule[target] = source;
+	}
+	if (sourceOfProductMolecule.empty()) return true;
+
+	vector <string> productMolecules;
+	map <string,int> patternOfProductMolecule;
+	map <string,string> moleculeOfProductComponent;
+	map <string,string> partParent, groupParent;
+	int patternIndex = 0;
+	for (Element *pProduct = pListOfProductPatterns->FirstChildElement("ProductPattern");
+			pProduct != NULL; pProduct = pProduct->NextSiblingElement("ProductPattern"), ++patternIndex)
+	{
+		Element *pListOfMols = pProduct->FirstChildElement("ListOfMolecules");
+		for (Element *pMol = pListOfMols ? pListOfMols->FirstChildElement("Molecule") : NULL;
+				pMol != NULL; pMol = pMol->NextSiblingElement("Molecule"))
+		{
+			const char *molId = pMol->Attribute("id");
+			if (molId == NULL) continue;
+			productMolecules.push_back(molId);
+			patternOfProductMolecule[molId] = patternIndex;
+			partParent[molId] = molId;
+			groupParent[molId] = molId;
+			Element *pListOfComps = pMol->FirstChildElement("ListOfComponents");
+			for (Element *pComp = pListOfComps ? pListOfComps->FirstChildElement("Component") : NULL;
+					pComp != NULL; pComp = pComp->NextSiblingElement("Component"))
+			{
+				const char *compId = pComp->Attribute("id");
+				if (compId != NULL) moleculeOfProductComponent[compId] = molId;
+			}
+		}
+		Element *pListOfBonds = pProduct->FirstChildElement("ListOfBonds");
+		for (Element *pBond = pListOfBonds ? pListOfBonds->FirstChildElement("Bond") : NULL;
+				pBond != NULL; pBond = pBond->NextSiblingElement("Bond"))
+		{
+			const char *site1 = pBond->Attribute("site1");
+			const char *site2 = pBond->Attribute("site2");
+			if (site1 == NULL || site2 == NULL) continue;
+			map <string,string>::iterator m1 = moleculeOfProductComponent.find(site1);
+			map <string,string>::iterator m2 = moleculeOfProductComponent.find(site2);
+			if (m1 == moleculeOfProductComponent.end() || m2 == moleculeOfProductComponent.end()) continue;
+			string g1 = unionFindRoot(groupParent, m1->second), g2 = unionFindRoot(groupParent, m2->second);
+			if (g1 != g2) groupParent[g2] = g1;
+			if (sourceOfProductMolecule.count(m1->second) && sourceOfProductMolecule.count(m2->second))
+			{
+				string p1 = unionFindRoot(partParent, m1->second), p2 = unionFindRoot(partParent, m2->second);
+				if (p1 != p2) partParent[p2] = p1;
+			}
+		}
+	}
+
+	set <int> touched;
+	Element *pListOfOperations = pRxnRule->FirstChildElement("ListOfOperations");
+	for (Element *pOp = pListOfOperations ? pListOfOperations->FirstChildElement() : NULL;
+			pOp != NULL; pOp = pOp->NextSiblingElement())
+	{
+		string op = pOp->Value();
+		if (op == "DeleteBond" || op == "AddBond")
+		{
+			const char *sites[2] = { pOp->Attribute("site1"), pOp->Attribute("site2") };
+			for (int k = 0; k < 2; ++k)
+			{
+				if (sites[k] == NULL) continue;
+				map <string,string>::iterator m = moleculeOfReactantComponent.find(sites[k]);
+				if (m != moleculeOfReactantComponent.end()) touched.insert(reactantPatternOfMolecule[m->second]);
+			}
+		}
+		else if (op == "Delete")
+		{
+			const char *id = pOp->Attribute("id");
+			if (id == NULL) continue;
+			map <string,int>::iterator r = reactantPatternOfMolecule.find(id);
+			if (r != reactantPatternOfMolecule.end()) touched.insert(r->second);
+		}
+	}
+
+	map <string,int> groupNumber;
+	set <string> partsDone;
+	for (unsigned int m = 0; m < productMolecules.size(); ++m)
+	{
+		if (!sourceOfProductMolecule.count(productMolecules[m])) continue;
+		string part = unionFindRoot(partParent, productMolecules[m]);
+		if (!partsDone.insert(part).second) continue;
+
+		vector <string> members;
+		set <int> memberPatterns;
+		for (unsigned int k = m; k < productMolecules.size(); ++k)
+		{
+			if (!sourceOfProductMolecule.count(productMolecules[k])) continue;
+			if (unionFindRoot(partParent, productMolecules[k]) != part) continue;
+			string source = sourceOfProductMolecule[productMolecules[k]];
+			members.push_back(source);
+			memberPatterns.insert(reactantPatternOfMolecule[source]);
+		}
+		if (memberPatterns.size() == 1)
+		{
+			int r = *memberPatterns.begin();
+			if (!touched.count(r) && members.size() == moleculesOfReactantPattern[r].size()) continue;
+		}
+
+		TemplateMolecule *placedTemplate = NULL;
+		for (unsigned int k = 0; k < members.size() && placedTemplate == NULL; ++k)
+		{
+			map <string,TemplateMolecule *>::iterator t = reactantTemplates.find(members[k]);
+			if (t == reactantTemplates.end() || t->second->getMoleculeType()->isPopulationType()) continue;
+			if (t->second->getN_mapGenerators() > 0) placedTemplate = t->second;
+		}
+		if (placedTemplate == NULL) continue;
+
+		string group = unionFindRoot(groupParent, productMolecules[m]);
+		if (!groupNumber.count(group))
+		{
+			int next = (int)groupNumber.size();
+			groupNumber[group] = next;
+		}
+		if (!ts->addProductPlacement(placedTemplate, patternOfProductMolecule[productMolecules[m]], groupNumber[group]))
+			return false;
+	}
+	return true;
+}
+
+
+// A composite rate law that reads reactant_N() reads the count of the rule's
+// Nth reactant. A rule with fewer than N reactants has no such count (#151).
+static bool refuseReactantCountBeyondRule(System *s, const string &rxnName, const string &functionName,
+		TransformationSet *ts)
+{
+	CompositeFunction *cf = s->getCompositeFunctionByName(functionName);
+	if (cf == NULL || cf->getNumOfReactantCounts() <= (int)ts->getNreactants()) return false;
+	cerr << "Error!! The rate law of ReactionRule " << rxnName << " uses function '"
+	     << functionName << "', which reads reactant_" << cf->getNumOfReactantCounts()
+	     << "(), but the rule has " << ts->getNreactants() << " reactant(s)." << endl;
+	return true;
+}
+
+
 System * NFinput::initializeFromXML(
 		string filename,
 		bool blockSameComplexBinding,
@@ -1777,21 +1969,33 @@ static string initStartSpeciesBody(
 			}
 
 			//Try to parse out the number of this species, or look it up in the parameter map
-			int specCountInteger=0;
-			/* Integer, then double (e.g. 2e4, truncated toward zero), then a
-			 * parameter name; tested without exceptions. */
-			double specCountDouble = 0.0;
-			if (!NFutil::tryConvertToInt(specCount, specCountInteger)) {
-				if (NFutil::tryConvertToDouble(specCount, specCountDouble)) {
-					specCountInteger = (int) specCountDouble;
-				} else {
-					if(parameter.find(specCount)==parameter.end()) {
-						cerr<<"Could not find parameter: "<<specCount<<" when creating species "<<speciesName<<". Quitting"<<endl;
-						// AS2023 - fails now return empty strings
-						return "";
-					}
-					specCountInteger = (int)parameter.find(specCount)->second;
+			double specCountValue = 0.0;
+			if (!NFutil::tryConvertToDouble(specCount, specCountValue)) {
+				if(parameter.find(specCount)==parameter.end()) {
+					cerr<<"Could not find parameter: "<<specCount<<" when creating species "<<speciesName<<". Quitting"<<endl;
+					// AS2023 - fails now return empty strings
+					return "";
 				}
+				specCountValue = parameter.find(specCount)->second;
+			}
+
+			//Round to the nearest whole number, halves up, as BioNetGen's SSA (run_network)
+			//does, so that simulate_nf and simulate({method=>"ssa"}) start from the same
+			//counts. NFsim used to truncate (#160).
+			if(specCountValue >= (double)INT_MAX) {
+				cerr<<"The amount of species "<<speciesName<<" ("<<specCount<<") is too large. Quitting"<<endl;
+				return "";
+			}
+			double specCountRounded = floor(specCountValue + 0.5);
+			int specCountInteger = (int)specCountRounded;
+			if(specCountValue >= 0 && specCountRounded != specCountValue) {
+				cout<<"Warning: the amount of species ";
+				if(pSpec->Attribute("name")) cout<<pSpec->Attribute("name");
+				else cout<<speciesName;
+				cout<<" ("<<specCount;
+				if(parameter.find(specCount)!=parameter.end())
+					cout<<" = "<<specCountValue;
+				cout<<") is not a whole number; rounded to "<<specCountInteger<<"."<<endl;
 			}
 
 			//Make sure we didn't try to create a negative number of molecules
@@ -2668,6 +2872,7 @@ static bool initReactionRulesBody(
 			generateRxnPermutations(permutations, symComps, symRxnCenter,verbose);
 
 			unsigned int n_permutations = permutations.size();
+			int firstOfRule = s->getNumOfReactions();
 			for( unsigned int p=0; p<n_permutations; p++)
 			{
 				map <string,component> symMap = permutations.at(p);
@@ -3626,6 +3831,11 @@ static bool initReactionRulesBody(
 				}
 
 
+				// For a rule with several product patterns, place its molecules in
+				// them, for the product-side checks.
+				if (!placeProductPatterns(pRxnRule, reactants, ts)) return false;
+
+
 				///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 				// With the transforations now set, Let's actually create the reaction (remember to finalize the TransformationSet!
 				//We can't finalize the transformation set here anymore! we have to do it just before we create
@@ -3994,6 +4204,7 @@ static bool initReactionRulesBody(
 						if(isGlobal)
 						{
 							string functionName = pRateLaw->Attribute("name");
+							s->useTimeTablesReadBy(functionName);
 							GlobalFunction *gf = s->getGlobalFunctionByName(functionName);
 							if(gf!=NULL) {
 								ts->finalize();
@@ -4003,6 +4214,10 @@ static bool initReactionRulesBody(
 								if(cf==NULL) {
 									cerr<<"When parsing reaction: '"<<rxnName<<"', could not identify function: '"<<functionName<<"' in\n";
 									cerr<<"the system.  Therefore, I must abort."<<endl;
+									return false;
+								}
+								if (refuseReactantCountBeyondRule(s, rxnName, functionName, ts)) {
+									delete ts;
 									return false;
 								}
 								ts->finalize();
@@ -4017,9 +4232,16 @@ static bool initReactionRulesBody(
 							}
 
 							string functionName = pRateLaw->Attribute("name");
+							s->useTimeTablesReadBy(functionName);
 							CompositeFunction *composite = s->getCompositeFunctionByName(functionName);
 							LegacyCompositeDOR2 legacyDOR2;
 							if (parseLegacyCompositeDOR2(composite, s, legacyDOR2)) {
+								if (refuseReactantCountBeyondRule(s, rxnName, functionName, ts)) {
+									delete ts;
+									return false;
+								}
+								s->useTimeTablesReadBy(legacyDOR2.functionName1);
+								s->useTimeTablesReadBy(legacyDOR2.functionName2);
 								if (funcArgs.size() != 2 ||
 										find(funcArgs.begin(), funcArgs.end(), legacyDOR2.argument1) == funcArgs.end() ||
 										find(funcArgs.begin(), funcArgs.end(), legacyDOR2.argument2) == funcArgs.end()) {
@@ -4090,6 +4312,11 @@ static bool initReactionRulesBody(
 					wrapper->finalizeInitialization(s);
 				}
 			}
+
+							if (refuseReactantCountBeyondRule(s, rxnName, functionName, ts)) {
+								delete ts;
+								return false;
+							}
 
 							ts->finalize();
 							CompositeFunction *cf = s->getCompositeFunctionByName(functionName);
@@ -4253,6 +4480,13 @@ static bool initReactionRulesBody(
 							}
 						}
 
+						s->useTimeTablesReadBy(functionName1);
+						s->useTimeTablesReadBy(functionName2);
+						if (refuseReactantCountBeyondRule(s, rxnName, functionName1, ts) ||
+							refuseReactantCountBeyondRule(s, rxnName, functionName2, ts)) {
+							delete ts;
+							return false;
+						}
 						ts->finalize();
 						CompositeFunction *cf1 = s->getCompositeFunctionByName(functionName1);
 						CompositeFunction *cf2 = s->getCompositeFunctionByName(functionName2);
@@ -4440,7 +4674,8 @@ static bool initReactionRulesBody(
 						cerr<<"  a Michaelis-Menten reaction should be specified as 'MM', and"<<endl;
 						cerr<<"  a functional reaction should be specified as 'Functional'."<<endl;
 						cerr<<"Quitting."<<endl;
-					//	return false;
+						delete ts;
+						return false;
 					}
 				} // end to the else statement that parses the rate law.
 
@@ -4454,16 +4689,14 @@ static bool initReactionRulesBody(
                 if (matchOnceList[i]) hasMatchOnce = true;
             }
 
+            // ReactionClass::fire() thins a MatchOnce reactant to once per
+            // complex whatever the rate law, so a local function (DOR) rule
+            // takes it as any other rule does.
             if (hasMatchOnce) {
-                if (r->getRxnType() == ReactionClass::DOR_RXN || r->getRxnType() == ReactionClass::DOR2_RXN) {
-                    cerr << "Warning: MatchOnce is not yet supported for DOR/functional reactions. "
-                         << "Ignoring matchOnce on reaction: " << rxnName << endl;
-                } else {
-                    unsigned int nReactants = r->getNumOfReactants();
-                    for (unsigned int i = 0; i < nReactants; i++) {
-                        if (i < matchOnceSize) {
-                            r->setMatchOnce(i, matchOnceList[i]);
-                        }
+                unsigned int nReactants = r->getNumOfReactants();
+                for (unsigned int i = 0; i < nReactants; i++) {
+                    if (i < matchOnceSize) {
+                        r->setMatchOnce(i, matchOnceList[i]);
                     }
                 }
             }
@@ -4568,6 +4801,43 @@ static bool initReactionRulesBody(
 				}
 
 			} //end loop through all permutations
+
+			// Each permutation holds its share of the matches of a reactant whose
+			// symmetric components it permutes.  A reactant counted once per
+			// complex (MatchOnce) has to be counted over the permutations that
+			// differ from one another in that reactant's components alone; tell
+			// each reaction which those are.
+			int endOfRule = s->getNumOfReactions();
+			if (n_permutations > 1 && endOfRule - firstOfRule == (int)n_permutations)
+			{
+				vector <string> prefixes;
+				Element *pReactants = pRxnRule->FirstChildElement("ListOfReactantPatterns");
+				for (Element *pReactant = pReactants ? pReactants->FirstChildElement("ReactantPattern") : 0;
+						pReactant != 0; pReactant = pReactant->NextSiblingElement("ReactantPattern"))
+					prefixes.push_back(string(pReactant->Attribute("id") ? pReactant->Attribute("id") : "") + "_");
+
+				vector < vector <string> > signature(n_permutations, vector <string>(prefixes.size()));
+				for (unsigned int p = 0; p < n_permutations; p++)
+					for (map <string, component>::iterator it = permutations[p].begin(); it != permutations[p].end(); ++it)
+						for (unsigned int r = 0; r < prefixes.size(); r++)
+							if (it->first.compare(0, prefixes[r].size(), prefixes[r]) == 0)
+								signature[p][r] += it->first + "=" + it->second.symPermutationName + ";";
+
+				for (unsigned int p = 0; p < n_permutations; p++)
+				{
+					vector < vector <ReactionClass *> > siblings(prefixes.size());
+					for (unsigned int r = 0; r < prefixes.size(); r++)
+						for (unsigned int q = 0; q < n_permutations; q++)
+						{
+							if (q == p || signature[q][r] == signature[p][r]) continue;
+							bool othersAlike = true;
+							for (unsigned int r2 = 0; r2 < prefixes.size(); r2++)
+								if (r2 != r && signature[q][r2] != signature[p][r2]) othersAlike = false;
+							if (othersAlike) siblings[r].push_back(s->getReaction(firstOfRule + q));
+						}
+					s->getReaction(firstOfRule + p)->setPermutationSiblings(siblings);
+				}
+			}
 
 		} //end loop through all reaction rules
 		if (ruleCursor.failed())

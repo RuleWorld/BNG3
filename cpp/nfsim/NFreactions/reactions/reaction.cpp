@@ -974,8 +974,11 @@ int BasicRxnClass::getCorrectedReactantCount(unsigned int reactantIndex) const
 	}
 	*/
 
-	if ((matchOncePerReactant[reactantIndex] ||
-			contextCountsPerComplex[reactantIndex]) &&
+	// contextCountsPerComplex counts a reactant the rule never transforms once
+	// per complex, which is how BNG counts one.  A MatchOnce reactant is counted
+	// once per match like any other, and fire() thins a pick of it back to once
+	// per complex.
+	if (contextCountsPerComplex[reactantIndex] &&
 			!isPopulationType[reactantIndex]) {
 		return countDistinctComplexes(reactantLists[reactantIndex]);
 	}

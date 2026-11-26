@@ -58,10 +58,10 @@ Owner: **@akutuva21**. These decisions were made by the maintainer in the Phase 
 | Source | Revision |
 |---|---|
 | RuleWorld/bionetgen | `740006ff3cfa0b6d5445e10367c9f2fcd0f75d67` |
-| RuleWorld/NFsim | `8c449bbccc4a0c54586ae562f46f4955e65fe876` |
+| RuleWorld/NFsim | `d45b7d99cf1905199911a3187edbba585fad56ba` |
 | RuleWorld/PyBioNetGen | `28bf351a9bbfc197e19487c26dedda683716bb64` |
 
-The maintainer requested the NFsim source and oracle refresh on 2026-11-18. The new pin is the NFsim `master` snapshot used to build the native oracle. The upstream release tag remains v1.14.3.
+The maintainer requested the NFsim source and oracle refresh on 2026-11-25 (previously refreshed 2026-11-18). The new pin is the NFsim `master` snapshot (`v2.0.1` plus `#160`) used to build the native oracle.
 
 The maintainer requested the BioNetGen source and oracle refresh on 2026-11-25. The new pin advances `RuleWorld/bionetgen` from `9601746f8884ed19ab2acea49fe87fc4660ace46` to `740006ff3cfa0b6d5445e10367c9f2fcd0f75d67` (BioNetGen 2.9.5), reconciling all 29 upstream commits in `provenance/reconciliation/bionetgen.yml`.
 

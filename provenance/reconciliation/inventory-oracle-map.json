@@ -5,7 +5,7 @@
   "acceptance_contract": "A declaration is a mapping, not an execution result. A row counts as covered only when an exact-revision release-capability[ID] case result consumes the named oracle and passes. No BNG3-generated expected answer is an oracle.",
   "pins": {
     "bionetgen": "740006ff3cfa0b6d5445e10367c9f2fcd0f75d67",
-    "nfsim": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
+    "nfsim": "d45b7d99cf1905199911a3187edbba585fad56ba",
     "pybionetgen": "28bf351a9bbfc197e19487c26dedda683716bb64"
   },
   "rows": {
@@ -16,43 +16,43 @@
       "reviewed_boundary": "supported for grammar/model forms with named tests only"
     },
     "nfsim.options.parameters": {
-      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 typed parameter/unit option contract",
+      "oracle": "pinned native NFsim@d45b7d99cf1905199911a3187edbba585fad56ba typed parameter/unit option contract",
       "oracle_kind": "external-source",
       "selector": "tests/cpp/test_nfsim_ast_adapter.cpp",
       "reviewed_boundary": "supported for the named mapped forms only; other options gated"
     },
     "nfsim.compartments": {
-      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 hierarchy, nested volume and placement semantics",
+      "oracle": "pinned native NFsim@d45b7d99cf1905199911a3187edbba585fad56ba hierarchy, nested volume and placement semantics",
       "oracle_kind": "external-source",
       "selector": "tests/cpp/test_nfsim_ast_adapter.cpp",
       "reviewed_boundary": "decision required until nested-volume/placement differential parity"
     },
     "nfsim.molecule-types": {
-      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 integer state expansion and symmetric-site renaming",
+      "oracle": "pinned native NFsim@d45b7d99cf1905199911a3187edbba585fad56ba integer state expansion and symmetric-site renaming",
       "oracle_kind": "external-source",
       "selector": "tests/validation/test_reconciliation_nfsim.py",
       "reviewed_boundary": "supported only for tested expansions; other type features unclassified"
     },
     "nfsim.global-functions.safe-subset": {
-      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 TFUN/local-function contract plus BNG2@740006ff3cfa0b6d5445e10367c9f2fcd0f75d67 expression evaluator",
+      "oracle": "pinned native NFsim@d45b7d99cf1905199911a3187edbba585fad56ba TFUN/local-function contract plus BNG2@740006ff3cfa0b6d5445e10367c9f2fcd0f75d67 expression evaluator",
       "oracle_kind": "external-source",
       "selector": "tests/validation/test_parity_expressions.py",
       "reviewed_boundary": "experimental for expanded nested/local/TFUN forms until family-specific parity"
     },
     "nfsim.seed-species": {
-      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 seed state and observable comparison",
+      "oracle": "pinned native NFsim@d45b7d99cf1905199911a3187edbba585fad56ba seed state and observable comparison",
       "oracle_kind": "external-source",
       "selector": "tests/validation/test_reconciliation_nfsim.py",
       "reviewed_boundary": "supported only for represented seed forms with independent native evidence"
     },
     "nfsim.observables": {
-      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 molecule/species counting modes, symmetry and stoichiometry",
+      "oracle": "pinned native NFsim@d45b7d99cf1905199911a3187edbba585fad56ba molecule/species counting modes, symmetry and stoichiometry",
       "oracle_kind": "external-source",
       "selector": "tests/validation/test_reconciliation_nfsim.py",
       "reviewed_boundary": "supported per exact tested mode; remaining matching forms decision required"
     },
     "nfsim.reaction-rules": {
-      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 reaction centers, rates and seeded execution matrix",
+      "oracle": "pinned native NFsim@d45b7d99cf1905199911a3187edbba585fad56ba reaction centers, rates and seeded execution matrix",
       "oracle_kind": "external-source",
       "selector": "tests/cpp/test_nfsim_ast_adapter.cpp",
       "reviewed_boundary": "supported per individually qualified reaction/rate family"

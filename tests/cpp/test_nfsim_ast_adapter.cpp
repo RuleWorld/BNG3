@@ -4413,15 +4413,14 @@ end reaction rules
     CHECK(direct->getReaction(2)->get_a() == Catch::Approx(0.0));
 
     // Exercise both sides of the live Ton thresholds, rather than only the
-    // initial false branch.  Exact seeded molecule counts remain a separate
-    // parity gate: native NFsim uses its legacy global mapping RNG, while the
-    // BNG3 adapter deliberately uses a per-System RNG stream.
+    // initial false branch, and verify exact seeded parity against native
+    // NFsim (now also single-RNG per #124/#125).
     const auto checkIfTestTrajectory = [](NFcore::System* system) {
-        // Independent native NFsim a6f9fa9 oracle, using
-        // nfsim/test/IfTest/ifTest.xml, seed 1, and output times
+        // Independent native NFsim d45b7d99cf oracle (v2.0.1, unified RNG),
+        // using nfsim/test/IfTest/ifTest.xml, seed 1, and output times
         // 0.5, 1, 2, 3, 5. These exact values are a parity contract, not a
         // tolerance or a replacement for the branch-semantic checks below.
-        const std::vector<int> nativeTon{2236, 3944, 6306, 7787, 9176};
+        const std::vector<int> nativeTon{2217, 3969, 6343, 7795, 9194};
         std::size_t checkpoint = 0;
         const auto count = [system](const char* name) {
             return system->getObservableByName(name)->getCount();

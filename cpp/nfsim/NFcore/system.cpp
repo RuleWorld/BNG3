@@ -10,11 +10,11 @@
 #include <cmath>
 #include <math.h>
 #include <fstream>
+#include <iomanip>
+#include <limits>
 #include <stdexcept>
 #include "../NFscheduler/NFstream.h"
 #include "../NFscheduler/Scheduler.h"
-
-#define ATOT_TOLERANCE 1e-9
 
 using namespace std;
 using namespace NFcore;
@@ -1252,6 +1252,8 @@ double System::getNextRxn()
 		this->printAllReactions();
 		exit(1);
 	}
+	// The selector may have summed its total afresh while picking.
+	a_tot = selector->getAtot();
 	if (isProfilingEnabled())
 		recordProfilePhase("reaction_selection", clock() - profileStart);
 	return x;
@@ -1341,6 +1343,7 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 	string logstr;
 	bool logged = false;
 
+	const bool readsTimeTables = !timeBreakpoints.empty();
 	while(current_time<end_time)
 	{
 		//this->printAllObservableCounts(current_time);
@@ -1353,23 +1356,37 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 		//   dt = -ln(rand) / a_tot;
 		//Choose a random number on the OPEN interval (0,1) so that we never
 		//have a dt=0 or a dt=infinity
-		if (!pendingEventValid) {
-			if (a_tot > ATOT_TOLERANCE) {
-				pendingEventTime =
-					current_time + (-log(rng_.random_open()) / a_tot);
-				pendingEventValid = true;
-			} else {
-				current_time = end_time;
-			}
-		}
-		const bool hasPendingEvent = pendingEventValid;
-		if (hasPendingEvent) {
-			delta_t = pendingEventTime - current_time;
+		bool hasPendingEvent = false;
+		double nextEventTime = end_time;
+		if (readsTimeTables) {
+			// A rate law reads a table indexed by time (#142): step across
+			// the tables' breakpoints to the next firing, which leaves the
+			// clock there, or at end_time if nothing fires first.
+			const double startTime = current_time;
+			hasPendingEvent = advanceTimeTables(end_time);
+			nextEventTime = current_time;
+			delta_t = nextEventTime - startTime;
 		} else {
-			delta_t = 0;
+			if (!pendingEventValid) {
+				// Any positive total can fire; a fixed threshold would be a rate in
+				// the model's time unit (issue #123).
+				a_tot = selector->getCheckedAtot();
+				if (a_tot > 0) {
+					pendingEventTime =
+						current_time + (-log(rng_.random_open()) / a_tot);
+					pendingEventValid = true;
+				} else {
+					current_time = end_time;
+				}
+			}
+			hasPendingEvent = pendingEventValid;
+			if (hasPendingEvent) {
+				delta_t = pendingEventTime - current_time;
+			} else {
+				delta_t = 0;
+			}
+			nextEventTime = hasPendingEvent ? pendingEventTime : end_time;
 		}
-		const double nextEventTime =
-			hasPendingEvent ? pendingEventTime : end_time;
 		if(DEBUG) cout<<"   Determine dt : " << delta_t << endl;
 
 
@@ -1411,7 +1428,7 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 			// Output evaluation temporarily advances the clock. Restore system
 			// functions to the event-time state before recomputing propensities,
 			// so an output checkpoint cannot change event selection or its wait.
-		restoreEventTime(eventTime);
+			restoreEventTime(eventTime);
 			if(verbose) {
 			cout << "Sim time: " << (curSampleTime - dSampleTime);
 			current_cpu_time = ((double) (clock() - start) / (double) CLOCKS_PER_SEC);
@@ -1431,7 +1448,7 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 
 		// Match stepTo(): an event at the requested endpoint belongs to the
 		// next continuation interval. Keep its pending wait for that call.
-		if (pendingEventTime >= end_time) {
+		if (!readsTimeTables && pendingEventTime >= end_time) {
 			current_time = end_time;
 			break;
 		}
@@ -1450,6 +1467,14 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 		//4: Select next reaction class based on smallest j,
 		//   such that sum of a_j over all j >= r2*a_tot
 		double randElement = getNextRxn();
+		if (nextReaction == 0) {
+			// The pick found nothing to fire: the total the waiting time was
+			// drawn from was left over from rounding.  Let the time pass as a
+			// null event and draw again from the selector's new total.
+			current_time = nextEventTime;
+			invalidatePendingEvent();
+			continue;
+		}
 		
 		if(DEBUG && verbose && iteration < 5) {
 			cout << "Selected: " << (nextReaction ? nextReaction->getName() : "NULL") << endl;
@@ -1468,10 +1493,10 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 			if(verbose) cout << "Iteration: " << iteration << " Time: " << current_time << " a_tot: " << a_tot << endl;
 		}
 		globalEventCounter++;
-		current_time = pendingEventTime;
+		current_time = nextEventTime;
 
 		// Recompute all propensities at each step to ensure time-dependent functions are updated correctly
-		if (hasTimeDependentFunctions) {
+		if (hasTimeDependentFunctions && !readsTimeTables) {
 			for(unsigned int r=0; r<allReactions.size(); r++) {
 				allReactions.at(r)->update_a();
 			}
@@ -1576,15 +1601,267 @@ nextReaction->fire(randElement);
 	return current_time;
 }
 
+/* Tables indexed by time (#142).  A table changes its value at its
+ * breakpoints whether or not anything fires, so a waiting time drawn from the
+ * propensities before a breakpoint is no draw for the time after it.  The loops
+ * below call advanceTimeTables() when a rate law reads such a table. */
+
+double System::nextTimeBreakpoint(double t) const
+{
+	vector<double>::const_iterator it =
+		std::upper_bound(timeBreakpoints.begin(), timeBreakpoints.end(), t);
+	return it == timeBreakpoints.end() ? std::numeric_limits<double>::infinity() : *it;
+}
+
+namespace {
+
+const int panelNodes = 5;
+
+double panelNode(int q)
+{
+	static const double off = 0.5 * std::sqrt(3.0 / 7.0);
+	static const double node[panelNodes] = { 0.0, 0.5 - off, 0.5, 0.5 + off, 1.0 };
+	return node[q];
+}
+
+double lobatto(const double *v)
+{
+	return (v[0] + v[4]) / 20.0 + (v[1] + v[3]) * 49.0 / 180.0 + v[2] * 16.0 / 45.0;
+}
+
+double simpson(const double *v)
+{
+	return (v[0] + 4.0 * v[2] + v[4]) / 6.0;
+}
+
+void fitQuartic(const double *v, double *c)
+{
+	double d[panelNodes];
+	for (int i = 0; i < panelNodes; i++) d[i] = v[i];
+	for (int k = 1; k < panelNodes; k++)
+		for (int i = panelNodes - 1; i >= k; i--)
+			d[i] = (d[i] - d[i-1]) / (panelNode(i) - panelNode(i-k));
+	for (int j = 0; j < panelNodes; j++) c[j] = 0.0;
+	c[0] = d[panelNodes-1];
+	for (int k = panelNodes - 2; k >= 0; k--) {
+		for (int j = panelNodes - 1; j >= 1; j--) c[j] = c[j-1] - panelNode(k) * c[j];
+		c[0] = d[k] - panelNode(k) * c[0];
+	}
+}
+
+double quarticValue(const double *c, double th)
+{
+	double acc = 0.0;
+	for (int k = panelNodes - 1; k >= 0; k--) acc = acc * th + c[k];
+	return acc;
+}
+
+double quarticIntegral(const double *c, double th)
+{
+	double acc = 0.0;
+	for (int k = panelNodes - 1; k >= 0; k--) acc = acc * th + c[k] / (k + 1);
+	return th * acc;
+}
+
+} // namespace
+
+double System::timeTablePanelCap(double t, double nextBreak) const
+{
+	double cap = std::numeric_limits<double>::infinity();
+	for (size_t i = 0; i < linearTimeRamps.size(); i++) {
+		if (linearTimeRamps[i].first <= t && nextBreak <= linearTimeRamps[i].second)
+			cap = std::min(cap, (linearTimeRamps[i].second - linearTimeRamps[i].first) / 1000.0);
+	}
+	return cap;
+}
+
+double System::timeTablePropensityAt(double t)
+{
+	current_time = t;
+	return recompute_A_tot();
+}
+
+double System::nextTimeTableFiring(double &hazardLeft, double tLim, double readEnd, double hmax)
+{
+	const double rtol = 1e-6;
+	const double atol = 1e-7;
+	const int maxFloorPanels = 100;
+	const long maxTinyPanels = 1000000;
+
+	double t = current_time;
+	double hazard = 0.0;
+	double h = timeTablePanel > 0.0 ? std::min(timeTablePanel, hmax) : hmax;
+	int floorPanels = 0;
+	long tinyPanels = 0;
+	double av[panelNodes];
+	double c[panelNodes];
+	av[0] = a_tot;
+	while (t < tLim) {
+		const double hmin = 64.0 * std::numeric_limits<double>::epsilon() * std::max(1.0, std::fabs(t));
+		h = std::max(h, hmin);
+		double hh, s1, hNext;
+		while (true) {
+			const bool toLim = h >= tLim - t;
+			s1 = toLim ? tLim : t + h;
+			hh = s1 - t;
+			for (int q = 1; q < panelNodes - 1; q++)
+				av[q] = timeTablePropensityAt(std::min(t + panelNode(q) * hh, readEnd));
+			av[panelNodes-1] = timeTablePropensityAt(std::min(s1, readEnd));
+			const double lob = hh * lobatto(av);
+			double err = std::fabs(lob - hh * simpson(av)) / 16.0 / (atol + rtol * std::fabs(lob));
+			const bool finite = err <= 1e10;
+			if (!finite) err = 1e10;
+			const double fac = err > 0.0 ? std::min(5.0, std::max(0.2, 0.9 * std::pow(err, -0.2))) : 5.0;
+			const bool atFloor = hh <= hmin && finite;
+			if (err <= 1.0 || (atFloor && floorPanels < maxFloorPanels)) {
+				floorPanels = err <= 1.0 ? 0 : floorPanels + 1;
+				hNext = std::min(hmax, toLim ? std::max(h, hh * fac) : hh * fac);
+				break;
+			}
+			if (hh <= hmin) {
+				cerr << std::setprecision(17) << "Error!! A rate law that reads a table function of time cannot be integrated past t="
+				     << t << ": ";
+				if (finite) cerr << maxFloorPanels << " panels in a row of length " << hmin << " failed the error test";
+				else cerr << "its propensity is not finite within " << hmin << " of there";
+				cerr << ", so the rate is singular there." << endl;
+				exit(1);
+			}
+			h = std::max(hh * fac, hmin);
+		}
+		if (hh <= 2.0 * hmin && hh < tLim - t) {
+			if (++tinyPanels > maxTinyPanels) {
+				cerr << std::setprecision(17) << "Error!! A rate law that reads a table function of time makes no headway at t="
+				     << t << ": " << maxTinyPanels << " panels in a row shorter than " << 2.0 * hmin
+				     << ", so the rate is singular there." << endl;
+				exit(1);
+			}
+		} else {
+			tinyPanels = 0;
+		}
+
+		fitQuartic(av, c);
+		const double span = hh * quarticIntegral(c, 1.0);
+		if (hazard + span >= hazardLeft) {
+			const double need = hazardLeft - hazard;
+			double lo = 0.0, hi = 1.0;
+			double th = need / span;
+			if (!(th > lo && th < hi)) th = 0.5;
+			double thFire = hi;
+			for (int it = 0; it < 100; it++) {
+				const double g = hh * quarticIntegral(c, th) - need;
+				if (std::fabs(g) <= 1e-15 * std::max(1.0, hazardLeft)) { thFire = th; break; }
+				if (g > 0.0) hi = th; else lo = th;
+				thFire = hi;
+				if (hi - lo <= 1e-15) break;
+				const double dg = hh * quarticValue(c, th);
+				if (dg > 0.0 && std::fabs(g) <= 1e-14 * dg) { thFire = th; break; }
+				double nt = dg > 0.0 ? th - g / dg : 0.5 * (lo + hi);
+				if (!(nt > lo && nt < hi)) nt = 0.5 * (lo + hi);
+				th = nt;
+			}
+			const double tau = thFire >= 1.0 ? s1 : t + thFire * hh;
+			timeTablePropensityAt(std::min(tau, readEnd));
+			current_time = tau;
+			hazardLeft = 0.0;
+			timeTablePanel = hNext;
+			return tau;
+		}
+		hazard += span;
+		t = s1;
+		av[0] = av[panelNodes-1];
+		h = hNext;
+	}
+	current_time = tLim;
+	hazardLeft -= hazard;
+	timeTablePanel = h;
+	return std::numeric_limits<double>::infinity();
+}
+
+bool System::advanceTimeTables(double tStop)
+{
+	const double inf = std::numeric_limits<double>::infinity();
+	while (current_time < tStop) {
+		const double nextBreak = nextTimeBreakpoint(current_time);
+		const double panelCap = timeTablePanelCap(current_time, nextBreak);
+		if (panelCap < inf) {
+			a_tot = selector->getCheckedAtot();
+			if (!pendingEventValid) {
+				pendingEventHazard = -log(rng_.random_open());
+				pendingEventValid = true;
+			}
+			const double segEnd = std::min(nextBreak, tStop);
+			const double readEnd = segEnd == nextBreak ? std::nextafter(segEnd, -inf) : segEnd;
+			if (nextTimeTableFiring(pendingEventHazard, segEnd, readEnd, panelCap) > segEnd) {
+				if (segEnd == nextBreak) {
+					invalidatePendingEvent();
+					timeTablePanel = 0.0;
+					recompute_A_tot();
+				}
+				continue;
+			}
+			invalidatePendingEvent();
+			if (!(a_tot > 0.0)) continue;
+			return true;
+		}
+
+		if (!pendingEventValid) {
+			a_tot = selector->getCheckedAtot();
+			if (a_tot > 0) {
+				pendingEventTime = current_time + (-log(rng_.random_open()) / a_tot);
+				pendingEventValid = true;
+			} else if (nextBreak <= tStop && nextBreak < inf) {
+				current_time = nextBreak;
+				recompute_A_tot();
+				continue;
+			} else {
+				if (tStop < inf) current_time = tStop;
+				return false;
+			}
+		}
+		if (pendingEventTime >= nextBreak && nextBreak <= tStop) {
+			current_time = nextBreak;
+			invalidatePendingEvent();
+			recompute_A_tot();
+			continue;
+		}
+		if (pendingEventTime >= tStop) {
+			current_time = tStop;
+			return false;
+		}
+		current_time = pendingEventTime;
+		invalidatePendingEvent();
+		return true;
+	}
+	return false;
+}
+
 double System::stepTo(double stoppingTime)
 {
 	refreshDirtyGlobalLocalFunctions();
+	if(!timeBreakpoints.empty()) {
+		// A rate law reads a table indexed by time (#142).  Read the tables
+		// at the clock, which equilibrate() or setCurrentTime() may have moved,
+		// and step across their breakpoints.
+		recompute_A_tot();
+		while(advanceTimeTables(stoppingTime)) {
+			double randElement = getNextRxn();
+			if(nextReaction == NULL) continue;
+			globalEventCounter++;
+			if (NFcore::shadowOn()) { NFcore::shadowEvent++; cout << "@EVT " << NFcore::shadowEvent << " " << nextReaction->getRxnId() << " " << nextReaction->getName() << endl; }
+			nextReaction->fire(randElement);
+			replenishFixedSpecies();
+			recompute_A_tot();
+		}
+		current_time = stoppingTime;
+		return current_time;
+	}
 	while(current_time < stoppingTime)
 	{
 		if(!pendingEventValid) {
 			// Preserve the pending waiting-time draw across output boundaries so
 			// repeated stepTo() calls consume the same RNG stream as sim().
-			if(a_tot > ATOT_TOLERANCE) {
+			a_tot = selector->getCheckedAtot();
+			if(a_tot > 0) {
 				pendingEventTime =
 					current_time + (-log(rng_.random_open()) / a_tot);
 				pendingEventValid = true;
@@ -1640,7 +1917,20 @@ void System::singleStep()
 	refreshDirtyGlobalLocalFunctions();
 	recompute_A_tot();
 	cout<<"  -total propensity (a_total) calculated as: "<<a_tot<<endl;
-	if(a_tot>ATOT_TOLERANCE) delta_t = -log(rng_.random_open()) / a_tot;
+	double eventTime = current_time;
+	if(!timeBreakpoints.empty()) {
+		const double startTime = current_time;
+		if(!advanceTimeTables(std::numeric_limits<double>::infinity())) {
+			cout<<"  -Total propensity is zero, no further rxns can fire."<<endl;
+			return;
+		}
+		eventTime = current_time;
+		delta_t = eventTime - startTime;
+	}
+	else if(a_tot>0) {
+		delta_t = -log(rng_.random_open()) / a_tot;
+		eventTime = current_time + delta_t;
+	}
 	else
 	{
 		//Otherwise, we can't react for the rest of this step
@@ -1651,9 +1941,13 @@ void System::singleStep()
 
 	cout<<" -calculated time step is: "<<delta_t<<" seconds";
 	double randElement = getNextRxn();
+	if(nextReaction == 0) {
+		cout<<"  -No reaction can fire."<<endl;
+		return;
+	}
 
 	//Increment time
-	current_time+=delta_t;
+	current_time = eventTime;
 
 	cout<<"  -Firing: "<<endl;
 	nextReaction->printDetails();;
@@ -2584,6 +2878,65 @@ bool System::setCompartmentSize(const string& compartmentId, double size) {
 	}
 	comp->setSize(size);
 	return true;
+}
+
+set<string> System::functionsReachedFrom(const string& name) const {
+	set<string> visited;
+	vector<string> pending(1, name);
+	while (!pending.empty()) {
+		string current = pending.back();
+		pending.pop_back();
+		if (!visited.insert(current).second) continue;
+		map<string, vector<string> >::const_iterator it = functionReferences.find(current);
+		if (it != functionReferences.end()) {
+			pending.insert(pending.end(), it->second.begin(), it->second.end());
+		}
+	}
+	return visited;
+}
+
+void System::addTimeTable(const string& name, const vector<double>& xs, bool linear) {
+	TimeTable table;
+	table.xs = xs;
+	table.linear = linear;
+	table.read = false;
+	timeTables[name] = table;
+}
+
+bool System::functionReadsTimeTable(const string& name) const {
+	set<string> reached = functionsReachedFrom(name);
+	for (set<string>::const_iterator it = reached.begin(); it != reached.end(); ++it) {
+		if (timeTables.count(*it)) return true;
+	}
+	return false;
+}
+
+void System::useTimeTablesReadBy(const string& functionName) {
+	if (timeTables.empty()) return;
+	set<string> reached = functionsReachedFrom(functionName);
+	bool added = false;
+	for (set<string>::const_iterator it = reached.begin(); it != reached.end(); ++it) {
+		map<string, TimeTable>::iterator tt = timeTables.find(*it);
+		if (tt == timeTables.end() || tt->second.read) continue;
+		tt->second.read = true;
+		added = true;
+		const vector<double> &xs = tt->second.xs;
+		const bool decreasing = xs.size() > 1 && xs[1] < xs[0];
+		double first = std::numeric_limits<double>::infinity();
+		double last = -first;
+		for (size_t i = 0; i < xs.size(); i++) {
+			const double x = decreasing
+				? std::nextafter(xs[i], std::numeric_limits<double>::infinity()) : xs[i];
+			timeBreakpoints.push_back(x);
+			first = std::min(first, x);
+			last = std::max(last, x);
+		}
+		if (tt->second.linear && first < last) linearTimeRamps.push_back(std::make_pair(first, last));
+	}
+	if (!added) return;
+	std::sort(timeBreakpoints.begin(), timeBreakpoints.end());
+	timeBreakpoints.erase(std::unique(timeBreakpoints.begin(), timeBreakpoints.end()),
+		timeBreakpoints.end());
 }
 
 void System::updateCompartmentSizesFromParameters() {

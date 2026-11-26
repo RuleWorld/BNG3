@@ -307,6 +307,23 @@ void setParameter(const string& command, System *s) {
 
 
 
+// The command a line of the execution block runs: its first word, if that is
+// one of these keywords, or "" for none. The whole word is compared, so that a
+// keyword inside an argument does not pick the command: "set Keq 5" used to run
+// as "eq" (issue #144).
+static string commandKeyword(const string& com)
+{
+	static const char *keywords[] = {"echo", "print", "eq", "sim", "update",
+			"saveConcentrations", "resetConcentrations", "set", "addConcentration"};
+	string::size_type start = com.find_first_not_of(" \t");
+	if (start == string::npos) return "";
+	string word = com.substr(start, com.find_first_of(" \t", start) - start);
+	for (unsigned int k = 0; k < sizeof(keywords)/sizeof(keywords[0]); k++)
+		if (word == keywords[k]) return keywords[k];
+	return "";
+}
+
+
 bool NFinput::runRNFcommands(System *s, map<string,string> &argMap, vector<string> &commands, bool verbose)
 {
 	cout<<"\n\nrunning RNF commands\n-----------------"<<endl;
@@ -314,33 +331,34 @@ bool NFinput::runRNFcommands(System *s, map<string,string> &argMap, vector<strin
 	for(int c=0; c<(int)commands.size(); c++) {
 		com = commands.at(c);
 	//	cout<<"Parsing command: "<<com<<endl;
+		string keyword = commandKeyword(com);
 
 
-		if(com.find("echo")!=string::npos) {
+		if(keyword=="echo") {
 			echo(com,s);
 			continue;
-		} else if(com.find("print")!=string::npos) {
+		} else if(keyword=="print") {
 			print(com,s);
 			continue;
-		} else if(com.find("eq")!=string::npos) {
+		} else if(keyword=="eq") {
 			equilibrate(com,s);
 			continue;
-		} else if(com.find("sim")!=string::npos) {
+		} else if(keyword=="sim") {
 			simulate(com,s,verbose);
 			continue;
-		}  else if(com.find("update")!=string::npos) {
+		}  else if(keyword=="update") {
 			s->updateSystemWithNewParameters();
 			continue;
-		} else if(com.find("saveConcentrations")!=string::npos) {
+		} else if(keyword=="saveConcentrations") {
 			s->saveConcentrations();
 			continue;
-		} else if(com.find("resetConcentrations")!=string::npos) {
+		} else if(keyword=="resetConcentrations") {
 			s->resetConcentrations();
 			continue;
-		} else if(com.find("set")!=string::npos) {
+		} else if(keyword=="set") {
 			setParameter(com,s);
 			continue;
-		} else if(com.find("addConcentration")!=string::npos) {
+		} else if(keyword=="addConcentration") {
 			// e.g. addConcentration L(r) 500
 			int id1=com.find("addConcentration");
 			string args = com.substr(id1+16);

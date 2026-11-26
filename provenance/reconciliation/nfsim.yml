@@ -3,7 +3,7 @@
   "schema_version": 1,
   "source": "nfsim",
   "represented_revision": "a6f9fa945c9d6e1e122e789c952260112c93f157",
-  "cutoff_revision": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
+  "cutoff_revision": "d45b7d99cf1905199911a3187edbba585fad56ba",
   "owner": "akutuva21",
   "entries": [
     {
@@ -444,6 +444,563 @@
       "bng3_reference": "provenance/reconciliation/nfsim.yml",
       "tests": [],
       "reviewer": "Codex technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "52819f85ee0cd708e1735087ae76eb137d2767e6",
+      "capability": "Initialize the -connect debug flags in System (#120)",
+      "classification": "incorporated-identically",
+      "bng3_reference": "cpp/nfsim/NFcore/NFcore.hh",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Default-initialize trackConnected, printConnected, and trackRxnNumber to false in System."
+    },
+    {
+      "source_revision": "a6b77b7784286ae23dbca2388ef378662927ba49",
+      "capability": "Merge pull request #121 from RuleWorld/fix/120-init-connect-flags",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "d943e5208e6209276f128e3602c90af27cf43ab6",
+      "capability": "Refuse a rate law that reads time() (#112)",
+      "classification": "superseded-by-bng3",
+      "bng3_reference": "cpp/nfsim/NFcore/system.cpp; cpp/nfsim/NFinput/parseFuncXML.cpp; cpp/nfsim/NFreactions/reactions/DORreaction.cpp",
+      "tests": [
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim AST adapter maps time-backed local TFUN rates"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "BNG3 implements live time-dependent global, composite, and local functions (refreshed during simulation via hasTimeDependentFunctions and refreshTimeDependentLocalFunctions); upstream NFsim refused time() in rate laws because its engine did not refresh them."
+    },
+    {
+      "source_revision": "1cb4efdbafff9618752d0be3f668059965d0be37",
+      "capability": "Refuse RuleMonkey mode for v1.14.4 (#116)",
+      "classification": "incorporated-identically",
+      "bng3_reference": "cpp/nfsim/NFsim.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_rulemonkey_refusal"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Refuse -rm and -rulemonkey in the NFsim CLI with exit code 1 while keeping ReactionClass::setUseRuleMonkey intact."
+    },
+    {
+      "source_revision": "ab56a53784a7422fc5a45c33b8c39b396ecd24e9",
+      "capability": "Keep README.md line endings as CRLF",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream repository documentation, line-ending, or release-notes bookkeeping with no standalone runtime semantics beyond the locked source pin."
+    },
+    {
+      "source_revision": "fad9e2262c019efdafb696091650098775aca32a",
+      "capability": "Keep README.md line endings as CRLF",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream repository documentation, line-ending, or release-notes bookkeeping with no standalone runtime semantics beyond the locked source pin."
+    },
+    {
+      "source_revision": "563372dd0bb2ebb99af11f94cb1100104cfe31ee",
+      "capability": "Keep README.md's original line endings",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream repository documentation, line-ending, or release-notes bookkeeping with no standalone runtime semantics beyond the locked source pin."
+    },
+    {
+      "source_revision": "e032bb80586cbdda0b32b2f776d9b44ce35e2ee5",
+      "capability": "Keep README.md's original line endings",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream repository documentation, line-ending, or release-notes bookkeeping with no standalone runtime semantics beyond the locked source pin."
+    },
+    {
+      "source_revision": "dc119f877bb98b114ccd41ac66ecdb68f3d851af",
+      "capability": "Merge pull request #122 from RuleWorld/fix/112-refuse-time-rate-laws",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "f35321163c0f903b737f4e9b0daeafeb900e4d7a",
+      "capability": "Merge pull request #126 from RuleWorld/fix/116-refuse-rulemonkey-mode",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "9a2b938be0e9f219c00b54ebaba30ec43c555c4c",
+      "capability": "Draw reactant picks from the System's generator (#124, #125)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/NFcore.hh; cpp/nfsim/NFsim.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_single_rng_and_unseeded"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Unify reactant mapping picks onto System's single per-instance RNG stream (getMappingRNG() returns rng_) and choose/print a random seed via std::random_device when -seed is omitted."
+    },
+    {
+      "source_revision": "4715182f680b3da0db08b0190ced109d8d0e027b",
+      "capability": "Merge pull request #127 from RuleWorld/fix/124-125-picks-from-system-rng",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "97384109391a800344c67de434ebf7ad47c4e144",
+      "capability": "Re-sum the total propensity once it falls; fire any positive total (#123)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/reactionSelector/reactionSelector.hh; cpp/nfsim/NFcore/reactionSelector/directSelector.cpp; cpp/nfsim/NFcore/system.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_tiny_propensity_and_end_time"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Remove the hardcoded ATOT_TOLERANCE=1e-9 cutoff, add DirectSelector::resumAtotFromCache() and getCheckedAtot() to re-sum after large drops or negative drift, and guard zero-total selection cleanly."
+    },
+    {
+      "source_revision": "7501f6756fb3c63204769e774ab50cbb34915782",
+      "capability": "Merge pull request #128 from RuleWorld/fix/123-atot-drift",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "ad73246e9018f09410fd2211821bd117326b8b1d",
+      "capability": "Also re-sum the total propensity every 4096 updates (#130)",
+      "classification": "incorporated-identically",
+      "bng3_reference": "cpp/nfsim/NFcore/reactionSelector/reactionSelector.hh; cpp/nfsim/NFcore/reactionSelector/directSelector.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_tiny_propensity_and_end_time"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Re-sum DirectSelector's running Atot afresh from cached propensities every 4096 updates."
+    },
+    {
+      "source_revision": "49ce8070255c0d5efca94a308bc24b273b19fa7e",
+      "capability": "Merge pull request #131 from RuleWorld/fix/130-periodic-resum",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "33a2851d1ff8fe3c46da60497e9dfd779bc47f87",
+      "capability": "Prepare NFsim v2.0.0",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream repository documentation, line-ending, or release-notes bookkeeping with no standalone runtime semantics beyond the locked source pin."
+    },
+    {
+      "source_revision": "899ac2c7efe1d475896775e36fccfe6997d39c48",
+      "capability": "Release notes: add #130 to the propensity-sum item",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream repository documentation, line-ending, or release-notes bookkeeping with no standalone runtime semantics beyond the locked source pin."
+    },
+    {
+      "source_revision": "a313a9ba45ef2084ee828892184de269095ef783",
+      "capability": "Merge pull request #129 from RuleWorld/prep/release-v2.0.0",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "1a40608390b4261fc716fd5c210621753bcde99f",
+      "capability": "Build the ExprTk backend again",
+      "classification": "superseded-by-bng3",
+      "bng3_reference": "cpp/nfsim/NFfunction/nfsim_funcparser.h",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_reactant_count_and_math_parser"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "BNG3 retired ExprTk and muParser in favor of the shared bng::ast::Expression evaluator shim in nfsim_funcparser.h."
+    },
+    {
+      "source_revision": "6347f13baed591cdfa89a76ad826a1ca78f02302",
+      "capability": "ExprTk backend: round a half up in rint, as muParser does",
+      "classification": "superseded-by-bng3",
+      "bng3_reference": "cpp/nfsim/NFfunction/nfsim_funcparser.h; cpp/nfsim/NFfunction/funcParser.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_reactant_count_and_math_parser"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "BNG3's shared expression evaluator already rounds halves up in rint(), verified by -test mathFuncParser test 8."
+    },
+    {
+      "source_revision": "735284cce8fa4ac6d3e56be0430e92ad846e9ea4",
+      "capability": "Require every two product patterns of a rule to come apart",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFreactions/transformations/transformationSet.hh; cpp/nfsim/NFreactions/transformations/transformationSet.cpp; cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Generalize product-side molecularity checks via addProductPlacement() and placedMoleculesMatchProducts() across both XML and compiled-AST lowering."
+    },
+    {
+      "source_revision": "da529e1720cc505773d8d16915eafb61aa55ff43",
+      "capability": "List each product molecule once",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_no_bscb_conserved_total"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Deduplicate newly appended product molecules in TransformationSet::getListOfProducts() so overlapping traversals under -no-bscb do not double-count observables."
+    },
+    {
+      "source_revision": "5a84aa32674b62e34c838c9dff8d9cc33c62a7b2",
+      "capability": "ExprTk backend: read a numeric literal as muParser does",
+      "classification": "superseded-by-bng3",
+      "bng3_reference": "cpp/nfsim/NFfunction/nfsim_funcparser.h; cpp/nfsim/NFfunction/funcParser.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_reactant_count_and_math_parser"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "BNG3's shared expression parser already parses numeric literals via strtod, verified by -test mathFuncParser test 9."
+    },
+    {
+      "source_revision": "409d905327daddb95371d1ab892d81a588d2aaa9",
+      "capability": "Keep a rule whose rate is zero at load when an RNF script sets its rate",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_rnf_and_set_parameter"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "BNG3 keeps all parameter-backed zero-rate rules at load via hasLiveBaseRate(), allowing RNF set/update and programmatic setParameter() to activate them."
+    },
+    {
+      "source_revision": "3cbdbb227e126e0588fe918066d8f29cee8df3f6",
+      "capability": "Refresh a Michaelis-Menten rule's kcat and Km on a parameter update",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFreactions/reactions/reaction.hh; cpp/nfsim/NFreactions/reactions/reaction.cpp; cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_rnf_and_set_parameter"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "MMRxnClass already stores parameter-backed kcat/Km names and overrides virtual resetBaseRateFromSystemParamter() to refresh both on parameter updates."
+    },
+    {
+      "source_revision": "00c0a5e96dfc1a4b352b40eac299caf87bcb9bbd",
+      "capability": "Follow a table function of time between reactions (#142)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/NFcore.hh; cpp/nfsim/NFcore/system.cpp; cpp/nfsim/NFfunction/NFfunction.hh; cpp/nfsim/NFinput/parseFuncXML.cpp; cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_time_table_and_tfun_comments",
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim AST adapter maps time-backed local TFUN rates"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Track time-indexed TFUN breakpoints and linear ramps in System and advance across them with exact breakpoint stepping and Gauss-Lobatto hazard integration in sim(), stepTo(), and singleStep(), while preserving BNG3's time-dependent local TFUN support."
+    },
+    {
+      "source_revision": "9c58e9c016790bc74a02d7f17beee13ccbd4eafa",
+      "capability": "Refuse a rate law type NFsim does not implement (#134)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_unknown_rate_law_refusal"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Fail closed on unrecognized RateLaw/@type attributes in NFinput.cpp while retaining BNG3's implemented Sat and Hill rate laws."
+    },
+    {
+      "source_revision": "e3c28c4c79e38b1c2880f9053ba2619285e87ad2",
+      "capability": "Stop the clock at the end of a sim without firing past it (#145)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/system.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_tiny_propensity_and_end_time"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "System::sim() stops at end_time without firing an event whose waiting time reaches or passes end_time."
+    },
+    {
+      "source_revision": "9e4175504d6c64c718f0ba58e42306dd3c0b0330",
+      "capability": "ExprTk backend: refuse more than one statement, as muParser does",
+      "classification": "superseded-by-bng3",
+      "bng3_reference": "cpp/nfsim/NFfunction/nfsim_funcparser.h; cpp/nfsim/NFfunction/funcParser.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_reactant_count_and_math_parser"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "BNG3's shared expression parser already refuses multi-statement and malformed expressions, verified by -test mathFuncParser test 10."
+    },
+    {
+      "source_revision": "f318d362f06fba9de32b03f6353992ccf90bb5fe",
+      "capability": "Tell RNF commands apart by their first word (#144)",
+      "classification": "incorporated-identically",
+      "bng3_reference": "cpp/nfsim/NFinput/rnfRunner.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_rnf_and_set_parameter"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Dispatch RNF execution-block commands by exact first word so parameter names containing keywords (such as Keq) are not misrouted."
+    },
+    {
+      "source_revision": "8934854667fe734a5df280c6c95628aa856ee6cf",
+      "capability": "Place every part of each product pattern, and walk each piece once (#132)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFreactions/transformations/transformationSet.hh; cpp/nfsim/NFreactions/transformations/transformationSet.cpp; cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Place one representative per connected part of every product pattern (grouping parts joined via created molecules) and walk each connected component once."
+    },
+    {
+      "source_revision": "03aac682c7c0c78334de822c7e8f1089097dd578",
+      "capability": "Count a whole-species deletion and a MatchOnce reactant once per complex",
+      "classification": "incorporated-identically",
+      "bng3_reference": "cpp/nfsim/NFcore/NFcore.hh; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/reactions/reaction.hh; cpp/nfsim/NFreactions/reactions/reaction.cpp; cpp/nfsim/NFreactions/reactions/DORreaction.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.hh; cpp/nfsim/NFreactions/transformations/transformationSet.cpp; cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_whole_complex_and_matchonce"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Count whole-species deletions and MatchOnce reactants once per complex via 1/m thinning in ReactionClass::fire(), including across DOR/DOR2 and symmetric permutation siblings, while rejecting nonlinear MM multi-match complexes."
+    },
+    {
+      "source_revision": "9f08221688ab00254506498c827e50c7c9cf5782",
+      "capability": "Refuse a rate law that reads a reactant the rule does not have",
+      "classification": "incorporated-identically",
+      "bng3_reference": "cpp/nfsim/NFfunction/NFfunction.hh; cpp/nfsim/NFfunction/compositeFunction.cpp; cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_reactant_count_and_math_parser"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Match exact reactant_N identifier boundaries in CompositeFunction, throw on out-of-range reactant counts in evaluateOn(), and refuse rules reading reactant_N() beyond their reactant count at load."
+    },
+    {
+      "source_revision": "bbabbbb87820340586861d633758481a10306bd3",
+      "capability": "Read a TFUN data file one point per line, with # comments",
+      "classification": "incorporated-identically",
+      "bng3_reference": "cpp/nfsim/NFutil/conversion.cpp; cpp/nfsim/NFinput/parseFuncXML.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_time_table_and_tfun_comments"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Read TFUN data files line-by-line across LF/CRLF/CR with UTF-8 BOM stripping, # comment handling, and strict two-number validation, and report std::exception messages in initFunctions()."
+    },
+    {
+      "source_revision": "7878ef8feceb5a41e34232c6e714a215370a2629",
+      "capability": "mathFuncParser test: rint, literals, and what muParser refuses",
+      "classification": "incorporated-identically",
+      "bng3_reference": "cpp/nfsim/NFfunction/funcParser.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_reactant_count_and_math_parser"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Port mathFuncParser self-tests 8-10 verifying rint half-up rounding, exact strtod numeric literals, and refusal of malformed/multi-statement expressions."
+    },
+    {
+      "source_revision": "cb8344ddcb2913d46ea0832cfdf588512c99ace1",
+      "capability": "Place only molecules the rule already maps (#132)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/templateMolecule.hh; cpp/nfsim/NFreactions/mappings/mappingGenerator.hh; cpp/nfsim/NFreactions/transformations/transformationSet.cpp; cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_matches_upstream_single_rng_and_unseeded"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Place only molecules the rule already maps (using existing MapGenerator indices) so product placement does not alter match multiplicity for disjoint '.' molecules."
+    },
+    {
+      "source_revision": "9a08082af509857f71c3d5749d7c3fa5be1d2dd8",
+      "capability": "README: citation for v2, acknowledgments, current links",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream repository documentation, line-ending, or release-notes bookkeeping with no standalone runtime semantics beyond the locked source pin."
+    },
+    {
+      "source_revision": "e909b781799297a1e293b6e5684de82d5812d0b8",
+      "capability": "Merge pull request #157 from RuleWorld/docs/readme-v2",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "ce0dc250b30ec253ab78691d1d30ef6aa7e28f67",
+      "capability": "Merge pull request #135 from wshlavacek/fix/134-refuse-unknown-rate-law",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "b29a9da1c666a698b6d47a73fda2fca7237083cb",
+      "capability": "Merge pull request #138 from wshlavacek/fix/list-each-product-once",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "24c8105621811634aa2b397ef0d849e6370c55ab",
+      "capability": "Merge pull request #146 from wshlavacek/fix/145-stop-at-end-time",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "1ea2bcc14029fe7903887647d0fc13ddb49d1efb",
+      "capability": "Merge pull request #140 from wshlavacek/fix/zero-rate-rule-set",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "50eb50bf1ae52b554f467403aae6f5cccf116117",
+      "capability": "Merge pull request #147 from wshlavacek/fix/144-rnf-first-word",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "310093930624147c441717879b62dde4765c7baa",
+      "capability": "Merge pull request #141 from wshlavacek/fix/mm-set-parameter",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "2402231de1093d1a2694970aae39e348e256d428",
+      "capability": "Merge pull request #153 from wshlavacek/fix/tfun-comment-lines",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "288785566984adb175bed363b50464516e31ec10",
+      "capability": "Merge pull request #154 from wshlavacek/fix/composite-reactant-count",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "339a38b2cd3b47d40bee90974c03d9bd324117d6",
+      "capability": "Merge pull request #155 from wshlavacek/fix/exprtk-muparser-parity",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "3a1402b0cfe14c921f6e2b8c0f62deea510d0b19",
+      "capability": "Merge pull request #139 from wshlavacek/fix/three-product-split",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "95995c083124d05141f70de059d8f2de8c01dcc1",
+      "capability": "Merge pull request #149 from wshlavacek/fix/whole-complex-deletion",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "d8e0f13d77e0d8603dd952f055f2e620cf1eec00",
+      "capability": "Merge pull request #143 from wshlavacek/fix/time-table-breakpoints",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "d1135eb6a345785d4bc9b1aaca4840f6a9334790",
+      "capability": "Prepare NFsim v2.0.1",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream repository documentation, line-ending, or release-notes bookkeeping with no standalone runtime semantics beyond the locked source pin."
+    },
+    {
+      "source_revision": "5b8ae59c7d04415f93215edac3417ab60beee026",
+      "capability": "Release notes: describe #156 and its workaround",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Upstream repository documentation, line-ending, or release-notes bookkeeping with no standalone runtime semantics beyond the locked source pin."
+    },
+    {
+      "source_revision": "bc0a025ad07a13b5b42d1bac865241e761b5d5a3",
+      "capability": "Merge pull request #158 from RuleWorld/prep/release-v2.0.1",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "a3c5728e4024630e02b66a55b094d1521295d99a",
+      "capability": "Round a non-integer seed amount to the nearest whole number, with a warning (#160)",
+      "classification": "incorporated-identically",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_fromAst.cpp; cpp/nfsim/NFinput/NFinput_fromCompiled.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_seed_rounding"
+      ],
+      "reviewer": "Antigravity technical reconciliation",
+      "rationale": "Round non-integer seed species amounts to the nearest whole number (halves up) with a warning matching BioNetGen run_network and upstream NFsim #160."
+    },
+    {
+      "source_revision": "d45b7d99cf1905199911a3187edbba585fad56ba",
+      "capability": "Merge pull request #161 from RuleWorld/fix/160-round-seed-counts",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Antigravity technical reconciliation",
       "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
     }
   ]
