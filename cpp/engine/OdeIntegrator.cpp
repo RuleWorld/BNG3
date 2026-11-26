@@ -3246,6 +3246,225 @@ bool OdeIntegrator::triggerHolds(const ast::Expression& trigger, double time,
     return eventValue(trigger, time, state) != 0.0;
 }
 
+bool OdeIntegrator::isAffineInTime(const ast::Expression& expression) const {
+    const auto expanded = functionEvaluator_.expandFunctions(expression);
+    // Returns 0 = time-independent, 1 = affine in time, -1 = unsupported.
+    std::function<int(const ast::Expression&)> classify =
+        [&](const ast::Expression& node) -> int {
+            switch (node.kind()) {
+            case ast::ExpressionKind::Number:
+                return 0;
+            case ast::ExpressionKind::Identifier:
+            case ast::ExpressionKind::ObservableRef: {
+                const auto& name = node.name();
+                if (name == "time" || name == "t") return 1;
+                if (observableIndex_.count(name)) return 0;
+                if (model_.getParameters().contains(name)) {
+                    if (model_.getParameters().isTimeDependent(name)) return -1;
+                    return 0;
+                }
+                return 0;
+            }
+            case ast::ExpressionKind::Unary: {
+                if (node.name() != "+" && node.name() != "-") return -1;
+                return classify(node.args().front());
+            }
+            case ast::ExpressionKind::Binary: {
+                const auto& op = node.name();
+                if (node.args().size() != 2) return -1;
+                const int left = classify(node.args()[0]);
+                const int right = classify(node.args()[1]);
+                if (left < 0 || right < 0) return -1;
+                if (op == "+" || op == "-") return std::max(left, right);
+                if (op == "*") {
+                    if (left == 1 && right == 1) return -1;
+                    return std::max(left, right);
+                }
+                if (op == "/") {
+                    if (right != 0) return -1;
+                    return left;
+                }
+                if (left == 0 && right == 0) return 0;
+                return -1;
+            }
+            case ast::ExpressionKind::Function: {
+                if (node.name() == "time" || node.name() == "t") return 1;
+                if (node.name() == "delay" || node.name() == "tfun" ||
+                    node.name() == "TFUN") {
+                    return -1;
+                }
+                for (const auto& arg : node.args()) {
+                    if (classify(arg) != 0) return -1;
+                }
+                return 0;
+            }
+            case ast::ExpressionKind::TableFunction:
+                return -1;
+            }
+            return -1;
+        };
+    return classify(expanded) >= 0;
+}
+
+std::pair<double, double> OdeIntegrator::evaluateAffineInTime(
+    const ast::Expression& expression, double time, const double* state) const {
+    const auto expanded = functionEvaluator_.expandFunctions(expression);
+    std::function<std::pair<double, double>(const ast::Expression&)> eval =
+        [&](const ast::Expression& node) -> std::pair<double, double> {
+            switch (node.kind()) {
+            case ast::ExpressionKind::Number:
+                return {node.numberValue(), 0.0};
+            case ast::ExpressionKind::Identifier:
+            case ast::ExpressionKind::ObservableRef:
+                if (node.name() == "time" || node.name() == "t") {
+                    return {time, 1.0};
+                }
+                return {eventValue(node, time, state), 0.0};
+            case ast::ExpressionKind::Unary: {
+                auto inner = eval(node.args().front());
+                if (node.name() == "-") return {-inner.first, -inner.second};
+                return inner;
+            }
+            case ast::ExpressionKind::Binary: {
+                const auto& op = node.name();
+                if (op == "+" || op == "-" || op == "*" || op == "/") {
+                    const auto left = eval(node.args()[0]);
+                    const auto right = eval(node.args()[1]);
+                    if (op == "+") return {left.first + right.first, left.second + right.second};
+                    if (op == "-") return {left.first - right.first, left.second - right.second};
+                    if (op == "*") {
+                        return {left.first * right.first,
+                                left.second * right.first + left.first * right.second};
+                    }
+                    return {left.first / right.first, left.second / right.first};
+                }
+                return {eventValue(node, time, state), 0.0};
+            }
+            case ast::ExpressionKind::Function:
+                if (node.name() == "time" || node.name() == "t") {
+                    return {time, 1.0};
+                }
+                return {eventValue(node, time, state), 0.0};
+            case ast::ExpressionKind::TableFunction:
+                return {eventValue(node, time, state), 0.0};
+            }
+            return {eventValue(node, time, state), 0.0};
+        };
+    return eval(expanded);
+}
+
+bool OdeIntegrator::triggerHoldsAtRightLimit(const ast::Expression& trigger,
+                                             double time,
+                                             const double* state) const {
+    const auto clock = periodicClockTriggers_.find(&trigger);
+    if (clock != periodicClockTriggers_.end()) {
+        return time >= periodicEventClocks_[clock->second].next;
+    }
+    const auto conjuncts = triggerConjuncts(trigger);
+    for (const auto* conjunct : conjuncts) {
+        const auto& args = conjunct->args();
+        if (args.size() != 2 || !isAffineInTime(args[0]) ||
+            !isAffineInTime(args[1])) {
+            if (!triggerHolds(*conjunct, time, state)) return false;
+            continue;
+        }
+        const auto lhs = evaluateAffineInTime(args[0], time, state);
+        const auto rhs = evaluateAffineInTime(args[1], time, state);
+        const double diff0 = lhs.first - rhs.first;
+        const double diff1 = lhs.second - rhs.second;
+        const auto& op = conjunct->name();
+        if (op == "==") {
+            if (!(diff0 == 0.0 && diff1 == 0.0)) return false;
+            continue;
+        }
+        const double sign = (op[0] == '<') ? -1.0 : 1.0;
+        const double g0 = sign * diff0;
+        const double g1 = sign * diff1;
+        const bool strict = (op == "<" || op == ">");
+        if (g1 == 0.0) {
+            if (strict ? !(g0 > 0.0) : !(g0 >= 0.0)) return false;
+        } else {
+            if (!(g0 > 0.0 || (g0 == 0.0 && g1 > 0.0))) return false;
+        }
+    }
+    return true;
+}
+
+void OdeIntegrator::pruneNonPersistentEvents(double time,
+                                             const std::vector<double>& state,
+                                             bool rightLimit) {
+    const double timeTolerance = periodicEventClocks_.empty() ? 1e-12 : 0.0;
+    pendingEvents_.erase(
+        std::remove_if(
+            pendingEvents_.begin(), pendingEvents_.end(),
+            [&](const PendingEvent& pending) {
+                const auto& event = nativeEvents_[pending.event];
+                if (event.persistent) return false;
+                if (rightLimit) {
+                    return !triggerHoldsAtRightLimit(
+                        event.trigger, time, state.data());
+                }
+                if (triggerHolds(event.trigger, time, state.data())) {
+                    return false;
+                }
+                const bool justRose =
+                    std::abs(triggerRoseAt_[pending.event] - time) <= timeTolerance;
+                if (justRose &&
+                    triggerHoldsAtRightLimit(event.trigger, time, state.data())) {
+                    return false;
+                }
+                return true;
+            }),
+        pendingEvents_.end());
+}
+
+double OdeIntegrator::nextSsaTimeTriggerTime(
+    double time, double tLimit, const std::vector<double>& state,
+    const std::vector<bool>& triggerHeld) const {
+    double earliest = std::numeric_limits<double>::infinity();
+    const double eps = 1e-15 * std::max(1.0, std::abs(time));
+    for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
+        const auto& trigger = nativeEvents_[index].trigger;
+        const auto conjuncts = triggerConjuncts(trigger);
+        std::vector<double> candidates;
+        for (const auto* conjunct : conjuncts) {
+            const auto& args = conjunct->args();
+            if (args.size() != 2 || !isAffineInTime(args[0]) ||
+                !isAffineInTime(args[1])) {
+                continue;
+            }
+            const auto lhs = evaluateAffineInTime(args[0], time, state.data());
+            const auto rhs = evaluateAffineInTime(args[1], time, state.data());
+            const double diff0 = lhs.first - rhs.first;
+            const double diff1 = lhs.second - rhs.second;
+            if (!std::isfinite(diff0) || !std::isfinite(diff1) || diff1 == 0.0) {
+                continue;
+            }
+            const double dt = -diff0 / diff1;
+            const double crossTime = time + dt;
+            if (dt > eps && crossTime <= tLimit + 1e-12) {
+                candidates.push_back(std::min(crossTime, tLimit));
+            }
+        }
+        if (candidates.empty()) continue;
+        std::sort(candidates.begin(), candidates.end());
+        for (const double crossTime : candidates) {
+            if (crossTime >= earliest) break;
+            const bool holdsAt = triggerHolds(trigger, crossTime, state.data());
+            const bool holdsAfter =
+                (crossTime < tLimit)
+                    ? triggerHoldsAtRightLimit(trigger, crossTime, state.data())
+                    : holdsAt;
+            const bool prevHeld = triggerHeld[index];
+            if (holdsAt != prevHeld || holdsAfter != prevHeld) {
+                earliest = crossTime;
+                break;
+            }
+        }
+    }
+    return earliest;
+}
+
 double OdeIntegrator::eventSideDerivative(const ast::Expression& expression,
                                            double time,
                                            const double* state,
@@ -3505,12 +3724,19 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
         // The event executes at its own instant, which is the instant its
         // delay put it at.
         const double instant = pending.executionTime;
-        if (!event.persistent &&
-            !triggerHolds(event.trigger, instant, state.data())) {
-            // SBML L3V2 Core Sec. 4.12.2: a trigger that is not persistent is
-            // re-evaluated before the execution, and the event is not executed
-            // at all when the trigger has become false again.
-            continue;
+        if (!event.persistent) {
+            const bool holdsNow = triggerHolds(event.trigger, instant, state.data());
+            const bool justRoseHere =
+                std::abs(triggerRoseAt_[pending.event] - instant) <= timeTolerance;
+            const bool holdsRight =
+                justRoseHere &&
+                triggerHoldsAtRightLimit(event.trigger, instant, state.data());
+            if (!holdsNow && !holdsRight) {
+                // SBML L3V2 Core Sec. 4.12.2: a trigger that is not persistent is
+                // re-evaluated before the execution, and the event is not executed
+                // at all when the trigger has become false again.
+                continue;
+            }
         }
         // The values are computed at the trigger time or at the execution
         // time, as the event's useValuesFromTriggerTime says.
@@ -3533,6 +3759,7 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
         }
         assignEventValues(event, state, values);
         advancePeriodicEventClocks(pending.event, instant);
+        pruneNonPersistentEvents(instant, state, false);
         applied = true;
         retestTriggers(instant, state, heldBefore);
     }
@@ -5029,7 +5256,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
 
     // Set user data
     CVodeSetUserData(cvode_mem, this);
-    if (!nativeEventGroups_.empty()) {
+    if (!nativeEventRoots_.empty()) {
         // One root per trigger group.  The root function is positive exactly
         // where the trigger holds, so an increasing crossing is the trigger's
         // rising edge.
@@ -5972,9 +6199,21 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                            [&](const auto& child) { return self(self, child); });
     };
     for (const auto& event : nativeEvents_) {
-        if (readsClock(readsClock, functionEvaluator_.expandFunctions(event.trigger))) {
-            throw std::runtime_error(
-                "SSA does not support time-dependent native event triggers");
+        const auto expanded = functionEvaluator_.expandFunctions(event.trigger);
+        if (readsClock(readsClock, expanded)) {
+            bool schedulable = true;
+            for (const auto* conjunct : triggerConjuncts(expanded)) {
+                const auto& args = conjunct->args();
+                if (args.size() != 2 || !isAffineInTime(args[0]) ||
+                    !isAffineInTime(args[1])) {
+                    schedulable = false;
+                    break;
+                }
+            }
+            if (!schedulable) {
+                throw std::runtime_error(
+                    "SSA does not support time-dependent native event triggers");
+            }
         }
     }
     // Direct Gillespie algorithm (matches BNG2 implementation)
@@ -6040,24 +6279,48 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             if (y[i] > 0.0) everPopulated[i] = true;
         }
     };
+    std::vector<bool> triggerHeld(nativeEvents_.size(), false);
+    const auto queueEventAt = [&](std::size_t index, double instant) {
+        const auto& event = nativeEvents_[index];
+        PendingEvent pending;
+        pending.event = index;
+        pending.executionTime = instant + eventDelay(event, instant, y.data());
+        if (event.useValuesFromTriggerTime) {
+            pending.values = eventValues(event, instant, y.data());
+        }
+        triggerRoseAt_[index] = instant;
+        pendingEvents_.push_back(std::move(pending));
+    };
+    const auto syncTriggerHeldForAdvance = [&](double instant) {
+        if (nativeEvents_.empty()) return;
+        const bool advancing = instant < opts.tEnd;
+        for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
+            triggerHeld[index] = advancing
+                ? triggerHoldsAtRightLimit(nativeEvents_[index].trigger, instant, y.data())
+                : triggerHolds(nativeEvents_[index].trigger, instant, y.data());
+        }
+        if (advancing) {
+            pruneNonPersistentEvents(instant, y, true);
+        }
+    };
     if (!opts.continueSimulation) {
         for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
             const auto& event = nativeEvents_[index];
-            if (!event.initialValue &&
-                triggerHolds(event.trigger, opts.tStart, y.data())) {
-                PendingEvent pending;
-                pending.event = index;
-                pending.executionTime = opts.tStart + eventDelay(event, opts.tStart, y.data());
-                if (event.useValuesFromTriggerTime) {
-                    pending.values = eventValues(event, opts.tStart, y.data());
-                }
-                triggerRoseAt_[index] = opts.tStart;
-                pendingEvents_.push_back(std::move(pending));
+            const bool holdsAtStart = triggerHolds(event.trigger, opts.tStart, y.data());
+            const bool holdsRight =
+                opts.tEnd > opts.tStart &&
+                triggerHoldsAtRightLimit(event.trigger, opts.tStart, y.data());
+            if ((!event.initialValue && holdsAtStart) ||
+                (!holdsAtStart && holdsRight)) {
+                queueEventAt(index, opts.tStart);
             }
         }
         if (applyDueEvents(opts.tStart, y)) {
             markCurrentPopulations();
         }
+        syncTriggerHeldForAdvance(opts.tStart);
+    } else {
+        syncTriggerHeldForAdvance(opts.tStart);
     }
     const bool stopAtInitial =
         stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, opts.tStart, y);
@@ -6274,7 +6537,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         (opts.maxSimStepsSpecified && opts.maxSimSteps == 0);
 
     // Main SSA loop
-    while (t < opts.tEnd && !stoppedEarly) {
+    while (t <= opts.tEnd && !stoppedEarly) {
         // Record scheduled output points as events advance the trajectory.
         if (opts.outputStepInterval == 0 || explicitTimes) {
             appendScheduledThrough(t);
@@ -6283,9 +6546,6 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         // Check if we've passed the end time
         if (opts.maxSimSteps > 0 && ssaStepCount >= opts.maxSimSteps) {
             stoppedEarly = true;
-            break;
-        }
-        if (t >= opts.tEnd) {
             break;
         }
         double nextCompletion = std::numeric_limits<double>::infinity();
@@ -6297,8 +6557,15 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         for (const auto& pending : pendingEvents_) {
             nextCompletion = std::min(nextCompletion, pending.executionTime);
         }
+        const double nextTimeTrigger = nativeEvents_.empty()
+            ? std::numeric_limits<double>::infinity()
+            : nextSsaTimeTriggerTime(t, opts.tEnd, y, triggerHeld);
+        const double nextWakeup = std::min(nextCompletion, nextTimeTrigger);
+        if (t >= opts.tEnd && nextWakeup > opts.tEnd) {
+            break;
+        }
         double nextReaction = std::numeric_limits<double>::infinity();
-        if (totalPropensity > 0.0) {
+        if (t < opts.tEnd && totalPropensity > 0.0) {
             if (session) {
                 if (!session->ssaHazardInitialized) {
                     double r1 = uniform(rng);
@@ -6314,23 +6581,34 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             }
         }
 
-        if (nextCompletion <= nextReaction && nextCompletion <= opts.tEnd) {
+        if (nextWakeup <= nextReaction && nextWakeup <= opts.tEnd) {
             if (session && totalPropensity > 0.0) {
                 session->ssaRemainingHazard = std::max(
                     0.0, session->ssaRemainingHazard -
-                             totalPropensity * (nextCompletion - t));
+                             totalPropensity * (nextWakeup - t));
             }
             if (opts.outputStepInterval == 0 || explicitTimes) {
-                appendScheduledBefore(nextCompletion);
+                appendScheduledBefore(nextWakeup);
             }
-            t = nextCompletion;
-            std::vector<bool> heldBefore;
+            t = nextWakeup;
+            std::vector<bool> heldBefore = triggerHeld;
+            // Fire any affine-in-time triggers that cross at t (exact or right-limit).
             if (!nativeEvents_.empty()) {
-                heldBefore.reserve(nativeEvents_.size());
-                for (const auto& event : nativeEvents_) {
-                    heldBefore.push_back(
-                        triggerHolds(event.trigger, t, y.data()));
+                for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
+                    const auto& event = nativeEvents_[index];
+                    const bool holdsAt = triggerHolds(event.trigger, t, y.data());
+                    const bool holdsRight =
+                        (t < opts.tEnd)
+                            ? triggerHoldsAtRightLimit(event.trigger, t, y.data())
+                            : holdsAt;
+                    if (!heldBefore[index] && (holdsAt || holdsRight)) {
+                        queueEventAt(index, t);
+                        heldBefore[index] = true;
+                    } else if (heldBefore[index] && !holdsAt && !holdsRight) {
+                        heldBefore[index] = false;
+                    }
                 }
+                pruneNonPersistentEvents(t, y, false);
             }
             bool reactionCompletionApplied = false;
             std::vector<std::size_t> completed;
@@ -6363,10 +6641,12 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                     static_cast<std::ptrdiff_t>(index));
             }
             if (reactionCompletionApplied && !nativeEvents_.empty()) {
+                pruneNonPersistentEvents(t, y, false);
                 retestTriggers(t, y, heldBefore);
             }
             const bool eventApplied = applyDueEvents(t, y);
             if (eventApplied) markCurrentPopulations();
+            syncTriggerHeldForAdvance(t);
             if (reactionCompletionApplied || eventApplied) {
                 recomputeAll();
             }
@@ -6452,10 +6732,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         // rate law it appears in - only the state update skips it.
         std::vector<bool> heldBefore;
         if (!nativeEvents_.empty()) {
-            heldBefore.reserve(nativeEvents_.size());
-            for (const auto& event : nativeEvents_) {
-                heldBefore.push_back(triggerHolds(event.trigger, t, y.data()));
-            }
+            heldBefore = triggerHeld;
         }
         const auto& rxn = compiledRxns_[selectedRxn];
         if (rxn.delay > 0.0) {
@@ -6482,10 +6759,12 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
 
         if (!nativeEvents_.empty()) {
+            pruneNonPersistentEvents(t, y, false);
             retestTriggers(t, y, heldBefore);
         }
         const bool eventApplied = applyDueEvents(t, y);
         if (eventApplied) markCurrentPopulations();
+        syncTriggerHeldForAdvance(t);
 
         // Recompute propensities.  On a network with a dependency graph only
         // reactions that read a species whose amount this event changed can

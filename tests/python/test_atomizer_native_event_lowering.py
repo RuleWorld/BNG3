@@ -69,11 +69,19 @@ def test_strict_and_non_strict_time_thresholds_lower_alike():
     assert "assignment: p_amt = 2 * S2_amt" in strict
 
 
-def test_non_strict_time_threshold_stays_untranslated_for_ssa():
-    """The native SSA runtime refuses a trigger that reads the clock."""
+def test_non_strict_time_threshold_lowers_and_executes_for_ssa(tmp_path):
+    """The native SSA runtime schedules affine clock crossings directly."""
+    import bionetgen
 
     bngl = _convert(actions='simulate({method=>"ssa", t_end=>3, n_steps=>6})')
-    assert "begin bng3_events version 1" not in bngl
+    assert "begin bng3_events version 1" in bngl
+    assert "trigger: time >= 1.5" in bngl
+    path = tmp_path / "ssa_clock.bngl"
+    path.write_text(bngl, encoding="utf-8")
+    result = bionetgen.load(str(path)).simulate(
+        method="ssa", t_end=3, n_steps=6, seed=17
+    )
+    assert len(result.time) == 7
 
 
 @pytest.mark.parametrize("comparison", ["geq", "eq"])
@@ -216,12 +224,21 @@ def test_native_engine_resets_at_the_moving_threshold(tmp_path, monkeypatch):
         )
 
 
-def test_state_against_a_moving_threshold_stays_refused_for_ssa():
+def test_state_against_a_moving_threshold_lowers_and_executes_for_ssa(tmp_path):
+    import bionetgen
+
     bngl = _convert(
         _moving_threshold_source(),
         actions='simulate({method=>"ssa", t_end=>3, n_steps=>6})',
     )
-    assert "begin bng3_events version 1" not in bngl
+    assert "begin bng3_events version 1" in bngl
+    assert "trigger: S2_amt > 0.1 * time + 0.5" in bngl
+    path = tmp_path / "ssa_moving.bngl"
+    path.write_text(bngl, encoding="utf-8")
+    result = bionetgen.load(str(path)).simulate(
+        method="ssa", t_end=3, n_steps=6, seed=17
+    )
+    assert len(result.time) == 7
 
 
 PIECEWISE = (

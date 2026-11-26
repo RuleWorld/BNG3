@@ -2029,55 +2029,69 @@ def _reduce_with_pool(
     resolver = _ConstantResolver(model, reaction)
     analysis = _SymbolAnalysis(model, reaction, resolver, {reactant_id, product_id})
     terms = _symbolic_terms(expression.body, resolver, analysis)
+    piecewise_plan = None
     if terms is None:
-        return refuse(
-            "the fast reaction's kinetic law is not a sum of species products "
-            "with coefficients that do not depend on the species"
+        piecewise_plan = _piecewise_switch_plan(
+            expression.body, reactant_id, product_id, resolver, analysis
         )
-    active = [term for term in terms if term.coefficient != 0.0]
-    if len(active) == 1:
-        zero_switch = _zero_switch_coefficient(
-            model, active[0], analysis, reactant_id, reactant_species
-        )
-        if zero_switch is not None:
-            return _reduce_zero_switch(model, reaction, reactant, product, zero_switch)
-    participants = {reactant_id, product_id}
-    for term in active:
-        if not set(term.species_ids) <= participants:
+        if piecewise_plan is None:
             return refuse(
-                "the fast reaction's rate depends on a species it does not convert"
+                "the fast reaction's kinetic law is not a sum of species products "
+                "with coefficients that do not depend on the species"
             )
-
-    if not active:
-        return FastReactionOutcome(
-            reaction.id,
-            True,
-            detail=(
-                "its kinetic law is zero for every state, so the reaction "
-                "never carries a flux and is removed"
-            ),
-        )
-    if len(active) == 1:
-        sourced = {
-            identifier
-            for other in model.reactions.values()
-            if other.id != reaction.id
-            for identifier in (reactant_id, product_id)
-            if _signed_stoichiometry(other, identifier) > 0
-        }
-        plan = _completion_plan(
-            active[0], reactant_id, product_id, analysis, sourced, model=model
-        )
-    elif len(active) == 2:
-        plan = _balance_plan(active, reactant_id, product_id, analysis)
+    participants = {reactant_id, product_id}
+    if piecewise_plan is not None:
+        active = []
+        plan = piecewise_plan
+        varying = True
     else:
-        return refuse(
-            "the fast reaction's rate is a sum of more than two terms, so its "
-            "pseudo steady state is a multi-term balance that needs an "
-            "algebraic solve in the simulation engine"
-        )
-    if isinstance(plan, str):
-        return refuse(plan)
+        assert terms is not None
+        active = [term for term in terms if term.coefficient != 0.0]
+        if len(active) == 1:
+            zero_switch = _zero_switch_coefficient(
+                model, active[0], analysis, reactant_id, reactant_species
+            )
+            if zero_switch is not None:
+                return _reduce_zero_switch(
+                    model, reaction, reactant, product, zero_switch
+                )
+        for term in active:
+            if not set(term.species_ids) <= participants:
+                return refuse(
+                    "the fast reaction's rate depends on a species it does not convert"
+                )
+
+        if not active:
+            return FastReactionOutcome(
+                reaction.id,
+                True,
+                detail=(
+                    "its kinetic law is zero for every state, so the reaction "
+                    "never carries a flux and is removed"
+                ),
+            )
+        if len(active) == 1:
+            sourced = {
+                identifier
+                for other in model.reactions.values()
+                if other.id != reaction.id
+                for identifier in (reactant_id, product_id)
+                if _signed_stoichiometry(other, identifier) > 0
+            }
+            plan = _completion_plan(
+                active[0], reactant_id, product_id, analysis, sourced, model=model
+            )
+        elif len(active) == 2:
+            plan = _balance_plan(active, reactant_id, product_id, analysis)
+        else:
+            return refuse(
+                "the fast reaction's rate is a sum of more than two terms, so its "
+                "pseudo steady state is a multi-term balance that needs an "
+                "algebraic solve in the simulation engine"
+            )
+        if isinstance(plan, str):
+            return refuse(plan)
+        varying = any(term.factors for term in active)
     varying_reference = (
         reactant
         if reactant.variable_stoichiometry
@@ -2105,7 +2119,6 @@ def _reduce_with_pool(
             f'species "{species.id}" is reassigned by a rule, an initial '
             "assignment, or an event"
         )
-    varying = any(term.factors for term in active)
     if stoichiometry_ids and varying:
         return refuse(
             "an event changes the fast reaction's stoichiometry while its rate "
@@ -2764,6 +2777,121 @@ def _symbolic_terms(
         return None
 
     return visit(node)
+
+
+def _piecewise_switch_plan(
+    node: ast.AST,
+    reactant_id: str,
+    product_id: str,
+    resolver: "_ConstantResolver",
+    analysis: _SymbolAnalysis,
+) -> Optional[_SteadyStatePlan]:
+    """Lower a two-branch piecewise fast rate whose sign follows a condition.
+
+    For a fast reaction ``R -> P`` with rate
+    ``piecewise(R * k, k > 0, P * k)`` (parsed as ``if(gt(k, 0), R * k, P * k)``),
+    the reaction runs forwards to completion (``R = 0``) while ``k > 0`` and
+    backwards to completion (``P = 0``) while ``k < 0``.  Its pseudo steady
+    state is therefore the switching pool projection governed by the sign of
+    ``k``.
+    """
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+        return None
+    func_name = node.func.id.lower()
+    if func_name == "bng_if" and len(node.args) == 3:
+        cond_node, true_branch, false_branch = node.args
+    elif func_name == "piecewise" and len(node.args) == 3:
+        true_branch, cond_node, false_branch = node.args
+    else:
+        return None
+
+    def is_zero(expr: ast.AST) -> bool:
+        value = _constant_value(_infix(expr), resolver)
+        return value is not None and value == 0.0
+
+    def is_species_free_expr(expr: ast.AST) -> bool:
+        for name_node in ast.walk(expr):
+            if isinstance(name_node, ast.Name):
+                if name_node.id in _CALLABLE_NAMES:
+                    continue
+                if isinstance(name_node.ctx, ast.Load) and _is_call_target(
+                    expr, name_node
+                ):
+                    continue
+                if analysis.is_fast_species(name_node.id):
+                    return False
+                if not analysis.is_species_free(name_node.id):
+                    return False
+        return True
+
+    # Extract (coeff_node, true_is_positive_branch) from cond_node.
+    coeff_node: Optional[ast.AST] = None
+    true_is_positive = True
+    if (
+        isinstance(cond_node, ast.Call)
+        and isinstance(cond_node.func, ast.Name)
+        and len(cond_node.args) == 2
+    ):
+        op = cond_node.func.id.lower()
+        left, right = cond_node.args
+        if op in {"gt", "geq"}:
+            if is_zero(right):
+                coeff_node, true_is_positive = left, True
+            elif is_zero(left):
+                coeff_node, true_is_positive = right, False
+        elif op in {"lt", "leq"}:
+            if is_zero(right):
+                coeff_node, true_is_positive = left, False
+            elif is_zero(left):
+                coeff_node, true_is_positive = right, True
+    if coeff_node is None or not is_species_free_expr(coeff_node):
+        return None
+    if analysis.can_vanish_on_an_interval((coeff_node,)):
+        return None
+
+    pos_branch, neg_branch = (
+        (true_branch, false_branch) if true_is_positive else (false_branch, true_branch)
+    )
+    pos_terms = _symbolic_terms(pos_branch, resolver, analysis)
+    neg_terms = _symbolic_terms(neg_branch, resolver, analysis)
+    if pos_terms is None or neg_terms is None:
+        return None
+    pos_active = [term for term in pos_terms if term.coefficient != 0.0]
+    neg_active = [term for term in neg_terms if term.coefficient != 0.0]
+    if len(pos_active) != 1 or len(neg_active) != 1:
+        return None
+    pos_term, neg_term = pos_active[0], neg_active[0]
+    participants = {reactant_id, product_id}
+    if not (set(pos_term.species_ids) <= participants and set(neg_term.species_ids) <= participants):
+        return None
+    pos_powers = dict(pos_term.species)
+    neg_powers = dict(neg_term.species)
+    if pos_powers.get(reactant_id, 0) < 1 or neg_powers.get(product_id, 0) < 1:
+        return None
+
+    coeff_dump = ast.dump(coeff_node)
+
+    def branch_sign(term: _SymbolicTerm, coeff_sign: str) -> Optional[str]:
+        sign = "+" if term.coefficient > 0 else "-"
+        for factor in term.factors:
+            if ast.dump(factor) == coeff_dump:
+                factor_sign = coeff_sign
+            else:
+                factor_sign = analysis.sign(factor)
+                if factor_sign not in {"+", "-"}:
+                    return None
+            sign = _combine_signs(sign, factor_sign)
+        return sign
+
+    if branch_sign(pos_term, "+") != "+" or branch_sign(neg_term, "-") != "-":
+        return None
+    return _SteadyStatePlan(
+        "switch",
+        "the species the fast reaction holds at zero follows the sign of "
+        f'"{_infix(coeff_node)}": "{reactant_id}" while it is positive and '
+        f'"{product_id}" while it is negative',
+        coefficient=_infix(coeff_node),
+    )
 
 
 def _is_call_target(root: ast.AST, name_node: ast.Name) -> bool:
