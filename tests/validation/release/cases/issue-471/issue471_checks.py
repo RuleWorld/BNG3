@@ -25,6 +25,7 @@ SUPPORTED_COMPARATORS = (
     "release-oracle-crn-bng2-v1",
     "release-oracle-bngl-hybrid-v1",
     "release-oracle-bngl-xml-v1",
+    "release-oracle-ssts-csv-v1",
 )
 
 
@@ -593,6 +594,126 @@ def _compare_bngl_xml_bytes(
     return True, ""
 
 
+def _parse_ssts_cell(value: Any, label: str) -> float:
+    if isinstance(value, bool):
+        raise ValueError(f"{label}: boolean is not numeric")
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        token = value.strip()
+        lowered = token.lower()
+        if lowered in {"inf", "+inf", "infinity", "+infinity"}:
+            return math.inf
+        if lowered in {"-inf", "-infinity"}:
+            return -math.inf
+        if lowered == "nan":
+            return math.nan
+        return float(token)
+    raise ValueError(f"{label}: unsupported cell type {type(value).__name__}")
+
+
+def _compare_ssts_csv_bytes(
+    oracle_bytes: bytes,
+    consumer_bytes: bytes,
+) -> tuple[bool, str]:
+    """Compare official SBML Test Suite reference trajectory JSON against consumer output."""
+    try:
+        oracle_data = json.loads(oracle_bytes.decode("utf-8"))
+        consumer_data = json.loads(consumer_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return False, f"invalid SSTS trajectory JSON: {exc}"
+    if not isinstance(oracle_data, dict) or not isinstance(consumer_data, dict):
+        return False, "SSTS trajectory payloads must be JSON objects"
+    settings = oracle_data.get("settings")
+    if not isinstance(settings, dict):
+        return False, "SSTS oracle payload missing settings block"
+    try:
+        rel_limit = _parse_ssts_cell(settings.get("relative"), "settings.relative")
+        abs_limit = _parse_ssts_cell(settings.get("absolute"), "settings.absolute")
+    except ValueError as exc:
+        return False, str(exc)
+    if (
+        not math.isfinite(rel_limit)
+        or not math.isfinite(abs_limit)
+        or rel_limit < 0.0
+        or abs_limit < 0.0
+        or rel_limit > 1e-3
+        or abs_limit > 5e-2
+    ):
+        return (
+            False,
+            f"SSTS settings bounds out of allowed range: relative={rel_limit!r}, absolute={abs_limit!r}",
+        )
+    ref_cols = oracle_data.get("columns")
+    sub_cols = consumer_data.get("columns")
+    if (
+        not isinstance(ref_cols, list)
+        or not isinstance(sub_cols, list)
+        or len(ref_cols) < 2
+        or ref_cols[0] != "time"
+        or ref_cols != sub_cols
+    ):
+        return (
+            False,
+            f"SSTS column mismatch: oracle={ref_cols!r} consumer={sub_cols!r}",
+        )
+    ref_rows = oracle_data.get("rows")
+    sub_rows = consumer_data.get("rows")
+    if (
+        not isinstance(ref_rows, list)
+        or not isinstance(sub_rows, list)
+        or not ref_rows
+        or len(ref_rows) != len(sub_rows)
+    ):
+        return (
+            False,
+            f"SSTS row count mismatch: oracle={len(ref_rows) if isinstance(ref_rows, list) else None} consumer={len(sub_rows) if isinstance(sub_rows, list) else None}",
+        )
+    ncols = len(ref_cols)
+    for row_idx, (ref_row, sub_row) in enumerate(zip(ref_rows, sub_rows)):
+        if (
+            not isinstance(ref_row, list)
+            or not isinstance(sub_row, list)
+            or len(ref_row) != ncols
+            or len(sub_row) != ncols
+        ):
+            return False, f"SSTS width mismatch at row {row_idx}"
+        for col_idx, (raw_ref, raw_sub) in enumerate(zip(ref_row, sub_row)):
+            try:
+                ref_val = _parse_ssts_cell(raw_ref, f"oracle[{row_idx}][{col_idx}]")
+                sub_val = _parse_ssts_cell(raw_sub, f"consumer[{row_idx}][{col_idx}]")
+            except ValueError as exc:
+                return False, str(exc)
+            if math.isnan(ref_val):
+                if not math.isnan(sub_val):
+                    return (
+                        False,
+                        f"SSTS NaN mismatch at row {row_idx} col {ref_cols[col_idx]!r}: consumer={sub_val!r}",
+                    )
+                continue
+            if math.isinf(ref_val):
+                if not math.isinf(sub_val) or (sub_val > 0) != (ref_val > 0):
+                    return (
+                        False,
+                        f"SSTS Inf mismatch at row {row_idx} col {ref_cols[col_idx]!r}: oracle={ref_val!r} consumer={sub_val!r}",
+                    )
+                continue
+            if not math.isfinite(sub_val):
+                return (
+                    False,
+                    f"SSTS non-finite consumer value at row {row_idx} col {ref_cols[col_idx]!r}: {sub_val!r}",
+                )
+            bound = abs_limit + rel_limit * abs(ref_val)
+            diff = abs(sub_val - ref_val)
+            if diff > bound:
+                return (
+                    False,
+                    f"SSTS trajectory mismatch at row {row_idx} col {ref_cols[col_idx]!r}: "
+                    f"oracle={ref_val!r} consumer={sub_val!r} diff={diff:.3e} bound={bound:.3e}",
+                )
+    return True, ""
+
+
 def _oracle_receipt_errors(
     row: dict[str, Any],
     receipt: dict[str, Any],
@@ -781,6 +902,13 @@ def _oracle_receipt_errors(
             **common,
             "consumer_equals_oracle": matched,
         }
+    elif comparator_id == "release-oracle-ssts-csv-v1":
+        matched, diff_detail = _compare_ssts_csv_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-ssts-csv-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
     else:
         errors.append(f"{row_id}: unsupported owned comparator {comparator_id!r}")
         return errors, None
@@ -842,7 +970,7 @@ def _locked_oracle_errors(
         "bng2": ("bng2",),
         "nfsim": ("nfsim",),
         "pybionetgen": ("pybionetgen",),
-        "sbml-test-suite": ("ssts", "sbml test suite"),
+        "sbml-test-suite": ("ssts", "sbml test suite", "independent source simulation"),
         "bngsim": ("bngsim",),
         "bngplayground": ("playground",),
         "rulehub": ("rulehub",),
