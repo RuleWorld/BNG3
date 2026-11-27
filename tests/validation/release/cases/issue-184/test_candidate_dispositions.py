@@ -174,6 +174,7 @@ def _build_all_candidate_inputs(tmp_path: Path, rev: str) -> dict[str, Path]:
     wd = tmp_path / "wheels"
     wd.mkdir()
     w_lin = wd / "bionetgen-3.0.0a1-cp312-cp312-manylinux_2_28_x86_64.whl"
+    w_lin_arm = wd / "bionetgen-3.0.0a1-cp312-cp312-manylinux_2_28_aarch64.whl"
     w_mac_arm = wd / "bionetgen-3.0.0a1-cp312-cp312-macosx_11_0_arm64.whl"
     w_mac_x64 = wd / "bionetgen-3.0.0a1-cp312-cp312-macosx_11_0_x86_64.whl"
     w_win = wd / "bionetgen-3.0.0a1-cp312-cp312-win_amd64.whl"
@@ -181,6 +182,7 @@ def _build_all_candidate_inputs(tmp_path: Path, rev: str) -> dict[str, Path]:
 
     shas = {
         w_lin.name: _make_wheel(w_lin),
+        w_lin_arm.name: _make_wheel(w_lin_arm),
         w_mac_arm.name: _make_wheel(w_mac_arm),
         w_mac_x64.name: _make_wheel(w_mac_x64),
         w_win.name: _make_wheel(w_win),

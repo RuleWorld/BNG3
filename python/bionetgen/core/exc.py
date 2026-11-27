@@ -33,7 +33,7 @@ class BNGParseError(BNGError):
         self.path = bngl_path
         full_msg = f"There was an issue parsing BNGL file: {bngl_path}"
         if message is not None:
-            full_msg += f": {message}"
+            full_msg += message
         self.message = full_msg
         super().__init__(self.message)
 

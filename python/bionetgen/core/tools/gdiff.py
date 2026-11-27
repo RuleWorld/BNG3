@@ -9,7 +9,9 @@ def _require_xmltodict():
     try:
         import xmltodict  # type: ignore
     except ImportError as exc:
-        raise ImportError("xmltodict is required for graph diff operations") from exc
+        raise ImportError(
+            "xmltodict is required for graph diff operations; install it with `pip install 'bionetgen[full]'`"
+        ) from exc
     return xmltodict
 
 

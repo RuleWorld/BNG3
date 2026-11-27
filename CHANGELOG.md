@@ -1,23 +1,31 @@
 # Changelog
 
-## [Unreleased] — post-`v3.0.0a1` `main` (through `90832910`)
+## [Unreleased] — post-`v3.0.0a1` `main` (through `9d6d5321`)
 
 ### Added
 
-- **Prepublication user documentation & licensing:** added workflow-oriented [Capability Guide](docs/capabilities.md), searchable [Detailed BNG2 & PyBioNetGen Change Reference](docs/bng2_migration_reference.md), standalone [Network-Free Simulation Guide (NFsim & NFnext)](docs/network_free_simulation.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) (bundled alongside `LICENSE` in release CLI archives); synchronized `README.md`, `docs/index.md`, `docs/user_guide.md`, `docs/cli_reference.md`, `docs/api_reference.md`, `docs/migration_guide.md`, `docs/architecture.md`, and `docs/contributing.md` with verified `v3.0.0a1` vs. `main` installation and usage contracts.
+- **Native Linux `aarch64` CI, wheels, and CLI archives (PR `#1064`):** added `ubuntu-24.04-arm` C++ builds (`gcc-aarch64`), `manylinux_2_28_aarch64` wheels across CPython 3.9–3.14, and `bionetgen-linux-aarch64` standalone CLI archives (bringing total wheel coverage to 30 wheels across 5 platforms).
+- **Explicit BNGL action `nfnext`/`nfcore` routing, physical units, and dynamic NFnext rates (PR `#1066`):** added explicit `method=>"nfnext"` / `"nfcore"` and `simulate_nf({engine=>...})` action dispatch, generalized physical-unit rate/seed scaling across Direct NFsim & NFnext (including bidirectional reverse-rate molecularity validation), and expanded NFnext dynamic energy and population-map support.
+- **Expanded GPU SSA/NFnext kernels & constant-delay DDE export (PR `#1069`):** extended GPU finite batch SSA with `TotalRate`, absolute-flux, and a 26-opcode functional-rate VM on Metal & CUDA; extended NFnext GPU `mode="graph"` with `TotalRate`, reactant `include_reactants`/`exclude_reactants` filters, and static energy-folded `Arrhenius` patterns; added constant-delay DDE export in Python (`writeCPYfile`) and MATLAB (`writeMfile`).
+- **SSA native SBML events, piecewise L3V1 fast reactions, and linear-time Atomizer inlining (PR `#1068`):** implemented native SBML events in SSA (affine-in-time triggers, state-jump triggers, `persistent=false` pruning, delayed queues, seeded priority ties), piecewise L3V1 fast-reaction equilibrium solving (`semantic/01568`, `semantic/01570`), and >40× linear-time `PYTHONHASHSEED`-invariant Atomizer function inlining.
+- **Expanded BNGIR `semantic_equal` certificates & `BngsimAdapter` lowering (PR `#1067`):** expanded exact `semantic_equal()` certificates (hierarchical renaming, multivariate rational reduction + pole domains, TFUN knot reduction, volume rescaling, Arrhenius normalization, delayed/`NonConsuming`, modifier partitions) and closed `BngsimAdapter` Type-A lowering gaps.
+- **Prepublication user documentation & licensing (PRs `#1063`, `#1065`):** added workflow-oriented [Capability Guide](docs/capabilities.md), searchable [Detailed BNG2 & PyBioNetGen Change Reference](docs/bng2_migration_reference.md), standalone [Network-Free Simulation Guide (NFsim & NFnext)](docs/network_free_simulation.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) (bundled alongside `LICENSE` in wheels and release CLI archives); reconciled active docs and synchronized `README.md`, `docs/index.md`, `docs/user_guide.md`, `docs/cli_reference.md`, `docs/api_reference.md`, `docs/migration_guide.md`, `docs/architecture.md`, and `docs/contributing.md`.
 - **NFnext GPU graph mode (`#474`):** added `mode="graph"` to `BioNetGenModel.simulate_nfnext_gpu()` for Apple Metal and NVIDIA CUDA covering `TIER_NF` graph SSA (PRs `#1040`, `#1041`, `#1044`).
 - **CLI & action parity:** added `bng_cpp --outdir` / `--output_dir` (PR `#1056`), `NFsim -i` initial start time flag (PR `#1052`), `writeMfile_all` / `writeLaTeXfile` and `prefix`/`suffix` handling across `write*` and `visualize` actions (PR `#1050`), `bifurcate` continuation and per-observable `.scan` output (PR `#1053`), and `readModel` refresh, `setModelName`, `print_net`, `simulate_protocol`, `readNFspecies`, `readSBML`, `LPS`, and `codename` (PR `#1054`).
 
 ### Changed
 
-- **Repository housekeeping & archival:** archived the retired NFcore2 prototype engine from `cpp/nfsim/NFcore2/` to `legacy/nfcore2/` (moving active `nfsim_pattern_lowering.{hh,cpp}` to `cpp/nfsim/NFinput/` and gating `bng_nfcore2` behind `BUILD_TESTS=ON`), archived superseded plans/reports/handoffs under `docs/archive/`, aligned stale pre-`#832` doc-check regexes and `(implementation to add)` inventory location strings, and excluded non-build repo directories from Python source distributions (`pyproject.toml`).
+- **Repository housekeeping & archival (PR `#1063`):** archived the retired NFcore2 prototype engine from `cpp/nfsim/NFcore2/` to `legacy/nfcore2/` (moving active `nfsim_pattern_lowering.{hh,cpp}` to `cpp/nfsim/NFinput/` and gating `bng_nfcore2` behind `BUILD_TESTS=ON`), archived superseded plans/reports/handoffs under `docs/archive/`, aligned stale pre-`#832` doc-check regexes and `(implementation to add)` inventory location strings, and excluded non-build repo directories from Python source distributions (`pyproject.toml`, trimming `sdist` from 28.2 MiB to 3.68 MiB).
 - **Upstream oracle pins refreshed (2026-11-25):** synced with `RuleWorld/bionetgen` through 2.9.5 (`740006ff`, PR `#1046`) and `RuleWorld/NFsim` through `v2.0.1` + `#160` (`d45b7d99`, PR `#1047`); aligned 33 PyBioNetGen API signatures and `assets/VERSION` (`0.8.7`, PRs `#1051`, `#1058`).
 - **Capability matrix:** promoted all 997 rows in `provenance/capability-matrix.yml` to `implemented` following hosted-verified oracle receipts (PRs `#1048`, `#1059`).
+- **Scheduled parity & release verification:** wired native NFsim and libRoadRunner oracles and Tier-P 180s case timeouts into scheduled conformance (PRs `#1062`, `#1070`), added `linux-aarch64` checks to preflight/`#184` scripts, aligned `release.yml` wheel tests with `ci.yml`, and made `parity.yml` fail closed on incomplete Issue `#471` oracle grounding.
 
 ### Fixed
 
-- **Direct-path NFsim time-indexed `TFUN` parity:** propagated `addTimeTable`, `addFunctionReference`, and `useTimeTablesReadBy` in the direct compiled/AST NFsim adapters so time-indexed `TFUN` breakpoint stepping and linear ramp integration match the XML NFsim path (`test_tfun_validation`).
-- **`bng_cpp --version`:** replaced the hardcoded `"bng_cpp version 4.0"` string with `BNG3_VERSION_STRING` (`3.0.0a1`).
+- **Clean-install CLI & PyBioNetGen migration fixes (PRs `#1071`, `#1072`):** fixed `bionetgen export -f latex` (`TypeError`), removed optional `pandas` requirement from CLI `scan`/`sensitivity`, removed `seaborn` requirement from `bionetgen plot`, added stdlib fallback action parser so `bionetgen.bngmodel()` works without `pyparsing`/`cement`, and restored exact `PyBioNetGen@28bf351a` `BNGParseError` string formatting (`#471` `997/997` parity).
+- **Direct-path NFsim time-indexed `TFUN` parity (PR `#1061`):** propagated `addTimeTable`, `addFunctionReference`, and `useTimeTablesReadBy` in the direct compiled/AST NFsim adapters so time-indexed `TFUN` breakpoint stepping and linear ramp integration match the XML NFsim path (`test_tfun_validation`).
+- **`bng_cpp --version` (PR `#1063`):** replaced the hardcoded `"bng_cpp version 4.0"` string with `BNG3_VERSION_STRING` (`3.0.0a1`).
+- **Wheel license notices & `graphdiff` error hint:** added `license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]` to `pyproject.toml` so built wheels bundle third-party BSD-3-Clause notices, and updated missing `xmltodict` `ImportError` in `bionetgen graphdiff` to name `pip install 'bionetgen[full]'`.
 
 ## [3.0.0a1] — 2026-11-25 (GitHub Pre-release, commit `8482215c`)
 
@@ -220,7 +228,7 @@ First public alpha pre-release published on [GitHub Releases](https://github.com
   (best-of interleaved reps), 1.04x at 45 reactions; seeded `.gdat`/`.cdat`
   bytes are unchanged on the identity corpus. See `benchmarks/README.md`.
 
-## [3.0.0a1] - 2026-05-11
+### 2026-05-11 — early `3.0.0a1` prototype milestone
 
 ### Added
 

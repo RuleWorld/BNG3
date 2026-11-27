@@ -24,6 +24,7 @@ from scripts.ci.qualify_release_candidate import (  # noqa: E402
 
 REQUIRED_WHEEL_ARTIFACTS = (
     "wheels-ubuntu-22.04",
+    "wheels-ubuntu-24.04-arm",
     "wheels-macos-15-intel",
     "wheels-macos-15",
     "wheels-windows-2022",

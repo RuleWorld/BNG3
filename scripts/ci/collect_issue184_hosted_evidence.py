@@ -254,6 +254,7 @@ def main(argv: list[str] | None = None) -> int:
         ci_arts_dir = out_dir / "ci-artifacts"
         for wheel_art in (
             "wheels-ubuntu-22.04",
+            "wheels-ubuntu-24.04-arm",
             "wheels-macos-15-intel",
             "wheels-macos-15",
             "wheels-windows-2022",
@@ -274,6 +275,7 @@ def main(argv: list[str] | None = None) -> int:
                 asan_receipt = cand_rec
         for plat_art in (
             f"issue184-install-receipt-ubuntu-22.04-{sha}",
+            f"issue184-install-receipt-ubuntu-24.04-arm-{sha}",
             f"issue184-install-receipt-macos-15-{sha}",
             f"issue184-install-receipt-windows-2022-{sha}",
             f"issue184-install-receipt-sdist-{sha}",

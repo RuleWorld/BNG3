@@ -3,11 +3,11 @@
 ## Pre-release baseline and documentation checkpoint (2026-11-26)
 
 - **Published pre-release (`v3.0.0a1`):** Tagged at `8482215cf0117895f792b1be7d8cf14d2dcb1fcc` (`2026-11-25`, Release workflow run `45662137697`). Published 24 Python wheels (CPython 3.9–3.14 on Linux x86_64 `manylinux_2_28`, macOS arm64/x86_64 `11.0+`, Windows `win_amd64`), the sdist, and 4 standalone CLI archives (`bng_cpp` + `NFsim`) on GitHub Releases. The `Publish to PyPI` job failed with `invalid-publisher` (Trusted Publisher not configured for `RuleWorld/BNG3/.github/workflows/release.yml` environment `pypi`), so PyPI currently serves legacy PyBioNetGen `0.8.7`.
-- **Source `main` (`9083291066a1cb60c8b4d94b53b38e19c584f899`, 23 commits after `v3.0.0a1`):**
+- **Source `main` (`9d6d532158eb4ee5b7a52827f5fced7259bc6a04`, 35 commits after `v3.0.0a1`):**
   - Upstream pins refreshed in [`provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml) and [DECISIONS.md](DECISIONS.md) to `RuleWorld/bionetgen@740006ff` (BioNetGen 2.9.5, PR #1046) and `RuleWorld/NFsim@d45b7d99` (NFsim v2.0.1 + #160, PR #1047); `RuleWorld/PyBioNetGen` remains pinned at `28bf351a` (v0.8.7 lineage).
-  - All 997 rows in [`provenance/capability-matrix.yml`](../provenance/capability-matrix.yml) and [CAPABILITY_UNION_INVENTORY.md](CAPABILITY_UNION_INVENTORY.md) are promoted to `implemented` (PRs #1048, #1059), including `backend.gpu` ([#474](https://github.com/RuleWorld/BNG3/issues/474)) with separate Apple Silicon Metal and NVIDIA TITAN V CUDA receipts for finite batch SSA and bounded NFnext GPU (`mode="unary"` and `mode="graph"` on `TIER_NF`).
-  - Post-`v3.0.0a1` CLI/action/API additions on `main`: `bng_cpp --outdir`, `NFsim -i`, `prefix`/`suffix` across `write*`/`visualize`, `writeMfile_all`/`writeLaTeXfile`, `bifurcate` continuation + `.scan` outputs, `readModel`/`setModelName`/`print_net`/`simulate_protocol`/`readNFspecies`/`readSBML`/`LPS`/`codename`, and 33 PyBioNetGen signature alignments.
-  - **Hosted CI on `90832910`:** push-triggered `CI` (`45812432339`), `Cross-tool parity` (`45812432511`), `Lean semantic kernel` (`45812432644`), `CodeQL` (`45812432397`), and `Formatting patch` (`45812432444`) succeeded. Scheduled `Cross-tool parity` (`45833971282`) failed in `Measure Tier-P direct/XML outcomes (scheduled)` and `Conformance findings` (process timeout + missing native NFsim reference); those scheduled-lane diagnostics remain open.
+  - All 997 rows in [`provenance/capability-matrix.yml`](../provenance/capability-matrix.yml) and [CAPABILITY_UNION_INVENTORY.md](CAPABILITY_UNION_INVENTORY.md) are promoted to `implemented` (PRs #1048, #1059), including `backend.gpu` ([#474](https://github.com/RuleWorld/BNG3/issues/474)) with separate Apple Silicon Metal and NVIDIA CUDA receipts for finite batch SSA and bounded NFnext GPU (`mode="unary"` and `mode="graph"` on `TIER_NF`).
+  - Post-`v3.0.0a1` additions on `main`: native Linux `aarch64` CI/wheels/CLI archives (PR #1064), clean-install CLI/PyBioNetGen migration fixes and regression suite (PRs #1071, #1072), explicit BNGL action `nfnext`/`nfcore` dispatch + generalized physical-unit scaling + expanded dynamic energy/population-map execution (PR #1066), expanded exact `semantic_equal` certificates and `BngsimAdapter` Type-A lowering (PR #1067), SSA native SBML events + piecewise L3V1 fast reactions (`01568`/`01570`) + >40× linear-time Atomizer function inlining (PR #1068), expanded GPU SSA/NFnext kernels + constant-delay Python/MATLAB export (PR #1069), plus earlier `bng_cpp --outdir`, `NFsim -i`, action/writer parity, and 33 PyBioNetGen signature alignments.
+  - **Hosted CI on `9d6d5321`:** push-triggered `CI` (`45955966726`, 43/43 jobs including 30 wheels across 5 platforms and 3.68 MiB `sdist`), `Cross-tool parity` (`45955966733`), `Lean semantic kernel` (`45955966679`), `CodeQL` (`45955966757`), and `Formatting patch` (`45955966744`) all succeeded. Scheduled `Cross-tool parity` (`46011111253`) also passed green across `NFsim historical validation`, `BNG3 vs independent NFsim`, `Tier-P corpus conformance`, and `Conformance findings`, confirming PRs #1061, #1062, and #1070 resolved the earlier `90832910` scheduled failures.
 - **Public documentation refresh:** Added user-facing [Capability Guide](capabilities.md), [Detailed BNG2 & PyBioNetGen Change Reference](bng2_migration_reference.md), and [Network-Free Simulation Guide](network_free_simulation.md), and synchronized `README.md`, `docs/index.md`, `docs/user_guide.md`, `docs/cli_reference.md`, `docs/api_reference.md`, `docs/migration_guide.md`, `docs/architecture.md`, and `docs/contributing.md` (with [SBML Atomizer Limitations](ATOMIZER_LIMITATIONS.md) linked across the front door).
 
 ## Gap resolved — all four network-free issues closed (2026-11-22)
@@ -57,9 +57,11 @@ and `backend="bngsim"` remains invalid for all network-free methods. Tests that
 pin NFcore/NFsim-specific behavior were moved to explicit `method="nfcore"`;
 the #149 default test now validates the promoted contract.
 
-Remaining limitation: the C++ BNGL action path still dispatches
+Remaining limitation (at 2026-11-21): the C++ BNGL action path still dispatches
 `simulate({method=>"nf"})` to NFcore and does not accept `method=>"nfcore"`;
-this is documented rather than silently changed.
+this is documented rather than silently changed (subsequently resolved on `main`
+in PR #1066, which added explicit `method=>"nfnext"`/`"nfcore"` and
+`simulate_nf({engine=>...})` dispatch).
 
 ## Full network-free corpus parity — 2026-11-20
 

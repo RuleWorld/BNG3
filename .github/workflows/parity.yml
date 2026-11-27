@@ -1767,6 +1767,34 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Enforce complete Issue 471 oracle grounding
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          oracle="$RUNNER_TEMP/issue471-combined/oracle.json"
+          if [[ ! -s "$oracle" ]]; then
+            echo "::error::Missing combined Issue 471 oracle report: $oracle"
+            exit 1
+          fi
+          python - "$oracle" <<'PY'
+          import json
+          import sys
+
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          result = data.get("result")
+          grounded = int(data.get("grounded_execution_rows", 0))
+          total = int(data.get("row_count", 0))
+          if result != "pass" or total <= 0 or grounded < total:
+              print(
+                  f"Issue 471 oracle grounding failed: result={result!r}, "
+                  f"grounded_execution_rows={grounded}/{total}",
+                  file=sys.stderr,
+              )
+              sys.exit(1)
+          print(f"Issue 471 oracle grounding verified: {grounded}/{total} rows pass")
+          PY
+
       - name: Restore previous main integrated-validation observations
         if: always()
         uses: actions/cache/restore@v4

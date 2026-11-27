@@ -32,7 +32,7 @@ Download or install the matching wheel directly from the [`v3.0.0a1` GitHub Rele
 | macOS Intel (11.0+) | `macosx_11_0_x86_64` |
 | Windows (64-bit) | `win_amd64` |
 
-*(Linux `aarch64`, `musllinux`, and 32-bit platforms do not have pre-built `v3.0.0a1` wheels; use the source install below.)*
+*(Linux `aarch64` wheels and CLI archives are added on post-`v3.0.0a1` `main` for the next release; `v3.0.0a1` itself covers the 4 targets above. `musllinux` and 32-bit platforms require building from source.)*
 
 Example for Python 3.12 on Linux x86_64 (replace `cp312-cp312` and the platform tag to match your interpreter):
 
@@ -72,7 +72,7 @@ tar xzf bionetgen-macos-arm64.tar.gz
 
 ### 3. From source (`main` — includes post-`v3.0.0a1` changes)
 
-Requires Python 3.9+, Git, CMake >= 3.15, and a C++17 compiler (GCC 12+, Clang 15+, or MSVC 2022+).
+Requires Python 3.9+, Git, CMake >= 3.15, and a C++17 compiler (GCC 12+, Clang 15+, or MSVC 2022+). Building from source or an `sdist` tarball fetches pinned `antlr4` (`4.13.2`), `sundials` (`v7.6.0`), and `pybind11` (`v2.13.6`) via CMake `FetchContent` at configure time, so network access (or pre-populated `FETCHCONTENT_SOURCE_DIR_*` caches) is required when compiling from source.
 
 ```bash
 git clone https://github.com/RuleWorld/BNG3.git

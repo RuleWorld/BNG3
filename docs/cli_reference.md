@@ -71,7 +71,7 @@ Execute all actions defined in a BNGL model's `begin actions ... end actions` bl
 bionetgen execute MODEL [-v|--verbose]
 ```
 
-Note: BNGL action blocks calling `simulate_nf()` or `simulate({method=>"nf"})` execute embedded NFcore; see [Network-Free Simulation](network_free_simulation.md).
+Note: In `v3.0.0a1`, BNGL action blocks calling `simulate_nf()` or `simulate({method=>"nf"})` execute embedded NFcore. On **(post-`v3.0.0a1` `main`)**, BNGL actions also accept explicit `method=>"nfnext"` / `method=>"nfcore"` (and `simulate_nf({engine=>"nfnext"|"nfcore"})` / `backend=>...`), while unqualified `simulate({method=>"nf"})` routes to NFnext when no NFcore-only control is present and the model lowers cleanly; see [Network-Free Simulation](network_free_simulation.md).
 
 ---
 
@@ -99,7 +99,7 @@ Default format: `xml`. Formats `net`, `sbml`, and `matlab` automatically generat
 
 ## `bionetgen scan`
 
-Run a one-dimensional parameter scan and print or save a CSV table (requires `bionetgen[plotting]` for `DataFrame` output).
+Run a one-dimensional parameter scan and print an aligned table or save a CSV file (`-o`, using Python's standard `csv` module with no `pandas` dependency; in Python, `ScanResult.to_dataframe()` still requires `bionetgen[plotting]`).
 
 ```bash
 bionetgen scan MODEL --parameter NAME --min FLOAT --max FLOAT [OPTIONS]
@@ -121,7 +121,7 @@ Options & defaults:
 
 ## `bionetgen sensitivity`
 
-Compute local normalized finite-difference sensitivities (requires `bionetgen[plotting]` for `DataFrame` output).
+Compute local normalized finite-difference sensitivities and print an aligned table or save a CSV file (`-o`, using Python's standard `csv` module with no `pandas` dependency; in Python, `SensitivityResult.to_dataframe()` still requires `bionetgen[plotting]`).
 
 ```bash
 bionetgen sensitivity MODEL [OPTIONS]

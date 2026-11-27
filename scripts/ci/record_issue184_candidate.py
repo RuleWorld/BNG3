@@ -28,10 +28,12 @@ REQUIRED_PUSH_WORKFLOWS = (
 REQUIRED_CI_JOBS = (
     "C++ (ubuntu-22.04, gcc-12)",
     "C++ (ubuntu-22.04, clang-15)",
+    "C++ (ubuntu-24.04-arm, gcc-aarch64)",
     "C++ (macos-15, clang-arm64)",
     "C++ (windows-2022, msvc)",
     "C++ ASan (Ubuntu)",
     "Wheels (ubuntu-22.04)",
+    "Wheels (ubuntu-24.04-arm)",
     "Wheels (macos-15-intel)",
     "Wheels (macos-15)",
     "Wheels (windows-2022)",
@@ -44,6 +46,7 @@ REQUIRED_CI_JOBS = (
 REQUIRED_WHEEL_PLATFORM_TAGS = (
     "manylinux",
     "x86_64",
+    "aarch64",
     "arm64",
     "win_amd64",
 )

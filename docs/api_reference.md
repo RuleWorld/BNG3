@@ -54,8 +54,8 @@ Exact process-level semantic equality up to consistent molecule/site/state renam
 
 #### GPU Introspection Helpers
 
-- `bionetgen.gpu_backend_capabilities() -> dict` — Reports compiled GPU routes (`finite_batch_ssa`, `nfnext_unary_state_change`, and on post-`v3.0.0a1` `main`, `nfnext_graph_corpus`) and physical-device availability.
-- `bionetgen.gpu_backends() -> dict` — Finite-network batched-SSA GPU backend compilation and availability.
+- `bionetgen.gpu_backend_capabilities() -> list[dict]` — Reports compiled GPU routes (`finite_batch_ssa`, `nfnext_unary_state_change`, and on post-`v3.0.0a1` `main`, `nfnext_graph_corpus`) and physical-device availability.
+- `bionetgen.gpu_backends() -> list[dict]` — Finite-network batched-SSA GPU backend compilation and availability.
 - `bionetgen.default_gpu_backend() -> str` — Default available finite-network batched-SSA GPU backend (`"metal"`, `"cuda"`, or `"none"`).
 
 #### Exceptions & Metadata

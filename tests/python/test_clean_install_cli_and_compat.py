@@ -243,8 +243,13 @@ def test_bngmodel_parses_actions_without_pyparsing(tmp_path: Path, monkeypatch):
     assert model.actions[1].args["method"] == '"ode"'
 
 
-def test_bngparseerror_separates_path_and_message():
-    err = BNGParseError("model.bngl", "unexpected token")
+def test_bngparseerror_matches_pybionetgen_format():
+    default_err = BNGParseError("probe-message")
+    assert (
+        str(default_err) == "There was an issue parsing BNGL file: probe-message"
+        "There was an issue with parsing your BNGL file"
+    )
+    err = BNGParseError("model.bngl", ": unexpected token")
     assert "model.bngl: unexpected token" in str(err)
 
 

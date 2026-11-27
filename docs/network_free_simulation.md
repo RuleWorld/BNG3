@@ -12,8 +12,8 @@ BioNetGen 3 includes two in-process network-free engines—**NFnext** and embedd
 | --- | --- | --- | --- |
 | **Upstream standalone `RuleWorld/NFsim`** | The independent upstream C++ project (`v2.0.1` + `#160` @ `d45b7d99` on `main`; `8c449bbc` at `v3.0.0a1`) | BNG-XML (`.xml`) or `.rnf` script | **Independent validation oracle only.** Built from its locked checkout in CI; BNG3's embedded engines are never treated as their own parity oracle. |
 | **Bundled `NFsim` CLI binary** | Standalone executable shipped inside BNG3 CLI release archives (`bionetgen-<platform>.tar.gz`) | BNG-XML (`.xml`) or `.rnf` script | Drop-in CLI execution for existing `-xml` / `-rnf` workflows without Python. Backed by BNG3's embedded NFcore (`cpp/nfsim/`). |
-| **Embedded NFcore** | The classic NFsim core embedded in `_bionetgen_cpp` and `bng_cpp` (`cpp/nfsim/`) | **Direct construction** from AST/`CompiledModel` (`construction_path="direct"`) by default; optional in-memory XML fallback (`BNG_NFSIM_ALLOW_XML_FALLBACK=1`) | Selected explicitly in Python via `method="nfcore"` (reports `result.backend == "nfsim"`). Also executed by BNGL action blocks (`simulate_nf()` and `simulate({method=>"nf"})`). |
-| **NFnext** | BNG3's next-generation network-free engine (`cpp/nfnext/`) | Direct lowering **`CompiledModel → NFIR`** (no XML serialization) | Selected automatically by Python `model.simulate(method="nf")`, `bionetgen.run(..., method="nf")`, and `bionetgen run MODEL -m nf`, or explicitly via `method="nfnext"` (reports `result.backend == "nfnext"`). Also provides an explicit, fail-closed GPU batch path (`model.simulate_nfnext_gpu()`). |
+| **Embedded NFcore** | The classic NFsim core embedded in `_bionetgen_cpp` and `bng_cpp` (`cpp/nfsim/`) | **Direct construction** from AST/`CompiledModel` (`construction_path="direct"`) by default; optional in-memory XML fallback (`BNG_NFSIM_ALLOW_XML_FALLBACK=1`) | Selected explicitly in Python via `method="nfcore"` (reports `result.backend == "nfsim"`), or in BNGL actions via `simulate_nf()` (default) and **(post-`v3.0.0a1` `main`)** explicit `method=>"nfcore"` / `engine=>"nfcore"`. |
+| **NFnext** | BNG3's next-generation network-free engine (`cpp/nfnext/`) | Direct lowering **`CompiledModel → NFIR`** (no XML serialization) | Selected automatically by Python `model.simulate(method="nf")`, `bionetgen.run(..., method="nf")`, and `bionetgen run MODEL -m nf`, explicitly via `method="nfnext"` (reports `result.backend == "nfnext"`), and **(post-`v3.0.0a1` `main`)** in BNGL actions via explicit `method=>"nfnext"` / `simulate_nf({engine=>"nfnext"})` or unqualified `simulate({method=>"nf"})` when no NFcore-only control is set. Also provides an explicit, fail-closed GPU batch path (`model.simulate_nfnext_gpu()`). |
 
 > **What happened to `NFcore2`?** `NFcore2` was an earlier prototype that was unlinked from the default build, consolidated into NFnext per [Maintainer Decisions](DECISIONS.md) item 4 (`#149`), and archived under `legacy/nfcore2/` (test-only `BUILD_TESTS=ON`). Passing `method="nfcore2"` raises a `ValueError` directing you to `method="nf"` / `"nfnext"` or `method="nfcore"`. The active pattern-lowering helper `NFcore2::lowerPatternToNFsim` lives in `cpp/nfsim/NFinput/nfsim_pattern_lowering.{hh,cpp}` for NFcore input.
 
@@ -30,7 +30,7 @@ BioNetGen 3 includes two in-process network-free engines—**NFnext** and embedd
 
 ## 2. Engine Decision Table
 
-This table reflects what a **`v3.0.0a1`** user sees, with post-tag **`main`** (`90832910`) additions clearly marked.
+This table reflects what a **`v3.0.0a1`** user sees, with post-tag **`main`** (`9d6d5321`) additions clearly marked.
 
 | Entry Point | Default Engine | Explicit Alternative | Prerequisites / Build Flags | Platforms | Refusal / Fallback Behavior |
 | --- | --- | --- | --- | --- | --- |
@@ -38,8 +38,8 @@ This table reflects what a **`v3.0.0a1`** user sees, with post-tag **`main`** (`
 | `bionetgen.run(path, method="nf")` | **NFnext** (`backend="nfnext"`) | Load model and call `model.simulate(method="nfcore")` | Default BNG3 wheel/build | Linux, macOS, Windows | Fail-closed (`bionetgen.run` accepts `ode`, `ssa`, `nf`, `pla`, `psa` only) |
 | `bionetgen run MODEL -m nf` | **NFnext** | Use Python `model.simulate(method="nfcore")` or BNGL action `simulate_nf` | Default BNG3 wheel/build | Linux, macOS, Windows | Fail-closed |
 | `model.simulate(method="nfcore")` | **NFcore** (`backend="nfsim"`) | `method="nf"` / `"nfnext"` | Default BNG3 wheel/build | Linux, macOS, Windows | Direct construction fails closed unless `BNG_NFSIM_ALLOW_XML_FALLBACK=1` is set |
-| BNGL action `simulate_nf()` or `simulate({method=>"nf"})` via `bng_cpp` / `bionetgen execute` / `model.execute()` | **NFcore** (direct) | None inside BNGL actions yet (`method=>"nfcore"` / `"nfnext"` are not accepted in BNGL actions) | Default wheel or CLI archive | Linux, macOS, Windows | Direct construction fails closed unless `BNG_NFSIM_ALLOW_XML_FALLBACK=1`; supports `utl`, `equilibrate`, `rnf` |
-| Standalone `NFsim -xml FILE` / `-rnf FILE` | **NFcore** (XML/RNF) | N/A | CLI release archive or `-DBUILD_NFSIM_CLI=ON` | Linux x86_64, macOS arm64/x86_64, Windows x86_64 | Classic NFsim CLI; **(post-`v3.0.0a1` `main`)** adds `-i <time>` initial start time flag |
+| BNGL action `simulate_nf()` or `simulate({method=>"nf"})` via `bng_cpp` / `bionetgen execute` / `model.execute()` | `v3.0.0a1`: **NFcore** (direct); **(post-`v3.0.0a1` `main`)**: `simulate_nf()` stays **NFcore**, while unqualified `simulate({method=>"nf"})` routes to **NFnext** when no NFcore-only control/hybrid stage is active and the model lowers cleanly | **(Post-`v3.0.0a1` `main`)** `method=>"nfnext"` / `method=>"nfcore"` or `simulate_nf({engine=>"nfnext"\|"nfcore"})` / `backend=>...` | Default wheel or CLI archive | Linux, macOS, Windows | Explicit `nfnext` fails closed on NFcore-only options (`utl`, `equil`, `param`, etc.); NFcore direct construction fails closed unless `BNG_NFSIM_ALLOW_XML_FALLBACK=1` is set |
+| Standalone `NFsim -xml FILE` / `-rnf FILE` | **NFcore** (XML/RNF) | N/A | CLI release archive or `-DBUILD_NFSIM_CLI=ON` | Linux x86_64/aarch64 (`main`), macOS arm64/x86_64, Windows x86_64 | Classic NFsim CLI; **(post-`v3.0.0a1` `main`)** adds `-i <time>` initial start time flag |
 | `model.simulate_nfnext_gpu(sample_times, ...)` | **NFnext GPU** (`backend="metal"` default arg) | `backend="metal"` or `backend="cuda"`; `mode="unary"` or `mode="graph"` **(post-`v3.0.0a1` `main`)** | Compiled Metal (macOS arm64) or CUDA build + physical GPU | macOS arm64 (Metal); CUDA hosts (source build) | **Strict fail-closed, zero CPU fallback:** raises if device/route is unavailable or model uses unsupported constructs |
 
 **Quick rule of thumb:**
@@ -171,7 +171,7 @@ print("Backend:", gpu_res.backend, "shape:", gpu_res.observables["AP"].shape)
 print("Ensemble mean AP:", gpu_res.observables["AP"].mean(axis=0))
 ```
 
-**(Post-`v3.0.0a1` `main` only):** Pass `mode="graph"` to `model.simulate_nfnext_gpu(..., mode="graph", backend="metal"|"cuda")` for general graph SSA across `TIER_NF` (binding/unbinding, molecule creation/deletion, complex deletion, dynamic rate functions, and `Molecules`/`Species` observables). Unsupported constructs (compartments, events, delays, energy patterns, population maps, rule filters, unbonded `SameComplex` constraints, multi-copy local scoping, or an unavailable device) raise an explicit error with zero CPU fallback.
+**(Post-`v3.0.0a1` `main` only):** Pass `mode="graph"` to `model.simulate_nfnext_gpu(..., mode="graph", backend="metal"|"cuda")` for general graph SSA across `TIER_NF` (binding/unbinding, molecule creation/deletion, complex deletion, dynamic rate functions, `Molecules`/`Species` observables, `TotalRate`, reactant `include_reactants`/`exclude_reactants` filters, and static energy-folded `Arrhenius` patterns). Unsupported constructs (compartments, events, delays, population maps, barrier patterns or non-folded energy expressions, product `include_products`/`exclude_products` filters, unbonded `SameComplex` constraints, multi-copy local scoping, or an unavailable device) raise an explicit error with zero CPU fallback.
 
 ### Confirming Which Backend Ran
 
@@ -208,9 +208,9 @@ print("Ensemble mean AP:", gpu_res.observables["AP"].mean(axis=0))
 
 ### Known Limitations & Open Diagnostics
 
-- **BNGL action files still invoke NFcore:** `simulate({method=>"nf"})` and `simulate_nf()` inside BNGL action blocks dispatch to NFcore rather than NFnext and do not yet accept `method=>"nfcore"` or `method=>"nfnext"`.
-- **Scheduled `Cross-tool parity` diagnostic:** On `main` (`90832910`), the push-triggered `Cross-tool parity` run (`45812432511`) passed, while the scheduled `Cross-tool parity` run (`45833971282`) failed in the scheduled-only `Measure Tier-P direct/XML outcomes (scheduled)` step and `Conformance findings` timeout. Track those diagnostics before claiming full Tier-P parity across every historical model.
-- **GPU construct boundaries:** `simulate_nfnext_gpu` rejects compartments, events, delays, energy patterns, population maps, rule filters, unbonded `SameComplex` constraints, and multi-copy local scoping fail-closed. In `v3.0.0a1`, it is further restricted to single-site unary state-change models.
+- **BNGL `simulate_nf()` defaults to NFcore:** Unqualified `simulate_nf()` retains NFcore semantics so existing BNG2/NFsim action scripts (`utl`, `equil`, `-rnf`, and XML/direct env controls) stay exact. On **(post-`v3.0.0a1` `main`, PR `#1066`)**, BNGL actions accept explicit `method=>"nfnext"` / `method=>"nfcore"` and `simulate_nf({engine=>"nfnext"|"nfcore"})` (and unqualified `simulate({method=>"nf"})` routes to NFnext when no NFcore-only control is set and the model lowers cleanly); in `v3.0.0a1`, all BNGL action blocks invoke NFcore.
+- **Scheduled `Cross-tool parity` status:** The earlier `90832910` scheduled `Cross-tool parity` failures (`45833971282`) in direct-path `TFUN` breakpoints, Tier-P timeout budgets, and scheduled oracle wiring were resolved in PRs `#1061`, `#1062`, and `#1070`, verified green in scheduled run `46011111253` on `9d6d5321`.
+- **GPU construct boundaries:** On **(post-`v3.0.0a1` `main`, PR `#1069`)**, `simulate_nfnext_gpu(..., mode="graph")` supports `TotalRate`, reactant `include_reactants`/`exclude_reactants` filters, and static energy-folded `Arrhenius` patterns in addition to `TIER_NF` graph SSA; it still rejects compartments, events, delays, population maps, barrier patterns / non-folded energy expressions, product filters, unbonded `SameComplex` constraints, and multi-copy local scoping fail-closed. In `v3.0.0a1`, `simulate_nfnext_gpu` is restricted to single-site unary state-change models (`mode="unary"`).
 
 ### How to Reproduce and Report a Network-Free Disagreement
 
@@ -226,18 +226,20 @@ print("Ensemble mean AP:", gpu_res.observables["AP"].mean(axis=0))
 
 ## 5. What Comes Next for NFnext and NFsim
 
-Grounded in [Maintainer Decisions](DECISIONS.md), the historical [NFnext Dynamic-Rate Runtime Plan](archive/plans/NFNEXT_DYNAMIC_RUNTIME_PLAN.md), the [NFsim Performance Plan](archive/plans/NFSIM_GPU_PERF_PLAN.md), and current `main` (`90832910`), here is the clear separation between what has shipped, what is on `main`, and what remains planned:
+Grounded in [Maintainer Decisions](DECISIONS.md), the historical [NFnext Dynamic-Rate Runtime Plan](archive/plans/NFNEXT_DYNAMIC_RUNTIME_PLAN.md), the [NFsim Performance Plan](archive/plans/NFSIM_GPU_PERF_PLAN.md), and current `main` (`9d6d5321`), here is the clear separation between what has shipped, what is on `main`, and what remains planned:
 
 - **Shipped in `v3.0.0a1` (`8482215c`):**
   - NFnext promoted as the Python `method="nf"` default (`#832`, `#149`) after passing `TIER_NF` parity (`#148`), including dynamic observable rates, dynamic energy expressions, and simple dynamic population-map rates (`#147`).
   - Embedded NFcore retained as `method="nfcore"` (direct construction by default) and as the BNGL action-block backend (`simulate_nf` / `simulate({method=>"nf"})`).
   - NFcore2 unlinked from the default build (`#660`).
   - Fail-closed `simulate_nfnext_gpu` unary state-change Metal route.
-- **Added on `main` after `v3.0.0a1` (`8482215c..90832910`):**
+- **Added on `main` after `v3.0.0a1` (`8482215c..9d6d5321`):**
   - Upstream `RuleWorld/NFsim` sync through `d45b7d99` (`v2.0.1` + `#160`, PR `#1047`) and `-i` initial start time CLI flag (PR `#1052`).
-  - `simulate_nfnext_gpu(..., mode="graph")` for Metal and CUDA across `TIER_NF` (PRs `#1040`, `#1041`, `#1044`) with separate real-device Apple Silicon Metal and NVIDIA TITAN V CUDA receipts (`#474`).
+  - Direct-path NFsim time-indexed `TFUN` breakpoint parity (PR `#1061`), scheduled conformance oracle/timeout wiring (PRs `#1062`, `#1070`, verified green in scheduled run `46011111253`).
+  - Explicit BNGL action engine routing (`method=>"nfnext"` / `"nfcore"`, `simulate_nf({engine=>...})`, and unqualified `simulate({method=>"nf"})` routing to NFnext when lowerable without NFcore-only options), physical-unit scaling across Direct NFsim & NFnext, and expanded dynamic energy/population-map support (PR `#1066`).
+  - `simulate_nfnext_gpu(..., mode="graph")` for Metal and CUDA across `TIER_NF` (PRs `#1040`, `#1041`, `#1044`) expanded with `TotalRate`, reactant `include_reactants`/`exclude_reactants` filters, and energy-folded `Arrhenius` patterns (PR `#1069`), with separate real-device Apple Silicon Metal and NVIDIA CUDA receipts (`#474`).
 - **Planned next milestones (not yet shipped):**
-  1. **Action-block routing & parity:** Extend BNGL action dispatch (`simulate_nf` / `simulate({method=>"nf"})`) to support explicit NFnext/NFcore selection once NFnext covers the remaining action-level options (`equilibrate`, `utl`, `.rnf` interoperability, and Tier-P scheduled corpus diagnostics).
+  1. **Remaining action-level NFcore parity:** Broaden NFnext action coverage for NFcore-only action options (`equilibrate`, `utl`, `.rnf` protocol scripts) while keeping unqualified `simulate_nf()` on NFcore until complete parity is established.
   2. **General hybrid & population-map coverage:** Broaden NFnext's executable population-map and dynamic-threshold coverage beyond the currently lowerable simple shapes without relaxing fail-closed diagnostics (`#150`).
   3. **CPU ensemble & specialized rule-family throughput:** Expand compile-once/many-trajectory CPU ensembles and rule-family / scaffold / polymer optimizations (`DECISIONS.md` NFnext consolidation step 5; [NFSIM_GPU_PERF_PLAN.md](archive/plans/NFSIM_GPU_PERF_PLAN.md)).
   4. **GPU scope expansion:** Any widening of `simulate_nfnext_gpu` beyond its documented `mode="unary"` / `mode="graph"` (`TIER_NF`) boundaries requires separate fail-closed lowering plus actual-device statistical parity receipts for each GPU backend (Metal and CUDA independently).
