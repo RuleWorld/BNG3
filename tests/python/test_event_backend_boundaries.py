@@ -77,10 +77,46 @@ def test_flattening_cannot_drop_events(event_model, consumer):
         getattr(cpp, consumer)(*event_model)
 
 
-def test_bngsim_capability_refuses_events(event_model):
+def test_bngsim_capability_accepts_supported_and_refuses_unsupported_events(
+    event_model, tmp_path
+):
     check = cpp.check_bngsim_lowering(*event_model)
-    assert not check["supported"]
-    assert any("event" in message for message in check["blockers"])
+    assert check["supported"]
+    assert check["blockers"] == []
+
+    distrib_source = tmp_path / "event_distrib.bngl"
+    distrib_source.write_text("""begin model
+begin parameters
+ k 1
+end parameters
+begin molecule types
+ A()
+end molecule types
+begin seed species
+ A() 10
+end seed species
+begin observables
+ Molecules X A()
+end observables
+begin reaction rules
+ A() -> 0 k
+end reaction rules
+begin bng3_events version 1
+ event "draw"
+ trigger: time >= 1
+ initial_value: false
+ persistent: true
+ use_values_from_trigger_time: true
+ assignment: X = distrib_uniform(1, 5)
+ end event
+end bng3_events
+end model
+""")
+    distrib_model = cpp.parse_file(str(distrib_source))
+    distrib_network = cpp.generate_network(distrib_model)
+    distrib_check = cpp.check_bngsim_lowering(distrib_model, distrib_network)
+    assert not distrib_check["supported"]
+    assert any("distrib" in message for message in distrib_check["blockers"])
 
 
 def test_structural_bngir_snapshot_cannot_discard_events(event_model):

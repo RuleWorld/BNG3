@@ -78,4 +78,12 @@ OdeResult simulateFiniteSsa(
     const OdeOptions& options,
     FiniteBackend backend);
 
+OdeResult simulateFinitePsa(
+    const ast::Model& model,
+    const GeneratedNetwork& network,
+    const OdeOptions& options,
+    double poplevel,
+    FiniteBackend backend,
+    bool pScaleChecker = true);
+
 } // namespace bng::engine

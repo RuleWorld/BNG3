@@ -1943,7 +1943,9 @@ jobs:
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
             -DBNGSIM_BUILD_PYTHON=OFF \
-            -DBNGSIM_BUILD_NFSIM=OFF
+            -DBNGSIM_BUILD_NFSIM=OFF \
+            -DBNGSIM_BUILD_RULEMONKEY=OFF \
+            -DBNGSIM_BUILD_TESTS=OFF
           # The pinned BNGSIM oracle's vendored NFsim shared library has a
           # glibc teardown fault: its static std::queue destructor double-frees
           # at interpreter exit (gdb backtrace in hosted run 45359245523).

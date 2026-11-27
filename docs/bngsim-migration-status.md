@@ -5,10 +5,10 @@
 > records the required fallback. It is test-backed: every row has a owning
 > test or a `TODO` ticket.
 
-**Last audited:** 2026-11-26 (`origin/main` at `90832910`)
+**Last audited:** 2026-11-27 (`lanl/bngsim` v0.18.0)
 **Capability source:** `cpp/engine/BngsimAdapter.cpp` (always compiled) and runtime solver-option guards in `cpp/engine/BngsimBackend.cpp` (compiled when `BNG3_HAS_BNGSIM_ADAPTER` is enabled)
 **Network adapter:** `cpp/engine/BngsimAdapter.cpp` (`buildBngsimNetwork` is optional)
-**Pinned BNGsim:** `49dc939035f5a272da663f8c9586e3c9f0e1c041` (see `provenance/upstreams.lock.yml`)
+**Pinned BNGsim:** `3295c4d31f2e8c75d07372f33ec2e6b578850540` (`v0.18.0`, see `provenance/upstreams.lock.yml`)
 **Default backend:** `native`; `bngsim` is an explicitly selected optional backend for faithfully lowerable models (see ADR 0003 and `DECISIONS.md`)
 
 ## How to read
@@ -37,15 +37,20 @@ Rejection is **fail-closed**: the adapter throws before solver construction with
 | ODE tolerances and step cap (`rtol`, `atol`, `max_step`) | supported (`BngsimBackend.cpp`) | yes (`SolverOptions`) | `… preserves native steady-state stopping semantics` |
 | ODE `steady_state` with positive finite `steady_state_tol` on non-empty species sets | supported (`BngsimBackend.cpp`) | yes (`SolverOptions::steady_state*`) | `… preserves native steady-state stopping semantics` |
 | Seeded SSA (`method="ssa"`, `seed`, uniform grid or explicit `sample_times`) | supported (`BngsimBackend.cpp`) | yes (`SsaSimulator::run`) | `… rejects controls it cannot represent` (`explicit sample times supersede event interval`) |
+| Seeded PSA (`method="psa"`, `poplevel > 1`, product-scale checking) | supported (`BngsimBackend.cpp`) | yes (`SsaSimulator::run_psa`) | `test_bngsim_adapter.cpp: BNGsim PSA routes method=psa with conservation and fail-closed guards` |
+| Authored BNGL `TotalRate` modifier (omits symmetry & volume conversion factors; multiplies by reactant counts) | supported (`BngsimAdapter.cpp`) | yes | `test_bngsim_adapter.cpp: BNGsim adapter bridges TotalRate with exact ODE and SSA parity` |
+| Static 2D/3D compartments (unit-conversion volume folding into `stat_factor`, unique `@COMP::` species names) | supported (`BngsimAdapter.cpp`) | yes | `test_bngsim_adapter.cpp: BNGsim adapter bridges static 2D/3D compartments with exact ODE parity` |
+| Native `bng3_events` (trigger, delay/delay_expr, priority/priority_expr, persistent, `initial_value`, `use_values_from_trigger_time`, single-species observable & promoted static parameter targets) | supported (`BngsimAdapter.cpp`) | yes (`ModelBuilder::add_event`) | `test_bngsim_adapter.cpp: BNGsim adapter bridges bng3_events to add_event with exact ODE and SSA parity` |
 
 ## Rejected today — model lowering (`cpp/engine/BngsimAdapter.cpp`)
 
 | Feature | Adapter message | Type | BNGsim supports it? | Work needed | Fallback | Test |
 |---|---|---|---|---|---|---|
-| Native SBML/BNGL events (`model.getEventFormatVersion().has_value()`) | `native events are unsupported` | B/C | no — BNGsim `NetworkModel` has no continuous event-root runtime | Keep fail-closed or bridge if BNGsim gains events | yes → native | covered via `checkBngsimLowering` (`BngsimAdapter.cpp:333`) |
-| Delayed reactions (`rule.getDelayExpression()` / `rxn.getDelayExpression()`) | `delayed reactions require the native DDE method-of-steps solver` | B/C | no — BNGsim has no DDE solver | Keep fail-closed (`requireNoDelayedSemantics`) | yes → native | covered via `checkBngsimLowering` (`BngsimAdapter.cpp:336-356`) |
-| `delay()` expressions (in rule rates, functions, or reaction rates) | `delay() expressions require the native DDE method-of-steps solver` | B/C | no — BNGsim has no DDE history buffer | Keep fail-closed (`expressionUsesDelay` / `containsDelayCall`) | yes → native | covered via `checkBngsimLowering` (`BngsimAdapter.cpp:357-392`) |
-| Compartments (`begin compartments`) | `compartments require a volume-aware bridge` | B | investigate — BNGsim `NetworkModel` currently has no compartment-volume API | Typed volume-aware bridge; decide whether BNGsim gains compartment support or BNG3 folds volumes into effective rates where static | yes → native | `test_bngsim_adapter.cpp: … rejects unsupported semantic surfaces` (compartment case) |
+| Unsupported `bng3_events` constructs (`distrib_*`, `delay()`, derived parameters depending on event-assigned parameters, non-single-species/constant targets) | `BNGsim adapter rejected event …` | B/C | no — BNGsim `add_event` does not support SBML `distrib`, DDE `delay()`, or derived parameter chains | Keep fail-closed | yes → native | `test_bngsim_adapter.cpp: … unsupported event constructs fail closed` |
+| Delayed reactions (`rule.getDelayExpression()` / `rxn.getDelayExpression()`) | `delayed reactions require the native DDE method-of-steps solver` | B/C | no — BNGsim has no DDE solver | Keep fail-closed (`requireNoDelayedSemantics`) | yes → native | covered via `checkBngsimLowering` |
+| `delay()` expressions (in rule rates, functions, or reaction rates) | `delay() expressions require the native DDE method-of-steps solver` | B/C | no — BNGsim has no DDE history buffer | Keep fail-closed (`expressionUsesDelay` / `containsDelayCall`) | yes → native | covered via `checkBngsimLowering` |
+| Dynamic / event-modified compartments (`isVolumeTimeDependent()` or volume referencing event-assigned parameter) | `dynamic/time-dependent compartment volumes are unsupported` / `event-modified compartment volumes are unsupported` | B | dynamic cBNGL volume rescaling differs | Keep fail-closed | yes → native | `test_bngsim_adapter.cpp: … rejects unsupported dynamic compartment surface` |
+| Atomizer absolute-flux reactions (`BNG3AbsoluteFluxRules`) | `absolute-flux reactions are unsupported` | B | SSA reactant-availability clamping differs | Keep fail-closed | yes → native | `test_bngsim_adapter.cpp: … absolute-flux TotalRate modifier remains fail-closed` |
 | Energy patterns (`begin energy patterns`) | `energy patterns require an eBNGL rate bridge` | C | likely not a BNGsim concern — rates should be compiled to effective finite rates before the boundary | Compile into generated rates where mathematically valid (Sekar expansion or `EnergyRxnClass`); reject otherwise | yes | add `test_bngsim_adapter` case for energy pattern |
 | Barrier patterns (`begin barrier patterns`) | `barrier patterns require an eBNGL rate bridge` | C | same | same | yes | same |
 | `driven_by(W)` reservoir work (`rule.hasDrivingWork()`) | `driven_by() reservoir work requires an eBNGL rate bridge` | C | same — nonequilibrium work is a rate correction, not graph context | same | yes | add |

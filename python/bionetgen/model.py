@@ -1645,14 +1645,14 @@ class BioNetGenModel:
                     raise RuntimeError(
                         "continue_simulation requires the native ODE or SSA backend"
                     )
-                # PLA/PSA not yet claimed for BNGsim — fail closed before any
+                # PLA is not claimed for BNGsim — fail closed before any
                 # lowering check so the message is precise even when the build
                 # is unavailable.
-                if method in ("pla", "psa"):
+                if method == "pla":
                     raise RuntimeError(
-                        f"BNGsim backend does not yet support method='{method}'; native fallback required"
+                        "BNGsim backend does not yet support method='pla'; native fallback required"
                     )
-                if method == "ssa" and batch_size > 0:
+                if method in ("ssa", "psa") and batch_size > 0:
                     raise RuntimeError(
                         "BNGsim backend does not support batch_size; "
                         "use backend='native' or 'auto'"
@@ -1846,20 +1846,56 @@ class BioNetGenModel:
                     raw["backend"] = "native"
             elif method == "psa":
                 if use_bngsim:
-                    # PSA not claimed; fail closed rather than silently running native
-                    raise RuntimeError(
-                        "BNGsim backend does not yet support method='psa'; native fallback required"
+                    if bngsim_provider == "cpp":
+                        raw = _cpp.simulate_psa_bngsim(
+                            self._model,
+                            self._network,
+                            t_end=t_end,
+                            n_steps=n_steps,
+                            poplevel=psa_poplevel,
+                            t_start=t_start,
+                            seed=seed,
+                            stop_if=stop_if,
+                            sample_times=normalized_sample_times,
+                            max_sim_steps=max_sim_steps,
+                            output_step_interval=output_step_interval,
+                        )
+                    else:
+                        raw = _simulate_via_python_bngsim(
+                            self._model,
+                            self._network,
+                            method="psa",
+                            t_start=t_start,
+                            t_end=t_end,
+                            n_steps=n_steps,
+                            rtol=rtol,
+                            atol=atol,
+                            seed=seed,
+                            max_step=max_step,
+                            steady_state=steady_state,
+                            steady_state_tol=steady_state_tol,
+                            stop_if=stop_if,
+                            sample_times=normalized_sample_times,
+                            max_sim_steps=max_sim_steps,
+                            output_step_interval=output_step_interval,
+                            sparse=sparse,
+                            check_product_scale=check_product_scale,
+                            batch_size=batch_size,
+                            psa_poplevel=psa_poplevel,
+                        )
+                    if isinstance(raw, dict) and "backend" not in raw:
+                        raw["backend"] = "bngsim"
+                else:
+                    raw = _cpp.simulate_psa(
+                        self._model,
+                        self._network,
+                        t_end=t_end,
+                        n_steps=n_steps,
+                        poplevel=psa_poplevel,
+                        t_start=t_start,
                     )
-                raw = _cpp.simulate_psa(
-                    self._model,
-                    self._network,
-                    t_end=t_end,
-                    n_steps=n_steps,
-                    poplevel=psa_poplevel,
-                    t_start=t_start,
-                )
-                if isinstance(raw, dict) and "backend" not in raw:
-                    raw["backend"] = "native"
+                    if isinstance(raw, dict) and "backend" not in raw:
+                        raw["backend"] = "native"
             else:
                 raise AssertionError("validated method dispatch is incomplete")
 

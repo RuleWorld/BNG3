@@ -143,7 +143,7 @@ def bngsim_capabilities() -> dict[str, Any]:
             "python_version": py_version,
             "supports_ode": True,
             "supports_ssa": True,
-            "supports_psa": False,
+            "supports_psa": True,
             "supports_pla": False,
         }
     return {
@@ -183,6 +183,7 @@ def _validate_runtime_options(
     max_sim_steps: int,
     output_step_interval: int,
     batch_size: int,
+    psa_poplevel: float = 100.0,
 ) -> None:
     """Mirror cpp/engine/BngsimBackend.cpp fail-closed runtime option checks."""
     if method == "ode":
@@ -208,7 +209,13 @@ def _validate_runtime_options(
                 raise RuntimeError(
                     "BNGsim adapter rejected steady_state_tol: a finite positive tolerance is required to match native semantics"
                 )
-    elif method == "ssa":
+    elif method in ("ssa", "psa"):
+        if method == "psa":
+            if not math.isfinite(float(psa_poplevel)) or float(psa_poplevel) <= 1.0:
+                raise RuntimeError(
+                    "BNGsim adapter rejected poplevel: BNGsim PSA requires finite poplevel > 1 "
+                    "(use method='ssa' for exact unscaled SSA)"
+                )
         if batch_size > 0:
             raise RuntimeError(
                 "BNGsim backend does not support batch_size; use backend='native' or 'auto'"
@@ -218,8 +225,9 @@ def _validate_runtime_options(
                 "BNGsim adapter rejected stop_if: native event stop expressions are not supported"
             )
         if max_sim_steps > 0:
+            label = "PSA" if method == "psa" else "SSA"
             raise RuntimeError(
-                "BNGsim adapter rejected max_sim_steps: BNGsim SSA has no reaction-event cap"
+                f"BNGsim adapter rejected max_sim_steps: BNGsim {label} has no reaction-event cap"
             )
         if output_step_interval > 0 and not sample_times:
             raise RuntimeError(
@@ -294,8 +302,9 @@ def simulate_via_python_bngsim(
     sparse: bool,
     check_product_scale: float,
     batch_size: int,
+    psa_poplevel: float = 100.0,
 ) -> dict[str, Any]:
-    """Run ODE or SSA via an installed LANL Python ``bngsim`` package.
+    """Run ODE, SSA, or PSA via an installed LANL Python ``bngsim`` package.
 
     Caller must have already passed ``_cpp.check_bngsim_lowering``. Fails
     closed on any unsupported option or solver failure; never falls back.
@@ -325,6 +334,7 @@ def simulate_via_python_bngsim(
         max_sim_steps=max_sim_steps,
         output_step_interval=output_step_interval,
         batch_size=batch_size,
+        psa_poplevel=psa_poplevel,
     )
 
     with TemporaryDirectory(prefix="bng3-bngsim-py-") as tmpdir:
@@ -332,7 +342,12 @@ def simulate_via_python_bngsim(
         cpp.io.write_net(cpp_model, cpp_network, net_path)
         bngsim_model = bngsim_mod.Model.from_net(net_path)
 
-    sim = bngsim_mod.Simulator(bngsim_model, method=method)
+    if method == "psa":
+        sim = bngsim_mod.Simulator(
+            bngsim_model, method="psa", poplevel=float(psa_poplevel)
+        )
+    else:
+        sim = bngsim_mod.Simulator(bngsim_model, method=method)
 
     run_kwargs: dict[str, Any] = {}
     if sample_times:
@@ -349,7 +364,7 @@ def simulate_via_python_bngsim(
         if steady_state:
             run_kwargs["steady_state"] = True
             run_kwargs["steady_state_tol"] = float(steady_state_tol)
-    elif method == "ssa":
+    elif method in ("ssa", "psa"):
         if seed:
             run_kwargs["seed"] = int(seed)
 

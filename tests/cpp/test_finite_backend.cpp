@@ -24,9 +24,14 @@ TEST_CASE("FiniteBackend capabilities are available without BNGSIM build", "[fin
     REQUIRE(!caps.available);
     REQUIRE(caps.version == "unavailable");
     REQUIRE(!caps.supportsOde);
+    REQUIRE(!caps.supportsSsa);
+    REQUIRE(!caps.supportsPsa);
 #else
     REQUIRE(caps.available);
-    REQUIRE(!caps.version.empty());
+    REQUIRE(caps.version == "3295c4d31f2e8c75d07372f33ec2e6b578850540");
+    REQUIRE(caps.supportsOde);
+    REQUIRE(caps.supportsSsa);
+    REQUIRE(caps.supportsPsa);
 #endif
     REQUIRE(engine::bngsimVersion() == caps.version);
     REQUIRE(engine::isBngsimAvailable() == caps.available);
@@ -118,26 +123,50 @@ end reaction rules
 #endif
 }
 
-TEST_CASE("FiniteBackend compartment lowering is rejected with semantic blocker", "[finite_backend]") {
-    auto model = parser::parseModel(R"(
+TEST_CASE("FiniteBackend static compartments lower cleanly and dynamic compartments are rejected", "[finite_backend]") {
+    auto staticModel = parser::parseModel(R"(
+begin parameters
+ k 0.1
+end parameters
 begin compartments
- CYT 3 1
+ CYT 3 2.5
 end compartments
 begin molecule types
  X()
 end molecule types
 begin seed species
- X() 1
+ @CYT:X() 10
+end seed species
+begin reaction rules
+ @CYT:X() + @CYT:X() -> 0 k
+end reaction rules
+)");
+    REQUIRE(staticModel != nullptr);
+    engine::NetworkGenerator staticGen(*staticModel);
+    auto staticNet = staticGen.generateNative();
+    auto staticChk = engine::checkBngsimLowering(*staticModel, staticNet);
+    REQUIRE(staticChk.supported);
+    REQUIRE(staticChk.blockers.empty());
+
+    auto dynamicModel = parser::parseModel(R"(
+begin compartments
+ CYT 3 1+time
+end compartments
+begin molecule types
+ X()
+end molecule types
+begin seed species
+ @CYT:X() 1
 end seed species
 )");
-    REQUIRE(model != nullptr);
-    engine::NetworkGenerator gen(*model);
-    auto net = gen.generateNative();
-    auto chk = engine::checkBngsimLowering(*model, net);
-    REQUIRE(!chk.supported);
+    REQUIRE(dynamicModel != nullptr);
+    engine::NetworkGenerator dynamicGen(*dynamicModel);
+    auto dynamicNet = dynamicGen.generateNative();
+    auto dynamicChk = engine::checkBngsimLowering(*dynamicModel, dynamicNet);
+    REQUIRE(!dynamicChk.supported);
     bool hasCompartment = false;
-    for (const auto& b : chk.blockers) {
-        if (b.find("compartments") != std::string::npos) hasCompartment = true;
+    for (const auto& b : dynamicChk.blockers) {
+        if (b.find("compartment") != std::string::npos) hasCompartment = true;
     }
     REQUIRE(hasCompartment);
 }

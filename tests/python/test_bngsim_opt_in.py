@@ -128,10 +128,42 @@ end reaction rules
 end model
 """)
 
-COMPARTMENT_BNGL = textwrap.dedent("""
+EVENT_DISTRIB_BNGL = textwrap.dedent("""
 begin model
+begin parameters
+    k 0.5
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules X A()
+end observables
+begin reaction rules
+    A() -> 0 k
+end reaction rules
+begin bng3_events version 1
+    event "draw"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: X = distrib_uniform(1, 5)
+    end event
+end bng3_events
+end model
+""")
+
+DYNAMIC_COMPARTMENT_BNGL = textwrap.dedent("""
+begin model
+begin parameters
+    k 0.1
+end parameters
 begin compartments
-    CYT 3 1.0
+    CYT 3 1+time
 end compartments
 begin molecule types
     X()
@@ -143,8 +175,91 @@ begin observables
     Molecules Xtot X()
 end observables
 begin reaction rules
-    X() -> 0 0.1
+    @CYT:X() -> 0 k
 end reaction rules
+end model
+""")
+
+COMPARTMENT_PARAM_BNGL = textwrap.dedent("""
+begin model
+begin parameters
+    kbind 0.5
+    kunbind 0.1
+end parameters
+begin compartments
+    EC 3 10.0
+    PM 2 2.0 EC
+end compartments
+begin molecule types
+    L(r)
+    R(l)
+end molecule types
+begin seed species
+    @EC:L(r) 40
+    @PM:R(l) 20
+end seed species
+begin observables
+    Molecules RL @PM:L(r!1).R(l!1)
+end observables
+begin reaction rules
+    @EC:L(r) + @PM:R(l) <-> @PM:L(r!1).R(l!1) kbind, kunbind
+end reaction rules
+end model
+""")
+
+TOTALRATE_BNGL = textwrap.dedent("""
+begin model
+begin parameters
+    k 0.05
+end parameters
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    A() 10
+    D() 0
+end seed species
+begin observables
+    Molecules Atot A()
+    Molecules Dtot D()
+end observables
+begin reaction rules
+    A() + A() -> D() k TotalRate
+end reaction rules
+end model
+""")
+
+EVENT_PARAM_BNGL = textwrap.dedent("""
+begin model
+begin parameters
+    k 0.2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 100
+    B() 0
+end seed species
+begin observables
+    Molecules Aobs A()
+    Molecules Bobs B()
+end observables
+begin reaction rules
+    A() -> B() k
+end reaction rules
+begin bng3_events version 1
+    event "boost"
+    trigger: time >= 1.0
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    delay: 0.5
+    assignment: k = 1.0
+    end event
+end bng3_events
 end model
 """)
 
@@ -265,10 +380,16 @@ def _make_fake_python_bngsim(
             self.observable_names = observable_names
 
     class FakeSimulator:
-        def __init__(self, model: FakeModel, method: str = "ode"):
+        def __init__(
+            self,
+            model: FakeModel,
+            method: str = "ode",
+            poplevel: float | None = None,
+        ):
             self.model = model
             self.method = method
-            calls.append(("Simulator", method))
+            self.poplevel = poplevel
+            calls.append(("Simulator", method, poplevel))
 
         def run(self, **kwargs):
             calls.append(("run", dict(kwargs)))
@@ -336,15 +457,22 @@ def test_public_bngsim_introspection_api():
 
 
 def test_model_check_bngsim_lowering_method(tmp_path):
-    simple = bionetgen.load(_write(tmp_path, "decay.bngl", DECAY_BNGL))
-    chk_ok = simple.check_bngsim_lowering()
-    assert chk_ok["supported"] is True
-    assert chk_ok["blockers"] == []
+    for name, src in (
+        ("decay.bngl", DECAY_BNGL),
+        ("event.bngl", EVENT_BNGL),
+        ("event_param.bngl", EVENT_PARAM_BNGL),
+        ("comp_ok.bngl", COMPARTMENT_PARAM_BNGL),
+        ("totalrate.bngl", TOTALRATE_BNGL),
+    ):
+        model = bionetgen.load(_write(tmp_path, name, src))
+        chk_ok = model.check_bngsim_lowering()
+        assert chk_ok["supported"] is True, (name, chk_ok)
+        assert chk_ok["blockers"] == []
 
     for name, src, expected_substr in (
-        ("event.bngl", EVENT_BNGL, "event"),
+        ("event_distrib.bngl", EVENT_DISTRIB_BNGL, "distrib"),
         ("delay.bngl", DELAY_BNGL, "delay"),
-        ("comp.bngl", COMPARTMENT_BNGL, "compartment"),
+        ("dyn_comp.bngl", DYNAMIC_COMPARTMENT_BNGL, "compartment"),
         ("energy.bngl", ENERGY_BNGL, "energy"),
         ("nonref.bngl", NON_REF_RATE_BNGL, "rate law"),
         ("localfn.bngl", LOCAL_FUNC_BNGL, "function arguments"),
@@ -404,8 +532,6 @@ def test_explicit_bngsim_fails_closed_for_incompatible_options(tmp_path):
 
     with pytest.raises(RuntimeError, match="does not yet support method='pla'"):
         model.simulate(method="pla", backend="bngsim", t_end=1.0, n_steps=2)
-    with pytest.raises(RuntimeError, match="does not yet support method='psa'"):
-        model.simulate(method="psa", backend="bngsim", t_end=1.0, n_steps=2)
     with pytest.raises(RuntimeError, match="continue_simulation"):
         model.simulate(
             method="ode",
@@ -418,6 +544,20 @@ def test_explicit_bngsim_fails_closed_for_incompatible_options(tmp_path):
         model.simulate(
             method="ssa", backend="bngsim", batch_size=4, t_end=1.0, n_steps=2
         )
+    with pytest.raises(ValueError, match="batch_size"):
+        model.simulate(
+            method="psa", backend="bngsim", batch_size=4, t_end=1.0, n_steps=2
+        )
+    if not bionetgen.bngsim_available():
+        with pytest.raises(RuntimeError, match="unavailable"):
+            model.simulate(
+                method="psa", backend="bngsim", t_end=1.0, n_steps=2, psa_poplevel=10.0
+            )
+    else:
+        with pytest.raises(RuntimeError, match="poplevel"):
+            model.simulate(
+                method="psa", backend="bngsim", t_end=1.0, n_steps=2, psa_poplevel=1.0
+            )
 
 
 def test_scan_and_sensitivity_forward_backend_and_fail_closed(tmp_path):
@@ -592,14 +732,36 @@ def test_python_bngsim_bridge_end_to_end_and_fail_closed(tmp_path, monkeypatch):
     )
     assert r_ssa.backend == "bngsim"
     assert r_ssa.construction_path == "python-bngsim"
-    assert any(c == ("Simulator", "ssa") for c in calls)
+    assert any(c == ("Simulator", "ssa", None) for c in calls)
+
+    # Explicit PSA opt-in works via Python bngsim bridge
+    r_psa = model.simulate(
+        method="psa",
+        t_end=2.0,
+        n_steps=4,
+        seed=42,
+        psa_poplevel=10.0,
+        backend="bngsim",
+    )
+    assert r_psa.backend == "bngsim"
+    assert r_psa.construction_path == "python-bngsim"
+    assert any(c == ("Simulator", "psa", 10.0) for c in calls)
+    with pytest.raises(RuntimeError, match="poplevel"):
+        model.simulate(
+            method="psa",
+            t_end=2.0,
+            n_steps=4,
+            seed=42,
+            psa_poplevel=1.0,
+            backend="bngsim",
+        )
 
     # Unsupported model constructs STILL fail closed BEFORE Python bngsim runs
     calls.clear()
     for name, src, substr in (
-        ("ev.bngl", EVENT_BNGL, "event"),
+        ("ev_distrib.bngl", EVENT_DISTRIB_BNGL, "distrib"),
         ("dl.bngl", DELAY_BNGL, "delay"),
-        ("cp.bngl", COMPARTMENT_BNGL, "compartment"),
+        ("dyn_cp.bngl", DYNAMIC_COMPARTMENT_BNGL, "compartment"),
         ("en.bngl", ENERGY_BNGL, "energy"),
         ("nr.bngl", NON_REF_RATE_BNGL, "rate law"),
     ):
@@ -657,3 +819,121 @@ def test_python_bngsim_bridge_end_to_end_and_fail_closed(tmp_path, monkeypatch):
     assert all(r.backend == "bngsim" for r in scan_res.results)
     assert math.isclose(scan_res.final("Xtot")[0], 100.0 * math.exp(-0.2), rel_tol=1e-9)
     assert math.isclose(scan_res.final("Xtot")[1], 100.0 * math.exp(-1.0), rel_tol=1e-9)
+
+
+# ---------------------------------------------------------------------------
+# 5. Real C++ BNGsim v0.18.0 differential parity tests (ODE, SSA, PSA,
+#    TotalRate, static 2D/3D compartments, and bng3_events)
+# ---------------------------------------------------------------------------
+
+
+def test_cpp_bngsim_differential_parity_suite(tmp_path):
+    import bionetgen._bionetgen_cpp as _cpp
+
+    if not _cpp.bngsim_available():
+        pytest.skip("C++ BUILD_BNGSIM_ADAPTER is not enabled in this build")
+
+    caps = bionetgen.bngsim_capabilities()
+    assert caps["provider"] == "cpp"
+    assert caps["version"] == "3295c4d31f2e8c75d07372f33ec2e6b578850540"
+    assert caps["supports_ode"] is True
+    assert caps["supports_ssa"] is True
+    assert caps["supports_psa"] is True
+
+    # 1. TotalRate ODE parity (homodimer omits 0.5 symmetry factor)
+    tr_model = bionetgen.load(_write(tmp_path, "tr.bngl", TOTALRATE_BNGL))
+    tr_native = tr_model.simulate(method="ode", t_end=2.0, n_steps=10)
+    tr_bngsim = tr_model.simulate(method="ode", t_end=2.0, n_steps=10, backend="bngsim")
+    assert tr_bngsim.backend == "bngsim"
+    np.testing.assert_allclose(
+        tr_bngsim.observables["Atot"], tr_native.observables["Atot"], atol=1e-5
+    )
+    np.testing.assert_allclose(
+        tr_bngsim.observables["Dtot"], tr_native.observables["Dtot"], atol=1e-5
+    )
+
+    # 2. Static 2D/3D compartment ODE parity
+    comp_model = bionetgen.load(_write(tmp_path, "comp.bngl", COMPARTMENT_PARAM_BNGL))
+    comp_native = comp_model.simulate(method="ode", t_end=2.0, n_steps=10)
+    comp_bngsim = comp_model.simulate(
+        method="ode", t_end=2.0, n_steps=10, backend="bngsim"
+    )
+    assert comp_bngsim.backend == "bngsim"
+    np.testing.assert_allclose(
+        comp_bngsim.observables["RL"], comp_native.observables["RL"], atol=1e-5
+    )
+
+    # 3. bng3_events (threshold reset + delayed parameter mutation) ODE parity
+    ev_model = bionetgen.load(_write(tmp_path, "ev.bngl", EVENT_BNGL))
+    ev_native = ev_model.simulate(method="ode", t_end=4.0, n_steps=20)
+    ev_bngsim = ev_model.simulate(method="ode", t_end=4.0, n_steps=20, backend="bngsim")
+    assert ev_bngsim.backend == "bngsim"
+    np.testing.assert_allclose(
+        ev_bngsim.observables["X"], ev_native.observables["X"], atol=1e-4
+    )
+
+    evp_model = bionetgen.load(_write(tmp_path, "evp.bngl", EVENT_PARAM_BNGL))
+    evp_native = evp_model.simulate(method="ode", t_end=3.0, n_steps=15)
+    evp_bngsim = evp_model.simulate(
+        method="ode", t_end=3.0, n_steps=15, backend="bngsim"
+    )
+    assert evp_bngsim.backend == "bngsim"
+    assert evp_bngsim.concentrations.shape == evp_native.concentrations.shape
+    assert list(evp_bngsim.observables.keys()) == list(evp_native.observables.keys())
+    np.testing.assert_allclose(
+        evp_bngsim.observables["Aobs"], evp_native.observables["Aobs"], atol=1e-4
+    )
+    np.testing.assert_allclose(
+        evp_bngsim.observables["Bobs"], evp_native.observables["Bobs"], atol=1e-4
+    )
+
+    # 4. PSA conservation, seed reproducibility, and fail-closed poplevel guard
+    psa_bngl = textwrap.dedent("""
+        begin model
+        begin parameters
+            k 0.25
+        end parameters
+        begin molecule types
+            A()
+            B()
+        end molecule types
+        begin seed species
+            A() 10000
+            B() 0
+        end seed species
+        begin observables
+            Molecules Aobs A()
+            Molecules Bobs B()
+        end observables
+        begin reaction rules
+            A() -> B() k
+        end reaction rules
+        end model
+    """)
+    psa_model = bionetgen.load(_write(tmp_path, "psa.bngl", psa_bngl))
+    r_psa1 = psa_model.simulate(
+        method="psa",
+        t_end=2.0,
+        n_steps=4,
+        seed=42,
+        psa_poplevel=100.0,
+        backend="bngsim",
+    )
+    r_psa2 = psa_model.simulate(
+        method="psa",
+        t_end=2.0,
+        n_steps=4,
+        seed=42,
+        psa_poplevel=100.0,
+        backend="bngsim",
+    )
+    assert r_psa1.backend == "bngsim"
+    np.testing.assert_array_equal(
+        r_psa1.observables["Aobs"], r_psa2.observables["Aobs"]
+    )
+    np.testing.assert_allclose(
+        r_psa1.observables["Aobs"] + r_psa1.observables["Bobs"], 10000.0, atol=1e-6
+    )
+    assert math.isclose(
+        float(r_psa1.observables["Aobs"][-1]), 10000.0 * math.exp(-0.5), rel_tol=0.08
+    )

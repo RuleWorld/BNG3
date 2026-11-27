@@ -26,6 +26,14 @@ OdeResult simulateSsaViaBngsim(
     const GeneratedNetwork& network,
     const OdeOptions& options);
 
+// PSA (Partial Scaling Algorithm) via BNGsim SsaSimulator::run_psa.
+// Requires finite poplevel > 1.0 and fails closed on unsupported controls.
+OdeResult simulatePsaViaBngsim(
+    const ast::Model& model,
+    const GeneratedNetwork& network,
+    const OdeOptions& options,
+    double poplevel);
+
 // Introspection helpers for the capability layer.
 std::string bngsimPinnedVersion();
 bool bngsimSupportsOde();
@@ -41,6 +49,11 @@ inline OdeResult simulateOdeViaBngsim(
 }
 inline OdeResult simulateSsaViaBngsim(
     const ast::Model&, const GeneratedNetwork&, const OdeOptions&) {
+    throw std::runtime_error(
+        "BNGsim backend unavailable: build without BUILD_BNGSIM_ADAPTER");
+}
+inline OdeResult simulatePsaViaBngsim(
+    const ast::Model&, const GeneratedNetwork&, const OdeOptions&, double) {
     throw std::runtime_error(
         "BNGsim backend unavailable: build without BUILD_BNGSIM_ADAPTER");
 }

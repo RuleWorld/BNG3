@@ -33,7 +33,8 @@ bngsim::TimeSpec toBngsimTimeSpec(const OdeOptions& opts) {
 
 OdeResult convertBngsimResult(
     const bngsim::Result& bngsimResult,
-    const ast::Model& model) {
+    const ast::Model& model,
+    const GeneratedNetwork& network) {
     OdeResult out;
     const auto nTimes = bngsimResult.n_times();
     out.timePoints.reserve(static_cast<std::size_t>(nTimes));
@@ -41,45 +42,58 @@ OdeResult convertBngsimResult(
     for (int i = 0; i < nTimes; ++i) {
         out.timePoints.push_back(tvec.at(static_cast<std::size_t>(i)));
     }
-    const auto nSpecies = bngsimResult.n_species();
+    const auto totalSpecies = bngsimResult.n_species();
+    // Promoted event-assigned parameters are appended as unreported continuous
+    // species after network.species. Project trajectory rows back to the
+    // model's real network species (0 .. network.species.size() - 1).
+    const std::size_t reportedSpecies = std::min(
+        network.species.size(),
+        static_cast<std::size_t>(std::max(0, totalSpecies)));
     out.concentrations.resize(static_cast<std::size_t>(nTimes));
     const auto& sd = bngsimResult.species_data();
-    // BNGsim's species_data is time-major flat: sd[ti * nS + si] (see
-    // test_bngsim_adapter.cpp: species_data().at(ti) for nS==1).
-    // Handle both flat and single-species shorthand.
+    // BNGsim's species_data is time-major flat: sd[ti * totalSpecies + si].
     for (int ti = 0; ti < nTimes; ++ti) {
-        out.concentrations[static_cast<std::size_t>(ti)].resize(static_cast<std::size_t>(nSpecies));
-        for (int si = 0; si < nSpecies; ++si) {
-            if (static_cast<std::size_t>(sd.size()) == static_cast<std::size_t>(nTimes * nSpecies)) {
-                out.concentrations[static_cast<std::size_t>(ti)][static_cast<std::size_t>(si)] =
-                    sd[static_cast<std::size_t>(ti * nSpecies + si)];
-            } else if (static_cast<std::size_t>(sd.size()) == static_cast<std::size_t>(nTimes) && nSpecies == 1) {
-                out.concentrations[static_cast<std::size_t>(ti)][0] = sd[static_cast<std::size_t>(ti)];
+        out.concentrations[static_cast<std::size_t>(ti)].resize(reportedSpecies);
+        for (std::size_t si = 0; si < reportedSpecies; ++si) {
+            if (static_cast<std::size_t>(sd.size()) ==
+                static_cast<std::size_t>(nTimes) * static_cast<std::size_t>(totalSpecies)) {
+                out.concentrations[static_cast<std::size_t>(ti)][si] =
+                    sd[static_cast<std::size_t>(ti) * static_cast<std::size_t>(totalSpecies) + si];
+            } else if (static_cast<std::size_t>(sd.size()) == static_cast<std::size_t>(nTimes) &&
+                       totalSpecies == 1) {
+                out.concentrations[static_cast<std::size_t>(ti)][0] =
+                    sd[static_cast<std::size_t>(ti)];
             } else if (!sd.empty()) {
-                // Fallback: try flat indexing even if size mismatched (will throw if OOB)
-                const std::size_t idx = static_cast<std::size_t>(ti * nSpecies + si);
-                out.concentrations[static_cast<std::size_t>(ti)][static_cast<std::size_t>(si)] =
+                const std::size_t idx =
+                    static_cast<std::size_t>(ti) * static_cast<std::size_t>(totalSpecies) + si;
+                out.concentrations[static_cast<std::size_t>(ti)][si] =
                     idx < sd.size() ? sd[idx] : 0.0;
             }
         }
     }
-    const auto nObs = bngsimResult.n_observables();
-    if (nObs > 0) {
+    const auto totalObs = bngsimResult.n_observables();
+    // Promoted event-assigned parameters may append helper observables after
+    // the model's declared observables; project back to model.getObservables().
+    const std::size_t reportedObs = std::min(
+        model.getObservables().size(),
+        static_cast<std::size_t>(std::max(0, totalObs)));
+    if (reportedObs > 0) {
         out.observables.resize(static_cast<std::size_t>(nTimes));
         const auto& od = bngsimResult.observable_data();
-        // Flat time-major: od[ti * nO + oi]
+        // Flat time-major: od[ti * totalObs + oi]
         for (int ti = 0; ti < nTimes; ++ti) {
-            out.observables[static_cast<std::size_t>(ti)].resize(static_cast<std::size_t>(nObs));
-            for (int oi = 0; oi < nObs; ++oi) {
-                if (static_cast<std::size_t>(od.size()) == static_cast<std::size_t>(nTimes * nObs)) {
-                    out.observables[static_cast<std::size_t>(ti)][static_cast<std::size_t>(oi)] =
-                        od[static_cast<std::size_t>(ti * nObs + oi)];
-                } else if (static_cast<std::size_t>(od.size()) == static_cast<std::size_t>(nObs)) {
-                    // Some BNGsim builds return only a single time slice (e.g. initial)
-                    out.observables[static_cast<std::size_t>(ti)][static_cast<std::size_t>(oi)] = od[static_cast<std::size_t>(oi)];
+            out.observables[static_cast<std::size_t>(ti)].resize(reportedObs);
+            for (std::size_t oi = 0; oi < reportedObs; ++oi) {
+                if (static_cast<std::size_t>(od.size()) ==
+                    static_cast<std::size_t>(nTimes) * static_cast<std::size_t>(totalObs)) {
+                    out.observables[static_cast<std::size_t>(ti)][oi] =
+                        od[static_cast<std::size_t>(ti) * static_cast<std::size_t>(totalObs) + oi];
+                } else if (static_cast<std::size_t>(od.size()) == static_cast<std::size_t>(totalObs)) {
+                    out.observables[static_cast<std::size_t>(ti)][oi] = od[oi];
                 } else if (!od.empty()) {
-                    const std::size_t idx = static_cast<std::size_t>(ti * nObs + oi);
-                    out.observables[static_cast<std::size_t>(ti)][static_cast<std::size_t>(oi)] =
+                    const std::size_t idx =
+                        static_cast<std::size_t>(ti) * static_cast<std::size_t>(totalObs) + oi;
+                    out.observables[static_cast<std::size_t>(ti)][oi] =
                         idx < od.size() ? od[idx] : 0.0;
                 }
             }
@@ -87,23 +101,24 @@ OdeResult convertBngsimResult(
     } else {
         out.observables.clear();
     }
-    (void)model;
     return out;
 }
 
 } // namespace
 
 std::string bngsimPinnedVersion() {
-    return "49dc939035f5a272da663f8c9586e3c9f0e1c041";
+    return "3295c4d31f2e8c75d07372f33ec2e6b578850540";
 }
 
 bool bngsimSupportsOde() { return true; }
 bool bngsimSupportsSsa() {
-    // BNGsim exposes SSA via its C++ API (Gillespie) in recent revisions.
-    // Treat as supported; the actual construction will throw if unavailable.
+    // BNGsim exposes SSA via its C++ API (Gillespie).
     return true;
 }
-bool bngsimSupportsPsa() { return false; }
+bool bngsimSupportsPsa() {
+    // BNGsim v0.18.0 exposes PSA via SsaSimulator::run_psa().
+    return true;
+}
 
 OdeResult simulateOdeViaBngsim(
     const ast::Model& model,
@@ -171,7 +186,7 @@ OdeResult simulateOdeViaBngsim(
     // current result layout. If the layout has changed between BNGsim
     // revisions, fall back to a minimal time/concentration mapping.
     try {
-        out = convertBngsimResult(bngsimResult, model);
+        out = convertBngsimResult(bngsimResult, model, network);
     } catch (const std::exception& ex) {
         throw std::runtime_error(std::string("BNGsim result conversion failed: ") + ex.what());
     }
@@ -214,16 +229,72 @@ OdeResult simulateSsaViaBngsim(
 
     try {
         bngsim::SsaSimulator solver(*bngsimModel);
-        // Future PSA path: if options indicate poplevel, use run_psa. For now,
-        // always use exact SSA. PSA parity is Phase F.
         bngsim::Result r = solver.run(times, static_cast<uint64_t>(options.seed));
-        return convertBngsimResult(r, model);
+        auto out = convertBngsimResult(r, model, network);
+        if (!options.sampleTimes.empty() && out.timePoints.size() != options.sampleTimes.size()) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected sample_times: BNGsim TimeSpec does not support explicit sample times in this build");
+        }
+        return out;
     } catch (const std::exception& ex) {
         const std::string msg = ex.what();
         if (msg.find("BNGsim adapter rejected") != std::string::npos) {
             throw;
         }
         throw std::runtime_error(std::string("BNGsim numerical failure (SSA): ") + msg);
+    }
+}
+
+OdeResult simulatePsaViaBngsim(
+    const ast::Model& model,
+    const GeneratedNetwork& network,
+    const OdeOptions& options,
+    double poplevel) {
+
+    if (!std::isfinite(poplevel) || !(poplevel > 1.0)) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected poplevel: BNGsim PSA requires finite poplevel > 1 (use method='ssa' for exact unscaled SSA)");
+    }
+    if (!options.stopIf.empty()) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected stop_if: native event stop expressions are not supported");
+    }
+    if (options.maxSimSteps > 0 || options.maxSimStepsSpecified) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected max_sim_steps: BNGsim PSA has no reaction-event cap");
+    }
+    if (options.outputStepInterval > 0 && options.sampleTimes.empty()) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected output_step_interval: event-indexed output is not represented by TimeSpec");
+    }
+    if (options.batchSize > 0) {
+        throw std::runtime_error(
+            "BNGsim backend does not support batch_size; use backend='native' or 'auto'");
+    }
+
+    auto bngsimModel = buildBngsimNetwork(model, network);
+    if (!bngsimModel) {
+        throw std::runtime_error("BNGsim backend failed to lower network: null model");
+    }
+
+    bngsim::TimeSpec times = toBngsimTimeSpec(options);
+
+    try {
+        bngsim::SsaSimulator solver(*bngsimModel);
+        bngsim::Result r = solver.run_psa(
+            times, static_cast<uint64_t>(options.seed), poplevel);
+        auto out = convertBngsimResult(r, model, network);
+        if (!options.sampleTimes.empty() && out.timePoints.size() != options.sampleTimes.size()) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected sample_times: BNGsim TimeSpec does not support explicit sample times in this build");
+        }
+        return out;
+    } catch (const std::exception& ex) {
+        const std::string msg = ex.what();
+        if (msg.find("BNGsim adapter rejected") != std::string::npos) {
+            throw;
+        }
+        throw std::runtime_error(std::string("BNGsim numerical failure (PSA): ") + msg);
     }
 }
 

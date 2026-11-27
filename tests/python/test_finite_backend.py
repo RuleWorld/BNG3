@@ -31,16 +31,37 @@ begin reaction rules
 end reaction rules
 """)
 
-COMPARTMENT_BNGL = textwrap.dedent("""
+DYNAMIC_COMPARTMENT_BNGL = textwrap.dedent("""
 begin compartments
- CYT 3 1
+ CYT 3 1+time
 end compartments
 begin molecule types
  X()
 end molecule types
 begin seed species
- X() 1
+ @CYT:X() 1
 end seed species
+""")
+
+STATIC_COMPARTMENT_BNGL = textwrap.dedent("""
+begin parameters
+ k 0.2
+end parameters
+begin compartments
+ CYT 3 2.5
+end compartments
+begin molecule types
+ X()
+end molecule types
+begin seed species
+ @CYT:X() 10
+end seed species
+begin observables
+ Molecules Xtot X()
+end observables
+begin reaction rules
+ @CYT:X() + @CYT:X() -> 0 k
+end reaction rules
 """)
 
 ENERGY_BNGL = textwrap.dedent("""
@@ -115,20 +136,28 @@ def test_explicit_bngsim_fails_closed_when_unavailable_or_unsupported():
 
 
 def test_compartment_model_lowering_is_rejected():
-    path = _tmp_bngl(COMPARTMENT_BNGL)
+    static_path = _tmp_bngl(STATIC_COMPARTMENT_BNGL)
+    dynamic_path = _tmp_bngl(DYNAMIC_COMPARTMENT_BNGL)
     try:
-        m = bionetgen.load(path)
-        m.generate_network()
         import bionetgen._bionetgen_cpp as _cpp
 
-        chk = _cpp.check_bngsim_lowering(m._model, m._network)
-        assert chk["supported"] is False
-        assert any("compartments" in b for b in chk["blockers"])
+        m_static = bionetgen.load(static_path)
+        m_static.generate_network()
+        chk_static = _cpp.check_bngsim_lowering(m_static._model, m_static._network)
+        assert chk_static["supported"] is True
+        assert chk_static["blockers"] == []
+
+        m_dyn = bionetgen.load(dynamic_path)
+        m_dyn.generate_network()
+        chk_dyn = _cpp.check_bngsim_lowering(m_dyn._model, m_dyn._network)
+        assert chk_dyn["supported"] is False
+        assert any("compartment" in b for b in chk_dyn["blockers"])
         # Explicit bngsim must be fail-closed, not silently fall back.
-        with pytest.raises(RuntimeError, match="compartments|unavailable"):
-            m.simulate(method="ode", backend="bngsim")
+        with pytest.raises(RuntimeError, match="compartment|unavailable"):
+            m_dyn.simulate(method="ode", backend="bngsim")
     finally:
-        os.unlink(path)
+        os.unlink(static_path)
+        os.unlink(dynamic_path)
 
 
 def test_nf_never_routes_through_bngsim():
@@ -199,14 +228,37 @@ def test_existing_user_syntax_unchanged():
         os.unlink(path)
 
 
-def test_bngsim_pla_psa_not_yet_routed():
+def test_bngsim_pla_rejected_and_psa_routed():
     path = _tmp_bngl(SIMPLE_BNGL)
     try:
+        import bionetgen._bionetgen_cpp as _cpp
+
         m = bionetgen.load(path)
-        # PLA/PSA with backend=bngsim should fail closed rather than silently use native
+        # PLA with backend=bngsim should fail closed rather than silently use native
         with pytest.raises(RuntimeError, match="does not yet support"):
             m.simulate(method="pla", backend="bngsim")
-        with pytest.raises(RuntimeError, match="does not yet support"):
-            m.simulate(method="psa", backend="bngsim")
+        if not _cpp.bngsim_available():
+            with pytest.raises(RuntimeError, match="unavailable"):
+                m.simulate(method="psa", backend="bngsim", t_end=1, n_steps=2)
+        else:
+            r = m.simulate(
+                method="psa",
+                backend="bngsim",
+                t_end=1,
+                n_steps=2,
+                psa_poplevel=10.0,
+                seed=7,
+            )
+            assert r.backend == "bngsim"
+            assert len(r.time) == 3
+            with pytest.raises(RuntimeError, match="poplevel"):
+                m.simulate(
+                    method="psa",
+                    backend="bngsim",
+                    t_end=1,
+                    n_steps=2,
+                    psa_poplevel=1.0,
+                    seed=7,
+                )
     finally:
         os.unlink(path)

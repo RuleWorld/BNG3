@@ -7,6 +7,7 @@
 
 #include "BngsimBackend.hpp"
 #include "OdeIntegrator.hpp"
+#include "PsaSimulator.hpp"
 
 namespace bng::engine {
 
@@ -113,6 +114,26 @@ OdeResult simulateFiniteSsa(
     OdeOptions ssaOpts = options;
     ssaOpts.method = "ssa";
     return integrator.integrate(ssaOpts);
+}
+
+OdeResult simulateFinitePsa(
+    const ast::Model& model,
+    const GeneratedNetwork& network,
+    const OdeOptions& options,
+    double poplevel,
+    FiniteBackend backend,
+    bool pScaleChecker) {
+    if (backend == FiniteBackend::Bngsim) {
+        if (!pScaleChecker) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected check_product_scale=0: BNGsim PSA always includes product populations in scaling");
+        }
+        return simulatePsaViaBngsim(model, network, options, poplevel);
+    }
+    PsaSimulator simulator(model, network);
+    OdeOptions psaOpts = options;
+    psaOpts.method = "psa";
+    return simulator.simulate(psaOpts, poplevel, pScaleChecker);
 }
 
 } // namespace bng::engine

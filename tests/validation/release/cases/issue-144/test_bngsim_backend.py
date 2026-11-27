@@ -66,10 +66,10 @@ end reaction rules
 end model
 """)
 
-COMPARTMENT_BNGL = textwrap.dedent("""
+DYNAMIC_COMPARTMENT_BNGL = textwrap.dedent("""
 begin model
 begin compartments
-    CYT 3 1.0
+    CYT 3 1+time
 end compartments
 begin molecule types
     X()
@@ -81,7 +81,7 @@ begin observables
     Molecules Xtot X()
 end observables
 begin reaction rules
-    X() -> 0 0.1
+    @CYT:X() -> 0 0.1
 end reaction rules
 end model
 """)
@@ -308,18 +308,18 @@ def test_release_bngsim_parity_lowering_acceptance():
 
 
 def test_release_bngsim_parity_lowering_rejection_compartments():
-    """Verify compartment models fail closed with explicit diagnostic."""
+    """Verify dynamic compartment models fail closed with explicit diagnostic."""
     import bionetgen._bionetgen_cpp as _cpp
 
-    path = _tmp_bngl(COMPARTMENT_BNGL)
+    path = _tmp_bngl(DYNAMIC_COMPARTMENT_BNGL)
     try:
         m = bionetgen.load(path)
         m.generate_network()
         chk = _cpp.check_bngsim_lowering(m._model, m._network)
         assert chk["supported"] is False
-        assert any("compartments" in b for b in chk["blockers"])
+        assert any("compartment" in b for b in chk["blockers"])
 
-        with pytest.raises(RuntimeError, match="compartments|unavailable"):
+        with pytest.raises(RuntimeError, match="compartment|unavailable"):
             m.simulate(method="ode", backend="bngsim")
     finally:
         os.unlink(path)

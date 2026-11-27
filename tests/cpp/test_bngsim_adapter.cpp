@@ -341,17 +341,17 @@ end reaction rules
                Catch::Matchers::WithinAbs(std::exp(-0.2), 1e-6));
 }
 
-TEST_CASE("BNGsim adapter rejects unsupported semantic surfaces", "[bngsim]") {
+TEST_CASE("BNGsim adapter rejects unsupported dynamic compartment surface", "[bngsim]") {
     auto model = parser::parseModel(R"(
 begin model
 begin compartments
-    CYT 3 1
+    CYT 3 1+time
 end compartments
 begin molecule types
     X()
 end molecule types
 begin seed species
-    X() 1
+    @CYT:X() 1
 end seed species
 end model
 )");
@@ -361,7 +361,7 @@ end model
 
     REQUIRE_THROWS_WITH(
         engine::buildBngsimNetwork(*model, network),
-        Catch::Matchers::ContainsSubstring("compartments require a volume-aware bridge"));
+        Catch::Matchers::ContainsSubstring("dynamic/time-dependent compartment volumes are unsupported"));
 }
 
 TEST_CASE("BNGsim adapter preserves BNGL observable matching semantics", "[bngsim]") {
@@ -597,14 +597,19 @@ end reaction rules
         times.t_start = 0.0;
         times.t_end = 1.0;
         times.n_points = 3;
+        bngsim::SolverOptions solverOpts;
+        solverOpts.rtol = 1e-10;
+        solverOpts.atol = 1e-12;
         bngsim::CvodeSimulator bngsimSolver(*adapted);
-        const auto bngsimResult = bngsimSolver.run(times);
+        const auto bngsimResult = bngsimSolver.run(times, solverOpts);
 
         engine::OdeOptions odeOptions;
         odeOptions.method = "cvode";
         odeOptions.tStart = 0.0;
         odeOptions.tEnd = 1.0;
         odeOptions.nSteps = 2;
+        odeOptions.rtol = 1e-10;
+        odeOptions.atol = 1e-12;
         const auto nativeResult = engine::OdeIntegrator(*model, network).integrate(odeOptions);
 
         for (std::size_t i = 0; i < nativeResult.timePoints.size(); ++i) {
@@ -643,14 +648,19 @@ end reaction rules
         times.t_start = 0.0;
         times.t_end = 1.0;
         times.n_points = 3;
+        bngsim::SolverOptions solverOpts;
+        solverOpts.rtol = 1e-10;
+        solverOpts.atol = 1e-12;
         bngsim::CvodeSimulator bngsimSolver(*adapted);
-        const auto bngsimResult = bngsimSolver.run(times);
+        const auto bngsimResult = bngsimSolver.run(times, solverOpts);
 
         engine::OdeOptions odeOptions;
         odeOptions.method = "cvode";
         odeOptions.tStart = 0.0;
         odeOptions.tEnd = 1.0;
         odeOptions.nSteps = 2;
+        odeOptions.rtol = 1e-10;
+        odeOptions.atol = 1e-12;
         const auto nativeResult = engine::OdeIntegrator(*model, network).integrate(odeOptions);
 
         for (std::size_t i = 0; i < nativeResult.timePoints.size(); ++i) {
@@ -892,8 +902,9 @@ end model
             Catch::Matchers::ContainsSubstring("function arguments require a local-function bridge"));
     }
 
-    SECTION("TotalRate modifier") {
+    SECTION("absolute-flux TotalRate modifier remains fail-closed") {
         auto model = parser::parseModel(R"(
+setOption("BNG3AbsoluteFluxRules","r")
 begin model
 begin parameters
     k 1.0
@@ -905,7 +916,7 @@ begin seed species
     X() 10
 end seed species
 begin reaction rules
-    X() -> 0 k TotalRate
+    r: X() -> 0 k TotalRate
 end reaction rules
 end model
 )");
@@ -914,8 +925,594 @@ end model
         const auto network = generator.generateNative();
         REQUIRE_THROWS_WITH(
             engine::buildBngsimNetwork(*model, network),
-            Catch::Matchers::ContainsSubstring("TotalRate reactions require a total-rate bridge"));
+            Catch::Matchers::ContainsSubstring("absolute-flux reactions are unsupported"));
     }
+}
+
+TEST_CASE("BNGsim adapter bridges TotalRate with exact ODE and SSA parity", "[bngsim]") {
+    SECTION("homodimer TotalRate omits symmetry factor 0.5 and matches native ODE") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 0.05
+end parameters
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    A() 10
+    D() 0
+end seed species
+begin observables
+    Molecules Atot A()
+    Molecules Dtot D()
+end observables
+begin reaction rules
+    A() + A() -> D() k TotalRate
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+
+        const auto check = engine::checkBngsimLowering(*model, network);
+        REQUIRE(check.supported);
+
+        engine::OdeOptions opts;
+        opts.method = "cvode";
+        opts.tStart = 0.0;
+        opts.tEnd = 2.0;
+        opts.nSteps = 10;
+        opts.rtol = 1e-10;
+        opts.atol = 1e-12;
+        const auto nativeRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Native);
+        const auto bngsimRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Bngsim);
+
+        REQUIRE(bngsimRes.timePoints.size() == nativeRes.timePoints.size());
+        for (std::size_t ti = 0; ti < nativeRes.timePoints.size(); ++ti) {
+            CHECK_THAT(bngsimRes.observables[ti][0],
+                       Catch::Matchers::WithinAbs(nativeRes.observables[ti][0], 1e-6));
+            CHECK_THAT(bngsimRes.observables[ti][1],
+                       Catch::Matchers::WithinAbs(nativeRes.observables[ti][1], 1e-6));
+        }
+    }
+
+    SECTION("homodimer TotalRate SSA firing probability matches exact propensity") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    A() 2
+    D() 0
+end seed species
+begin observables
+    Molecules Dtot D()
+end observables
+begin reaction rules
+    A() + A() -> D() k TotalRate
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+
+        engine::OdeOptions opts;
+        opts.method = "ssa";
+        opts.tStart = 0.0;
+        opts.tEnd = 0.1;
+        opts.nSteps = 1;
+
+        constexpr std::size_t kTrials = 2048;
+        std::size_t fired = 0;
+        for (std::size_t seed = 1; seed <= kTrials; ++seed) {
+            opts.seed = seed;
+            const auto res = engine::simulateFiniteSsa(
+                *model, network, opts, engine::FiniteBackend::Bngsim);
+            fired += static_cast<std::size_t>(std::llround(res.observables.back()[0]));
+        }
+        // Propensity = 1.0 * 1.0 * 2 * 1 = 2.0 -> P(fire by t=0.1) = 1 - exp(-0.2)
+        const double fraction = static_cast<double>(fired) / static_cast<double>(kTrials);
+        CHECK_THAT(fraction, Catch::Matchers::WithinAbs(1.0 - std::exp(-0.2), 0.035));
+    }
+
+    SECTION("compartment TotalRate omits volume unit conversion factor") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 0.2
+end parameters
+begin compartments
+    CYT 3 4.0
+end compartments
+begin molecule types
+    A()
+    B()
+    C()
+end molecule types
+begin seed species
+    @CYT:A() 5
+    @CYT:B() 5
+end seed species
+begin observables
+    Molecules Ctot C()
+end observables
+begin reaction rules
+    @CYT:A() + @CYT:B() -> @CYT:C() k TotalRate
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+
+        engine::OdeOptions opts;
+        opts.method = "cvode";
+        opts.tStart = 0.0;
+        opts.tEnd = 1.0;
+        opts.nSteps = 5;
+        opts.rtol = 1e-10;
+        opts.atol = 1e-12;
+        const auto nativeRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Native);
+        const auto bngsimRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Bngsim);
+
+        for (std::size_t ti = 0; ti < nativeRes.timePoints.size(); ++ti) {
+            CHECK_THAT(bngsimRes.observables[ti][0],
+                       Catch::Matchers::WithinAbs(nativeRes.observables[ti][0], 1e-6));
+        }
+    }
+}
+
+TEST_CASE("BNGsim adapter bridges static 2D/3D compartments with exact ODE parity", "[bngsim]") {
+    SECTION("3D volume, 2D surface anchor, transport, and zero-order synthesis match native ODE") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    kbind 0.5
+    kunbind 0.1
+    ktrans 0.3
+    ksyn 2.0
+    kdimer 0.04
+end parameters
+begin compartments
+    EC 3 10.0
+    PM 2 2.0 EC
+    CYT 3 5.0 PM
+end compartments
+begin molecule types
+    L(r)
+    R(l)
+    X()
+    D()
+end molecule types
+begin seed species
+    @EC:L(r) 40
+    @PM:R(l) 20
+    @EC:X() 30
+    @CYT:X() 10
+end seed species
+begin observables
+    Molecules RL @PM:L(r!1).R(l!1)
+    Molecules X_ec @EC:X()
+    Molecules X_cyt @CYT:X()
+    Molecules D_cyt @CYT:D()
+end observables
+begin reaction rules
+    @EC:L(r) + @PM:R(l) <-> @PM:L(r!1).R(l!1) kbind, kunbind
+    @EC:X() -> @CYT:X() ktrans
+    0 -> @CYT:X() ksyn
+    @CYT:X() + @CYT:X() -> @CYT:D() kdimer
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+
+        const auto check = engine::checkBngsimLowering(*model, network);
+        REQUIRE(check.supported);
+        REQUIRE(check.blockers.empty());
+
+        engine::OdeOptions opts;
+        opts.method = "cvode";
+        opts.tStart = 0.0;
+        opts.tEnd = 2.0;
+        opts.nSteps = 10;
+        opts.rtol = 1e-10;
+        opts.atol = 1e-12;
+        const auto nativeRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Native);
+        const auto bngsimRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Bngsim);
+
+        REQUIRE(bngsimRes.observables.size() == nativeRes.observables.size());
+        for (std::size_t ti = 0; ti < nativeRes.timePoints.size(); ++ti) {
+            for (std::size_t oi = 0; oi < nativeRes.observables[ti].size(); ++oi) {
+                CHECK_THAT(
+                    bngsimRes.observables[ti][oi],
+                    Catch::Matchers::WithinAbs(nativeRes.observables[ti][oi], 1e-5));
+            }
+        }
+    }
+
+    SECTION("event-modified compartment volume remains fail-closed") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    V 2.0
+    k 0.1
+end parameters
+begin compartments
+    CYT 3 V
+end compartments
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    @CYT:X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    @CYT:X() + @CYT:X() -> 0 k
+end reaction rules
+begin bng3_events version 1
+    event "resize"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: V = 4.0
+    end event
+end bng3_events
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("event-modified compartment volumes are unsupported"));
+    }
+}
+
+TEST_CASE("BNGsim adapter bridges bng3_events to add_event with exact ODE and SSA parity", "[bngsim]") {
+    SECTION("state-threshold reset event matches native ODE") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 0.5
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules X A()
+end observables
+begin reaction rules
+    A() -> 0 k
+end reaction rules
+begin bng3_events version 1
+    event "reset"
+    trigger: X <= 5
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: X = 10
+    end event
+end bng3_events
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE(engine::checkBngsimLowering(*model, network).supported);
+
+        engine::OdeOptions opts;
+        opts.method = "cvode";
+        opts.tStart = 0.0;
+        opts.tEnd = 4.0;
+        opts.nSteps = 20;
+        opts.rtol = 1e-10;
+        opts.atol = 1e-12;
+        const auto nativeRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Native);
+        const auto bngsimRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Bngsim);
+
+        REQUIRE(bngsimRes.observables.size() == nativeRes.observables.size());
+        for (std::size_t ti = 0; ti < nativeRes.timePoints.size(); ++ti) {
+            CHECK_THAT(bngsimRes.observables[ti][0],
+                       Catch::Matchers::WithinAbs(nativeRes.observables[ti][0], 1e-4));
+        }
+    }
+
+    SECTION("delayed event with parameter mutation and priority ordering matches native ODE") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 0.2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 100
+    B() 0
+end seed species
+begin observables
+    Molecules Aobs A()
+    Molecules Bobs B()
+end observables
+begin reaction rules
+    A() -> B() k
+end reaction rules
+begin bng3_events version 1
+    event "boost_rate"
+    trigger: time >= 1.0
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    delay: 0.5
+    priority: 10
+    assignment: k = 1.0
+    end event
+    event "pulse_a"
+    trigger: time >= 1.0
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: false
+    delay: 0.5
+    priority: 1
+    assignment: Aobs = Aobs + 20
+    end event
+end bng3_events
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE(engine::checkBngsimLowering(*model, network).supported);
+
+        engine::OdeOptions opts;
+        opts.method = "cvode";
+        opts.tStart = 0.0;
+        opts.tEnd = 3.0;
+        opts.nSteps = 15;
+        opts.rtol = 1e-10;
+        opts.atol = 1e-12;
+        const auto nativeRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Native);
+        const auto bngsimRes = engine::simulateFiniteOde(
+            *model, network, opts, engine::FiniteBackend::Bngsim);
+
+        // Result must project out promoted unreported parameter species/observables.
+        REQUIRE(bngsimRes.concentrations[0].size() == network.species.size());
+        REQUIRE(bngsimRes.observables[0].size() == model->getObservables().size());
+        for (std::size_t ti = 0; ti < nativeRes.timePoints.size(); ++ti) {
+            CHECK_THAT(bngsimRes.observables[ti][0],
+                       Catch::Matchers::WithinAbs(nativeRes.observables[ti][0], 1e-4));
+            CHECK_THAT(bngsimRes.observables[ti][1],
+                       Catch::Matchers::WithinAbs(nativeRes.observables[ti][1], 1e-4));
+        }
+    }
+
+    SECTION("time-triggered SSA dose event preserves exact conservation shift") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 0.2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 50
+    B() 0
+end seed species
+begin observables
+    Molecules Aobs A()
+    Molecules Bobs B()
+end observables
+begin reaction rules
+    A() -> B() k
+end reaction rules
+begin bng3_events version 1
+    event "dose"
+    trigger: time >= 1.0
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: Aobs = Aobs + 25
+    end event
+end bng3_events
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        engine::OdeOptions opts;
+        opts.method = "ssa";
+        opts.tStart = 0.0;
+        opts.tEnd = 2.0;
+        opts.nSteps = 4;
+        opts.seed = 42;
+        const auto res = engine::simulateFiniteSsa(
+            *model, network, opts, engine::FiniteBackend::Bngsim);
+        REQUIRE(res.observables.size() == 5);
+        // Before t=1.0 total mass = 50; at/after t=1.0 total mass = 75
+        CHECK_THAT(res.observables[0][0] + res.observables[0][1],
+                   Catch::Matchers::WithinAbs(50.0, 1e-9));
+        CHECK_THAT(res.observables[1][0] + res.observables[1][1],
+                   Catch::Matchers::WithinAbs(50.0, 1e-9));
+        CHECK_THAT(res.observables[2][0] + res.observables[2][1],
+                   Catch::Matchers::WithinAbs(75.0, 1e-9));
+        CHECK_THAT(res.observables[4][0] + res.observables[4][1],
+                   Catch::Matchers::WithinAbs(75.0, 1e-9));
+    }
+
+    SECTION("unsupported event constructs fail closed") {
+        auto distribModel = parser::parseModel(R"(
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules X A()
+end observables
+begin reaction rules
+    A() -> 0 k
+end reaction rules
+begin bng3_events version 1
+    event "draw"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: X = distrib_uniform(1, 5)
+    end event
+end bng3_events
+end model
+)");
+        REQUIRE(distribModel != nullptr);
+        engine::NetworkGenerator distribGen(*distribModel);
+        const auto distribNet = distribGen.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*distribModel, distribNet),
+            Catch::Matchers::ContainsSubstring("distrib"));
+
+        auto derivedParamModel = parser::parseModel(R"(
+begin model
+begin parameters
+    k 0.1
+    k2 2*k
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    A() -> 0 k2
+end reaction rules
+begin bng3_events version 1
+    event "mutate_k"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: k = 0.5
+    end event
+end bng3_events
+end model
+)");
+        REQUIRE(derivedParamModel != nullptr);
+        engine::NetworkGenerator derivedGen(*derivedParamModel);
+        const auto derivedNet = derivedGen.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*derivedParamModel, derivedNet),
+            Catch::Matchers::ContainsSubstring("derived parameter 'k2' depends on an event-assigned parameter"));
+    }
+}
+
+TEST_CASE("BNGsim PSA routes method=psa with conservation and fail-closed guards", "[bngsim]") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 0.25
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10000
+    B() 0
+end seed species
+begin observables
+    Molecules Aobs A()
+    Molecules Bobs B()
+end observables
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+
+    const auto caps = engine::getBngsimCapabilities();
+    REQUIRE(caps.available);
+    REQUIRE(caps.supportsPsa);
+
+    engine::OdeOptions opts;
+    opts.method = "psa";
+    opts.tStart = 0.0;
+    opts.tEnd = 2.0;
+    opts.nSteps = 4;
+    opts.seed = 123;
+
+    const auto psaRes = engine::simulateFinitePsa(
+        *model, network, opts, 100.0, engine::FiniteBackend::Bngsim, true);
+    REQUIRE(psaRes.timePoints.size() == 5);
+    for (std::size_t ti = 0; ti < psaRes.timePoints.size(); ++ti) {
+        CHECK_THAT(psaRes.observables[ti][0] + psaRes.observables[ti][1],
+                   Catch::Matchers::WithinAbs(10000.0, 1e-6));
+    }
+    // High-population PSA mean should closely track deterministic 10000*exp(-0.5)
+    CHECK_THAT(psaRes.observables.back()[0],
+               Catch::Matchers::WithinRel(10000.0 * std::exp(-0.5), 0.08));
+
+    // Seed reproducibility
+    const auto psaRes2 = engine::simulateFinitePsa(
+        *model, network, opts, 100.0, engine::FiniteBackend::Bngsim, true);
+    REQUIRE(psaRes.observables == psaRes2.observables);
+
+    // Fail-closed guards
+    REQUIRE_THROWS_WITH(
+        engine::simulateFinitePsa(*model, network, opts, 1.0, engine::FiniteBackend::Bngsim, true),
+        Catch::Matchers::ContainsSubstring("BNGsim adapter rejected poplevel"));
+    REQUIRE_THROWS_WITH(
+        engine::simulateFinitePsa(*model, network, opts, 100.0, engine::FiniteBackend::Bngsim, false),
+        Catch::Matchers::ContainsSubstring("BNGsim adapter rejected check_product_scale=0"));
+
+    auto badMaxSteps = opts;
+    badMaxSteps.maxSimSteps = 5;
+    REQUIRE_THROWS_WITH(
+        engine::simulateFinitePsa(*model, network, badMaxSteps, 100.0, engine::FiniteBackend::Bngsim, true),
+        Catch::Matchers::ContainsSubstring("BNGsim adapter rejected max_sim_steps"));
+
+    auto badStopIf = opts;
+    badStopIf.stopIf = "Aobs < 5000";
+    REQUIRE_THROWS_WITH(
+        engine::simulateFinitePsa(*model, network, badStopIf, 100.0, engine::FiniteBackend::Bngsim, true),
+        Catch::Matchers::ContainsSubstring("BNGsim adapter rejected stop_if"));
 }
 
 TEST_CASE("BNGsim adapter validates TFUN counters and interpolation methods", "[bngsim]") {

@@ -2302,8 +2302,7 @@ void runSimulation(
     // Run simulation
     engine::OdeResult result;
     if (requestedBackend == engine::FiniteBackend::Bngsim) {
-        if (opts.method == "pla" || opts.method == "psa" ||
-            opts.method == "euler" || opts.method == "rk4") {
+        if (opts.method == "pla" || opts.method == "euler" || opts.method == "rk4") {
             throw std::runtime_error(
                 "BNGsim backend does not support method='" + opts.method +
                 "'; use backend='native' or 'auto'");
@@ -2312,7 +2311,7 @@ void runSimulation(
             throw std::runtime_error(
                 "BNGsim backend does not support continue=>1; use backend='native' or 'auto'");
         }
-        if (opts.method == "ssa" && opts.batchSize > 0) {
+        if ((opts.method == "ssa" || opts.method == "psa") && opts.batchSize > 0) {
             throw std::runtime_error(
                 "BNGsim backend does not support batch_size; use backend='native' or 'auto'");
         }
@@ -2323,6 +2322,22 @@ void runSimulation(
         if (opts.method == "ssa") {
             result = engine::simulateFiniteSsa(
                 model, network, opts, engine::FiniteBackend::Bngsim);
+        } else if (opts.method == "psa") {
+            if (compiledOptions != nullptr && compiledOptions->poplevelDiagnostic.has_value()) {
+                throw std::runtime_error(compiledOptions->poplevelDiagnostic->message);
+            }
+            double defaultPoplevel = 0.0;
+            if (compiledOptions != nullptr && compiledOptions->poplevel.has_value()) {
+                defaultPoplevel = *compiledOptions->poplevel;
+            }
+            const auto poplevelText = readArgument(action, "poplevel", std::to_string(defaultPoplevel));
+            const double poplevel = parseScalarValue(poplevelText, model);
+            if (const auto decision = bng::compile::poplevelDecisionError(poplevel)) {
+                throw std::runtime_error(*decision);
+            }
+            const bool pScaleChecker = checkProductScaleSpecified ? (opts.checkProductScale != 0.0) : true;
+            result = engine::simulateFinitePsa(
+                model, network, opts, poplevel, engine::FiniteBackend::Bngsim, pScaleChecker);
         } else {
             result = engine::simulateFiniteOde(
                 model, network, opts, engine::FiniteBackend::Bngsim);

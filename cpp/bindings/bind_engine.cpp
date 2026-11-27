@@ -951,6 +951,37 @@ void bind_engine(py::module_& m) {
        py::arg("stop_if") = "", py::arg("sample_times") = std::vector<double>{},
        py::arg("max_sim_steps") = 0, py::arg("output_step_interval") = 0,
        "Run SSA via the BNGsim backend (fails closed if not lowerable or not wired)");
+    m.def("simulate_psa_bngsim", [](Model& model, GeneratedNetwork& network,
+                                     double t_end, int n_steps, double poplevel,
+                                     double t_start, int seed,
+                                     const std::string& stop_if,
+                                     const std::vector<double>& sample_times,
+                                     std::size_t max_sim_steps,
+                                     std::size_t output_step_interval) {
+        OdeOptions opts;
+        opts.tStart = t_start;
+        opts.tEnd = t_end;
+        opts.nSteps = n_steps;
+        opts.method = "psa";
+        opts.seed = seed;
+        opts.stopIf = stop_if;
+        opts.sampleTimes = sample_times;
+        opts.maxSimSteps = max_sim_steps;
+        opts.outputStepInterval = output_step_interval;
+        py::gil_scoped_release release;
+        OdeResult result = simulateFinitePsa(
+            model, network, opts, poplevel, FiniteBackend::Bngsim, true);
+        py::gil_scoped_acquire acquire;
+        py::dict d = result_to_dict(result, model);
+        d["backend"] = py::cast(std::string("bngsim"));
+        return d;
+    }, py::arg("model"), py::arg("network"),
+       py::arg("t_end") = 100.0, py::arg("n_steps") = 100,
+       py::arg("poplevel") = 100.0,
+       py::arg("t_start") = 0.0, py::arg("seed") = 0,
+       py::arg("stop_if") = "", py::arg("sample_times") = std::vector<double>{},
+       py::arg("max_sim_steps") = 0, py::arg("output_step_interval") = 0,
+       "Run PSA via the BNGsim backend (fails closed if not lowerable or poplevel <= 1)");
 
     m.def("gpu_backends", []() {
         py::list out;

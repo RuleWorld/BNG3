@@ -6,11 +6,13 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <iomanip>
 #include <limits>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -19,7 +21,11 @@
 #include <bngsim/model_builder.hpp>
 #endif
 
+#include "ast/EventSupport.hpp"
 #include "ast/Model.hpp"
+#include "ast/ModelFunctionEvaluator.hpp"
+#include "compile/TotalRate.hpp"
+#include "io/NetWriter.hpp"
 #include "parser/antlr_compat.hpp"
 #include "antlr4-runtime.h"
 #include "BNGLexer.h"
@@ -476,18 +482,416 @@ std::string bngsimTableCounterName(
         "BNGsim adapter rejected TFUN: counter must be time or a named parameter/observable");
 }
 
+bool expressionDependsOnAny(
+    const ast::Model& model,
+    const ast::Expression& expression,
+    const std::unordered_set<std::string>& targets,
+    std::unordered_set<std::string>& visitedParams) {
+    if (targets.empty()) return false;
+    for (const auto& dep : expression.getDependencies()) {
+        if (targets.count(dep) > 0) return true;
+        if (model.getParameters().contains(dep) && visitedParams.insert(dep).second) {
+            if (expressionDependsOnAny(
+                    model,
+                    model.getParameters().get(dep).getExpression(),
+                    targets,
+                    visitedParams)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+bool expressionReferencesDynamicOrPromoted(
+    const ast::Model& model,
+    const ast::Expression& expression,
+    const std::unordered_set<std::string>& promotedParams) {
+    switch (expression.kind()) {
+    case ast::ExpressionKind::Number:
+        return false;
+    case ast::ExpressionKind::Identifier: {
+        const auto& name = expression.name();
+        if (name == "time" || name == "t" ||
+            modelHasObservable(model, name) ||
+            promotedParams.count(name) > 0) {
+            return true;
+        }
+        if (model.getParameters().contains(name)) {
+            std::unordered_set<std::string> visited;
+            if (expressionDependsOnAny(
+                    model,
+                    model.getParameters().get(name).getExpression(),
+                    promotedParams,
+                    visited)) {
+                return true;
+            }
+            return model.getParameters().isTimeDependent(name);
+        }
+        return false;
+    }
+    case ast::ExpressionKind::ObservableRef:
+        return true;
+    case ast::ExpressionKind::TableFunction:
+        return true;
+    case ast::ExpressionKind::Function:
+        if (expression.args().empty() &&
+            (expression.name() == "time" || expression.name() == "t")) {
+            return true;
+        }
+        for (const auto& arg : expression.args()) {
+            if (expressionReferencesDynamicOrPromoted(model, arg, promotedParams)) {
+                return true;
+            }
+        }
+        return false;
+    case ast::ExpressionKind::Unary:
+    case ast::ExpressionKind::Binary:
+        for (const auto& arg : expression.args()) {
+            if (expressionReferencesDynamicOrPromoted(model, arg, promotedParams)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    return true;
+}
+
+void collectEventExpressionBlockers(
+    const ast::Model& model,
+    const ast::Expression& expression,
+    const std::string& context,
+    bool allowLogicalAndCompare,
+    std::vector<std::string>& blockers) {
+    switch (expression.kind()) {
+    case ast::ExpressionKind::Number:
+        if (!std::isfinite(expression.numberValue())) {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context + ": expression contains non-finite literal");
+        }
+        return;
+    case ast::ExpressionKind::Identifier: {
+        const auto& name = expression.name();
+        if (name == "time" || name == "t" ||
+            model.getParameters().contains(name) ||
+            modelHasObservable(model, name)) {
+            return;
+        }
+        blockers.push_back(
+            "BNGsim adapter rejected " + context +
+            ": unsupported identifier '" + name + "' in event expression");
+        return;
+    }
+    case ast::ExpressionKind::Unary: {
+        if (expression.args().size() != 1) {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context + ": malformed unary expression");
+            return;
+        }
+        const auto& op = expression.name();
+        if (op == "+" || op == "-") {
+            collectEventExpressionBlockers(
+                model, expression.args().front(), context, false, blockers);
+            return;
+        }
+        if (allowLogicalAndCompare && op == "!") {
+            collectEventExpressionBlockers(
+                model, expression.args().front(), context, true, blockers);
+            return;
+        }
+        blockers.push_back(
+            "BNGsim adapter rejected " + context +
+            ": unsupported unary operator '" + op + "' in event expression");
+        return;
+    }
+    case ast::ExpressionKind::Binary: {
+        if (expression.args().size() != 2) {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context + ": malformed binary expression");
+            return;
+        }
+        const auto& op = expression.name();
+        if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^" || op == "**") {
+            collectEventExpressionBlockers(
+                model, expression.args()[0], context, false, blockers);
+            collectEventExpressionBlockers(
+                model, expression.args()[1], context, false, blockers);
+            return;
+        }
+        if (allowLogicalAndCompare && (op == "&&" || op == "||")) {
+            collectEventExpressionBlockers(
+                model, expression.args()[0], context, true, blockers);
+            collectEventExpressionBlockers(
+                model, expression.args()[1], context, true, blockers);
+            return;
+        }
+        if (allowLogicalAndCompare &&
+            (op == "<" || op == "<=" || op == ">" || op == ">=" ||
+             op == "==" || op == "!=")) {
+            collectEventExpressionBlockers(
+                model, expression.args()[0], context, false, blockers);
+            collectEventExpressionBlockers(
+                model, expression.args()[1], context, false, blockers);
+            return;
+        }
+        blockers.push_back(
+            "BNGsim adapter rejected " + context +
+            ": unsupported binary operator '" + op + "' in event expression");
+        return;
+    }
+    case ast::ExpressionKind::Function:
+    case ast::ExpressionKind::ObservableRef: {
+        const std::string& name = expression.name();
+        const std::string lower = toLowerCopy(name);
+        const std::size_t arity = expression.args().size();
+        if (lower == "delay") {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context +
+                ": delay() expressions require the native DDE method-of-steps solver");
+            return;
+        }
+        if (lower.rfind("distrib_", 0) == 0) {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context +
+                ": SBML distrib function '" + name + "' is unsupported by BNGsim");
+            return;
+        }
+        if (arity == 0 && (lower == "time" || lower == "t" || modelHasObservable(model, name))) {
+            return;
+        }
+        if (arity == 3 && lower == "if") {
+            collectEventExpressionBlockers(model, expression.args()[0], context, true, blockers);
+            collectEventExpressionBlockers(model, expression.args()[1], context, false, blockers);
+            collectEventExpressionBlockers(model, expression.args()[2], context, false, blockers);
+            return;
+        }
+        static const std::unordered_set<std::string> kUnaryBuiltins = {
+            "abs", "acos", "asin", "atan", "ceil", "cos", "cosh", "exp",
+            "floor", "ln", "log", "log10", "log2", "sin", "sinh", "sqrt",
+            "tan", "tanh"
+        };
+        const bool supportedBuiltin =
+            (arity == 1 && kUnaryBuiltins.count(lower) > 0) ||
+            (arity == 2 && (lower == "min" || lower == "max"));
+        if (!supportedBuiltin) {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context +
+                ": unsupported function '" + name + "' in event expression");
+            return;
+        }
+        for (const auto& argument : expression.args()) {
+            collectEventExpressionBlockers(model, argument, context, false, blockers);
+        }
+        return;
+    }
+    case ast::ExpressionKind::TableFunction:
+        blockers.push_back(
+            "BNGsim adapter rejected " + context +
+            ": TFUN inside event expressions is unsupported");
+        return;
+    }
+    blockers.push_back("BNGsim adapter rejected " + context + ": unknown expression kind");
+}
+
+struct CompiledBngsimEventAssignment {
+    bool isSpecies = true;
+    int speciesIndex = -1;
+    std::string parameterName;
+    ast::Expression expandedValue;
+};
+
+struct CompiledBngsimEvent {
+    std::string id;
+    ast::Expression expandedTrigger;
+    bool initialValue = false;
+    bool persistent = true;
+    bool useValuesFromTriggerTime = true;
+    std::optional<ast::Expression> expandedDelay;
+    std::optional<ast::Expression> expandedPriority;
+    std::vector<CompiledBngsimEventAssignment> assignments;
+};
+
+struct CompiledBngsimEventPlan {
+    std::vector<CompiledBngsimEvent> events;
+    std::vector<std::string> promotedParameterOrder;
+    std::unordered_set<std::string> promotedParameters;
+};
+
+CompiledBngsimEventPlan analyzeBngsimEvents(
+    const ast::Model& model,
+    const GeneratedNetwork& network,
+    const std::unordered_map<std::string, std::vector<std::pair<int, double>>>& compiledObservables,
+    std::vector<std::string>& blockers) {
+    CompiledBngsimEventPlan plan;
+    if (!model.getEventFormatVersion().has_value()) {
+        return plan;
+    }
+
+    try {
+        ast::validateNativeEventSubset(model);
+    } catch (const std::exception& error) {
+        blockers.push_back(
+            std::string("BNGsim adapter rejected event: ") + error.what());
+        return plan;
+    }
+
+    std::unordered_set<std::string> speciesNames;
+    speciesNames.reserve(network.species.size() * 2);
+    for (const auto& sp : network.species.all()) {
+        speciesNames.insert(sp.getSpeciesGraph().toString());
+        speciesNames.insert(sp.getSpeciesGraph().toStringForDedup());
+    }
+
+    const ast::ModelFunctionEvaluator evaluator(model);
+    for (std::size_t idx = 0; idx < model.getEvents().size(); ++idx) {
+        const auto& ev = model.getEvents()[idx];
+        const std::string eventId =
+            ev.id.empty() ? ("event_" + std::to_string(idx)) : ev.id;
+        const std::string ctx = "event '" + eventId + "'";
+
+        CompiledBngsimEvent compiled;
+        compiled.id = eventId;
+        compiled.initialValue = ev.initialValue;
+        compiled.persistent = ev.persistent;
+        compiled.useValuesFromTriggerTime = ev.useValuesFromTriggerTime;
+        compiled.expandedTrigger = evaluator.expandFunctions(ev.trigger);
+
+        collectEventExpressionBlockers(
+            model, compiled.expandedTrigger, ctx + " trigger", true, blockers);
+
+        if (ev.delay.has_value()) {
+            compiled.expandedDelay = evaluator.expandFunctions(*ev.delay);
+            collectEventExpressionBlockers(
+                model, *compiled.expandedDelay, ctx + " delay", false, blockers);
+        }
+        if (ev.priority.has_value()) {
+            compiled.expandedPriority = evaluator.expandFunctions(*ev.priority);
+            collectEventExpressionBlockers(
+                model, *compiled.expandedPriority, ctx + " priority", false, blockers);
+        }
+
+        std::unordered_set<std::string> seenTargets;
+        std::unordered_set<int> seenSpeciesTargets;
+        for (const auto& assignment : ev.assignments) {
+            if (!seenTargets.insert(assignment.target).second) {
+                blockers.push_back(
+                    "BNGsim adapter rejected " + ctx +
+                    ": duplicate assignment target '" + assignment.target + "'");
+                continue;
+            }
+            CompiledBngsimEventAssignment compiledAssign;
+            compiledAssign.expandedValue = evaluator.expandFunctions(assignment.value);
+            collectEventExpressionBlockers(
+                model,
+                compiledAssign.expandedValue,
+                ctx + " assignment '" + assignment.target + "'",
+                false,
+                blockers);
+
+            const auto obsIt = compiledObservables.find(assignment.target);
+            if (obsIt != compiledObservables.end()) {
+                const auto& entries = obsIt->second;
+                if (entries.size() != 1 || entries.front().second != 1.0 ||
+                    network.species.get(static_cast<std::size_t>(entries.front().first)).isConstant()) {
+                    blockers.push_back(
+                        "BNGsim adapter rejected " + ctx +
+                        ": assignment target '" + assignment.target +
+                        "' must identify one nonconstant species with weight one");
+                    continue;
+                }
+                const int spIdx = entries.front().first;
+                if (!seenSpeciesTargets.insert(spIdx).second) {
+                    blockers.push_back(
+                        "BNGsim adapter rejected " + ctx +
+                        ": assignments alias the same species");
+                    continue;
+                }
+                compiledAssign.isSpecies = true;
+                compiledAssign.speciesIndex = spIdx;
+            } else if (model.getParameters().contains(assignment.target)) {
+                if (model.getParameters().isTimeDependent(assignment.target)) {
+                    blockers.push_back(
+                        "BNGsim adapter rejected " + ctx +
+                        ": assignment target parameter '" + assignment.target + "' must be static");
+                    continue;
+                }
+                if (modelHasZeroArgFunction(model, assignment.target) ||
+                    speciesNames.count(assignment.target) > 0) {
+                    blockers.push_back(
+                        "BNGsim adapter rejected " + ctx +
+                        ": event-assigned parameter '" + assignment.target +
+                        "' collides with a species or function name");
+                    continue;
+                }
+                compiledAssign.isSpecies = false;
+                compiledAssign.parameterName = assignment.target;
+                if (plan.promotedParameters.insert(assignment.target).second) {
+                    plan.promotedParameterOrder.push_back(assignment.target);
+                }
+            } else {
+                blockers.push_back(
+                    "BNGsim adapter rejected " + ctx +
+                    ": assignment target '" + assignment.target +
+                    "' must be a species observable or static parameter");
+                continue;
+            }
+
+            compiled.assignments.push_back(std::move(compiledAssign));
+        }
+        if (compiled.assignments.empty() && ev.assignments.empty()) {
+            blockers.push_back(
+                "BNGsim adapter rejected " + ctx + ": event requires at least one assignment");
+        }
+        plan.events.push_back(std::move(compiled));
+    }
+
+    // Reject derived parameters that depend on an event-assigned parameter,
+    // because BNGsim evaluates parameter-expression chains only at build/set_param.
+    if (!plan.promotedParameters.empty()) {
+        for (const auto& parameter : model.getParameters().all()) {
+            if (plan.promotedParameters.count(parameter.getName()) > 0) continue;
+            std::unordered_set<std::string> visited;
+            if (expressionDependsOnAny(
+                    model, parameter.getExpression(), plan.promotedParameters, visited)) {
+                blockers.push_back(
+                    "BNGsim adapter rejected event: derived parameter '" +
+                    parameter.getName() +
+                    "' depends on an event-assigned parameter");
+            }
+        }
+    }
+
+    // Validate static delays are finite and non-negative.
+    for (const auto& ev : plan.events) {
+        if (!ev.expandedDelay.has_value()) continue;
+        if (!expressionReferencesDynamicOrPromoted(model, *ev.expandedDelay, plan.promotedParameters)) {
+            try {
+                const double d = ev.expandedDelay->evaluate([&](const std::string& name) {
+                    return model.getParameters().evaluate(name);
+                });
+                if (!std::isfinite(d) || d < 0.0) {
+                    blockers.push_back(
+                        "BNGsim adapter rejected event '" + ev.id +
+                        "': delay must be finite and non-negative");
+                }
+            } catch (const std::exception& error) {
+                blockers.push_back(
+                    "BNGsim adapter rejected event '" + ev.id +
+                    "' delay: " + error.what());
+            }
+        }
+    }
+
+    return plan;
+}
+
 BngsimRateReference resolveBngsimRateReference(
     const ast::Model& model,
     const ast::Rxn& reaction,
     std::size_t index,
     const BngsimLoweringOptions& options) {
     const auto context = bngsimReactionContext(index, reaction);
-    if (reaction.isTotalRate()) {
-        throw std::runtime_error(
-            "BNGsim adapter rejected " + context +
-            ": TotalRate reactions require a total-rate bridge");
-    }
-    if (reaction.isAbsoluteFlux()) {
+    if (compile::isAbsoluteFluxReaction(model, reaction)) {
         throw std::runtime_error(
             "BNGsim adapter rejected " + context +
             ": absolute-flux reactions are unsupported");
@@ -530,6 +934,38 @@ BngsimRateReference resolveBngsimRateReference(
     return {BngsimRateKind::SyntheticExpression, {}, std::move(rateExpression)};
 }
 
+double computeEffectiveBngsimStatFactor(
+    const ast::Model& model,
+    const GeneratedNetwork& network,
+    const ast::Rxn& reaction,
+    const std::string& context) {
+    const bool isTotalRate =
+        reaction.isTotalRate() ||
+        compile::isTotalRateReaction(model, reaction.getOriginRuleName());
+    if (isTotalRate) {
+        // BNG2 / BNG3 authored TotalRate omits both the reaction-center
+        // symmetry factor and the compartment unit conversion factor while
+        // still multiplying by reactant counts (apply_species_factor = true).
+        return 1.0;
+    }
+    double factor = reaction.getFactor();
+    const auto unitFactor = io::NetWriter::computeUnitConversionFactor(reaction, model, network);
+    if (unitFactor.has_value()) {
+        if (!std::isfinite(*unitFactor) || *unitFactor <= 0.0) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected " + context +
+                ": compartment unit conversion factor must be finite and positive");
+        }
+        factor *= *unitFactor;
+    }
+    if (!std::isfinite(factor)) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected " + context +
+            ": effective statistical/volume factor is not finite");
+    }
+    return factor;
+}
+
 } // namespace
 
 BngsimLoweringCheck checkBngsimLowering(
@@ -548,9 +984,6 @@ BngsimLoweringCheck checkBngsimLowering(
         check.blockers.push_back(blocker);
     };
 
-    if (model.getEventFormatVersion().has_value()) {
-        reject("BNGsim adapter rejected model: native events are unsupported");
-    }
     bool hasDelayBlocker = false;
     for (const auto& rule : model.getReactionRules()) {
         if (rule.getDelayExpression()) {
@@ -608,9 +1041,6 @@ BngsimLoweringCheck checkBngsimLowering(
             }
         }
     }
-    if (!model.getCompartments().empty()) {
-        reject("BNGsim adapter rejected model: compartments require a volume-aware bridge");
-    }
     if (!model.getEnergyPatterns().empty()) {
         reject("BNGsim adapter rejected model: energy patterns require an eBNGL rate bridge");
     }
@@ -654,9 +1084,12 @@ BngsimLoweringCheck checkBngsimLowering(
         }
     }
 
+    std::unordered_map<std::string, std::vector<std::pair<int, double>>> compiledObservables;
     for (const auto& observable : model.getObservables()) {
         try {
-            (void)compileBngsimObservableEntries(mutableModel, network, observable);
+            compiledObservables.emplace(
+                observable.getName(),
+                compileBngsimObservableEntries(mutableModel, network, observable));
         } catch (const std::exception& error) {
             reject(error.what());
             break;
@@ -665,6 +1098,43 @@ BngsimLoweringCheck checkBngsimLowering(
                 "BNGsim adapter rejected observable '" + observable.getName() +
                 "': could not build observable pattern");
             break;
+        }
+    }
+
+    const auto eventPlan = analyzeBngsimEvents(
+        model, network, compiledObservables, check.blockers);
+
+    for (const auto& compartment : model.getCompartments()) {
+        if (compartment.isVolumeTimeDependent()) {
+            reject(
+                "BNGsim adapter rejected compartment '" + compartment.getName() +
+                "': dynamic/time-dependent compartment volumes are unsupported");
+            continue;
+        }
+        if (compartment.getDimension() != 2 && compartment.getDimension() != 3) {
+            reject(
+                "BNGsim adapter rejected compartment '" + compartment.getName() +
+                "': only 2D surface and 3D volume compartments are supported");
+            continue;
+        }
+        if (!std::isfinite(compartment.getVolume()) || compartment.getVolume() <= 0.0) {
+            reject(
+                "BNGsim adapter rejected compartment '" + compartment.getName() +
+                "': compartment volume must be finite and positive");
+            continue;
+        }
+        if (compartment.getVolumeExpression().has_value() &&
+            !eventPlan.promotedParameters.empty()) {
+            std::unordered_set<std::string> visited;
+            if (expressionDependsOnAny(
+                    model,
+                    *compartment.getVolumeExpression(),
+                    eventPlan.promotedParameters,
+                    visited)) {
+                reject(
+                    "BNGsim adapter rejected compartment '" + compartment.getName() +
+                    "': event-modified compartment volumes are unsupported");
+            }
         }
     }
 
@@ -691,6 +1161,7 @@ BngsimLoweringCheck checkBngsimLowering(
         }
         try {
             (void)resolveBngsimRateReference(model, reaction, index, options);
+            (void)computeEffectiveBngsimStatFactor(model, network, reaction, context);
         } catch (const std::exception& error) {
             reject(error.what());
             break;
@@ -710,8 +1181,8 @@ namespace {
 std::string makeUniqueSyntheticFunctionName(
     const ast::Model& model,
     std::unordered_set<std::string>& usedNames,
-    std::size_t reactionIndex) {
-    std::string candidate = "__bng3_rate_" + std::to_string(reactionIndex);
+    const std::string& base) {
+    std::string candidate = base;
     while (usedNames.count(candidate) > 0 ||
            model.getParameters().contains(candidate) ||
            modelHasObservable(model, candidate) ||
@@ -720,6 +1191,77 @@ std::string makeUniqueSyntheticFunctionName(
     }
     usedNames.insert(candidate);
     return candidate;
+}
+
+std::string makeUniqueSyntheticFunctionName(
+    const ast::Model& model,
+    std::unordered_set<std::string>& usedNames,
+    std::size_t reactionIndex) {
+    return makeUniqueSyntheticFunctionName(
+        model, usedNames, "__bng3_rate_" + std::to_string(reactionIndex));
+}
+
+std::string formatDoubleExact(double value) {
+    std::ostringstream oss;
+    oss << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+    return oss.str();
+}
+
+std::string eventExpressionForBngsim(
+    const ast::Model& model,
+    const ast::Expression& expression) {
+    switch (expression.kind()) {
+    case ast::ExpressionKind::Number:
+        return formatDoubleExact(expression.numberValue());
+    case ast::ExpressionKind::Identifier:
+        if ((expression.name() == "time" || expression.name() == "t") &&
+            !model.getParameters().contains(expression.name()) &&
+            !modelHasObservable(model, expression.name())) {
+            return "time()";
+        }
+        return expression.name();
+    case ast::ExpressionKind::Unary: {
+        const auto& op = expression.name();
+        const auto arg = eventExpressionForBngsim(model, expression.args().front());
+        if (op == "!") {
+            return "(not(" + arg + "))";
+        }
+        return "(" + op + arg + ")";
+    }
+    case ast::ExpressionKind::Binary: {
+        std::string op = expression.name();
+        if (op == "**") op = "^";
+        else if (op == "&&") op = "and";
+        else if (op == "||") op = "or";
+        return "(" + eventExpressionForBngsim(model, expression.args()[0]) +
+               " " + op + " " +
+               eventExpressionForBngsim(model, expression.args()[1]) + ")";
+    }
+    case ast::ExpressionKind::Function:
+    case ast::ExpressionKind::ObservableRef: {
+        const auto& name = expression.name();
+        const auto lower = toLowerCopy(name);
+        if (expression.args().empty() &&
+            (lower == "time" || lower == "t") &&
+            !modelHasObservable(model, name)) {
+            return "time()";
+        }
+        if (expression.args().empty() && modelHasObservable(model, name)) {
+            return name;
+        }
+        std::ostringstream result;
+        result << lower << "(";
+        for (std::size_t index = 0; index < expression.args().size(); ++index) {
+            if (index != 0) result << ", ";
+            result << eventExpressionForBngsim(model, expression.args()[index]);
+        }
+        result << ")";
+        return result.str();
+    }
+    case ast::ExpressionKind::TableFunction:
+        break;
+    }
+    throw std::logic_error("Invalid event expression reached BNGsim conversion after capability check");
 }
 
 std::string expressionForBngsim(const ast::Model& model,
@@ -806,27 +1348,61 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
                                      : check.blockers.front());
     }
 
+    auto& mutableModel = const_cast<ast::Model&>(model);
+    std::unordered_map<std::string, std::vector<std::pair<int, double>>> compiledObservables;
+    for (const auto& observable : model.getObservables()) {
+        compiledObservables.emplace(
+            observable.getName(),
+            compileBngsimObservableEntries(mutableModel, network, observable));
+    }
+
+    std::vector<std::string> eventBlockers;
+    const auto eventPlan = analyzeBngsimEvents(
+        model, network, compiledObservables, eventBlockers);
+    if (!eventBlockers.empty()) {
+        throw std::runtime_error(eventBlockers.front());
+    }
+
     bngsim::ModelBuilder builder;
 
     for (const auto& parameter : model.getParameters().all()) {
+        if (eventPlan.promotedParameters.count(parameter.getName()) > 0) {
+            continue;
+        }
         const double value = model.getParameters().evaluate(parameter.getName());
         builder.add_parameter(parameter.getName(), value);
     }
 
+    const bool hasCompartments = !model.getCompartments().empty();
     for (const auto& species : network.species.all()) {
+        const std::string speciesName = hasCompartments
+            ? species.getSpeciesGraph().toStringForDedup()
+            : species.getSpeciesGraph().toString();
         builder.add_species(
-            species.getSpeciesGraph().toString(),
+            speciesName,
             species.getAmount(),
             species.isConstant());
     }
 
     if (!model.getObservables().empty()) {
-        auto& mutableModel = const_cast<ast::Model&>(model);
         for (const auto& observable : model.getObservables()) {
             builder.add_observable(
                 observable.getName(),
-                compileBngsimObservableEntries(mutableModel, network, observable));
+                compiledObservables.at(observable.getName()));
         }
+    }
+
+    // Promote event-assigned static parameters to unreported continuous species
+    // with matching helper observables appended after real model observables.
+    std::unordered_map<std::string, int> promotedParamSpeciesIndex;
+    for (const auto& paramName : eventPlan.promotedParameterOrder) {
+        const double initVal = model.getParameters().evaluate(paramName);
+        const int spIdx = builder.add_species(
+            paramName, initVal, /*fixed=*/false, /*volume_factor=*/1.0,
+            /*amount_valued=*/false, /*reported=*/false);
+        builder.set_species_continuous(spIdx);
+        builder.add_observable(paramName, {{spIdx, 1.0}});
+        promotedParamSpeciesIndex.emplace(paramName, spIdx);
     }
 
     std::unordered_set<std::string> usedFunctionNames;
@@ -840,6 +1416,7 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
                 options.sourcePath, builder, tableIndex));
     }
 
+    std::unordered_map<std::string, std::string> promotedParamRateFunctions;
     for (std::size_t index = 0; index < network.reactions.size(); ++index) {
         const auto& reaction = network.reactions.all()[index];
         const auto context = bngsimReactionContext(index, reaction);
@@ -848,11 +1425,25 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
         const auto products = checkedBngsimIndices(
             reaction.getProducts(), network.species.size(), context);
         const auto rate = resolveBngsimRateReference(model, reaction, index, options);
+        const double effectiveStatFactor =
+            computeEffectiveBngsimStatFactor(model, network, reaction, context);
 
         bngsim::RateLawType type;
         std::string rateName = rate.name;
         if (rate.kind == BngsimRateKind::Parameter) {
-            type = bngsim::RateLawType::Elementary;
+            if (promotedParamSpeciesIndex.count(rate.name) > 0) {
+                type = bngsim::RateLawType::Functional;
+                auto fnIt = promotedParamRateFunctions.find(rate.name);
+                if (fnIt == promotedParamRateFunctions.end()) {
+                    const auto synthName = makeUniqueSyntheticFunctionName(
+                        model, usedFunctionNames, "__bng3_eparam_" + rate.name);
+                    builder.add_function(synthName, rate.name);
+                    fnIt = promotedParamRateFunctions.emplace(rate.name, synthName).first;
+                }
+                rateName = fnIt->second;
+            } else {
+                type = bngsim::RateLawType::Elementary;
+            }
         } else if (rate.kind == BngsimRateKind::Function) {
             type = bngsim::RateLawType::Functional;
         } else {
@@ -871,8 +1462,71 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
             products,
             type,
             rateName,
-            reaction.getFactor(),
+            effectiveStatFactor,
             true);
+    }
+
+    for (const auto& ev : eventPlan.events) {
+        const std::string triggerExpr =
+            eventExpressionForBngsim(model, ev.expandedTrigger);
+
+        double constDelay = 0.0;
+        std::string delayExpr;
+        if (ev.expandedDelay.has_value()) {
+            if (expressionReferencesDynamicOrPromoted(
+                    model, *ev.expandedDelay, eventPlan.promotedParameters)) {
+                delayExpr = eventExpressionForBngsim(model, *ev.expandedDelay);
+            } else {
+                constDelay = ev.expandedDelay->evaluate([&](const std::string& name) {
+                    return model.getParameters().evaluate(name);
+                });
+            }
+        }
+
+        int constPriority = 0;
+        std::string priorityExpr;
+        if (ev.expandedPriority.has_value()) {
+            if (expressionReferencesDynamicOrPromoted(
+                    model, *ev.expandedPriority, eventPlan.promotedParameters)) {
+                priorityExpr = eventExpressionForBngsim(model, *ev.expandedPriority);
+            } else {
+                const double val = ev.expandedPriority->evaluate([&](const std::string& name) {
+                    return model.getParameters().evaluate(name);
+                });
+                const double rounded = std::round(val);
+                if (std::isfinite(val) &&
+                    std::abs(val - rounded) == 0.0 &&
+                    rounded >= static_cast<double>(std::numeric_limits<int>::min()) &&
+                    rounded <= static_cast<double>(std::numeric_limits<int>::max())) {
+                    constPriority = static_cast<int>(rounded);
+                } else {
+                    priorityExpr = eventExpressionForBngsim(model, *ev.expandedPriority);
+                }
+            }
+        }
+
+        std::vector<std::pair<int, std::string>> assignments;
+        assignments.reserve(ev.assignments.size());
+        for (const auto& assign : ev.assignments) {
+            const int targetSpeciesIdx = assign.isSpecies
+                ? assign.speciesIndex
+                : promotedParamSpeciesIndex.at(assign.parameterName);
+            assignments.emplace_back(
+                targetSpeciesIdx,
+                eventExpressionForBngsim(model, assign.expandedValue));
+        }
+
+        builder.add_event(
+            ev.id,
+            triggerExpr,
+            assignments,
+            constDelay,
+            constPriority,
+            ev.persistent,
+            ev.initialValue,
+            ev.useValuesFromTriggerTime,
+            delayExpr,
+            priorityExpr);
     }
 
     return std::make_unique<bngsim::NetworkModel>(builder.build());

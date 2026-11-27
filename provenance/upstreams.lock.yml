@@ -66,12 +66,12 @@
     "bngsim": {
       "repository": "https://github.com/lanl/bngsim.git",
       "branch": "main",
-      "revision": "49dc939035f5a272da663f8c9586e3c9f0e1c041",
+      "revision": "3295c4d31f2e8c75d07372f33ec2e6b578850540",
       "role": "intended-canonical-finite-network-backend (ADR 0003)",
       "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
-        "checked_at": "2026-10-08"
+        "checked_at": "2026-11-27"
       }
     },
     "pybionetgen": {
