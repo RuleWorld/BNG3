@@ -31,6 +31,10 @@
     {
       "change": "Corrected three previously unclassified cause/owner labels without changing verdicts or stage counts: semantic/00950 is MathML infinity, semantic/00951 is a non-finite parameter approximation, and stochastic/00028 and stochastic/00032 are scheduled-action phase-boundary comparison limits owned by the harness.",
       "date": "2026-10-22"
+    },
+    {
+      "change": "Exact-main full SSTS campaign 46043978792 (d6f26cc9): piecewise L3V1 fast-reaction equilibrium lowering (PR #1068) resolved semantic/01568 and semantic/01570 across all four stages, and semantic/01466 now lowers and round-trips cleanly with its equal-priority mutually cancelling events classified as harness:random-event-execution. The official suite no longer exercises fast-reaction:no-fast-equilibrium-solve or events:state-trigger-not-schedulable (the refusals remain in the Atomizer for non-reducible cases).",
+      "date": "2026-11-27"
     }
   ],
   "constructs": {
@@ -47,9 +51,11 @@
       "bng3_does": "The Atomizer refuses the event and says why: \"trigger is not a simple time threshold (state-dependent triggers cannot be scheduled)\", or, when the trigger names an identifier that is not a legal SBML SId, that the identifier \"contains a character outside the SBML SId class and cannot be matched\".",
       "citation": "SBML Level 3 Version 2 Core Sec. 4.12.2, Sec. 4.12.7",
       "first_recorded": "2026-10-20",
-      "reducible": "Yes, in two directions. A trigger the native event runtime can evaluate is lowered rather than refused (PR #328, 2026-10-21); an identifier that is not a legal SId is a source defect the user can fix by renaming it, and the diagnostic says so.",
+      "last_exercised": "2026-11-24",
+      "reducible": "Yes, in two directions. A trigger the native event runtime can evaluate is lowered rather than refused (PR #328, 2026-10-21; PR #1068, 2026-11-26); an identifier that is not a legal SId is a source defect the user can fix by renaming it, and the diagnostic says so.",
+      "resolved_note": "The refusal still exists in the Atomizer; the official suite no longer reaches it as of full SSTS campaign 46043978792 (2026-11-27), because semantic/01466 now lowers and round-trips cleanly and its equal-priority mutually cancelling triggers are classified under harness:random-event-execution.",
       "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.12.2 requires the Trigger to be evaluated against the model's current state, and Sec. 4.12.7 requires the event to be executed when the trigger becomes true.",
-      "status": "open",
+      "status": "not-exercised",
       "title": "A state trigger the runtime cannot schedule"
     },
     "events:untranslated": {
@@ -62,12 +68,14 @@
       "title": "An event the Atomizer cannot lower, or cannot order"
     },
     "fast-reaction:no-fast-equilibrium-solve": {
-      "bng3_does": "The Atomizer reduces a fast reaction to its pseudo steady state where it can (PR #370, 2026-10-21) and refuses the remainder, saying that it treats such a reaction as an ordinary reaction and that this changes the trajectory.",
+      "bng3_does": "The Atomizer reduces a fast reaction to its pseudo steady state where it can (PR #370, 2026-10-21; PR #1068, 2026-11-26) and refuses the remainder, saying that it treats such a reaction as an ordinary reaction and that this changes the trajectory.",
       "citation": "SBML Level 3 Version 1 Core Sec. 4.11; SBML Level 3 Version 2 Core Sec. 4.11",
       "first_recorded": "2026-10-20",
-      "reducible": "Largely reduced already: the reduction closed most of these cases. The remainder needs a fast reaction whose pseudo steady state cannot be written as a BNGL rule.",
+      "last_exercised": "2026-11-24",
+      "reducible": "The official suite's remaining two piecewise fast-reaction cases (semantic/01568, semantic/01570) are resolved (PR #1068, measured 2026-11-27 in run 46043978792). Non-reducible fast reactions outside the official suite (such as in Curated BioModels) remain refused.",
+      "resolved_note": "The refusal still exists in the Atomizer for non-reducible fast reactions; the official suite no longer reaches it as of full SSTS campaign 46043978792 (2026-11-27), after PR #1068 resolved semantic/01568 and semantic/01570 across all four stages.",
       "sbml_requires": "SBML Level 3 Version 1 Core Sec. 4.11 asks that software tools use a pseudo steady-state approximation for the set of reactions whose fast attribute is true. SBML Level 3 Version 2 removed the fast attribute (Sec. 4.11), so a Level 3 Version 2 model says nothing about fast reactions.",
-      "status": "open",
+      "status": "not-exercised",
       "title": "A fast reaction whose pseudo steady state cannot be used"
     },
     "mathml:non-finite-parameter-approximation": {

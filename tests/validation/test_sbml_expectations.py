@@ -1007,11 +1007,12 @@ def test_stochastic_failure_is_preserved_against_a_different_seed_campaign():
 
     # Unsupported verdicts are gaps, not support. Reconciliation must not
     # advance any of them on the strength of a different-seed campaign;
-    # only the 4 cases that became supported at pinned seed 1000000
-    # (semantic/00988, 01000, 01398, 01539 in run 45431796452) changed.
+    # only the cases that became supported at pinned seed 1000000
+    # (semantic/00988, 01000, 01398, 01539 in run 45431796452 and
+    # semantic/01568, 01570 in run 46043978792) changed.
     unsupported = [
         identity
         for identity, entry in manifest["cases"].items()
         if entry["official_reference"] == "unsupported"
     ]
-    assert len(unsupported) == 119
+    assert len(unsupported) == 117

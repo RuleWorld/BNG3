@@ -10,13 +10,13 @@ A limitation is **not** a defect. It is a case the Atomizer refuses, and a refus
 
 | Field | Value |
 | --- | --- |
-| Generated on | 2026-11-24 |
-| Tree described | `d8d21dfcc6aadc8cce8b279f121239eba9a170ea` |
-| Measured at commit | `d8d21dfcc6aadc8cce8b279f121239eba9a170ea` |
+| Generated on | 2026-11-27 |
+| Tree described | `d6f26cc96055a565c736c952ddd79848257c23c4` |
+| Measured at commit | `d6f26cc96055a565c736c952ddd79848257c23c4` |
 | Official suite revision | `cf38585fac5de8e0e90112febb62851ee2181816` (https://github.com/sbmlteam/sbml-test-suite.git) |
-| Report SHA-256 | `0d4f0fd58fbd5d451c829c9f27b488e8eebcba85893d60732e18538b2747cbf7` |
+| Report SHA-256 | `af3797ba83997c1faa997c8a45283af0db83469729f826715a673d235c12d33f` |
 | BNG3 version | 3.0.0a1 |
-| Native extension SHA-256 | `f1b24b61afa8b7f75e382d1731f8d50371fe7d2d3477a932af8bab7d8216f8dc` |
+| Native extension SHA-256 | `bcf5dbe9bafb4083e7c423c84c84d7c6fe544964ba8887ab15e431057979a070` |
 | Source tree of the measurement | `/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/__init__.py` |
 
 The measurement is a full run of the pinned official SBML Test Suite; its per-case verdicts are recorded in the expectation manifest, which the campaign regenerates whenever a merge changes a verdict.
@@ -47,15 +47,13 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 | --- | --- | --- | --- | --- |
 | `events:untranslated` | atomizer | 61 | An event the Atomizer cannot lower, or cannot order | 2026-10-20 |
 | `package:fbc` | atomizer | 34 | The fbc package: a flux-balance model, not a time course | 2026-10-20 |
-| `fast-reaction:no-fast-equilibrium-solve` | atomizer | 2 | A fast reaction whose pseudo steady state cannot be used | 2026-10-20 |
-| `events:state-trigger-not-schedulable` | atomizer | 1 | A state trigger the runtime cannot schedule | 2026-10-20 |
 | `other` | atomizer | 1 | Refusals the cause taxonomy does not yet name | 2026-10-20 |
-| `harness:random-event-execution` | harness | 16 | The official reference is one draw of a random execution order | 2026-10-21 |
+| `harness:random-event-execution` | harness | 17 | The official reference is one draw of a random execution order | 2026-10-21 |
 | `harness:scheduled-action-phase-boundary` | harness | 2 | The official reference samples a scheduled-action phase boundary | 2026-10-22 |
 | `harness:stochastic-ensemble-budget-not-comparable` | harness | 2 | Projected stochastic work exceeds the comparison-planning threshold | 2026-10-22 |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
-Cases with a recorded gap: 99 atomizer-side, 20 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
+Cases with a recorded gap: 96 atomizer-side, 21 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
 
 ## The Atomizer's limitations
 
@@ -81,26 +79,6 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **What BNG3 does instead**: The Atomizer reports that the package is declared and that the affected structure is missing from the converted model, and it says why the model is out of scope: "This is a constraint-based flux-balance model, not a kinetic time-course model."
 - **Reducible?**: No, not as a time course. BNG3 has no flux-balance solver, so a flux-balance model is not convertible; the honest boundary is to refuse it and to say that it is a different kind of model.
 
-### A fast reaction whose pseudo steady state cannot be used
-
-- **Construct**: `fast-reaction:no-fast-equilibrium-solve`
-- **Cases**: 2 — semantic/01568 semantic/01570
-- **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 1 Core Sec. 4.11 asks that software tools use a pseudo steady-state approximation for the set of reactions whose fast attribute is true. SBML Level 3 Version 2 removed the fast attribute (Sec. 4.11), so a Level 3 Version 2 model says nothing about fast reactions.
-- **Citation**: SBML Level 3 Version 1 Core Sec. 4.11; SBML Level 3 Version 2 Core Sec. 4.11
-- **What BNG3 does instead**: The Atomizer reduces a fast reaction to its pseudo steady state where it can (PR #370, 2026-10-21) and refuses the remainder, saying that it treats such a reaction as an ordinary reaction and that this changes the trajectory.
-- **Reducible?**: Largely reduced already: the reduction closed most of these cases. The remainder needs a fast reaction whose pseudo steady state cannot be written as a BNGL rule.
-
-### A state trigger the runtime cannot schedule
-
-- **Construct**: `events:state-trigger-not-schedulable`
-- **Cases**: 1 — semantic/01466
-- **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.12.2 requires the Trigger to be evaluated against the model's current state, and Sec. 4.12.7 requires the event to be executed when the trigger becomes true.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.2, Sec. 4.12.7
-- **What BNG3 does instead**: The Atomizer refuses the event and says why: "trigger is not a simple time threshold (state-dependent triggers cannot be scheduled)", or, when the trigger names an identifier that is not a legal SBML SId, that the identifier "contains a character outside the SBML SId class and cannot be matched".
-- **Reducible?**: Yes, in two directions. A trigger the native event runtime can evaluate is lowered rather than refused (PR #328, 2026-10-21); an identifier that is not a legal SId is a source defect the user can fix by renaming it, and the diagnostic says so.
-
 ### Refusals the cause taxonomy does not yet name
 
 - **Construct**: `other`
@@ -118,7 +96,7 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 ### The official reference is one draw of a random execution order
 
 - **Construct**: `harness:random-event-execution`
-- **Cases**: 16 — semantic/00952 semantic/00953 semantic/00962 semantic/00964 semantic/00965 semantic/00966 semantic/01588 semantic/01589 semantic/01590 semantic/01591 semantic/01592 semantic/01593 semantic/01599 semantic/01605 semantic/01626 semantic/01627
+- **Cases**: 17 — semantic/00952 semantic/00953 semantic/00962 semantic/00964 semantic/00965 semantic/00966 semantic/01466 semantic/01588 semantic/01589 semantic/01590 semantic/01591 semantic/01592 semantic/01593 semantic/01599 semantic/01605 semantic/01626 semantic/01627
 - **First recorded**: 2026-10-21
 - **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.12.3 and Sec. 4.12.7 define the order in which simultaneously triggered events are executed; a case that draws the events in a random order is a valid instance of that semantics.
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.3, Sec. 4.12.7
@@ -165,6 +143,8 @@ A limitation that is closed does not vanish from the record. This section names 
 
 | Construct | What it is | Status | Date | What happened |
 | --- | --- | --- | --- | --- |
+| `events:state-trigger-not-schedulable` | A state trigger the runtime cannot schedule | not-exercised | 2026-11-24 | The refusal still exists in the Atomizer; the official suite no longer reaches it as of full SSTS campaign 46043978792 (2026-11-27), because semantic/01466 now lowers and round-trips cleanly and its equal-priority mutually cancelling triggers are classified under harness:random-event-execution. |
+| `fast-reaction:no-fast-equilibrium-solve` | A fast reaction whose pseudo steady state cannot be used | not-exercised | 2026-11-24 | The refusal still exists in the Atomizer for non-reducible fast reactions; the official suite no longer reaches it as of full SSTS campaign 46043978792 (2026-11-27), after PR #1068 resolved semantic/01568 and semantic/01570 across all four stages. |
 | `harness:reference-does-not-track-variable` | The official reference does not report a boundary species | closed | 2026-10-21 | Closed by PR #380, validated 2026-10-21: the direct SSA path no longer decrements or increments a boundary species, so the model's value matches the official reference and the three cases are compared instead of skipped. The defect had been a symptom of the engine honouring a boundary species in three of its four engines. First measured as closed on 2026-10-21. |
 | `harness:scheduled-actions-not-executed` | The reference runner could not execute a model with actions | closed | 2026-10-21 | Closed by PR #337, validated 2026-10-20: the harness now validates official references for action-bearing cases, so these cases are compared rather than skipped. First measured as closed on 2026-10-21. |
 | `harness:stochastic-ensemble-not-evaluated` | The official reference needed an ensemble the harness did not run | closed | 2026-10-21 | Closed by PR #337, validated 2026-10-20: the harness now evaluates the official stochastic references, so these cases are compared rather than skipped. First measured as closed on 2026-10-21. |
@@ -185,6 +165,7 @@ The expectation manifest records one measurement, not a history, so this log is 
 - **2026-10-21** — Reduced: a fast reaction is lowered to its pseudo steady state instead of being refused (PR #370), and several simultaneous events execute in the order the specification defines (PR #371). The official-reference failure count is zero.
 - **2026-10-21** — Closed: a reference that names a reaction's rate is now compared, because the Atomizer states the rate as a zero-argument function and the harness maps the reference's quantity onto it (PR #378); and a boundary species is now honoured by the direct SSA path, so the reference's value for it is compared rather than skipped (PR #380). The event limit 'an event the Atomizer cannot lower, or cannot order' shrinks by one case: an event group whose priority is read from the model state is now ordered by the priority it has at the execution instant (PR #376).
 - **2026-10-22** — Corrected three previously unclassified cause/owner labels without changing verdicts or stage counts: semantic/00950 is MathML infinity, semantic/00951 is a non-finite parameter approximation, and stochastic/00028 and stochastic/00032 are scheduled-action phase-boundary comparison limits owned by the harness.
+- **2026-11-27** — Exact-main full SSTS campaign 46043978792 (d6f26cc9): piecewise L3V1 fast-reaction equilibrium lowering (PR #1068) resolved semantic/01568 and semantic/01570 across all four stages, and semantic/01466 now lowers and round-trips cleanly with its equal-priority mutually cancelling events classified as harness:random-event-execution. The official suite no longer exercises fast-reaction:no-fast-equilibrium-solve or events:state-trigger-not-schedulable (the refusals remain in the Atomizer for non-reducible cases).
 
 ## How to regenerate
 
