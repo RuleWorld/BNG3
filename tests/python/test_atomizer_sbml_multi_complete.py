@@ -1672,7 +1672,7 @@ def test_multi_mathml_dynamic_species_feature_count_rate_matches_core_oracle():
   </model>
 </sbml>"""
 
-    # libSBML's L3V1 Core MathML validator does not recognize Multi §3.26
+    # libSBML's L3V1 Core MathML validator does not recognize Multi v1 (3.26)
     # speciesFeature IDs inside <ci multi:speciesReference="r1">sf_p</ci>,
     # so validate the independent Core oracle and compare full ODE trajectories.
     _compare_with_core_oracle(
