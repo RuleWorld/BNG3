@@ -933,8 +933,9 @@ end model
 """
         return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
 
-    with pytest.raises(bionetgen.EqualityUndecided):
-        bionetgen.semantic_equal(model(2), model(3))
+    # Distinct completion delays on an enabled delayed transition are now
+    # decided with a verified completion-clock counterexample (False).
+    assert bionetgen.semantic_equal(model(2), model(3)) is False
 
 
 def test_semantic_equal_does_not_invent_arbitrary_species_renamings():

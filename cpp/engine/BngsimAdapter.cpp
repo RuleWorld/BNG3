@@ -7,9 +7,11 @@
 #include <cmath>
 #include <filesystem>
 #include <limits>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -23,6 +25,7 @@
 #include "BNGLexer.h"
 #include "BNGParser.h"
 #include "core/Ullmann.hpp"
+#include "parser/BNGAstVisitor.hpp"
 #include "parser/PatternGraphBuilder.hpp"
 
 namespace bng::engine {
@@ -32,14 +35,91 @@ namespace {
 enum class BngsimRateKind {
     Parameter,
     Function,
+    SyntheticExpression,
 };
 
 struct BngsimRateReference {
     BngsimRateKind kind;
     std::string name;
+    std::optional<ast::Expression> expression;
 };
 
-std::string bngsimTableCounterName(const ast::Expression& counter);
+std::string toLowerCopy(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return value;
+}
+
+bool modelHasObservable(const ast::Model& model, const std::string& name) {
+    for (const auto& observable : model.getObservables()) {
+        if (observable.getName() == name) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool modelHasZeroArgFunction(const ast::Model& model, const std::string& name) {
+    for (const auto& function : model.getFunctions()) {
+        if (function.getName() == name && function.getArgs().empty()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void validateBngsimTableMethod(const std::string& method) {
+    const std::string lower = toLowerCopy(method);
+    if (lower.empty() || lower == "linear" || lower == "step") {
+        return;
+    }
+    throw std::runtime_error(
+        "BNGsim adapter rejected TFUN: unsupported interpolation method '" + method + "'");
+}
+
+std::string resolveBngsimTablePath(
+    const std::string& rawPath,
+    const std::filesystem::path& sourcePath) {
+    if (rawPath.empty()) {
+        return {};
+    }
+    try {
+        const std::filesystem::path tablePath(rawPath);
+        if (tablePath.is_absolute()) {
+            return tablePath.lexically_normal().string();
+        }
+        if (sourcePath.empty()) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected TFUN: relative table path requires source-directory provenance");
+        }
+        std::error_code ec;
+        std::filesystem::path baseDir;
+        if (std::filesystem::is_directory(sourcePath, ec)) {
+            baseDir = sourcePath;
+        } else {
+            baseDir = sourcePath.parent_path();
+        }
+        if (baseDir.empty()) {
+            baseDir = std::filesystem::current_path(ec);
+        }
+        const auto resolved = std::filesystem::absolute(baseDir / tablePath, ec).lexically_normal();
+        if (ec || resolved.empty()) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected TFUN: relative table path requires source-directory provenance");
+        }
+        return resolved.string();
+    } catch (const std::runtime_error&) {
+        throw;
+    } catch (const std::exception&) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected TFUN: relative table path requires source-directory provenance");
+    }
+}
+
+std::string bngsimTableCounterName(
+    const ast::Model& model,
+    const ast::Expression& counter);
 
 std::string normalizeRateLaw(std::string value) {
     const auto first = value.find_first_not_of(" \t");
@@ -62,7 +142,9 @@ std::string normalizeRateLaw(std::string value) {
 }
 
 void collectExpressionBlockers(
+    const ast::Model& model,
     const ast::Expression& expression,
+    const std::filesystem::path& sourcePath,
     std::vector<std::string>& blockers) {
     switch (expression.kind()) {
     case ast::ExpressionKind::Number:
@@ -73,20 +155,20 @@ void collectExpressionBlockers(
             blockers.push_back("BNGsim adapter rejected malformed unary expression");
             return;
         }
-        collectExpressionBlockers(expression.args().front(), blockers);
+        collectExpressionBlockers(model, expression.args().front(), sourcePath, blockers);
         return;
     case ast::ExpressionKind::Binary:
         if (expression.args().size() != 2) {
             blockers.push_back("BNGsim adapter rejected malformed binary expression");
             return;
         }
-        collectExpressionBlockers(expression.args()[0], blockers);
-        collectExpressionBlockers(expression.args()[1], blockers);
+        collectExpressionBlockers(model, expression.args()[0], sourcePath, blockers);
+        collectExpressionBlockers(model, expression.args()[1], sourcePath, blockers);
         return;
     case ast::ExpressionKind::Function:
     case ast::ExpressionKind::ObservableRef:
         for (const auto& argument : expression.args()) {
-            collectExpressionBlockers(argument, blockers);
+            collectExpressionBlockers(model, argument, sourcePath, blockers);
         }
         return;
     case ast::ExpressionKind::TableFunction:
@@ -95,22 +177,106 @@ void collectExpressionBlockers(
             return;
         }
         try {
-            (void)bngsimTableCounterName(expression.args().front());
+            validateBngsimTableMethod(expression.tableMethod());
+            (void)bngsimTableCounterName(model, expression.args().front());
+            if (!expression.tableFilePath().empty()) {
+                (void)resolveBngsimTablePath(expression.tableFilePath(), sourcePath);
+            }
         } catch (const std::exception& error) {
             blockers.push_back(error.what());
+        }
+        return;
+    }
+    blockers.push_back("BNGsim adapter rejected unknown expression kind");
+}
+
+void collectInlineRateExpressionBlockers(
+    const ast::Model& model,
+    const ast::Expression& expression,
+    const std::filesystem::path& sourcePath,
+    const std::string& context,
+    std::vector<std::string>& blockers) {
+    switch (expression.kind()) {
+    case ast::ExpressionKind::Number:
+        if (!std::isfinite(expression.numberValue())) {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context + ": rate expression contains non-finite literal");
+        }
+        return;
+    case ast::ExpressionKind::Identifier: {
+        const auto& name = expression.name();
+        if (name == "time" || name == "t" ||
+            model.getParameters().contains(name) ||
+            modelHasObservable(model, name) ||
+            modelHasZeroArgFunction(model, name)) {
             return;
         }
-        if (!expression.tableFilePath().empty()) {
-            try {
-                if (!std::filesystem::path(expression.tableFilePath()).is_absolute()) {
-                    blockers.push_back(
-                        "BNGsim adapter rejected TFUN: relative table path requires source-directory provenance");
-                }
-            } catch (const std::exception&) {
-                blockers.push_back(
-                    "BNGsim adapter rejected TFUN: relative table path requires source-directory provenance");
-            }
+        blockers.push_back(
+            "BNGsim adapter rejected " + context + ": rate expression references unsupported identifier '" + name + "'");
+        return;
+    }
+    case ast::ExpressionKind::Unary:
+        if (expression.args().size() != 1) {
+            blockers.push_back("BNGsim adapter rejected malformed unary expression");
+            return;
         }
+        if (expression.name() != "+" && expression.name() != "-") {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context + ": unsupported unary operator '" + expression.name() + "' in rate expression");
+            return;
+        }
+        collectInlineRateExpressionBlockers(
+            model, expression.args().front(), sourcePath, context, blockers);
+        return;
+    case ast::ExpressionKind::Binary:
+        if (expression.args().size() != 2) {
+            blockers.push_back("BNGsim adapter rejected malformed binary expression");
+            return;
+        }
+        if (expression.name() != "+" && expression.name() != "-" &&
+            expression.name() != "*" && expression.name() != "/" &&
+            expression.name() != "^") {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context + ": unsupported binary operator '" + expression.name() + "' in rate expression");
+            return;
+        }
+        collectInlineRateExpressionBlockers(
+            model, expression.args()[0], sourcePath, context, blockers);
+        collectInlineRateExpressionBlockers(
+            model, expression.args()[1], sourcePath, context, blockers);
+        return;
+    case ast::ExpressionKind::Function:
+    case ast::ExpressionKind::ObservableRef: {
+        const std::string& name = expression.name();
+        const std::string lower = toLowerCopy(name);
+        const std::size_t arity = expression.args().size();
+        if (arity == 0 &&
+            (lower == "time" || lower == "t" ||
+             modelHasZeroArgFunction(model, name) ||
+             modelHasObservable(model, name))) {
+            return;
+        }
+        static const std::unordered_set<std::string> kUnaryBuiltins = {
+            "abs", "acos", "asin", "atan", "ceil", "cos", "cosh", "exp",
+            "floor", "ln", "log", "log10", "log2", "sin", "sinh", "sqrt",
+            "tan", "tanh"
+        };
+        const bool supportedBuiltin =
+            (arity == 1 && kUnaryBuiltins.count(lower) > 0) ||
+            (arity == 2 && (lower == "min" || lower == "max")) ||
+            (arity == 3 && lower == "if");
+        if (!supportedBuiltin) {
+            blockers.push_back(
+                "BNGsim adapter rejected " + context + ": unsupported function '" + name + "' in rate expression");
+            return;
+        }
+        for (const auto& argument : expression.args()) {
+            collectInlineRateExpressionBlockers(model, argument, sourcePath, context, blockers);
+        }
+        return;
+    }
+    case ast::ExpressionKind::TableFunction:
+        collectExpressionBlockers(model, expression, sourcePath, blockers);
         return;
     }
     blockers.push_back("BNGsim adapter rejected unknown expression kind");
@@ -283,13 +449,23 @@ std::vector<std::pair<int, double>> compileBngsimObservableEntries(
     return entries;
 }
 
-std::string bngsimTableCounterName(const ast::Expression& counter) {
+std::string bngsimTableCounterName(
+    const ast::Model& model,
+    const ast::Expression& counter) {
     if (counter.kind() == ast::ExpressionKind::Identifier ||
         counter.kind() == ast::ExpressionKind::ObservableRef) {
         if (counter.name().empty()) {
             throw std::runtime_error("BNGsim adapter rejected TFUN: empty counter name");
         }
-        return counter.name() == "t" ? "time" : counter.name();
+        if (counter.name() == "t" || counter.name() == "time") {
+            return "time";
+        }
+        if (model.getParameters().contains(counter.name()) ||
+            modelHasObservable(model, counter.name())) {
+            return counter.name();
+        }
+        throw std::runtime_error(
+            "BNGsim adapter rejected TFUN: counter must be time or a named parameter/observable");
     }
     if (counter.kind() == ast::ExpressionKind::Function &&
         (counter.name() == "time" || counter.name() == "t") &&
@@ -303,20 +479,55 @@ std::string bngsimTableCounterName(const ast::Expression& counter) {
 BngsimRateReference resolveBngsimRateReference(
     const ast::Model& model,
     const ast::Rxn& reaction,
-    std::size_t index) {
+    std::size_t index,
+    const BngsimLoweringOptions& options) {
+    const auto context = bngsimReactionContext(index, reaction);
+    if (reaction.isTotalRate()) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected " + context +
+            ": TotalRate reactions require a total-rate bridge");
+    }
+    if (reaction.isAbsoluteFlux()) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected " + context +
+            ": absolute-flux reactions are unsupported");
+    }
     const auto& rateLaw = reaction.getRateLaw();
     const auto normalized = normalizeRateLaw(rateLaw);
     if (model.getParameters().contains(normalized)) {
-        return {BngsimRateKind::Parameter, normalized};
+        return {BngsimRateKind::Parameter, normalized, std::nullopt};
     }
     for (const auto& function : model.getFunctions()) {
         if (function.getName() == normalized) {
-            return {BngsimRateKind::Function, normalized};
+            return {BngsimRateKind::Function, normalized, std::nullopt};
         }
     }
-    throw std::runtime_error(
-        "BNGsim adapter rejected " + bngsimReactionContext(index, reaction) +
-        ": rate law '" + rateLaw + "' is not a direct parameter or function reference");
+    if (!options.allowRateExpressionWrapping) {
+        throw std::runtime_error(
+            "BNGsim adapter rejected " + context +
+            ": rate law '" + rateLaw + "' is not a direct parameter or function reference");
+    }
+
+    ast::Expression rateExpression;
+    if (reaction.getRateExpression().has_value()) {
+        rateExpression = *reaction.getRateExpression();
+    } else {
+        try {
+            rateExpression = parser::parseExpression(rateLaw);
+        } catch (const std::exception&) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected " + context +
+                ": rate law '" + rateLaw + "' could not be parsed as a BNGsim functional expression");
+        }
+    }
+
+    std::vector<std::string> exprBlockers;
+    collectInlineRateExpressionBlockers(
+        model, rateExpression, options.sourcePath, context, exprBlockers);
+    if (!exprBlockers.empty()) {
+        throw std::runtime_error(exprBlockers.front());
+    }
+    return {BngsimRateKind::SyntheticExpression, {}, std::move(rateExpression)};
 }
 
 } // namespace
@@ -324,6 +535,13 @@ BngsimRateReference resolveBngsimRateReference(
 BngsimLoweringCheck checkBngsimLowering(
     const ast::Model& model,
     const GeneratedNetwork& network) {
+    return checkBngsimLowering(model, network, BngsimLoweringOptions{});
+}
+
+BngsimLoweringCheck checkBngsimLowering(
+    const ast::Model& model,
+    const GeneratedNetwork& network,
+    const BngsimLoweringOptions& options) {
     BngsimLoweringCheck check;
     auto& mutableModel = const_cast<ast::Model&>(model);
     auto reject = [&](const std::string& blocker) {
@@ -457,7 +675,8 @@ BngsimLoweringCheck checkBngsimLowering(
                 "': function arguments require a local-function bridge");
             continue;
         }
-        collectExpressionBlockers(function.getExpression(), check.blockers);
+        collectExpressionBlockers(
+            model, function.getExpression(), options.sourcePath, check.blockers);
     }
 
     for (std::size_t index = 0; index < network.reactions.size(); ++index) {
@@ -471,7 +690,7 @@ BngsimLoweringCheck checkBngsimLowering(
             break;
         }
         try {
-            (void)resolveBngsimRateReference(model, reaction, index);
+            (void)resolveBngsimRateReference(model, reaction, index, options);
         } catch (const std::exception& error) {
             reject(error.what());
             break;
@@ -488,40 +707,75 @@ BngsimLoweringCheck checkBngsimLowering(
 
 namespace {
 
-std::string expressionForBngsim(const ast::Expression& expression,
+std::string makeUniqueSyntheticFunctionName(
+    const ast::Model& model,
+    std::unordered_set<std::string>& usedNames,
+    std::size_t reactionIndex) {
+    std::string candidate = "__bng3_rate_" + std::to_string(reactionIndex);
+    while (usedNames.count(candidate) > 0 ||
+           model.getParameters().contains(candidate) ||
+           modelHasObservable(model, candidate) ||
+           modelHasZeroArgFunction(model, candidate)) {
+        candidate.push_back('_');
+    }
+    usedNames.insert(candidate);
+    return candidate;
+}
+
+std::string expressionForBngsim(const ast::Model& model,
+                                const ast::Expression& expression,
                                 const std::string& owner,
+                                const std::filesystem::path& sourcePath,
                                 bngsim::ModelBuilder& builder,
                                 std::size_t& tableIndex) {
     switch (expression.kind()) {
     case ast::ExpressionKind::Number:
+        return expression.toString();
     case ast::ExpressionKind::Identifier:
+        if (expression.name() == "t" &&
+            !model.getParameters().contains("t") &&
+            !modelHasObservable(model, "t") &&
+            !modelHasZeroArgFunction(model, "t")) {
+            return "time";
+        }
         return expression.toString();
     case ast::ExpressionKind::Unary:
         return "(" + expression.name() +
-               expressionForBngsim(expression.args().front(), owner, builder, tableIndex) + ")";
+               expressionForBngsim(model, expression.args().front(), owner, sourcePath, builder, tableIndex) + ")";
     case ast::ExpressionKind::Binary:
-        return "(" + expressionForBngsim(expression.args()[0], owner, builder, tableIndex) +
+        return "(" + expressionForBngsim(model, expression.args()[0], owner, sourcePath, builder, tableIndex) +
                " " + expression.name() + " " +
-               expressionForBngsim(expression.args()[1], owner, builder, tableIndex) + ")";
+               expressionForBngsim(model, expression.args()[1], owner, sourcePath, builder, tableIndex) + ")";
     case ast::ExpressionKind::Function:
     case ast::ExpressionKind::ObservableRef: {
+        if (expression.args().empty() &&
+            (expression.name() == "time" || expression.name() == "t") &&
+            !modelHasZeroArgFunction(model, expression.name()) &&
+            !modelHasObservable(model, expression.name())) {
+            return "time";
+        }
+        if (expression.args().empty() && modelHasObservable(model, expression.name())) {
+            return expression.name();
+        }
         std::ostringstream result;
         result << expression.name() << "(";
         for (std::size_t index = 0; index < expression.args().size(); ++index) {
             if (index != 0) result << ", ";
-            result << expressionForBngsim(expression.args()[index], owner, builder, tableIndex);
+            result << expressionForBngsim(model, expression.args()[index], owner, sourcePath, builder, tableIndex);
         }
         result << ")";
         return result.str();
     }
     case ast::ExpressionKind::TableFunction: {
-        const std::string counter = bngsimTableCounterName(expression.args().front());
+        const std::string counter = bngsimTableCounterName(model, expression.args().front());
         const std::string syntheticName =
             owner + "__tfun" + std::to_string(tableIndex++);
         if (!expression.tableFilePath().empty()) {
+            const std::string resolvedPath =
+                resolveBngsimTablePath(expression.tableFilePath(), sourcePath);
             builder.add_table_function_spec(
                 syntheticName,
-                expression.tableFilePath(),
+                resolvedPath,
                 counter,
                 expression.tableMethod());
         } else {
@@ -542,9 +796,10 @@ std::string expressionForBngsim(const ast::Expression& expression,
 
 std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
     const ast::Model& model,
-    const GeneratedNetwork& network) {
+    const GeneratedNetwork& network,
+    const BngsimLoweringOptions& options) {
     requireNoDelayedSemantics(model, network, "the BNGsim adapter");
-    const auto check = checkBngsimLowering(model, network);
+    const auto check = checkBngsimLowering(model, network, options);
     if (!check.supported) {
         throw std::runtime_error(check.blockers.empty()
                                      ? "BNGsim adapter rejected model: unsupported lowering"
@@ -574,11 +829,15 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
         }
     }
 
+    std::unordered_set<std::string> usedFunctionNames;
     for (const auto& function : model.getFunctions()) {
+        usedFunctionNames.insert(function.getName());
         std::size_t tableIndex = 0;
         builder.add_function(
             function.getName(),
-            expressionForBngsim(function.getExpression(), function.getName(), builder, tableIndex));
+            expressionForBngsim(
+                model, function.getExpression(), function.getName(),
+                options.sourcePath, builder, tableIndex));
     }
 
     for (std::size_t index = 0; index < network.reactions.size(); ++index) {
@@ -588,20 +847,30 @@ std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
             reaction.getReactants(), network.species.size(), context);
         const auto products = checkedBngsimIndices(
             reaction.getProducts(), network.species.size(), context);
-        const auto rate = resolveBngsimRateReference(model, reaction, index);
+        const auto rate = resolveBngsimRateReference(model, reaction, index, options);
 
         bngsim::RateLawType type;
+        std::string rateName = rate.name;
         if (rate.kind == BngsimRateKind::Parameter) {
             type = bngsim::RateLawType::Elementary;
+        } else if (rate.kind == BngsimRateKind::Function) {
+            type = bngsim::RateLawType::Functional;
         } else {
             type = bngsim::RateLawType::Functional;
+            rateName = makeUniqueSyntheticFunctionName(model, usedFunctionNames, index);
+            std::size_t tableIndex = 0;
+            builder.add_function(
+                rateName,
+                expressionForBngsim(
+                    model, *rate.expression, rateName,
+                    options.sourcePath, builder, tableIndex));
         }
 
         builder.add_reaction(
             reactants,
             products,
             type,
-            rate.name,
+            rateName,
             reaction.getFactor(),
             true);
     }

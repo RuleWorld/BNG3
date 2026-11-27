@@ -509,3 +509,483 @@ end reaction rules
         engine::buildBngsimNetwork(*model, network),
         Catch::Matchers::ContainsSubstring("relative table path requires source-directory provenance"));
 }
+
+TEST_CASE("BNGsim adapter resolves relative TFUN with source_path provenance", "[bngsim]") {
+    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto tempDir = std::filesystem::temp_directory_path() /
+                         ("bng3_bngsim_rel_tfun_" + std::to_string(suffix));
+    std::filesystem::create_directories(tempDir);
+    const auto tablePath = tempDir / "forcing.dat";
+    const auto sourcePath = tempDir / "model.bngl";
+    {
+        std::ofstream table(tablePath);
+        REQUIRE(table.good());
+        table << "# time rate__tfun0\n0 2\n1 4\n";
+    }
+
+    auto model = parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin functions
+    rate() = TFUN('forcing.dat', time)
+end functions
+begin reaction rules
+    X() -> 0 rate
+end reaction rules
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+
+    engine::BngsimLoweringOptions options;
+    options.sourcePath = sourcePath;
+    const auto check = engine::checkBngsimLowering(*model, network, options);
+    REQUIRE(check.supported);
+    REQUIRE(check.blockers.empty());
+
+    auto adapted = engine::buildBngsimNetwork(*model, network, options);
+    bngsim::TimeSpec times;
+    times.t_start = 0.0;
+    times.t_end = 1.0;
+    times.n_points = 2;
+    bngsim::CvodeSimulator solver(*adapted);
+    const auto result = solver.run(times);
+    CHECK_THAT(result.species_data().back(),
+               Catch::Matchers::WithinAbs(std::exp(-3.0), 1e-6));
+
+    std::error_code error;
+    std::filesystem::remove_all(tempDir, error);
+}
+
+TEST_CASE("BNGsim adapter wraps supported inline rate expressions when enabled", "[bngsim]") {
+    SECTION("parameter arithmetic matches native ODE") {
+        auto model = parser::parseModel(R"(
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k*2
+end reaction rules
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+
+        engine::BngsimLoweringOptions options;
+        options.allowRateExpressionWrapping = true;
+        const auto check = engine::checkBngsimLowering(*model, network, options);
+        REQUIRE(check.supported);
+
+        auto adapted = engine::buildBngsimNetwork(*model, network, options);
+        REQUIRE(adapted->n_functions() == 1);
+        REQUIRE(adapted->reactions().at(0).rate_law_type == bngsim::RateLawType::Functional);
+
+        bngsim::TimeSpec times;
+        times.t_start = 0.0;
+        times.t_end = 1.0;
+        times.n_points = 3;
+        bngsim::CvodeSimulator bngsimSolver(*adapted);
+        const auto bngsimResult = bngsimSolver.run(times);
+
+        engine::OdeOptions odeOptions;
+        odeOptions.method = "cvode";
+        odeOptions.tStart = 0.0;
+        odeOptions.tEnd = 1.0;
+        odeOptions.nSteps = 2;
+        const auto nativeResult = engine::OdeIntegrator(*model, network).integrate(odeOptions);
+
+        for (std::size_t i = 0; i < nativeResult.timePoints.size(); ++i) {
+            CHECK_THAT(bngsimResult.species_data().at(i),
+                       Catch::Matchers::WithinAbs(nativeResult.concentrations.at(i).at(0), 1e-6));
+        }
+    }
+
+    SECTION("observable-dependent inline expression matches native ODE") {
+        auto model = parser::parseModel(R"(
+begin parameters
+    k 0.05
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 4
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    X() -> 0 k*(1 + Xtot)
+end reaction rules
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+
+        engine::BngsimLoweringOptions options;
+        options.allowRateExpressionWrapping = true;
+        auto adapted = engine::buildBngsimNetwork(*model, network, options);
+
+        bngsim::TimeSpec times;
+        times.t_start = 0.0;
+        times.t_end = 1.0;
+        times.n_points = 3;
+        bngsim::CvodeSimulator bngsimSolver(*adapted);
+        const auto bngsimResult = bngsimSolver.run(times);
+
+        engine::OdeOptions odeOptions;
+        odeOptions.method = "cvode";
+        odeOptions.tStart = 0.0;
+        odeOptions.tEnd = 1.0;
+        odeOptions.nSteps = 2;
+        const auto nativeResult = engine::OdeIntegrator(*model, network).integrate(odeOptions);
+
+        for (std::size_t i = 0; i < nativeResult.timePoints.size(); ++i) {
+            CHECK_THAT(bngsimResult.species_data().at(i),
+                       Catch::Matchers::WithinAbs(nativeResult.concentrations.at(i).at(0), 1e-6));
+        }
+    }
+
+    SECTION("unsupported Sat rate law stays fail-closed even with wrapping enabled") {
+        auto model = parser::parseModel(R"(
+begin parameters
+    kcat 1.0
+    Km 2.0
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin reaction rules
+    X() -> 0 Sat(kcat, Km)
+end reaction rules
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+
+        engine::BngsimLoweringOptions options;
+        options.allowRateExpressionWrapping = true;
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network, options),
+            Catch::Matchers::ContainsSubstring("unsupported function"));
+    }
+}
+
+TEST_CASE("BNGsim adapter rejects energy, barrier, and driven_by surfaces", "[bngsim]") {
+    SECTION("energy patterns") {
+        auto model = parser::parseModel(R"(
+begin model
+begin molecule types
+    A(s~u~p)
+end molecule types
+begin seed species
+    A(s~u) 10
+end seed species
+begin energy patterns
+    ep1: A(s~p) 1.0
+end energy patterns
+begin reaction rules
+    A(s~u) -> A(s~p) 1.0
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("energy patterns require an eBNGL rate bridge"));
+    }
+
+    SECTION("barrier patterns") {
+        auto model = parser::parseModel(R"(
+begin model
+begin molecule types
+    A(s~u~p)
+end molecule types
+begin parameters
+    phi 0.5
+    Ea 1.0
+    Gb 2.0
+end parameters
+begin seed species
+    A(s~u) 10
+end seed species
+begin energy patterns
+    ep1: A(s~p) 1.0
+end energy patterns
+begin barrier patterns
+    bp1: A(s~u) -> A(s~p) Gb
+end barrier patterns
+begin reaction rules
+    A(s~u) <-> A(s~p) Arrhenius(phi, Ea)
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        const auto check = engine::checkBngsimLowering(*model, network);
+        REQUIRE_FALSE(check.supported);
+        bool sawBarrier = false;
+        for (const auto& blocker : check.blockers) {
+            if (blocker.find("barrier patterns require an eBNGL rate bridge") != std::string::npos) {
+                sawBarrier = true;
+            }
+        }
+        REQUIRE(sawBarrier);
+    }
+
+    SECTION("driven_by reservoir work") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 1.0
+    W 0.5
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    A() -> B() k driven_by(W)
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("driven_by() reservoir work requires an eBNGL rate bridge"));
+    }
+}
+
+TEST_CASE("BNGsim adapter rejects population maps, protocol, actions, local functions, and TotalRate", "[bngsim]") {
+    SECTION("population maps") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    P() population
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin population maps
+    m1: A() -> P() k
+end population maps
+begin reaction rules
+    A() -> 0 k
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("population maps are not a generated-network feature"));
+    }
+
+    SECTION("simulation protocol") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+begin protocol
+    simulate({method=>"ode", t_end=>1, n_steps=>2})
+end protocol
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("simulation protocol requires a protocol bridge"));
+    }
+
+    SECTION("actions other than generate_network") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+setParameter("k", 2.0)
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("action execution requires a protocol bridge"));
+    }
+
+    SECTION("local function arguments") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin functions
+    local_rate(x) = k
+end functions
+begin reaction rules
+    X() -> 0 k
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("function arguments require a local-function bridge"));
+    }
+
+    SECTION("TotalRate modifier") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin reaction rules
+    X() -> 0 k TotalRate
+end reaction rules
+end model
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("TotalRate reactions require a total-rate bridge"));
+    }
+}
+
+TEST_CASE("BNGsim adapter validates TFUN counters and interpolation methods", "[bngsim]") {
+    SECTION("observable counter is accepted") {
+        auto model = parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 2
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin functions
+    rate() = TFUN([0, 10], [1, 3], Xtot)
+end functions
+begin reaction rules
+    X() -> 0 rate
+end reaction rules
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        const auto check = engine::checkBngsimLowering(*model, network);
+        REQUIRE(check.supported);
+    }
+
+    SECTION("expression counter is rejected") {
+        auto model = parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin functions
+    rate() = TFUN([0, 1], [2, 4], 1 + 2)
+end functions
+begin reaction rules
+    X() -> 0 rate
+end reaction rules
+)");
+        REQUIRE(model != nullptr);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("counter must be time or a named parameter/observable"));
+    }
+
+    SECTION("unsupported interpolation method is rejected") {
+        auto model = parser::parseModel(R"(
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+)");
+        REQUIRE(model != nullptr);
+        model->addFunction(ast::Function(
+            "rate",
+            {},
+            ast::Expression::tableFunction(
+                {0.0, 1.0}, {2.0, 4.0}, "", ast::Expression::identifier("time"), "cubic")));
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            engine::buildBngsimNetwork(*model, network),
+            Catch::Matchers::ContainsSubstring("unsupported interpolation method"));
+    }
+}

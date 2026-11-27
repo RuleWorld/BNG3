@@ -196,7 +196,7 @@ OdeResult simulateSsaViaBngsim(
         throw std::runtime_error(
             "BNGsim adapter rejected stop_if: native event stop expressions are not supported");
     }
-    if (options.maxSimSteps > 0) {
+    if (options.maxSimSteps > 0 || options.maxSimStepsSpecified) {
         throw std::runtime_error(
             "BNGsim adapter rejected max_sim_steps: BNGsim SSA has no reaction-event cap");
     }
