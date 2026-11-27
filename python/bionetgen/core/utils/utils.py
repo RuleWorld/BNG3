@@ -1,8 +1,193 @@
-import os, subprocess
+import os, re, subprocess
 from bionetgen.core.exc import BNGParseError, BNGPerlError
 import shutil as spawn
 
 from bionetgen.core.utils.logging import BNGLogger
+
+
+class _StdlibActionParser:
+    """Pure-Python fallback for ActionList.action_parser when pyparsing is absent.
+
+    Produces the same flat token list consumed by BNGParser._parse_action_strings
+    for normal ``{key=>val,...}``, square-bracket ``[...]``, two-argument, and
+    zero/one-argument BNGL action calls.
+    """
+
+    _ACTION_RE = re.compile(
+        r"^([A-Za-z][A-Za-z0-9_]*)\s*\((.*)\)\s*(;?)\s*$", re.DOTALL
+    )
+    _IDENT_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]*")
+    _INT_RE = re.compile(r"^[0-9]+")
+    _EXPR_RE = re.compile(r"^[0-9.+\-eE()/*^]+")
+
+    @staticmethod
+    def _skip_ws(text: str, pos: int) -> int:
+        n = len(text)
+        while pos < n and text[pos].isspace():
+            pos += 1
+        return pos
+
+    @staticmethod
+    def _read_quoted(text: str, pos: int):
+        if pos >= len(text) or text[pos] not in ('"', "'"):
+            return None
+        quote = text[pos]
+        i = pos + 1
+        n = len(text)
+        while i < n:
+            ch = text[i]
+            if ch == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if ch == quote:
+                return text[pos : i + 1], i + 1
+            i += 1
+        return None
+
+    def _parse_nested_dict(self, text: str, pos: int):
+        tokens = ["{"]
+        pos = self._skip_ws(text, pos + 1)
+        if pos < len(text) and text[pos] == "}":
+            tokens.append("}")
+            return tokens, pos + 1
+        while pos < len(text):
+            q = self._read_quoted(text, pos)
+            if q is None:
+                raise ValueError(f"expected quoted key at {pos}")
+            key_tok, pos = q
+            pos = self._skip_ws(text, pos)
+            if text[pos : pos + 2] != "=>":
+                raise ValueError(f"expected '=>' at {pos}")
+            pos = self._skip_ws(text, pos + 2)
+            m = self._INT_RE.match(text[pos:])
+            if not m:
+                raise ValueError(f"expected integer value at {pos}")
+            val_tok = m.group(0)
+            pos = self._skip_ws(text, pos + len(val_tok))
+            tokens.extend([key_tok, "=>", val_tok])
+            if pos < len(text) and text[pos] == ",":
+                pos = self._skip_ws(text, pos + 1)
+                continue
+            if pos < len(text) and text[pos] == "}":
+                tokens.append("}")
+                return tokens, pos + 1
+            raise ValueError(f"expected ',' or '}}' at {pos}")
+        raise ValueError("unterminated '{'")
+
+    def _parse_nested_list(self, text: str, pos: int, quoted_only: bool = False):
+        tokens = ["["]
+        pos = self._skip_ws(text, pos + 1)
+        if pos < len(text) and text[pos] == "]":
+            tokens.append("]")
+            return tokens, pos + 1
+        while pos < len(text):
+            q = self._read_quoted(text, pos)
+            if q is not None:
+                elem, pos = q
+            elif not quoted_only:
+                m = self._EXPR_RE.match(text[pos:])
+                if not m:
+                    raise ValueError(f"expected list element at {pos}")
+                elem = m.group(0)
+                pos += len(elem)
+            else:
+                raise ValueError(f"expected quoted element at {pos}")
+            tokens.append(elem)
+            pos = self._skip_ws(text, pos)
+            if pos < len(text) and text[pos] == ",":
+                pos = self._skip_ws(text, pos + 1)
+                continue
+            if pos < len(text) and text[pos] == "]":
+                tokens.append("]")
+                return tokens, pos + 1
+            raise ValueError(f"expected ',' or ']' at {pos}")
+        raise ValueError("unterminated '['")
+
+    def _parse_dict_args(self, body: str):
+        tokens = ["{"]
+        pos = self._skip_ws(body, 1)
+        n = len(body)
+        if pos < n and body[pos] == "}":
+            pos = self._skip_ws(body, pos + 1)
+            if pos != n:
+                raise ValueError("trailing characters after '}'")
+            tokens.append("}")
+            return tokens
+        while pos < n:
+            m = self._IDENT_RE.match(body[pos:])
+            if not m:
+                raise ValueError(f"expected argument name at {pos}")
+            key = m.group(0)
+            pos = self._skip_ws(body, pos + len(key))
+            if body[pos : pos + 2] != "=>":
+                raise ValueError(f"expected '=>' at {pos}")
+            pos = self._skip_ws(body, pos + 2)
+            tokens.extend([key, "=>"])
+            if pos >= n:
+                raise ValueError("missing argument value")
+            ch = body[pos]
+            if ch in ('"', "'"):
+                q = self._read_quoted(body, pos)
+                if q is None:
+                    raise ValueError(f"unterminated string at {pos}")
+                val, pos = q
+                tokens.append(val)
+            elif ch == "{":
+                sub, pos = self._parse_nested_dict(body, pos)
+                tokens.extend(sub)
+            elif ch == "[":
+                sub, pos = self._parse_nested_list(body, pos, quoted_only=False)
+                tokens.extend(sub)
+            else:
+                em = self._EXPR_RE.match(body[pos:])
+                if not em:
+                    raise ValueError(f"unexpected argument value at {pos}")
+                tokens.append(em.group(0))
+                pos += len(em.group(0))
+            pos = self._skip_ws(body, pos)
+            if pos < n and body[pos] == ",":
+                pos = self._skip_ws(body, pos + 1)
+                continue
+            if pos < n and body[pos] == "}":
+                pos = self._skip_ws(body, pos + 1)
+                if pos != n:
+                    raise ValueError("trailing characters after '}'")
+                tokens.append("}")
+                return tokens
+            raise ValueError(f"expected ',' or '}}' at {pos}")
+        raise ValueError("unterminated '{'")
+
+    def parseString(self, action: str):
+        match = self._ACTION_RE.match(action.strip())
+        if not match:
+            raise ValueError(f"Malformed action: {action}")
+        name, body, semi = match.group(1), match.group(2).strip(), match.group(3)
+        tokens = [name, "("]
+        if body:
+            if body.startswith("{"):
+                tokens.extend(self._parse_dict_args(body))
+            elif body.startswith("["):
+                sub, end = self._parse_nested_list(body, 0, quoted_only=True)
+                if self._skip_ws(body, end) != len(body):
+                    raise ValueError(f"trailing characters in list action: {action}")
+                tokens.extend(sub)
+            else:
+                q = self._read_quoted(body, 0)
+                if q is None:
+                    raise ValueError(f"expected quoted argument in action: {action}")
+                first_arg, pos = q
+                pos = self._skip_ws(body, pos)
+                if pos == len(body):
+                    tokens.append(first_arg)
+                elif body[pos] == ",":
+                    second_arg = body[pos + 1 :].strip()
+                    tokens.extend([first_arg, ",", second_arg])
+                else:
+                    raise ValueError(f"unexpected characters in action: {action}")
+        tokens.append(")")
+        if semi:
+            tokens.append(";")
+        return tokens
 
 
 class ActionList:
@@ -545,7 +730,11 @@ class ActionList:
 
     def define_parser(self):
         ## Define action grammar
-        import pyparsing as pp
+        try:
+            import pyparsing as pp
+        except ImportError:
+            self.action_parser = _StdlibActionParser()
+            return
 
         #
         base_name = pp.Word(pp.alphas, pp.alphanums + "_")

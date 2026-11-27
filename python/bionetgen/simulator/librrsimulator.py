@@ -45,7 +45,8 @@ class libRRSimulator(BNGSimulator):
         except ImportError as exc:
             raise ImportError(
                 "libRoadRunner is required for sim_type='libRR'; "
-                "install the optional roadrunner dependency"
+                "install the optional roadrunner dependency, or use "
+                "bionetgen.load(...) / model.simulate() for the built-in BNG3 simulator"
             ) from exc
 
     @property

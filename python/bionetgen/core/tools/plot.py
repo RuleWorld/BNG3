@@ -70,8 +70,16 @@ class BNGPlotter:
             f"Plotting .gdat/.cdat/.scan file {self.result.file_name}",
             loc=f"{__file__} : BNGPlotter._datplot()",
         )
-        import seaborn as sbrn
-        import matplotlib.pyplot as plt
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError as exc:
+            raise ImportError(
+                "Plotting requires matplotlib; install it with `pip install 'bionetgen[plotting]'`"
+            ) from exc
+        try:
+            import seaborn as sbrn
+        except ImportError:
+            sbrn = None
 
         # get the data out of result object
         self.data = self.result[self.result.file_name]
@@ -80,13 +88,19 @@ class BNGPlotter:
         x_name = names[0]
         # loop over and plot them all
         ctr = 0
-        ax = None
+        fig, ax = plt.subplots()
         for name in names:
             if name == x_name:
                 continue
-            ax = sbrn.lineplot(x=self.data[x_name], y=self.data[name], label=name)
+            if sbrn is not None:
+                ax = sbrn.lineplot(
+                    x=self.data[x_name], y=self.data[name], label=name, ax=ax
+                )
+            else:
+                ax.plot(self.data[x_name], self.data[name], label=name)
             ctr += 1
-        if ax is None:
+        if ctr == 0:
+            plt.close(fig)
             self.logger.error(
                 "No data columns are found in file {}".format(self.result.direct_path),
                 loc=f"{__file__} : BNGPlotter._datplot()",
@@ -96,23 +110,33 @@ class BNGPlotter:
                 "No data columns are found in file {}".format(self.result.direct_path),
             )
 
-        fax = ax.get_figure().gca()
-        if not self.kwargs.get("legend", False):
-            fax.legend().remove()
+        fax = ax
+        if self.kwargs.get("legend", False):
+            fax.legend()
+        else:
+            existing_legend = fax.get_legend()
+            if existing_legend is not None:
+                existing_legend.remove()
         oxmin, oxmax = fax.get_xlim()
         oymin, oymax = fax.get_ylim()
 
-        xmin = self.kwargs.get("xmin", False) or oxmin
-        xmax = self.kwargs.get("xmax", False) or oxmax
-        ymin = self.kwargs.get("ymin", False) or oymin
-        ymax = self.kwargs.get("ymax", False) or oymax
+        xmin = self.kwargs.get("xmin")
+        xmax = self.kwargs.get("xmax")
+        ymin = self.kwargs.get("ymin")
+        ymax = self.kwargs.get("ymax")
+        xmin = oxmin if xmin is None else xmin
+        xmax = oxmax if xmax is None else xmax
+        ymin = oymin if ymin is None else ymin
+        ymax = oymax if ymax is None else ymax
         if not xmax > xmin:
+            plt.close(fig)
             self.logger.error(
                 "--xmin is bigger than --xmax!",
                 loc=f"{__file__} : BNGPlotter._datplot()",
             )
             raise BNGError("--xmin is bigger than --xmax!")
         if not ymax > ymin:
+            plt.close(fig)
             self.logger.error(
                 "--ymin is bigger than --ymax!",
                 loc=f"{__file__} : BNGPlotter._datplot()",
@@ -122,12 +146,13 @@ class BNGPlotter:
         fax.set_xlim(left=xmin, right=xmax)
         fax.set_ylim(bottom=ymin, top=ymax)
         # labels and title
-        _ = plt.xlabel(self.kwargs.get("xlabel") or x_name)
-        _ = plt.ylabel(self.kwargs.get("ylabel") or "concentration")
-        _ = plt.title(self.kwargs.get("title") or self.result.file_name)
+        fax.set_xlabel(self.kwargs.get("xlabel") or x_name)
+        fax.set_ylabel(self.kwargs.get("ylabel") or "concentration")
+        fax.set_title(self.kwargs.get("title") or self.result.file_name)
 
         self.logger.debug(
             f"Saving figure to {self.out}", loc=f"{__file__} : BNGPlotter._datplot()"
         )
         # save the figure
-        plt.savefig(self.out)
+        fig.savefig(self.out)
+        plt.close(fig)

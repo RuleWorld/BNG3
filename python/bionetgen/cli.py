@@ -2,11 +2,46 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import sys
 from pathlib import Path
 
 import click
+
+
+def _emit_table(headers, rows, output, written_message):
+    """Write a table to CSV or print an aligned text table without pandas."""
+    if output:
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(headers)
+            writer.writerows(rows)
+        click.echo(written_message)
+        return
+
+    str_headers = [str(header) for header in headers]
+    str_rows = [[str(cell) for cell in row] for row in rows]
+    widths = [len(header) for header in str_headers]
+    for row in str_rows:
+        for idx, cell in enumerate(row):
+            if idx < len(widths):
+                widths[idx] = max(widths[idx], len(cell))
+    header_line = "  ".join(
+        header.rjust(widths[idx]) if idx > 0 else header.ljust(widths[idx])
+        for idx, header in enumerate(str_headers)
+    )
+    lines = [header_line]
+    for row in str_rows:
+        lines.append(
+            "  ".join(
+                cell.rjust(widths[idx]) if idx > 0 else cell.ljust(widths[idx])
+                for idx, cell in enumerate(row)
+            )
+        )
+    click.echo("\n".join(lines))
 
 
 def _require_callback(ctx, param, value):
@@ -281,9 +316,7 @@ def export(model, fmt, output):
         _cpp.io.write_xml(cpp_model, output)
     elif fmt == "bngl":
         _cpp.io.write_bngl(cpp_model, output)
-    elif fmt == "latex":
-        _cpp.io.write_latex(cpp_model, output)
-    elif fmt in ("net", "sbml", "matlab"):
+    elif fmt in ("net", "sbml", "matlab", "latex"):
         network = _cpp.generate_network(cpp_model)
         if fmt == "net":
             _cpp.io.write_net(cpp_model, network, output)
@@ -291,6 +324,8 @@ def export(model, fmt, output):
             _cpp.io.write_sbml(cpp_model, network, output)
         elif fmt == "matlab":
             _cpp.io.write_matlab(cpp_model, network, output)
+        elif fmt == "latex":
+            _cpp.io.write_latex(cpp_model, network, output)
 
     click.echo(f"Exported to {output}")
 
@@ -697,12 +732,27 @@ def scan(
         parallel=parallel,
     )
 
-    frame = scan_result.to_dataframe()
-    if output:
-        frame.to_csv(output, index=False)
-        click.echo(f"Scan results written to {output}")
+    if not scan_result.results:
+        headers = [scan_result.parameter_name, "time"]
+        rows = []
     else:
-        click.echo(frame.to_string(index=False))
+        obs_names = list(scan_result.observable_names)
+        headers = [scan_result.parameter_name, "time", *obs_names]
+        rows = []
+        for param_val, sim_res in zip(
+            scan_result.parameter_values, scan_result.results
+        ):
+            times = sim_res.time
+            obs_cols = [sim_res.observables[name] for name in obs_names]
+            for idx in range(len(times)):
+                rows.append(
+                    [
+                        float(param_val),
+                        float(times[idx]),
+                        *(float(col[idx]) for col in obs_cols),
+                    ]
+                )
+    _emit_table(headers, rows, output, f"Scan results written to {output}")
 
 
 @main.command()
@@ -787,12 +837,12 @@ def sensitivity(
         parallel=parallel,
     )
 
-    frame = result.to_dataframe()
-    if output:
-        frame.to_csv(output, index=False)
-        click.echo(f"Sensitivity matrix written to {output}")
-    else:
-        click.echo(frame.to_string(index=False))
+    headers = ["parameter", *result.observable_names]
+    rows = [
+        [param_name, *(float(val) for val in row)]
+        for param_name, row in zip(result.parameter_names, result.matrix)
+    ]
+    _emit_table(headers, rows, output, f"Sensitivity matrix written to {output}")
 
 
 @main.command()
