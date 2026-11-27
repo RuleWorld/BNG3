@@ -643,6 +643,18 @@ class EventTranslationContext:
     resolve_native_assignment_function: Callable[[str], Optional[str]] = (
         lambda _identifier: None
     )
+    # Return the explicit SBML <rateRule> math expression for an identifier, or
+    # None when the identifier has no explicit SBML rateRule (distinct from
+    # resolve_rate_rule_expression_for_event, which also synthesizes net
+    # reaction derivatives for ordinary species).
+    resolve_explicit_rate_rule_expression: Callable[[str], Optional[str]] = (
+        lambda _identifier: None
+    )
+    # True when the model contains discrete reactions alongside rules/events.
+    has_reactions: bool = False
+    # True when a discrete reaction depends on an explicit continuous rateRule
+    # variable (making Gillespie propensities continuously time-varying).
+    has_reaction_reading_rate_rule: bool = False
     # Return additional scheduled sets when a compartment volume changes by
     # event assignment. Used to rescale concentration-valued species amounts so
     # that concentrations remain continuous across a discrete volume change,
@@ -4026,21 +4038,96 @@ def _native_fixed_trigger_instant(
     return value
 
 
+def _is_ssa_affine_trigger_expression(
+    trigger: str, continuous_observables: Set[str]
+) -> bool:
+    """Return True when every conjunct of a lowered BNGL trigger is affine in
+    (time, continuous_observables) for fixed discrete state."""
+
+    if not trigger:
+        return False
+    # Split top-level conjunctions joined by ``&&`` and check each comparison.
+    expr_text = trigger.replace("&&", " and ").replace("||", " or ")
+    try:
+        tree = ast.parse(expr_text, mode="eval").body
+    except SyntaxError:
+        return False
+
+    def classify_affine(node: ast.AST) -> int:
+        # 0 = constant between jumps, 1 = affine in (time, continuous), -1 = non-affine
+        if isinstance(node, ast.Constant):
+            return 0 if isinstance(node.value, (int, float)) else -1
+        if isinstance(node, ast.Name):
+            if node.id.lower() in {"time", "t"} or node.id in continuous_observables:
+                return 1
+            return 0
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            return classify_affine(node.operand)
+        if isinstance(node, ast.BinOp):
+            left = classify_affine(node.left)
+            right = classify_affine(node.right)
+            if left < 0 or right < 0:
+                return -1
+            if isinstance(node.op, (ast.Add, ast.Sub)):
+                return max(left, right)
+            if isinstance(node.op, ast.Mult):
+                if left == 1 and right == 1:
+                    return -1
+                return max(left, right)
+            if isinstance(node.op, ast.Div):
+                return left if right == 0 else -1
+            return 0 if (left == 0 and right == 0) else -1
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Name) and node.func.id.lower() in {
+                "delay",
+                "tfun",
+            }:
+                return -1
+            return 0 if all(classify_affine(arg) == 0 for arg in node.args) else -1
+        return -1
+
+    def check_bool(node: ast.AST) -> bool:
+        if isinstance(node, ast.BoolOp) and isinstance(node.op, ast.And):
+            return all(check_bool(value) for value in node.values)
+        if isinstance(node, ast.Compare) and len(node.comparators) == 1:
+            return (
+                classify_affine(node.left) >= 0
+                and classify_affine(node.comparators[0]) >= 0
+            )
+        return False
+
+    return check_bool(tree)
+
+
 def _lower_native_event(
     event: SBMLEvent, context: EventTranslationContext
 ) -> Optional[NativeEventEntry]:
     """Lower one SBML event to the native event runtime, or return ``None``."""
 
-    if str(context.method or "ode").lower() in {"ssa", "stochastic"}:
-        # Discrete Gillespie SSA cannot integrate continuous SBML rateRule ODEs
-        # (lowering dx/dt = f to a synthetic TotalRate reaction turns
-        # deterministic continuous drift into a Poisson jump process). Refuse
-        # native SSA event lowering when the trigger depends on a nonzero
-        # rateRule variable instead of approximating its semantics.
+    is_ssa = str(context.method or "ode").lower() in {"ssa", "stochastic"}
+    ssa_continuous_observables: Set[str] = set()
+    if is_ssa:
+        if context.has_reaction_reading_rate_rule:
+            return None
+        # Hybrid SSA supports exact analytical continuous drift for SBML
+        # rateRules whose rate is a finite constant (e.g., periodic clocks
+        # dt/dt = 1 in SBML distrib models) coupled with discrete SSA jumps.
+        # Non-constant / nonlinear continuous rateRules coupled to discrete
+        # reactions must fail closed rather than be approximated as Poisson
+        # jumps.
         for ident in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", str(event.trigger or "")):
-            rate = context.resolve_rate_rule_expression_for_event(ident, event)
-            if rate is not None and _native_fold_term_text(rate, context) != 0.0:
-                return None
+            explicit_rate = context.resolve_explicit_rate_rule_expression(ident)
+            if explicit_rate is None:
+                continue
+            folded_rate = _native_fold_term_text(explicit_rate, context)
+            if folded_rate is None or not math.isfinite(folded_rate):
+                if context.has_reactions:
+                    return None
+                continue
+            if folded_rate != 0.0:
+                resolved = context.resolve_native_state(ident)
+                if resolved is not None:
+                    ssa_continuous_observables.add(resolved.observable)
 
     priority: Optional[str] = None
     if event.priority:
@@ -4082,6 +4169,13 @@ def _lower_native_event(
         event, trigger_context, instantaneous=delay is None
     )
     if trigger is None:
+        return None
+    if (
+        is_ssa
+        and context.has_reactions
+        and ssa_continuous_observables
+        and not _is_ssa_affine_trigger_expression(trigger, ssa_continuous_observables)
+    ):
         return None
     assignments: List[Tuple[str, str]] = []
     for assignment in event.assignments:

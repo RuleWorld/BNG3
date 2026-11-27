@@ -12,6 +12,7 @@
 #include <limits>
 #include <sstream>
 
+#include "engine/BatchSsa.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
 #include "io/MatlabWriter.hpp"
@@ -496,6 +497,283 @@ end bng3_events
     REQUIRE(repeated.eventCount == 1);
     CHECK(first.observables.back()[0] == repeated.observables.back()[0]);
     CHECK(first.observables.back()[0] < 0.0);
+}
+
+TEST_CASE("Hybrid SSA integrates continuous affine rateRule clocks exactly alongside discrete reactions and distrib draws",
+          "[OdeOptions][Events][SSA][Hybrid]") {
+    auto model = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules","__rate_rule_clock")
+begin parameters
+    k 0.5
+end parameters
+begin molecule types
+    A()
+    B()
+    X()
+    Clock()
+end molecule types
+begin seed species
+    A() 30
+    B() 0
+    X() 0
+    Clock() 0
+end seed species
+begin observables
+    Species A_amt A()
+    Species B_amt B()
+    Species X_amt X()
+    Species clock_amt Clock()
+end observables
+begin functions
+    __rate_rule__clock() = 1
+end functions
+begin reaction rules
+    decay: A() -> B() k
+    __rate_rule_clock: 0 -> Clock() __rate_rule__clock() TotalRate
+end reaction rules
+begin bng3_events version 1
+    event "tick"
+        trigger: clock_amt >= 0.5
+        initial_value: true
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: X_amt = distrib_uniform(2, 6)
+        assignment: clock_amt = -0.5
+    end event
+end bng3_events
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 42;
+    options.tStart = 0.0;
+    options.tEnd = 5.0;
+    options.nSteps = 10; // output at 0.0, 0.5, 1.0, ..., 5.0
+
+    const auto run1 = integrator.integrate(options);
+    const auto run2 = integrator.integrate(options);
+    REQUIRE(run1.timePoints.size() == 11);
+    for (std::size_t step = 0; step < run1.timePoints.size(); ++step) {
+        // Exact deterministic seed reproducibility.
+        CHECK(run1.observables[step] == run2.observables[step]);
+        // Discrete conservation law A + B == 30 with exact integer counts.
+        const double aVal = run1.observables[step][0];
+        const double bVal = run1.observables[step][1];
+        CHECK(aVal == std::round(aVal));
+        CHECK(bVal == std::round(bVal));
+        CHECK_THAT(aVal + bVal, Catch::Matchers::WithinAbs(30.0, 1e-12));
+        // Clock evolves deterministically: 0 at t=0, -0.5 at half-integers, 0 at integers.
+        const double expectedClock = (step == 0 || step % 2 == 0) ? 0.0 : -0.5;
+        CHECK_THAT(run1.observables[step][3],
+                   Catch::Matchers::WithinAbs(expectedClock, 1e-12));
+        // X is 0 at t=0 and in [2, 6) afterwards.
+        const double xVal = run1.observables[step][2];
+        if (step == 0) {
+            CHECK_THAT(xVal, Catch::Matchers::WithinAbs(0.0, 1e-12));
+        } else {
+            CHECK(xVal >= 2.0);
+            CHECK(xVal < 6.0);
+        }
+    }
+
+    // Batch CPU ensemble across 1 and 4 threads must match identically and
+    // reproduce both the analytical Uniform(2,6) moments (mean=4, sd=4/sqrt(12))
+    // and the analytical pure-death mean A(t) = 30 * exp(-0.5 * t).
+    engine::BatchSsaOptions batchOpts;
+    batchOpts.batchSize = 2000;
+    batchOpts.tStart = 0.0;
+    batchOpts.tEnd = 5.0;
+    batchOpts.nSteps = 5;
+    batchOpts.baseSeed = 777;
+    engine::CpuBatchSsaSimulator batchSim(*model, network);
+    const auto singleThread = batchSim.simulateSingleWorker(batchOpts);
+    const auto multiThread = batchSim.simulateMultiCore(batchOpts, 4);
+
+    REQUIRE(singleThread.observableMeans.size() == 6);
+    REQUIRE(multiThread.observableMeans.size() == 6);
+    const double expectedUniformMean = 4.0;
+    const double expectedUniformSd = 4.0 / std::sqrt(12.0);
+    for (std::size_t step = 0; step < 6; ++step) {
+        for (std::size_t g = 0; g < 4; ++g) {
+            CHECK_THAT(multiThread.observableMeans[step][g],
+                       Catch::Matchers::WithinAbs(singleThread.observableMeans[step][g], 1e-5));
+            CHECK_THAT(multiThread.observableStdDevs[step][g],
+                       Catch::Matchers::WithinAbs(singleThread.observableStdDevs[step][g], 1e-5));
+        }
+        const double tVal = static_cast<double>(step);
+        const double expectedAMean = 30.0 * std::exp(-0.5 * tVal);
+        const double p = std::exp(-0.5 * tVal);
+        const double expectedASd = std::sqrt(30.0 * p * (1.0 - p));
+        const double seA = std::max(expectedASd / std::sqrt(2000.0), 1e-6);
+        CHECK_THAT(multiThread.observableMeans[step][0],
+                   Catch::Matchers::WithinAbs(expectedAMean, 4.5 * seA));
+        if (step == 0) {
+            CHECK_THAT(multiThread.observableMeans[step][2], Catch::Matchers::WithinAbs(0.0, 1e-12));
+            CHECK_THAT(multiThread.observableStdDevs[step][2], Catch::Matchers::WithinAbs(0.0, 1e-12));
+        } else {
+            CHECK_THAT(multiThread.observableMeans[step][2],
+                       Catch::Matchers::WithinAbs(expectedUniformMean, 0.12));
+            CHECK_THAT(multiThread.observableStdDevs[step][2],
+                       Catch::Matchers::WithinAbs(expectedUniformSd, 0.08));
+        }
+        CHECK_THAT(multiThread.observableMeans[step][3], Catch::Matchers::WithinAbs(0.0, 1e-6));
+    }
+}
+
+TEST_CASE("Hybrid SSA handles non-dyadic periodic rateRule clocks without drift or missed ticks",
+          "[OdeOptions][Events][SSA][Hybrid]") {
+    auto model = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules","__rate_rule_clock")
+begin molecule types
+    Clock()
+    Ticks()
+end molecule types
+begin seed species
+    Clock() 0
+    Ticks() 0
+end seed species
+begin observables
+    Species clock_amt Clock()
+    Species ticks_amt Ticks()
+end observables
+begin functions
+    __rate_rule__clock() = 1
+end functions
+begin reaction rules
+    __rate_rule_clock: 0 -> Clock() __rate_rule__clock() TotalRate
+end reaction rules
+begin bng3_events version 1
+    event "tick"
+        trigger: clock_amt >= 0.1
+        initial_value: true
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: ticks_amt = ticks_amt + 1
+        assignment: clock_amt = 0
+    end event
+end bng3_events
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 11;
+    options.tStart = 0.0;
+    options.tEnd = 1.0;
+    options.nSteps = 10;
+
+    const auto result = integrator.integrate(options);
+    REQUIRE(result.observables.size() == 11);
+    for (std::size_t step = 0; step <= 10; ++step) {
+        CHECK_THAT(result.observables[step][1],
+                   Catch::Matchers::WithinAbs(static_cast<double>(step), 1e-12));
+    }
+}
+
+TEST_CASE("Hybrid SSA fails closed on nonlinear rateRules or continuous-coupled SSA propensities",
+          "[OdeOptions][Events][SSA][Hybrid]") {
+    // 1. Nonlinear continuous rateRule dx/dt = -x coupled with discrete reaction.
+    auto nonlinearModel = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules","__rate_rule_x")
+begin molecule types
+    A()
+    B()
+    X()
+end molecule types
+begin seed species
+    A() 10
+    B() 0
+    X() 2
+end seed species
+begin observables
+    Species x_amt X()
+end observables
+begin functions
+    __rate_rule__x() = -x_amt
+end functions
+begin reaction rules
+    decay: A() -> B() 1
+    __rate_rule_x: 0 -> X() __rate_rule__x() TotalRate
+end reaction rules
+begin bng3_events version 1
+    event "stop"
+        trigger: x_amt <= 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: x_amt = 2
+    end event
+end bng3_events
+end model
+)");
+    {
+        engine::NetworkGenerator generator(*nonlinearModel);
+        auto network = generator.generateNative();
+        engine::OdeIntegrator integrator(*nonlinearModel, network);
+        engine::OdeOptions options;
+        options.method = "ssa";
+        options.seed = 5;
+        options.tEnd = 2.0;
+        options.nSteps = 4;
+        REQUIRE_THROWS_WITH(
+            integrator.integrate(options),
+            Catch::Matchers::ContainsSubstring("hybrid continuous rateRule dynamics"));
+    }
+
+    // 2. Discrete SSA propensity depending on continuously drifting rateRule state.
+    auto coupledPropensityModel = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules","__rate_rule_clock")
+begin molecule types
+    A()
+    B()
+    Clock()
+end molecule types
+begin seed species
+    A() 10
+    B() 0
+    Clock() 1
+end seed species
+begin observables
+    Species clock_amt Clock()
+end observables
+begin functions
+    __rate_rule__clock() = 1
+    rate_a() = clock_amt
+end functions
+begin reaction rules
+    decay: A() -> B() rate_a()
+    __rate_rule_clock: 0 -> Clock() __rate_rule__clock() TotalRate
+end reaction rules
+end model
+)");
+    {
+        engine::NetworkGenerator generator(*coupledPropensityModel);
+        auto network = generator.generateNative();
+        engine::OdeIntegrator integrator(*coupledPropensityModel, network);
+        engine::OdeOptions options;
+        options.method = "ssa";
+        options.seed = 5;
+        options.tEnd = 2.0;
+        options.nSteps = 4;
+        REQUIRE_THROWS_WITH(
+            integrator.integrate(options),
+            Catch::Matchers::ContainsSubstring("continuously varying rateRule state"));
+        // GPU/JAX flattening must also fail closed on continuous rateRule channels.
+        REQUIRE_THROWS_WITH(
+            engine::FlattenedReactionNetwork::fromModelAndNetwork(
+                *coupledPropensityModel, network),
+            Catch::Matchers::ContainsSubstring("continuous SBML rateRule channels"));
+    }
 }
 
 

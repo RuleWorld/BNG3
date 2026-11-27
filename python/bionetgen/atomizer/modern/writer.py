@@ -12953,6 +12953,76 @@ def generate_bngl(
                 )
                 else None
             ),
+            resolve_explicit_rate_rule_expression=(
+                lambda identifier: next(
+                    (
+                        extend_function(rule.math or "", {}, model.function_definitions)
+                        for rule in model.rules
+                        if rule.type == "rate"
+                        and rule.variable
+                        and standardize_name(str(rule.variable))
+                        == standardize_name(identifier)
+                    ),
+                    None,
+                )
+            ),
+            has_reactions=bool(model.reactions),
+            has_reaction_reading_rate_rule=(
+                bool(model.reactions)
+                and bool(
+                    explicit_rate_rule_ids := {
+                        standardize_name(str(rule.variable))
+                        for rule in model.rules
+                        if rule.type == "rate"
+                        and rule.variable
+                        and str(rule.math or "").strip()
+                        not in {"", "0", "0.0", "-0", "-0.0"}
+                    }
+                )
+                and any(
+                    (
+                        {
+                            standardize_name(
+                                str(
+                                    item
+                                    if isinstance(item, str)
+                                    else getattr(item, "species", "")
+                                )
+                            )
+                            for item in (
+                                list(rxn.reactants or ())
+                                + list(rxn.products or ())
+                                + list(rxn.modifiers or ())
+                            )
+                            if (
+                                item
+                                if isinstance(item, str)
+                                else getattr(item, "species", None)
+                            )
+                        }
+                        | {
+                            standardize_name(tok)
+                            for tok in re.findall(
+                                r"[A-Za-z_][A-Za-z0-9_]*",
+                                extend_function(
+                                    str(
+                                        getattr(rxn.kinetic_law, "math", None)
+                                        or (
+                                            rxn.kinetic_law.get("math", "")
+                                            if isinstance(rxn.kinetic_law, dict)
+                                            else rxn.kinetic_law or ""
+                                        )
+                                    ),
+                                    {},
+                                    model.function_definitions,
+                                ),
+                            )
+                        }
+                    )
+                    & explicit_rate_rule_ids
+                    for rxn in model.reactions.values()
+                )
+            ),
         )
         if _force_all_native_events:
             scheduled_result = (

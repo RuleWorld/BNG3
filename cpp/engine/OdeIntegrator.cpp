@@ -611,11 +611,24 @@ void OdeIntegrator::compile() {
     }
 
     std::unordered_map<std::string, bng::compile::RateLawKind> typedRateKinds;
+    std::unordered_set<std::string> rateRuleOriginNames;
     for (const auto& rule : model_.getReactionRules()) {
         if (!rule.getRates().empty()) {
             typedRateKinds.emplace(
                 rule.getRuleName(),
                 bng::compile::CompiledRateLaw::compile(rule.getRates().front()).kind);
+        }
+        const auto& label = rule.getLabel();
+        const auto& ruleName = rule.getRuleName();
+        if (label.rfind("__rate_rule", 0) == 0 ||
+            ruleName.rfind("__rate_rule", 0) == 0) {
+            rateRuleOriginNames.insert(ruleName);
+            if (!label.empty()) {
+                rateRuleOriginNames.insert(label);
+                if (label.back() == ':') {
+                    rateRuleOriginNames.insert(label.substr(0, label.size() - 1));
+                }
+            }
         }
     }
     const auto typedRateKindForOrigin = [&](std::string origin)
@@ -744,6 +757,13 @@ void OdeIntegrator::compile() {
         // authored BNGL laws still receive reactant counts below; only the
         // separately marked Atomizer absolute flux omits those factors too.
         const auto& originRuleName = rxn.getOriginRuleName();
+        const auto resolvedOrigin = bng::compile::resolveOriginRule(originRuleName).name;
+        crxn.isRateRuleChannel =
+            crxn.isAbsoluteFlux &&
+            (originRuleName.rfind("__rate_rule", 0) == 0 ||
+             resolvedOrigin.rfind("__rate_rule", 0) == 0 ||
+             rateRuleOriginNames.count(originRuleName) > 0 ||
+             rateRuleOriginNames.count(resolvedOrigin) > 0);
 
         // Fast path: If NetWriter pre-computed a per-reaction derived rate parameter
         // (local functions with %x:: scope prefix or energy patterns), use it directly.
@@ -3246,9 +3266,174 @@ bool OdeIntegrator::triggerHolds(const ast::Expression& trigger, double time,
     return eventValue(trigger, time, state) != 0.0;
 }
 
-bool OdeIntegrator::isAffineInTime(const ast::Expression& expression) const {
+bool OdeIntegrator::expressionDependsOnSpeciesSet(
+    const ast::Expression& expression,
+    const std::vector<bool>& speciesMask) const {
+    if (speciesMask.empty()) return false;
     const auto expanded = functionEvaluator_.expandFunctions(expression);
-    // Returns 0 = time-independent, 1 = affine in time, -1 = unsupported.
+    std::function<bool(const ast::Expression&)> walks =
+        [&](const ast::Expression& node) -> bool {
+            if (node.kind() == ast::ExpressionKind::Identifier ||
+                node.kind() == ast::ExpressionKind::ObservableRef) {
+                const auto& name = node.name();
+                const auto found = observableIndex_.find(name);
+                if (found != observableIndex_.end()) {
+                    for (const auto& entry : compiledGroups_[found->second].entries) {
+                        if (entry.first < speciesMask.size() &&
+                            speciesMask[entry.first]) {
+                            return true;
+                        }
+                    }
+                }
+                static constexpr const char* kSubPrefix = "__substrate_";
+                if (name.rfind(kSubPrefix, 0) == 0) {
+                    try {
+                        const std::size_t idx = std::stoul(name.substr(12));
+                        if (idx < speciesMask.size() && speciesMask[idx]) {
+                            return true;
+                        }
+                    } catch (...) {}
+                }
+            }
+            return std::any_of(node.args().begin(), node.args().end(), walks);
+        };
+    return walks(expanded);
+}
+
+OdeIntegrator::HybridSsaPlan OdeIntegrator::analyzeHybridSsa() const {
+    HybridSsaPlan plan;
+    std::size_t rateRuleCount = 0;
+    std::size_t discreteCount = 0;
+    for (const auto& rxn : compiledRxns_) {
+        if (rxn.isRateRuleChannel) {
+            ++rateRuleCount;
+        } else {
+            ++discreteCount;
+        }
+    }
+    plan.hasRateRuleChannels = rateRuleCount > 0;
+    plan.allRateRuleChannels = rateRuleCount > 0 && discreteCount == 0;
+    if (!plan.hasRateRuleChannels) {
+        plan.exactHybridSupported = true;
+        return plan;
+    }
+
+    plan.continuousSpecies.assign(nSpecies_, false);
+    for (const auto& rxn : compiledRxns_) {
+        if (!rxn.isRateRuleChannel) continue;
+        if (!rxn.reactantIndices.empty() || rxn.productIndices.size() != 1 ||
+            rxn.productIndices.front() >= nSpecies_) {
+            plan.unsupportedReason =
+                "rateRule channel has unsupported stoichiometry for hybrid SSA";
+            return plan;
+        }
+        if (rxn.delay > 0.0) {
+            plan.unsupportedReason =
+                "delayed rateRule channel is not supported in hybrid SSA";
+            return plan;
+        }
+        // A promoted event-assigned parameter carries a synthetic zero-rate
+        // channel (dx/dt = 0). It is piecewise constant between events and
+        // does not drift continuously, so discrete reactions may read it.
+        if (!rxn.isFunctional && rxn.rateConstant == 0.0) {
+            continue;
+        }
+        plan.continuousSpecies[rxn.productIndices.front()] = true;
+    }
+
+    // Between discrete jumps/events, continuous rateRule channels must have
+    // exact constant drift (independent of time and of continuous states).
+    for (const auto& rxn : compiledRxns_) {
+        if (!rxn.isRateRuleChannel) continue;
+        if (rxn.isTimeDependent) {
+            plan.unsupportedReason =
+                "time-dependent rateRule cannot be stepped analytically in hybrid SSA";
+            return plan;
+        }
+        if (rxn.isFunctional && rxn.functionalRateExpr &&
+            expressionDependsOnSpeciesSet(*rxn.functionalRateExpr,
+                                          plan.continuousSpecies)) {
+            plan.unsupportedReason =
+                "continuous-state-dependent rateRule cannot be stepped analytically in hybrid SSA";
+            return plan;
+        }
+    }
+
+    // Discrete SSA propensities must remain piecewise constant between jumps
+    // (independent of continuously drifting rateRule species).
+    for (const auto& rxn : compiledRxns_) {
+        if (rxn.isRateRuleChannel) continue;
+        for (const auto idx : rxn.reactantIndices) {
+            if (idx < plan.continuousSpecies.size() &&
+                plan.continuousSpecies[idx]) {
+                plan.unsupportedReason =
+                    "discrete SSA reaction depends on continuously varying rateRule state";
+                return plan;
+            }
+        }
+        if (rxn.isFunctional && rxn.functionalRateExpr &&
+            expressionDependsOnSpeciesSet(*rxn.functionalRateExpr,
+                                          plan.continuousSpecies)) {
+            plan.unsupportedReason =
+                "discrete SSA propensity depends on continuously varying rateRule state";
+            return plan;
+        }
+    }
+
+    // Every native event trigger that reads time or continuous rateRule species
+    // must be affine in (time, continuous rateRule species) so crossings are
+    // scheduled analytically without numerical root-finding drift.
+    const auto readsContinuousOrClock =
+        [&](const auto& self, const ast::Expression& expression) -> bool {
+            if ((expression.kind() == ast::ExpressionKind::Identifier ||
+                 expression.kind() == ast::ExpressionKind::Function) &&
+                (expression.name() == "time" || expression.name() == "t" ||
+                 model_.getParameters().isTimeDependent(expression.name()))) {
+                return true;
+            }
+            if (expression.kind() == ast::ExpressionKind::Identifier ||
+                expression.kind() == ast::ExpressionKind::ObservableRef) {
+                const auto found = observableIndex_.find(expression.name());
+                if (found != observableIndex_.end()) {
+                    for (const auto& entry :
+                         compiledGroups_[found->second].entries) {
+                        if (entry.first < plan.continuousSpecies.size() &&
+                            plan.continuousSpecies[entry.first]) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return std::any_of(expression.args().begin(),
+                               expression.args().end(),
+                               [&](const auto& child) {
+                                   return self(self, child);
+                               });
+        };
+    for (const auto& event : nativeEvents_) {
+        const auto expanded = functionEvaluator_.expandFunctions(event.trigger);
+        if (!readsContinuousOrClock(readsContinuousOrClock, expanded)) continue;
+        for (const auto* conjunct : triggerConjuncts(expanded)) {
+            const auto& args = conjunct->args();
+            if (args.size() != 2 ||
+                !isAffineInTime(args[0], &plan.continuousSpecies) ||
+                !isAffineInTime(args[1], &plan.continuousSpecies)) {
+                plan.unsupportedReason =
+                    "non-affine continuous or time-dependent native event trigger";
+                return plan;
+            }
+        }
+    }
+
+    plan.exactHybridSupported = true;
+    return plan;
+}
+
+bool OdeIntegrator::isAffineInTime(
+    const ast::Expression& expression,
+    const std::vector<bool>* continuousSpecies) const {
+    const auto expanded = functionEvaluator_.expandFunctions(expression);
+    // Returns 0 = constant between jumps, 1 = affine in time/continuous states, -1 = unsupported.
     std::function<int(const ast::Expression&)> classify =
         [&](const ast::Expression& node) -> int {
             switch (node.kind()) {
@@ -3258,7 +3443,19 @@ bool OdeIntegrator::isAffineInTime(const ast::Expression& expression) const {
             case ast::ExpressionKind::ObservableRef: {
                 const auto& name = node.name();
                 if (name == "time" || name == "t") return 1;
-                if (observableIndex_.count(name)) return 0;
+                const auto obsIt = observableIndex_.find(name);
+                if (obsIt != observableIndex_.end()) {
+                    if (continuousSpecies != nullptr) {
+                        for (const auto& entry :
+                             compiledGroups_[obsIt->second].entries) {
+                            if (entry.first < continuousSpecies->size() &&
+                                (*continuousSpecies)[entry.first]) {
+                                return 1;
+                            }
+                        }
+                    }
+                    return 0;
+                }
                 if (model_.getParameters().contains(name)) {
                     if (model_.getParameters().isTimeDependent(name)) return -1;
                     return 0;
@@ -3307,7 +3504,8 @@ bool OdeIntegrator::isAffineInTime(const ast::Expression& expression) const {
 }
 
 std::pair<double, double> OdeIntegrator::evaluateAffineInTime(
-    const ast::Expression& expression, double time, const double* state) const {
+    const ast::Expression& expression, double time, const double* state,
+    const std::vector<double>* continuousRates) const {
     const auto expanded = functionEvaluator_.expandFunctions(expression);
     std::function<std::pair<double, double>(const ast::Expression&)> eval =
         [&](const ast::Expression& node) -> std::pair<double, double> {
@@ -3315,11 +3513,25 @@ std::pair<double, double> OdeIntegrator::evaluateAffineInTime(
             case ast::ExpressionKind::Number:
                 return {node.numberValue(), 0.0};
             case ast::ExpressionKind::Identifier:
-            case ast::ExpressionKind::ObservableRef:
+            case ast::ExpressionKind::ObservableRef: {
                 if (node.name() == "time" || node.name() == "t") {
                     return {time, 1.0};
                 }
-                return {eventValue(node, time, state), 0.0};
+                double slope = 0.0;
+                if (continuousRates != nullptr) {
+                    const auto obsIt = observableIndex_.find(node.name());
+                    if (obsIt != observableIndex_.end()) {
+                        for (const auto& entry :
+                             compiledGroups_[obsIt->second].entries) {
+                            if (entry.first < continuousRates->size()) {
+                                slope += entry.second *
+                                         (*continuousRates)[entry.first];
+                            }
+                        }
+                    }
+                }
+                return {eventValue(node, time, state), slope};
+            }
             case ast::ExpressionKind::Unary: {
                 auto inner = eval(node.args().front());
                 if (node.name() == "-") return {-inner.first, -inner.second};
@@ -3353,9 +3565,10 @@ std::pair<double, double> OdeIntegrator::evaluateAffineInTime(
     return eval(expanded);
 }
 
-bool OdeIntegrator::triggerHoldsAtRightLimit(const ast::Expression& trigger,
-                                             double time,
-                                             const double* state) const {
+bool OdeIntegrator::triggerHoldsAtRightLimit(
+    const ast::Expression& trigger, double time, const double* state,
+    const std::vector<double>* continuousRates,
+    const std::vector<bool>* continuousSpecies) const {
     const auto clock = periodicClockTriggers_.find(&trigger);
     if (clock != periodicClockTriggers_.end()) {
         return time >= periodicEventClocks_[clock->second].next;
@@ -3363,13 +3576,16 @@ bool OdeIntegrator::triggerHoldsAtRightLimit(const ast::Expression& trigger,
     const auto conjuncts = triggerConjuncts(trigger);
     for (const auto* conjunct : conjuncts) {
         const auto& args = conjunct->args();
-        if (args.size() != 2 || !isAffineInTime(args[0]) ||
-            !isAffineInTime(args[1])) {
+        if (args.size() != 2 ||
+            !isAffineInTime(args[0], continuousSpecies) ||
+            !isAffineInTime(args[1], continuousSpecies)) {
             if (!triggerHolds(*conjunct, time, state)) return false;
             continue;
         }
-        const auto lhs = evaluateAffineInTime(args[0], time, state);
-        const auto rhs = evaluateAffineInTime(args[1], time, state);
+        const auto lhs =
+            evaluateAffineInTime(args[0], time, state, continuousRates);
+        const auto rhs =
+            evaluateAffineInTime(args[1], time, state, continuousRates);
         const double diff0 = lhs.first - rhs.first;
         const double diff1 = lhs.second - rhs.second;
         const auto& op = conjunct->name();
@@ -3390,9 +3606,10 @@ bool OdeIntegrator::triggerHoldsAtRightLimit(const ast::Expression& trigger,
     return true;
 }
 
-void OdeIntegrator::pruneNonPersistentEvents(double time,
-                                             const std::vector<double>& state,
-                                             bool rightLimit) {
+void OdeIntegrator::pruneNonPersistentEvents(
+    double time, const std::vector<double>& state, bool rightLimit,
+    const std::vector<double>* continuousRates,
+    const std::vector<bool>* continuousSpecies) {
     const double timeTolerance = periodicEventClocks_.empty() ? 1e-12 : 0.0;
     pendingEvents_.erase(
         std::remove_if(
@@ -3402,7 +3619,8 @@ void OdeIntegrator::pruneNonPersistentEvents(double time,
                 if (event.persistent) return false;
                 if (rightLimit) {
                     return !triggerHoldsAtRightLimit(
-                        event.trigger, time, state.data());
+                        event.trigger, time, state.data(), continuousRates,
+                        continuousSpecies);
                 }
                 if (triggerHolds(event.trigger, time, state.data())) {
                     return false;
@@ -3410,7 +3628,9 @@ void OdeIntegrator::pruneNonPersistentEvents(double time,
                 const bool justRose =
                     std::abs(triggerRoseAt_[pending.event] - time) <= timeTolerance;
                 if (justRose &&
-                    triggerHoldsAtRightLimit(event.trigger, time, state.data())) {
+                    triggerHoldsAtRightLimit(event.trigger, time, state.data(),
+                                             continuousRates,
+                                             continuousSpecies)) {
                     return false;
                 }
                 return true;
@@ -3420,21 +3640,41 @@ void OdeIntegrator::pruneNonPersistentEvents(double time,
 
 double OdeIntegrator::nextSsaTimeTriggerTime(
     double time, double tLimit, const std::vector<double>& state,
-    const std::vector<bool>& triggerHeld) const {
+    const std::vector<bool>& triggerHeld,
+    const std::vector<double>* continuousRates,
+    const std::vector<bool>* continuousSpecies) const {
     double earliest = std::numeric_limits<double>::infinity();
     const double eps = 1e-15 * std::max(1.0, std::abs(time));
+    const double endpointRoundingTol =
+        64.0 * std::numeric_limits<double>::epsilon() *
+        std::max(1.0, std::abs(tLimit));
+    const bool hasDrift = continuousRates != nullptr && !continuousRates->empty();
+    std::vector<double> propagated;
+    const auto stateDataAt = [&](double targetTime) -> const double* {
+        if (!hasDrift) return state.data();
+        propagated = state;
+        const double dt = targetTime - time;
+        for (std::size_t s = 0; s < propagated.size() && s < continuousRates->size(); ++s) {
+            const double rate = (*continuousRates)[s];
+            if (rate != 0.0) propagated[s] += rate * dt;
+        }
+        return propagated.data();
+    };
     for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
         const auto& trigger = nativeEvents_[index].trigger;
         const auto conjuncts = triggerConjuncts(trigger);
         std::vector<double> candidates;
         for (const auto* conjunct : conjuncts) {
             const auto& args = conjunct->args();
-            if (args.size() != 2 || !isAffineInTime(args[0]) ||
-                !isAffineInTime(args[1])) {
+            if (args.size() != 2 ||
+                !isAffineInTime(args[0], continuousSpecies) ||
+                !isAffineInTime(args[1], continuousSpecies)) {
                 continue;
             }
-            const auto lhs = evaluateAffineInTime(args[0], time, state.data());
-            const auto rhs = evaluateAffineInTime(args[1], time, state.data());
+            const auto lhs =
+                evaluateAffineInTime(args[0], time, state.data(), continuousRates);
+            const auto rhs =
+                evaluateAffineInTime(args[1], time, state.data(), continuousRates);
             const double diff0 = lhs.first - rhs.first;
             const double diff1 = lhs.second - rhs.second;
             if (!std::isfinite(diff0) || !std::isfinite(diff1) || diff1 == 0.0) {
@@ -3442,23 +3682,40 @@ double OdeIntegrator::nextSsaTimeTriggerTime(
             }
             const double dt = -diff0 / diff1;
             const double crossTime = time + dt;
-            if (dt > eps && crossTime <= tLimit + 1e-12) {
-                candidates.push_back(std::min(crossTime, tLimit));
+            if (dt > eps && crossTime <= tLimit + endpointRoundingTol) {
+                candidates.push_back(crossTime);
             }
         }
         if (candidates.empty()) continue;
         std::sort(candidates.begin(), candidates.end());
         for (const double crossTime : candidates) {
             if (crossTime >= earliest) break;
-            const bool holdsAt = triggerHolds(trigger, crossTime, state.data());
-            const bool holdsAfter =
-                (crossTime < tLimit)
-                    ? triggerHoldsAtRightLimit(trigger, crossTime, state.data())
-                    : holdsAt;
-            const bool prevHeld = triggerHeld[index];
-            if (holdsAt != prevHeld || holdsAfter != prevHeld) {
+            const auto crossesAt = [&](double candidateTime) -> bool {
+                const double* data = stateDataAt(candidateTime);
+                const bool holdsAt = triggerHolds(trigger, candidateTime, data);
+                const bool holdsAfter =
+                    (candidateTime < tLimit)
+                        ? triggerHoldsAtRightLimit(trigger, candidateTime, data,
+                                                   continuousRates,
+                                                   continuousSpecies)
+                        : holdsAt;
+                const bool prevHeld = triggerHeld[index];
+                return holdsAt != prevHeld || holdsAfter != prevHeld;
+            };
+            if (crossesAt(crossTime)) {
                 earliest = crossTime;
                 break;
+            }
+            // Guard against 1-ULP under-rounding in state + drift * dt at an
+            // analytical root (e.g. non-dyadic periods like 0.1 or 0.3).
+            if (hasDrift) {
+                const double nudged = std::nextafter(
+                    crossTime, std::numeric_limits<double>::infinity());
+                if (nudged > time && nudged <= tLimit + endpointRoundingTol &&
+                    nudged < earliest && crossesAt(nudged)) {
+                    earliest = nudged;
+                    break;
+                }
             }
         }
     }
@@ -3668,7 +3925,10 @@ double OdeIntegrator::eventDelay(const NativeEvent& event, double time,
     return delay;
 }
 
-bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
+bool OdeIntegrator::applyDueEvents(
+    double time, std::vector<double>& state,
+    const std::vector<double>* continuousRates,
+    const std::vector<bool>* continuousSpecies) {
     bool applied = false;
     // Calendar crossings and zero-delay cascades share exact represented
     // instants. They need no solver-root localization tolerance.
@@ -3730,7 +3990,8 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
                 std::abs(triggerRoseAt_[pending.event] - instant) <= timeTolerance;
             const bool holdsRight =
                 justRoseHere &&
-                triggerHoldsAtRightLimit(event.trigger, instant, state.data());
+                triggerHoldsAtRightLimit(event.trigger, instant, state.data(),
+                                         continuousRates, continuousSpecies);
             if (!holdsNow && !holdsRight) {
                 // SBML L3V2 Core Sec. 4.12.2: a trigger that is not persistent is
                 // re-evaluated before the execution, and the event is not executed
@@ -3759,7 +4020,8 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
         }
         assignEventValues(event, state, values);
         advancePeriodicEventClocks(pending.event, instant);
-        pruneNonPersistentEvents(instant, state, false);
+        pruneNonPersistentEvents(instant, state, false, continuousRates,
+                                 continuousSpecies);
         applied = true;
         retestTriggers(instant, state, heldBefore);
     }
@@ -3813,6 +4075,13 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
             trajectory.state[i] = network_.species.get(i).getAmount();
             trajectory.initialState[i] = trajectory.state[i];
         }
+        const std::mt19937_64::result_type seedValue =
+            options.seed > 0
+                ? static_cast<std::mt19937_64::result_type>(options.seed)
+                : static_cast<std::mt19937_64::result_type>(
+                      std::random_device{}());
+        trajectory.rng.seed(seedValue);
+        trajectory.rngInitialized = true;
         activeSimulationSession_ = &trajectory;
         try {
             auto result = integrateCore(options);
@@ -4001,10 +4270,6 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
         !options.stopIf.empty()) {
         throw std::runtime_error("batch SSA does not support stop_if");
     }
-    if (options.method == "ssa" && options.batchSize > 0 &&
-        !nativeEvents_.empty()) {
-        throw std::runtime_error("batch SSA does not support native events");
-    }
     if (nSpecies_ == 0 &&
         (options.method == "euler" || options.method == "rk4" ||
          options.method == "cvode" || options.method == "ssa")) {
@@ -4119,28 +4384,21 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
         if (options.batchSize > 0) {
             return integrateBatchSSA(options);
         }
-        bool allRateRuleStateChannels = !compiledRxns_.empty();
-        {
-            auto rxnIt = network_.reactions.all().begin();
-            for (const auto& reaction : compiledRxns_) {
-                if (!reaction.isAbsoluteFlux) { allRateRuleStateChannels = false; break; }
-                std::string originName;
-                if (rxnIt != network_.reactions.all().end()) {
-                    originName = rxnIt->getOriginRuleName();
-                    ++rxnIt;
-                }
-                if (originName.rfind("__rate_rule", 0) != 0) {
-                    allRateRuleStateChannels = false;
-                    break;
-                }
+        const auto hybridPlan = analyzeHybridSsa();
+        if (hybridPlan.hasRateRuleChannels) {
+            if (hybridPlan.exactHybridSupported) {
+                return integrateSSA(options);
             }
-        }
-        if (!nativeEvents_.empty() && allRateRuleStateChannels) {
-            // A model with no stochastic reaction channels can still have
-            // continuous SBML rate-rule states that drive discrete events.
-            // Preserve those trajectories with the deterministic solver and
-            // let the event assignments consume the seeded session RNG.
-            return integrateCvode(options);
+            if (hybridPlan.allRateRuleChannels && !nativeEvents_.empty()) {
+                // A model with no stochastic reaction channels can still have
+                // nonlinear or time-varying continuous SBML rate-rule states
+                // that drive discrete events. Preserve those trajectories with
+                // CVODE and let event assignments consume the seeded RNG.
+                return integrateCvode(options);
+            }
+            throw std::runtime_error(
+                "SSA does not support hybrid continuous rateRule dynamics: " +
+                hybridPlan.unsupportedReason);
         }
         return integrateSSA(options);
     } else {
@@ -4689,8 +4947,12 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
     const bool hasDelayedReactions = std::any_of(
         compiledRxns_.begin(), compiledRxns_.end(),
         [](const CompiledReaction& reaction) { return reaction.delay > 0.0; });
-    if (opts.batchGpuPreferred && !hasDelayedReactions &&
-        opts.sampleTimes.empty() && opts.outputStepInterval == 0) {
+    const bool hasRateRuleChannels = std::any_of(
+        compiledRxns_.begin(), compiledRxns_.end(),
+        [](const CompiledReaction& reaction) { return reaction.isRateRuleChannel; });
+    if (opts.batchGpuPreferred && !hasDelayedReactions && nativeEvents_.empty() &&
+        !hasRateRuleChannels && opts.sampleTimes.empty() &&
+        opts.outputStepInterval == 0) {
         const GpuBackendKind requested = gpuBackendFromName(opts.batchGpuBackend);
         const GpuBackendKind selected =
             (requested == GpuBackendKind::Auto) ? defaultGpuBackend() : requested;
@@ -6188,39 +6450,71 @@ struct SsaScratch {
 } // namespace
 
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
-    const auto readsClock = [&](const auto& self, const ast::Expression& expression) -> bool {
-        if ((expression.kind() == ast::ExpressionKind::Identifier ||
-             expression.kind() == ast::ExpressionKind::Function) &&
-            (expression.name() == "time" || expression.name() == "t" ||
-             model_.getParameters().isTimeDependent(expression.name()))) {
-            return true;
-        }
-        return std::any_of(expression.args().begin(), expression.args().end(),
-                           [&](const auto& child) { return self(self, child); });
-    };
-    for (const auto& event : nativeEvents_) {
-        const auto expanded = functionEvaluator_.expandFunctions(event.trigger);
-        if (readsClock(readsClock, expanded)) {
-            bool schedulable = true;
-            for (const auto* conjunct : triggerConjuncts(expanded)) {
-                const auto& args = conjunct->args();
-                if (args.size() != 2 || !isAffineInTime(args[0]) ||
-                    !isAffineInTime(args[1])) {
-                    schedulable = false;
-                    break;
-                }
+    const auto hybridPlan = analyzeHybridSsa();
+    if (hybridPlan.hasRateRuleChannels && !hybridPlan.exactHybridSupported) {
+        throw std::runtime_error(
+            "SSA does not support hybrid continuous rateRule dynamics: " +
+            hybridPlan.unsupportedReason);
+    }
+    const bool hasContinuousRateRules = hybridPlan.hasRateRuleChannels;
+    if (!hasContinuousRateRules) {
+        const auto readsClock = [&](const auto& self, const ast::Expression& expression) -> bool {
+            if ((expression.kind() == ast::ExpressionKind::Identifier ||
+                 expression.kind() == ast::ExpressionKind::Function) &&
+                (expression.name() == "time" || expression.name() == "t" ||
+                 model_.getParameters().isTimeDependent(expression.name()))) {
+                return true;
             }
-            if (!schedulable) {
-                throw std::runtime_error(
-                    "SSA does not support time-dependent native event triggers");
+            return std::any_of(expression.args().begin(), expression.args().end(),
+                               [&](const auto& child) { return self(self, child); });
+        };
+        for (const auto& event : nativeEvents_) {
+            const auto expanded = functionEvaluator_.expandFunctions(event.trigger);
+            if (readsClock(readsClock, expanded)) {
+                bool schedulable = true;
+                for (const auto* conjunct : triggerConjuncts(expanded)) {
+                    const auto& args = conjunct->args();
+                    if (args.size() != 2 || !isAffineInTime(args[0]) ||
+                        !isAffineInTime(args[1])) {
+                        schedulable = false;
+                        break;
+                    }
+                }
+                if (!schedulable) {
+                    throw std::runtime_error(
+                        "SSA does not support time-dependent native event triggers");
+                }
             }
         }
     }
-    // Direct Gillespie algorithm (matches BNG2 implementation)
-    for (const auto& rxn : compiledRxns_) {
+    // Direct Gillespie algorithm (matches BNG2 implementation), extended with
+    // exact analytical piecewise-constant continuous rateRule channels.
+    std::vector<std::size_t> rateRuleRxnIndices;
+    std::vector<std::size_t> continuousSpeciesIndices;
+    std::vector<bool> participatesInSsa(nSpecies_, false);
+    for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+        const auto& rxn = compiledRxns_[r];
+        if (rxn.isRateRuleChannel) {
+            rateRuleRxnIndices.push_back(r);
+            continue;
+        }
         if (rxn.isTimeDependent) {
             throw std::runtime_error(
                 "SSA does not support explicitly time-dependent rate laws");
+        }
+        for (const auto idx : rxn.reactantIndices) {
+            if (idx < nSpecies_) participatesInSsa[idx] = true;
+        }
+        for (const auto idx : rxn.productIndices) {
+            if (idx < nSpecies_) participatesInSsa[idx] = true;
+        }
+    }
+    if (hasContinuousRateRules) {
+        for (std::size_t s = 0; s < nSpecies_; ++s) {
+            if (s < hybridPlan.continuousSpecies.size() &&
+                hybridPlan.continuousSpecies[s]) {
+                continuousSpeciesIndices.push_back(s);
+            }
         }
     }
     auto times = outputTimes(opts);
@@ -6257,14 +6551,16 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     auto& rng = session ? session->rng : localRng;
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
-    // Initialize state (round to nearest integer)
+    // Initialize state: discrete SSA species round to molecule counts, while
+    // continuous rateRule states and event-only continuous states preserve
+    // exact double values.
     static thread_local SsaScratch scratch;
     auto& y = scratch.state;
     y.resize(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         const double state = session && session->state.size() == nSpecies_
             ? session->state[i] : network_.species.get(i).getAmount();
-        y[i] = std::round(state);
+        y[i] = participatesInSsa[i] ? std::round(state) : state;
     }
     std::vector<bool> everPopulated(nSpecies_, false);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -6279,6 +6575,40 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             if (y[i] > 0.0) everPopulated[i] = true;
         }
     };
+
+    double t = opts.tStart;
+    std::vector<double> continuousRates(hasContinuousRateRules ? nSpecies_ : 0, 0.0);
+    const std::vector<double>* continuousRatesPtr =
+        hasContinuousRateRules ? &continuousRates : nullptr;
+    const std::vector<bool>* continuousSpeciesPtr =
+        hasContinuousRateRules ? &hybridPlan.continuousSpecies : nullptr;
+    const auto recomputeContinuousRates = [&]() {
+        if (!hasContinuousRateRules) return;
+        std::fill(continuousRates.begin(), continuousRates.end(), 0.0);
+        for (const std::size_t r : rateRuleRxnIndices) {
+            const auto& rxn = compiledRxns_[r];
+            const double rate =
+                (rxn.isFunctional && rxn.functionalRateExpr.has_value())
+                    ? eventValue(*rxn.functionalRateExpr, t, y.data())
+                    : rxn.rateConstant;
+            const std::size_t prod = rxn.productIndices.front();
+            if (!fixedSpecies_[prod]) {
+                continuousRates[prod] += rate;
+            }
+        }
+    };
+    const auto advanceContinuous = [&](double targetTime) {
+        if (!hasContinuousRateRules || targetTime <= t) return;
+        const double dt = targetTime - t;
+        for (const std::size_t s : continuousSpeciesIndices) {
+            if (!fixedSpecies_[s] && continuousRates[s] != 0.0) {
+                y[s] += continuousRates[s] * dt;
+                if (y[s] > 0.0) everPopulated[s] = true;
+            }
+        }
+    };
+    recomputeContinuousRates();
+
     std::vector<bool> triggerHeld(nativeEvents_.size(), false);
     const auto queueEventAt = [&](std::size_t index, double instant) {
         const auto& event = nativeEvents_[index];
@@ -6296,11 +6626,14 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         const bool advancing = instant < opts.tEnd;
         for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
             triggerHeld[index] = advancing
-                ? triggerHoldsAtRightLimit(nativeEvents_[index].trigger, instant, y.data())
+                ? triggerHoldsAtRightLimit(nativeEvents_[index].trigger, instant,
+                                           y.data(), continuousRatesPtr,
+                                           continuousSpeciesPtr)
                 : triggerHolds(nativeEvents_[index].trigger, instant, y.data());
         }
         if (advancing) {
-            pruneNonPersistentEvents(instant, y, true);
+            pruneNonPersistentEvents(instant, y, true, continuousRatesPtr,
+                                     continuousSpeciesPtr);
         }
     };
     if (!opts.continueSimulation) {
@@ -6309,14 +6642,18 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             const bool holdsAtStart = triggerHolds(event.trigger, opts.tStart, y.data());
             const bool holdsRight =
                 opts.tEnd > opts.tStart &&
-                triggerHoldsAtRightLimit(event.trigger, opts.tStart, y.data());
+                triggerHoldsAtRightLimit(event.trigger, opts.tStart, y.data(),
+                                         continuousRatesPtr,
+                                         continuousSpeciesPtr);
             if ((!event.initialValue && holdsAtStart) ||
                 (!holdsAtStart && holdsRight)) {
                 queueEventAt(index, opts.tStart);
             }
         }
-        if (applyDueEvents(opts.tStart, y)) {
+        if (applyDueEvents(opts.tStart, y, continuousRatesPtr,
+                           continuousSpeciesPtr)) {
             markCurrentPopulations();
+            recomputeContinuousRates();
         }
         syncTriggerHeldForAdvance(opts.tStart);
     } else {
@@ -6332,17 +6669,31 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     result.timePoints.reserve(times.size() + 1);
     result.concentrations.reserve(times.size() + 1);
 
-    double t = opts.tStart;
     std::size_t nextOutputTime = 0;
     std::size_t ssaStepCount = 0;  // track internal SSA steps for output_step_interval
     bool stoppedEarly = false;
 
+    const auto pushScheduledSample = [&](double sampleTime) {
+        result.timePoints.push_back(sampleTime);
+        if (!hasContinuousRateRules || sampleTime <= t) {
+            result.concentrations.push_back(y);
+        } else {
+            std::vector<double> sample = y;
+            const double dt = sampleTime - t;
+            for (const std::size_t s : continuousSpeciesIndices) {
+                if (!fixedSpecies_[s] && continuousRates[s] != 0.0) {
+                    sample[s] += continuousRates[s] * dt;
+                }
+            }
+            result.concentrations.push_back(std::move(sample));
+        }
+        result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
+    };
+
     const auto appendScheduledBefore = [&](double until) {
         while (nextOutputTime < times.size() &&
                times[nextOutputTime] < until - 1e-12) {
-            result.timePoints.push_back(times[nextOutputTime]);
-            result.concentrations.push_back(y);
-            result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
+            pushScheduledSample(times[nextOutputTime]);
             ++nextOutputTime;
         }
     };
@@ -6350,9 +6701,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     const auto appendScheduledThrough = [&](double until) {
         while (nextOutputTime < times.size() &&
                times[nextOutputTime] <= until + 1e-12) {
-            result.timePoints.push_back(times[nextOutputTime]);
-            result.concentrations.push_back(y);
-            result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
+            pushScheduledSample(times[nextOutputTime]);
             ++nextOutputTime;
         }
     };
@@ -6416,6 +6765,11 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         totalPropensity = 0.0;
         monotonePrefix = true;
         for (std::size_t r = 0; r < nRxns; ++r) {
+            if (compiledRxns_[r].isRateRuleChannel) {
+                propensities[r] = 0.0;
+                prefixSums[r] = totalPropensity;
+                continue;
+            }
             const double rateCoef = rateCoefficientFor(r);
             if (!(rateCoef >= 0.0)) {
                 monotonePrefix = false;
@@ -6451,18 +6805,8 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     if (useDependencyGraph) {
         depOffset.assign(nSpecies_ + 1, 0);
         for (const auto& rxn : compiledRxns_) {
+            if (rxn.isRateRuleChannel) continue;
             for (const auto idx : rxn.reactantIndices) {
-                // Reactant indices are network species indices, so they are in
-                // [0, nSpecies_) — the same invariant the pre-existing ODE and
-                // SSA code relies on when it reads y[idx].  depOffset is sized
-                // nSpecies_ + 1 precisely so idx + 1 stays in range; assert the
-                // invariant where the index first crosses this new write.
-                // Beyond the assertion, this bound was audited empirically over
-                // the repository's generated networks (perfOracle's audit, 2026-
-                // 09-30): 2,711 generated .net files, 792,960 reaction lines,
-                // max 1-based reactant index == nSpecies and zero references
-                // outside [1, nSpecies] in every file, so idx+1 never exceeds
-                // depOffset[nSpecies_].
                 assert(idx < nSpecies_);
                 ++depOffset[idx + 1];
             }
@@ -6474,6 +6818,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         std::vector<std::size_t> cursor(depOffset.begin(),
                                         depOffset.end() - 1);
         for (std::size_t r = 0; r < nRxns; ++r) {
+            if (compiledRxns_[r].isRateRuleChannel) continue;
             for (const auto idx : compiledRxns_[r].reactantIndices) {
                 depReactions[cursor[idx]++] = r;
             }
@@ -6490,6 +6835,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 t, y.data(), rateCoefficients.data(), scratch.groupValues, true,
                 /*discreteReactantCounts=*/true);
             for (const auto r : functionalRxnIndices_) {
+                if (compiledRxns_[r].isRateRuleChannel) continue;
                 propensities[r] = computePropensity(
                     compiledRxns_[r], y, rateCoefficients[r]);
             }
@@ -6498,7 +6844,8 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             for (std::size_t p = depOffset[speciesIndex];
                  p < depOffset[speciesIndex + 1]; ++p) {
                 const std::size_t r = depReactions[p];
-                if (!compiledRxns_[r].isFunctional) {
+                if (!compiledRxns_[r].isFunctional &&
+                    !compiledRxns_[r].isRateRuleChannel) {
                     propensities[r] = computePropensity(
                         compiledRxns_[r], y, rateCoefficientFor(r));
                 }
@@ -6513,6 +6860,10 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         totalPropensity = 0.0;
         monotonePrefix = true;
         for (std::size_t r = 0; r < nRxns; ++r) {
+            if (compiledRxns_[r].isRateRuleChannel) {
+                prefixSums[r] = totalPropensity;
+                continue;
+            }
             if (!(rateCoefficientFor(r) >= 0.0)) {
                 monotonePrefix = false;
             }
@@ -6559,9 +6910,13 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
         const double nextTimeTrigger = nativeEvents_.empty()
             ? std::numeric_limits<double>::infinity()
-            : nextSsaTimeTriggerTime(t, opts.tEnd, y, triggerHeld);
+            : nextSsaTimeTriggerTime(t, opts.tEnd, y, triggerHeld,
+                                     continuousRatesPtr, continuousSpeciesPtr);
+        const double endpointRoundingTol =
+            64.0 * std::numeric_limits<double>::epsilon() *
+            std::max(1.0, std::abs(opts.tEnd));
         const double nextWakeup = std::min(nextCompletion, nextTimeTrigger);
-        if (t >= opts.tEnd && nextWakeup > opts.tEnd) {
+        if (t >= opts.tEnd && nextWakeup > opts.tEnd + endpointRoundingTol) {
             break;
         }
         double nextReaction = std::numeric_limits<double>::infinity();
@@ -6581,25 +6936,30 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             }
         }
 
-        if (nextWakeup <= nextReaction && nextWakeup <= opts.tEnd) {
+        if (nextWakeup <= nextReaction &&
+            nextWakeup <= opts.tEnd + endpointRoundingTol) {
+            const double clampedWakeup = std::min(nextWakeup, opts.tEnd);
             if (session && totalPropensity > 0.0) {
                 session->ssaRemainingHazard = std::max(
                     0.0, session->ssaRemainingHazard -
-                             totalPropensity * (nextWakeup - t));
+                             totalPropensity * (clampedWakeup - t));
             }
             if (opts.outputStepInterval == 0 || explicitTimes) {
-                appendScheduledBefore(nextWakeup);
+                appendScheduledBefore(clampedWakeup);
             }
-            t = nextWakeup;
+            advanceContinuous(nextWakeup);
+            t = clampedWakeup;
             std::vector<bool> heldBefore = triggerHeld;
-            // Fire any affine-in-time triggers that cross at t (exact or right-limit).
+            // Fire any affine-in-time / continuous-clock triggers that cross at t.
             if (!nativeEvents_.empty()) {
                 for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
                     const auto& event = nativeEvents_[index];
                     const bool holdsAt = triggerHolds(event.trigger, t, y.data());
                     const bool holdsRight =
                         (t < opts.tEnd)
-                            ? triggerHoldsAtRightLimit(event.trigger, t, y.data())
+                            ? triggerHoldsAtRightLimit(event.trigger, t, y.data(),
+                                                       continuousRatesPtr,
+                                                       continuousSpeciesPtr)
                             : holdsAt;
                     if (!heldBefore[index] && (holdsAt || holdsRight)) {
                         queueEventAt(index, t);
@@ -6608,7 +6968,8 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                         heldBefore[index] = false;
                     }
                 }
-                pruneNonPersistentEvents(t, y, false);
+                pruneNonPersistentEvents(t, y, false, continuousRatesPtr,
+                                         continuousSpeciesPtr);
             }
             bool reactionCompletionApplied = false;
             std::vector<std::size_t> completed;
@@ -6641,15 +7002,18 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                     static_cast<std::ptrdiff_t>(index));
             }
             if (reactionCompletionApplied && !nativeEvents_.empty()) {
-                pruneNonPersistentEvents(t, y, false);
+                pruneNonPersistentEvents(t, y, false, continuousRatesPtr,
+                                         continuousSpeciesPtr);
                 retestTriggers(t, y, heldBefore);
             }
-            const bool eventApplied = applyDueEvents(t, y);
+            const bool eventApplied = applyDueEvents(
+                t, y, continuousRatesPtr, continuousSpeciesPtr);
             if (eventApplied) markCurrentPopulations();
-            syncTriggerHeldForAdvance(t);
             if (reactionCompletionApplied || eventApplied) {
+                recomputeContinuousRates();
                 recomputeAll();
             }
+            syncTriggerHeldForAdvance(t);
             if (opts.outputStepInterval == 0 || explicitTimes) {
                 appendScheduledThrough(t);
             } else if ((ssaStepCount % opts.outputStepInterval) == 0) {
@@ -6669,6 +7033,10 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                     0.0, session->ssaRemainingHazard -
                              totalPropensity * (opts.tEnd - t));
             }
+            if (opts.outputStepInterval == 0 || explicitTimes) {
+                appendScheduledBefore(opts.tEnd);
+            }
+            advanceContinuous(opts.tEnd);
             t = opts.tEnd;
             break;
         }
@@ -6678,6 +7046,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             // Scheduled samples before the event see the pre-event state.
             appendScheduledBefore(eventTime);
         }
+        advanceContinuous(eventTime);
         t = eventTime;
         if (session) {
             session->ssaHazardInitialized = false;
@@ -6720,16 +7089,6 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
 
         // Fire the selected reaction
-        //
-        // A constant species carries the model's "this amount does not change"
-        // marker (BNGL's ``$`` seed species; SBML's ``boundaryCondition``).
-        // The deterministic reading honours it by zeroing the species'
-        // derivative, and the partitioned simulators honour it by skipping the
-        // species in their state update, so the direct method has to skip it
-        // too: otherwise the same converted model means two different things
-        // depending on which engine simulates it.  The propensity is
-        // untouched - a constant species still contributes its amount to the
-        // rate law it appears in - only the state update skips it.
         std::vector<bool> heldBefore;
         if (!nativeEvents_.empty()) {
             heldBefore = triggerHeld;
@@ -6759,11 +7118,14 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
 
         if (!nativeEvents_.empty()) {
-            pruneNonPersistentEvents(t, y, false);
+            pruneNonPersistentEvents(t, y, false, continuousRatesPtr,
+                                     continuousSpeciesPtr);
             retestTriggers(t, y, heldBefore);
         }
-        const bool eventApplied = applyDueEvents(t, y);
+        const bool eventApplied = applyDueEvents(
+            t, y, continuousRatesPtr, continuousSpeciesPtr);
         if (eventApplied) markCurrentPopulations();
+        recomputeContinuousRates();
         syncTriggerHeldForAdvance(t);
 
         // Recompute propensities.  On a network with a dependency graph only

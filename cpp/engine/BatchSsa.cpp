@@ -67,6 +67,19 @@ int32_t checkedPopulation(double population) {
     return static_cast<int32_t>(population);
 }
 
+int32_t recordFinalSpeciesPopulation(double value, bool allowContinuousEventRange) {
+    const double rounded = std::round(value);
+    if (!allowContinuousEventRange) {
+        return checkedPopulation(rounded);
+    }
+    if (!std::isfinite(rounded)) {
+        throw std::runtime_error("Batch SSA: non-finite final state value");
+    }
+    constexpr double kMin = static_cast<double>(std::numeric_limits<int32_t>::min());
+    constexpr double kMax = static_cast<double>(std::numeric_limits<int32_t>::max());
+    return static_cast<int32_t>(std::clamp(rounded, kMin, kMax));
+}
+
 } // namespace
 
 namespace detail {
@@ -734,6 +747,11 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
 
     const auto& compiledRxns = integrator.getCompiledReactions();
     const auto& compiledGroups = integrator.getCompiledGroups();
+    if (std::any_of(compiledRxns.begin(), compiledRxns.end(),
+                    [](const auto& rxn) { return rxn.isRateRuleChannel; })) {
+        throw std::runtime_error(
+            "Batch SSA/JAX flattening does not support continuous SBML rateRule channels");
+    }
 
     flat.numSpecies = static_cast<uint32_t>(network.species.size());
     flat.numReactions = static_cast<uint32_t>(compiledRxns.size());
@@ -908,7 +926,9 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
 
 CpuBatchSsaSimulator::CpuBatchSsaSimulator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network) {
-    compile::requireNoNativeEvents(model_, "batch SSA");
+    // Native bng3_events are supported on CPU batch SSA: each worker owns an
+    // isolated OdeIntegrator with its own seeded SimulationSession. GPU/JAX
+    // flattening remains fail-closed via FlattenedReactionNetwork.
     requireNoExpressionDelaySemantics(model_, network_, "batch SSA");
 }
 
@@ -969,10 +989,12 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
         metrics.trajectoryEventCounts[b] = static_cast<uint32_t>(res.eventCount);
 
         // Record final species
+        const bool hasNativeEvents = model_.getEventFormatVersion().has_value();
         if (!res.concentrations.empty()) {
             const auto& finalConc = res.concentrations.back();
             for (std::size_t s = 0; s < numSpecies && s < finalConc.size(); ++s) {
-                metrics.finalSpecies[b * numSpecies + s] = checkedPopulation(std::round(finalConc[s]));
+                metrics.finalSpecies[b * numSpecies + s] =
+                    recordFinalSpeciesPopulation(finalConc[s], hasNativeEvents);
             }
         }
 
@@ -1115,10 +1137,12 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
                 wRes.workerEvents += res.eventCount;
                 metrics.trajectoryEventCounts[b] = static_cast<uint32_t>(res.eventCount);
 
+                const bool hasNativeEvents = model_.getEventFormatVersion().has_value();
                 if (!res.concentrations.empty()) {
                     const auto& finalConc = res.concentrations.back();
                     for (std::size_t s = 0; s < numSpecies && s < finalConc.size(); ++s) {
-                        metrics.finalSpecies[b * numSpecies + s] = checkedPopulation(std::round(finalConc[s]));
+                        metrics.finalSpecies[b * numSpecies + s] =
+                            recordFinalSpeciesPopulation(finalConc[s], hasNativeEvents);
                     }
                 }
 

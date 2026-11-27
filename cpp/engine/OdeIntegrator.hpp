@@ -145,6 +145,7 @@ public:
         std::optional<ast::Expression> sourceRateExpr;
         bool isTotalRate = false;     // no statistical/unit conversion factor
         bool isAbsoluteFlux = false;  // source law already includes reactant dependence
+        bool isRateRuleChannel = false; // Atomizer continuous SBML rateRule channel
         double delay = 0.0;           // constant reaction delay (0 = ordinary reaction)
         bool nonConsuming = false;    // defer net stoichiometry until completion
     };
@@ -257,7 +258,9 @@ private:
                                 const double* state) const;
     // Execute the queued events whose execution instant has arrived.  Returns
     // true when the state changed.
-    bool applyDueEvents(double time, std::vector<double>& state);
+    bool applyDueEvents(double time, std::vector<double>& state,
+                        const std::vector<double>* continuousRates = nullptr,
+                        const std::vector<bool>* continuousSpecies = nullptr);
     double eventSideDerivative(const ast::Expression& expression, double time,
                                const double* state,
                                const std::vector<double>& derivatives) const;
@@ -292,26 +295,52 @@ private:
     // True when the trigger expression holds at the given instant.
     bool triggerHolds(const ast::Expression& trigger, double time,
                       const double* state) const;
-    // True when the trigger expression is affine in time for a fixed species
-    // state (used by exact SSA time-trigger scheduling between jumps).
-    bool isAffineInTime(const ast::Expression& expression) const;
+    // True when the trigger expression is affine in time and any continuous
+    // rate-rule species for a fixed discrete state (used by exact hybrid SSA
+    // trigger scheduling between jumps).
+    bool isAffineInTime(
+        const ast::Expression& expression,
+        const std::vector<bool>* continuousSpecies = nullptr) const;
     // Evaluate an affine-in-time expression at (time, state) returning
-    // (value_at_time, slope_wrt_time) for fixed state.
+    // (value_at_time, slope_wrt_time) for fixed discrete state and piecewise-
+    // constant continuous drift rates.
     std::pair<double, double> evaluateAffineInTime(
         const ast::Expression& expression, double time,
-        const double* state) const;
+        const double* state,
+        const std::vector<double>* continuousRates = nullptr) const;
     // True when the trigger holds in the right limit time -> time+ for a fixed
-    // state (handles strict time inequalities at their exact crossing instant).
-    bool triggerHoldsAtRightLimit(const ast::Expression& trigger, double time,
-                                  const double* state) const;
+    // discrete state and optional piecewise-constant continuous drift rates.
+    bool triggerHoldsAtRightLimit(
+        const ast::Expression& trigger, double time,
+        const double* state,
+        const std::vector<double>* continuousRates = nullptr,
+        const std::vector<bool>* continuousSpecies = nullptr) const;
     // Remove pending non-persistent events whose trigger no longer holds.
-    void pruneNonPersistentEvents(double time, const std::vector<double>& state,
-                                  bool rightLimit = false);
-    // Earliest time in (time, tLimit] at which any affine-in-time trigger
-    // changes truth value relative to triggerHeld, or +inf if none.
-    double nextSsaTimeTriggerTime(double time, double tLimit,
-                                  const std::vector<double>& state,
-                                  const std::vector<bool>& triggerHeld) const;
+    void pruneNonPersistentEvents(
+        double time, const std::vector<double>& state,
+        bool rightLimit = false,
+        const std::vector<double>* continuousRates = nullptr,
+        const std::vector<bool>* continuousSpecies = nullptr);
+    // Earliest time in (time, tLimit] at which any affine-in-time / continuous-
+    // rate-rule trigger changes truth value relative to triggerHeld, or +inf if none.
+    double nextSsaTimeTriggerTime(
+        double time, double tLimit,
+        const std::vector<double>& state,
+        const std::vector<bool>& triggerHeld,
+        const std::vector<double>* continuousRates = nullptr,
+        const std::vector<bool>* continuousSpecies = nullptr) const;
+    // True when expression references any observable or substrate touching speciesMask.
+    bool expressionDependsOnSpeciesSet(
+        const ast::Expression& expression,
+        const std::vector<bool>& speciesMask) const;
+    struct HybridSsaPlan {
+        bool hasRateRuleChannels = false;
+        bool allRateRuleChannels = false;
+        bool exactHybridSupported = false;
+        std::string unsupportedReason;
+        std::vector<bool> continuousSpecies;
+    };
+    HybridSsaPlan analyzeHybridSsa() const;
     // Queue every event of a trigger group that has just been triggered.
     void queueTriggeredGroup(std::size_t groupIndex, double time,
                              const std::vector<double>& state);

@@ -269,10 +269,10 @@ def test_periodic_rate_rule_clock_with_truncated_distrib_draws(tmp_path):
     </listOfEvents>
   </model>
 </sbml>"""
-    # Continuous rateRule clock (dt/dt = 1) with truncated distrib draws lowers
-    # and executes faithfully under ODE (CVODE integrates dt/dt = 1 exactly),
-    # while SSA must fail closed rather than approximating dt/dt = 1 as a
-    # discrete Poisson jump process.
+    # Continuous constant-slope rateRule clock (dt/dt = 1) with truncated
+    # distrib draws now lowers and executes faithfully under BOTH hybrid SSA
+    # (exact analytical clock ticks + seeded distrib draws + CPU batch SSA)
+    # and ODE (CVODE).
     ssa_result = _atomize(
         xml,
         actions='simulate({method=>"ssa", t_end=>30, n_steps=>30})',
@@ -280,8 +280,53 @@ def test_periodic_rate_rule_clock_with_truncated_distrib_draws(tmp_path):
         n_steps=30,
     )
     assert ssa_result.success, ssa_result.error
-    assert "begin bng3_events version 1" not in ssa_result.bngl
-    assert any(w.get("severity") == "dropped" for w in ssa_result.import_warnings)
+    assert "begin bng3_events version 1" in ssa_result.bngl
+    assert not any(w.get("severity") == "dropped" for w in ssa_result.import_warnings)
+
+    ssa_model = _load_bngl(tmp_path, "periodic_distrib_ssa.bngl", ssa_result.bngl)
+    ssa1 = ssa_model.simulate(method="ssa", t_end=30, n_steps=30, seed=42)
+    ssa2 = ssa_model.simulate(method="ssa", t_end=30, n_steps=30, seed=42)
+    ssa_samples = np.asarray(ssa1.observables["X_amt"][1:], dtype=float)
+    np.testing.assert_array_equal(ssa1.observables["X_amt"], ssa2.observables["X_amt"])
+    assert np.all(ssa_samples < 0.5)
+    assert ssa_samples.std() > 0.2
+    # Clock t_id resets to -0.5 at every half-integer tick, so at integer
+    # sample times t = 0, 1, ..., 30 it must be identically 0.0.
+    np.testing.assert_allclose(ssa1.observables["t_id_amt"], 0.0, atol=1e-12)
+
+    # Analytical moments of Normal(mu=0, sigma=1.5) upper-truncated at b=0.5:
+    # beta = (b - mu)/sigma = 1/3, phi(beta)/Phi(beta) = Mills ratio.
+    import math
+
+    sigma = 1.5
+    beta = 0.5 / sigma
+    phi_beta = math.exp(-0.5 * beta * beta) / math.sqrt(2.0 * math.pi)
+    Phi_beta = 0.5 * (1.0 + math.erf(beta / math.sqrt(2.0)))
+    lam = phi_beta / Phi_beta
+    expected_mean = -sigma * lam
+    expected_sd = sigma * math.sqrt(1.0 - beta * lam - lam * lam)
+
+    from bionetgen import _bionetgen_cpp as cpp
+
+    cpp_model = cpp.parse_string(ssa_result.bngl)
+    cpp_net = cpp.generate_network(cpp_model)
+    batch = cpp.simulate_batch_ssa_cpu(
+        cpp_model,
+        cpp_net,
+        batch_size=2000,
+        t_end=10.0,
+        n_steps=10,
+        t_start=0.0,
+        base_seed=1000000,
+        threads=4,
+        max_sim_steps=0,
+    )
+    batch_means = np.asarray(batch["observable_means"]["X_amt"], dtype=float)
+    batch_stds = np.asarray(batch["observable_stds"]["X_amt"], dtype=float)
+    assert batch_means[0] == pytest.approx(0.0, abs=1e-12)
+    assert batch_stds[0] == pytest.approx(0.0, abs=1e-12)
+    np.testing.assert_allclose(batch_means[1:], expected_mean, atol=0.12)
+    np.testing.assert_allclose(batch_stds[1:], expected_sd, atol=0.10)
 
     result = _atomize(
         xml,
@@ -300,6 +345,195 @@ def test_periodic_rate_rule_clock_with_truncated_distrib_draws(tmp_path):
     np.testing.assert_array_equal(sim1.observables["X_amt"], sim2.observables["X_amt"])
     assert np.all(samples < 0.5)
     assert samples.std() > 0.2
+
+
+def test_hybrid_clock_coupled_with_discrete_ssa_and_inf_param_truncation(tmp_path):
+    """Verify (1) INF/-INF parameter truncation bounds (SSTS 00096..00099),
+    (2) state-triggered reset events in CPU batch SSA (SSTS 00033), and
+    (3) fail-closed refusal for nonlinear rateRules / coupled propensities."""
+    from bionetgen import _bionetgen_cpp as cpp
+
+    # 1. INF parameter truncation bound (stochastic/00096 pattern)
+    inf_param_xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+      xmlns:distrib="http://www.sbml.org/sbml/level3/version1/distrib/version1"
+      level="3" version="2" distrib:required="true">
+  <model id="inf_param_trunc">
+    <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies>
+      <species id="X" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="t" value="0" constant="false"/>
+      <parameter id="mean" value="0" constant="true"/>
+      <parameter id="stddev" value="1.5" constant="true"/>
+      <parameter id="truncationLowerBound" value="-0.5" constant="true"/>
+      <parameter id="truncationUpperBound" value="INF" constant="true"/>
+    </listOfParameters>
+    <listOfRules>
+      <rateRule variable="t"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></rateRule>
+    </listOfRules>
+    <listOfEvents>
+      <event id="E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><ci>t</ci><cn>0.5</cn></apply></math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="X">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply>
+                <csymbol definitionURL="http://www.sbml.org/sbml/symbols/distrib/normal">normal</csymbol>
+                <ci>mean</ci><ci>stddev</ci><ci>truncationLowerBound</ci><ci>truncationUpperBound</ci>
+              </apply>
+            </math>
+          </eventAssignment>
+          <eventAssignment variable="t"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>-0.5</cn></math></eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    res_inf = _atomize(
+        inf_param_xml,
+        actions='simulate({method=>"ssa", t_end=>5, n_steps=>5})',
+        t_end=5,
+        n_steps=5,
+    )
+    assert res_inf.success, res_inf.error
+    assert "begin bng3_events version 1" in res_inf.bngl
+    assert not any(w.get("severity") == "dropped" for w in res_inf.import_warnings)
+    m_inf = cpp.parse_string(res_inf.bngl)
+    net_inf = cpp.generate_network(m_inf)
+    batch_inf = cpp.simulate_batch_ssa_cpu(
+        m_inf, net_inf, batch_size=1000, t_end=5.0, n_steps=5, base_seed=42, threads=2
+    )
+    # Symmetric mirror of upper-truncated at 0.5 -> positive mean > 0.7
+    assert np.all(np.asarray(batch_inf["observable_means"]["X_amt"][1:]) > 0.7)
+
+    # 2. State-triggered reset in CPU batch SSA (stochastic/00033 pattern)
+    dimer_reset_xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="dimer_reset">
+    <listOfCompartments><compartment id="Cell" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies>
+      <species id="P" compartment="Cell" initialAmount="100" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="P2" compartment="Cell" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k1" value="0.001" constant="true"/>
+      <parameter id="k2" value="0.01" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="Dimerisation" reversible="false">
+        <listOfReactants><speciesReference species="P" stoichiometry="2" constant="true"/></listOfReactants>
+        <listOfProducts><speciesReference species="P2" stoichiometry="1" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><divide/><apply><times/><ci>k1</ci><ci>P</ci><apply><minus/><ci>P</ci><cn>1</cn></apply></apply><cn>2</cn></apply>
+        </math></kineticLaw>
+      </reaction>
+      <reaction id="Disassociation" reversible="false">
+        <listOfReactants><speciesReference species="P2" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts><speciesReference species="P" stoichiometry="2" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k2</ci><ci>P2</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="reset" useValuesFromTriggerTime="true">
+        <trigger initialValue="false" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><gt/><ci>P2</ci><cn>30</cn></apply></math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="P"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>100</cn></math></eventAssignment>
+          <eventAssignment variable="P2"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math></eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    res_33 = _atomize(
+        dimer_reset_xml,
+        actions='simulate({method=>"ssa", t_end=>10, n_steps=>10})',
+        t_end=10,
+        n_steps=10,
+    )
+    assert res_33.success and "begin bng3_events version 1" in res_33.bngl
+    m_33 = cpp.parse_string(res_33.bngl)
+    net_33 = cpp.generate_network(m_33)
+    b1 = cpp.simulate_batch_ssa_cpu(
+        m_33, net_33, batch_size=64, t_end=10.0, n_steps=10, base_seed=100, threads=1
+    )
+    b4 = cpp.simulate_batch_ssa_cpu(
+        m_33, net_33, batch_size=64, t_end=10.0, n_steps=10, base_seed=100, threads=4
+    )
+    np.testing.assert_allclose(
+        b1["observable_means"]["P2_amt"], b4["observable_means"]["P2_amt"], atol=1e-5
+    )
+    np.testing.assert_allclose(
+        b1["observable_stds"]["P2_amt"], b4["observable_stds"]["P2_amt"], atol=1e-5
+    )
+    assert np.all(np.asarray(b4["observable_means"]["P2_amt"]) <= 30.0)
+    # GPU/JAX flattening must still fail closed on native events.
+    with pytest.raises(RuntimeError, match="native events"):
+        cpp.jax_ssa_flatten(m_33, net_33)
+
+    # 3. Fail-closed refusal when nonlinear rateRule is coupled to SSA reactions
+    nonlinear_ssa_xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="nonlinear_coupled_ssa">
+    <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="C" initialAmount="10" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="B" compartment="C" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters><parameter id="u" value="2" constant="false"/></listOfParameters>
+    <listOfRules>
+      <rateRule variable="u"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><ci>u</ci></apply></math></rateRule>
+    </listOfRules>
+    <listOfReactions>
+      <reaction id="r" reversible="false">
+        <listOfReactants><speciesReference species="A" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts><speciesReference species="B" stoichiometry="1" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>A</ci></math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="false" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><apply><leq/><ci>u</ci><cn>1</cn></apply></math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="u"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    res_nl = _atomize(
+        nonlinear_ssa_xml,
+        actions='simulate({method=>"ssa", t_end=>5, n_steps=>5})',
+        t_end=5,
+        n_steps=5,
+    )
+    assert res_nl.success
+    assert "begin bng3_events version 1" not in res_nl.bngl
+    assert any(w.get("severity") == "dropped" for w in res_nl.import_warnings)
+
+    # 4. Fail-closed refusal when discrete SSA reaction kinetic law reads a
+    # continuously drifting rateRule variable.
+    coupled_rate_xml = nonlinear_ssa_xml.replace(
+        "<apply><minus/><ci>u</ci></apply>", "<cn>1</cn>"
+    ).replace(
+        '<kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><ci>A</ci></math></kineticLaw>',
+        '<kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><times/><ci>u</ci><ci>A</ci></apply></math></kineticLaw>',
+    )
+    res_cp = _atomize(
+        coupled_rate_xml,
+        actions='simulate({method=>"ssa", t_end=>5, n_steps=>5})',
+        t_end=5,
+        n_steps=5,
+    )
+    assert res_cp.success
+    assert "begin bng3_events version 1" not in res_cp.bngl
+    assert any(w.get("severity") == "dropped" for w in res_cp.import_warnings)
 
 
 def test_competing_nonpersistent_equal_priority_pairs_with_discrete_sum_trigger(
