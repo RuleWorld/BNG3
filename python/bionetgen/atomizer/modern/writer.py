@@ -8996,6 +8996,10 @@ def generate_bngl(
     _force_all_native_events: bool = False,
     _native_event_ids: Optional[Set[str]] = None,
 ) -> BNGLGenerationResult:
+    if _promoted_event_parameters is None:
+        global _missing_kinetic_log_count, _transport_log_count
+        _missing_kinetic_log_count = 0
+        _transport_log_count = 0
     import_warnings_before_generation = copy.deepcopy(model.import_warnings)
     unsupported_import = next(
         (

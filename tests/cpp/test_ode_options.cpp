@@ -754,6 +754,41 @@ begin reaction rules
     decay: A() -> B() rate_a()
     __rate_rule_clock: 0 -> Clock() __rate_rule__clock() TotalRate
 end reaction rules
+begin bng3_events version 1
+    event "tick"
+        trigger: clock_amt >= 2
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: clock_amt = 1
+    end event
+end bng3_events
+end model
+)");
+    auto eventlessRateRuleModel = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules","__rate_rule_clock")
+begin molecule types
+    A()
+    B()
+    Clock()
+end molecule types
+begin seed species
+    A() 10
+    B() 0
+    Clock() 1
+end seed species
+begin observables
+    Species clock_amt Clock()
+end observables
+begin functions
+    __rate_rule__clock() = 1
+    rate_a() = clock_amt
+end functions
+begin reaction rules
+    decay: A() -> B() rate_a()
+    __rate_rule_clock: 0 -> Clock() __rate_rule__clock() TotalRate
+end reaction rules
 end model
 )");
     {
@@ -769,9 +804,11 @@ end model
             integrator.integrate(options),
             Catch::Matchers::ContainsSubstring("continuously varying rateRule state"));
         // GPU/JAX flattening must also fail closed on continuous rateRule channels.
+        engine::NetworkGenerator eventlessGen(*eventlessRateRuleModel);
+        auto eventlessNet = eventlessGen.generateNative();
         REQUIRE_THROWS_WITH(
             engine::FlattenedReactionNetwork::fromModelAndNetwork(
-                *coupledPropensityModel, network),
+                *eventlessRateRuleModel, eventlessNet),
             Catch::Matchers::ContainsSubstring("continuous SBML rateRule channels"));
     }
 }

@@ -3302,6 +3302,14 @@ bool OdeIntegrator::expressionDependsOnSpeciesSet(
 
 OdeIntegrator::HybridSsaPlan OdeIntegrator::analyzeHybridSsa() const {
     HybridSsaPlan plan;
+    // Continuous hybrid rateRule stepping activates when native bng3_events
+    // are present (where a Poisson-jump approximation of a continuous clock
+    // corrupts event trigger times). Event-free models preserve direct SSA
+    // propensity sampling for rateRule channels.
+    if (nativeEvents_.empty()) {
+        plan.exactHybridSupported = true;
+        return plan;
+    }
     std::size_t rateRuleCount = 0;
     std::size_t discreteCount = 0;
     for (const auto& rxn : compiledRxns_) {
@@ -6494,7 +6502,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     std::vector<bool> participatesInSsa(nSpecies_, false);
     for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
         const auto& rxn = compiledRxns_[r];
-        if (rxn.isRateRuleChannel) {
+        if (hasContinuousRateRules && rxn.isRateRuleChannel) {
             rateRuleRxnIndices.push_back(r);
             continue;
         }
@@ -6765,7 +6773,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         totalPropensity = 0.0;
         monotonePrefix = true;
         for (std::size_t r = 0; r < nRxns; ++r) {
-            if (compiledRxns_[r].isRateRuleChannel) {
+            if (hasContinuousRateRules && compiledRxns_[r].isRateRuleChannel) {
                 propensities[r] = 0.0;
                 prefixSums[r] = totalPropensity;
                 continue;
@@ -6805,7 +6813,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     if (useDependencyGraph) {
         depOffset.assign(nSpecies_ + 1, 0);
         for (const auto& rxn : compiledRxns_) {
-            if (rxn.isRateRuleChannel) continue;
+            if (hasContinuousRateRules && rxn.isRateRuleChannel) continue;
             for (const auto idx : rxn.reactantIndices) {
                 assert(idx < nSpecies_);
                 ++depOffset[idx + 1];
@@ -6818,7 +6826,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         std::vector<std::size_t> cursor(depOffset.begin(),
                                         depOffset.end() - 1);
         for (std::size_t r = 0; r < nRxns; ++r) {
-            if (compiledRxns_[r].isRateRuleChannel) continue;
+            if (hasContinuousRateRules && compiledRxns_[r].isRateRuleChannel) continue;
             for (const auto idx : compiledRxns_[r].reactantIndices) {
                 depReactions[cursor[idx]++] = r;
             }
@@ -6835,7 +6843,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 t, y.data(), rateCoefficients.data(), scratch.groupValues, true,
                 /*discreteReactantCounts=*/true);
             for (const auto r : functionalRxnIndices_) {
-                if (compiledRxns_[r].isRateRuleChannel) continue;
+                if (hasContinuousRateRules && compiledRxns_[r].isRateRuleChannel) continue;
                 propensities[r] = computePropensity(
                     compiledRxns_[r], y, rateCoefficients[r]);
             }
@@ -6845,7 +6853,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                  p < depOffset[speciesIndex + 1]; ++p) {
                 const std::size_t r = depReactions[p];
                 if (!compiledRxns_[r].isFunctional &&
-                    !compiledRxns_[r].isRateRuleChannel) {
+                    !(hasContinuousRateRules && compiledRxns_[r].isRateRuleChannel)) {
                     propensities[r] = computePropensity(
                         compiledRxns_[r], y, rateCoefficientFor(r));
                 }
@@ -6860,7 +6868,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         totalPropensity = 0.0;
         monotonePrefix = true;
         for (std::size_t r = 0; r < nRxns; ++r) {
-            if (compiledRxns_[r].isRateRuleChannel) {
+            if (hasContinuousRateRules && compiledRxns_[r].isRateRuleChannel) {
                 prefixSums[r] = totalPropensity;
                 continue;
             }

@@ -794,6 +794,8 @@ def analyze_structural_topology(model: SBMLModel) -> Dict[str, object]:
 def topological_sort(
     species_ids: Sequence[str], dependencies: Mapping[str, Set[str]]
 ) -> List[str]:
+    global _dep_cycle_log_count
+    _dep_cycle_log_count = 0
     sorted_species: List[str] = []
     visited: Set[str] = set()
     visiting: Set[str] = set()
