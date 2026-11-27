@@ -292,6 +292,26 @@ private:
     // True when the trigger expression holds at the given instant.
     bool triggerHolds(const ast::Expression& trigger, double time,
                       const double* state) const;
+    // True when the trigger expression is affine in time for a fixed species
+    // state (used by exact SSA time-trigger scheduling between jumps).
+    bool isAffineInTime(const ast::Expression& expression) const;
+    // Evaluate an affine-in-time expression at (time, state) returning
+    // (value_at_time, slope_wrt_time) for fixed state.
+    std::pair<double, double> evaluateAffineInTime(
+        const ast::Expression& expression, double time,
+        const double* state) const;
+    // True when the trigger holds in the right limit time -> time+ for a fixed
+    // state (handles strict time inequalities at their exact crossing instant).
+    bool triggerHoldsAtRightLimit(const ast::Expression& trigger, double time,
+                                  const double* state) const;
+    // Remove pending non-persistent events whose trigger no longer holds.
+    void pruneNonPersistentEvents(double time, const std::vector<double>& state,
+                                  bool rightLimit = false);
+    // Earliest time in (time, tLimit] at which any affine-in-time trigger
+    // changes truth value relative to triggerHeld, or +inf if none.
+    double nextSsaTimeTriggerTime(double time, double tLimit,
+                                  const std::vector<double>& state,
+                                  const std::vector<bool>& triggerHeld) const;
     // Queue every event of a trigger group that has just been triggered.
     void queueTriggeredGroup(std::size_t groupIndex, double time,
                              const std::vector<double>& state);

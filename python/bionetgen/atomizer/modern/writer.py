@@ -39,8 +39,6 @@ from .events import (
     parse_time_threshold,
     synthesize_event_actions,
     lower_native_events,
-    _lower_native_event,
-    _native_is_clock_window,
     _native_fixed_trigger_instant,
 )
 from .rate_rule_constants import (
@@ -66,8 +64,10 @@ from .types import (
     SpeciesCompositionTable,
     coerce_import_warning,
     get_kinetic_math,
-    standardize_name,
+    standardize_name as _raw_standardize_name,
 )
+
+standardize_name = lru_cache(maxsize=65536)(_raw_standardize_name)
 
 _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
 # SBML Level 3 Version 2 Core fixes the value of the built-in ``avogadro``
@@ -126,14 +126,28 @@ def _declared_id_spans(
     hyphenated id from being read as a symbol of its own.
     """
 
-    declared = {str(name) for name in names if str(name)}
+    spans = list(_SBML_ID_RUN.finditer(expression))
+    if not spans:
+        return []
+    declared = (
+        names
+        if isinstance(names, (set, frozenset, dict))
+        else {str(name) for name in names if str(name)}
+    )
     if not declared:
         return []
-    by_standard = {standardize_name(name): name for name in declared}
+    by_standard: Optional[Dict[str, str]] = None
     matched: List[Tuple["re.Match[str]", str]] = []
-    for span in _SBML_ID_RUN.finditer(expression):
+    for span in spans:
         run = span.group(0)
-        source = run if run in declared else by_standard.get(run)
+        if run in declared:
+            matched.append((span, run))
+            continue
+        if by_standard is None:
+            by_standard = {
+                standardize_name(str(name)): str(name) for name in declared if str(name)
+            }
+        source = by_standard.get(run)
         if source is not None:
             matched.append((span, source))
     return matched
@@ -648,18 +662,23 @@ def _protected_math_names(model: object) -> frozenset[str]:
     model parameter of the same name.
     """
 
-    names = set()
-    for collection in (
+    collections = (
         getattr(model, "parameters", {}),
         getattr(model, "species", {}),
         getattr(model, "compartments", {}),
         getattr(model, "function_definitions", {}),
-    ):
-        names.update(str(name) for name in getattr(collection, "keys", lambda: ())())
-    for rule in getattr(model, "rules", ()) or ():
-        if getattr(rule, "variable", None):
-            names.add(str(rule.variable))
-    return frozenset(name for name in names if name in _MATH_BUILTIN_SYMBOL_NAMES)
+    )
+    found = {
+        name
+        for name in _MATH_BUILTIN_SYMBOL_NAMES
+        if any(name in collection for collection in collections)
+    }
+    if len(found) < len(_MATH_BUILTIN_SYMBOL_NAMES):
+        for rule in getattr(model, "rules", ()) or ():
+            variable = getattr(rule, "variable", None)
+            if variable and str(variable) in _MATH_BUILTIN_SYMBOL_NAMES:
+                found.add(str(variable))
+    return frozenset(found)
 
 
 def convert_math_expression(
@@ -933,6 +952,208 @@ def _substitute_formal_arguments(
     return pattern.sub(lambda match: f"({mapping[match.group(0)]})", body)
 
 
+_CALL_SITE_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+_IDENT_WORD_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")
+_IDENT_NON_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b(?!\s*\()")
+_IDENT_CALL_OPT_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b(?:\s*\(\s*\)|(?!\s*\())")
+
+
+def _is_plain_ascii_ident(name: str) -> bool:
+    return bool(name) and name.isascii() and name.isidentifier()
+
+
+def _substitute_id_map(
+    expression: str,
+    mapping: Mapping[str, object],
+    *,
+    suffix_pattern: str = "",
+    value_fn=None,
+) -> str:
+    """Substitute identifier keys in ``expression`` in one linear pass.
+
+    Uses a precompiled word-identifier regex when every key is a plain ASCII
+    identifier, and falls back to a longest-first single-pass alternation
+    filtered to keys present in ``expression`` when any key contains non-word
+    characters (such as raw hyphenated SBML identifiers like ``A-B``).
+    """
+    if not mapping or not expression:
+        return expression
+    if all(_is_plain_ascii_ident(str(key)) for key in mapping):
+        if suffix_pattern == "":
+            pattern = _IDENT_WORD_RE
+        elif suffix_pattern == r"(?!\s*\()":
+            pattern = _IDENT_NON_CALL_RE
+        elif suffix_pattern == r"(?:\s*\(\s*\)|(?!\s*\())":
+            pattern = _IDENT_CALL_OPT_RE
+        else:
+            pattern = re.compile(rf"\b([A-Za-z_][A-Za-z0-9_]*)\b{suffix_pattern}")
+        if value_fn is None:
+            return pattern.sub(
+                lambda match: str(mapping.get(match.group(1), match.group(0))),
+                expression,
+            )
+        return pattern.sub(
+            lambda match: (
+                value_fn(mapping[match.group(1)])
+                if match.group(1) in mapping
+                else match.group(0)
+            ),
+            expression,
+        )
+    present_keys = [str(key) for key in mapping if str(key) and str(key) in expression]
+    if not present_keys:
+        return expression
+    ordered_keys = sorted(present_keys, key=len, reverse=True)
+    pattern = re.compile(
+        rf"\b({'|'.join(re.escape(key) for key in ordered_keys)})\b{suffix_pattern}"
+    )
+    if value_fn is None:
+        return pattern.sub(lambda match: str(mapping[match.group(1)]), expression)
+    return pattern.sub(lambda match: value_fn(mapping[match.group(1)]), expression)
+
+
+def _expand_calls_with_lookup(
+    expression: str,
+    lookup: Mapping[str, Tuple[List[str], str]],
+    *,
+    strict_arity: bool,
+    max_passes: int = 20,
+) -> str:
+    """Expand calls present in ``expression`` against ``lookup`` without scanning
+    unrelated definitions.
+
+    Each pass finds only the function-call sites actually occurring in the
+    current expression string and expands them in a single left-to-right scan,
+    avoiding O(|expr| * |function_definitions|) scans and regex-cache thrashing
+    on large SBML models with hundreds of function definitions.
+    """
+    result = expression
+    if not lookup or "(" not in result:
+        return result
+    if all(_is_plain_ascii_ident(key) for key in lookup):
+        call_re = _CALL_SITE_RE
+    else:
+        ordered = sorted(lookup, key=len, reverse=True)
+        call_re = re.compile(rf"\b({'|'.join(re.escape(key) for key in ordered)})\s*\(")
+    for _ in range(max_passes):
+        pieces: List[str] = []
+        cursor = 0
+        changed = False
+        search_pos = 0
+        length = len(result)
+        while search_pos < length:
+            match = call_re.search(result, search_pos)
+            if match is None:
+                break
+            call_name = match.group(1)
+            entry = lookup.get(call_name)
+            if entry is None:
+                search_pos = match.end()
+                continue
+            # Keep the bounded call-pattern cache populated for actually-called
+            # definitions without compiling patterns for unreferenced functions.
+            _function_call_pattern(call_name)
+            # Find matching closing parenthesis.
+            depth = 1
+            close = match.end()
+            while close < length and depth:
+                ch = result[close]
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                close += 1
+            if depth:
+                break
+            inner = result[match.end() : close - 1]
+            args = _split_arguments(inner)
+            arguments, body = entry
+            if strict_arity:
+                if not arguments and len(args) == 1 and not args[0]:
+                    replacement = f"({body})"
+                elif len(args) == 1 and not args[0] and arguments:
+                    replacement = result[match.start() : close]
+                elif len(args) != len(arguments):
+                    replacement = result[match.start() : close]
+                else:
+                    expanded = _substitute_formal_arguments(body, arguments, args)
+                    replacement = f"({expanded})"
+            else:
+                actuals = [arg.strip() for arg in args]
+                formals = [str(formal).strip() for formal in arguments]
+                if formals:
+                    expanded = _substitute_formal_arguments(body, formals, actuals)
+                else:
+                    expanded = body
+                replacement = f"({expanded})"
+            original = result[match.start() : close]
+            if replacement == original:
+                search_pos = close
+                continue
+            pieces.append(result[cursor : match.start()])
+            pieces.append(replacement)
+            cursor = close
+            search_pos = close
+            changed = True
+        if not changed:
+            break
+        pieces.append(result[cursor:])
+        result = "".join(pieces)
+    return result
+
+
+_LAST_EXTEND_LOOKUP: Tuple[
+    Optional[Mapping[str, object]],
+    Tuple[Tuple[str, object, str, Tuple[str, ...], str], ...],
+    Dict[str, Tuple[List[str], str]],
+] = (
+    None,
+    (),
+    {},
+)
+
+
+def _function_definition_lookup(
+    function_definitions: Mapping[str, object], *, include_names: bool
+) -> Dict[str, Tuple[List[str], str]]:
+    global _LAST_EXTEND_LOOKUP
+    if include_names:
+        cached_mapping, cached_snapshot, cached_lookup = _LAST_EXTEND_LOOKUP
+        if (
+            cached_mapping is function_definitions
+            and len(function_definitions) == len(cached_snapshot)
+            and all(
+                function_definitions.get(key) is definition
+                and (getattr(definition, "name", "") or key) == name
+                and tuple(getattr(definition, "arguments", []) or ()) == args
+                and str(getattr(definition, "math", "") or "") == body
+                for key, definition, name, args, body in cached_snapshot
+            )
+        ):
+            return cached_lookup
+    lookup: Dict[str, Tuple[List[str], str]] = {}
+    snapshot: List[Tuple[str, object, str, Tuple[str, ...], str]] = []
+    for function_id, definition in function_definitions.items():
+        if include_names:
+            name = getattr(definition, "name", "") or function_id
+            arguments = list(getattr(definition, "arguments", []) or [])
+            body = str(getattr(definition, "math", "") or "")
+            entry = (arguments, body)
+            lookup.setdefault(str(name), entry)
+            if str(function_id) != str(name):
+                lookup.setdefault(str(function_id), entry)
+            snapshot.append((function_id, definition, name, tuple(arguments), body))
+        else:
+            body = str(_definition_field(definition, "math", "") or "")
+            formal_arguments = list(
+                _definition_field(definition, "arguments", []) or []
+            )
+            lookup[str(function_id)] = (formal_arguments, body)
+    if include_names:
+        _LAST_EXTEND_LOOKUP = (function_definitions, tuple(snapshot), lookup)
+    return lookup
+
+
 def extend_function(
     function_string: str,
     parameter_dict: Mapping[str, object],
@@ -941,50 +1162,17 @@ def extend_function(
     """Inline SBML function definitions and scalar parameters at call sites."""
 
     result = str(function_string or "")
-    # Definitions may call definitions declared later in the SBML document
-    # (for example fGK -> Gamma). Expand to a bounded fixed point so document
-    # ordering does not leave unresolved user-function calls in BNGL.
-    for _ in range(20):
-        before_iteration = result
-        for function_id, definition in function_definitions.items():
-            name = getattr(definition, "name", "") or function_id
-            arguments = list(getattr(definition, "arguments", []) or [])
-            body = str(getattr(definition, "math", "") or "")
+    if function_definitions and "(" in result:
+        lookup = _function_definition_lookup(function_definitions, include_names=True)
+        result = _expand_calls_with_lookup(result, lookup, strict_arity=True)
 
-            def replace_call(
-                args: List[str],
-                arguments=arguments,
-                body=body,
-                call_name=name,
-            ):
-                if not arguments and len(args) == 1 and not args[0]:
-                    return f"({body})"
-                if len(args) == 1 and not args[0] and arguments:
-                    return f"{call_name}()"
-                if len(args) != len(arguments):
-                    return f"{call_name}({', '.join(args)})"
-                expanded = _substitute_formal_arguments(body, arguments, args)
-                return f"({expanded})"
-
-            function_names = [name]
-            if function_id != name:
-                function_names.append(function_id)
-            for function_name in function_names:
-                result = _replace_nested_function(
-                    result,
-                    function_name,
-                    lambda args, call_name=function_name: replace_call(
-                        args, call_name=call_name
-                    ),
-                )
-        if result == before_iteration:
-            break
-
-    for parameter, value in parameter_dict.items():
-        replacement = _number(value)
-        # An SBML assignment rule can shadow a parameter with the same name;
-        # preserve the zero-argument function call in that case.
-        result = re.sub(rf"\b{re.escape(parameter)}\b(?!\s*\()", replacement, result)
+    if parameter_dict:
+        result = _substitute_id_map(
+            result,
+            parameter_dict,
+            suffix_pattern=r"(?!\s*\()",
+            value_fn=_number,
+        )
     return result
 
 
@@ -1000,64 +1188,30 @@ def _expand_function_call(
 ) -> str:
     """Expand every call of one SBML function with parenthesis-aware parsing."""
 
-    result = expression
-    call_pattern = _function_call_pattern(function_name)
-    guard = 0
-    while guard < 10000:
-        match = call_pattern.search(result)
-        if match is None:
-            break
-        depth = 1
-        index = match.end()
-        while depth and index < len(result):
-            if result[index] == "(":
-                depth += 1
-            elif result[index] == ")":
-                depth -= 1
-            index += 1
-        if depth:
-            break
-
-        actual_arguments = _split_arguments(result[match.end() : index - 1])
-        body = str(_definition_field(definition, "math", "") or "")
-        formal_arguments = list(_definition_field(definition, "arguments", []) or [])
-        argument_map = {
-            str(formal).strip(): actual_arguments[position].strip()
-            for position, formal in enumerate(formal_arguments)
-            if position < len(actual_arguments) and str(formal).strip()
-        }
-        names = sorted(argument_map, key=len, reverse=True)
-        if names:
-            formal_pattern = _formal_pattern(tuple(names))
-            body = formal_pattern.sub(
-                lambda item: f"({argument_map[item.group(0)]})", body
-            )
-        result = result[: match.start()] + f"({body})" + result[index:]
-        guard += 1
-    return result
+    body = str(_definition_field(definition, "math", "") or "")
+    formal_arguments = list(_definition_field(definition, "arguments", []) or [])
+    return _expand_calls_with_lookup(
+        expression,
+        {function_name: (formal_arguments, body)},
+        strict_arity=False,
+        max_passes=20,
+    )
 
 
 def inline_sbml_functions(
     rate_expression: str, function_definitions: Mapping[str, object]
 ) -> str:
-    """Inline SBML function calls using the Playground's bounded expansion loop."""
+    """Inline SBML function calls using a bounded call-driven expansion loop."""
 
     result = str(rate_expression or "")
-    modified = True
-    iterations = 0
-    while modified and iterations < 20:
-        modified = False
-        iterations += 1
-        for function_id, definition in function_definitions.items():
-            function_name = str(function_id)
-            if not _function_call_pattern(function_name).search(result):
-                continue
-            expanded = _expand_function_call(result, function_name, definition)
-            if expanded != result:
-                result = expanded
-                modified = True
-                break
-    return result
+    if not function_definitions or "(" not in result:
+        return result
+    lookup: Dict[str, Tuple[List[str], str]] = {}
+    for function_id, definition in function_definitions.items():
+        body = str(_definition_field(definition, "math", "") or "")
+        formal_arguments = list(_definition_field(definition, "arguments", []) or [])
+        lookup[str(function_id)] = (formal_arguments, body)
+    return _expand_calls_with_lookup(result, lookup, strict_arity=False, max_passes=20)
 
 
 def bngl_function(
@@ -1130,43 +1284,55 @@ def bngl_function(
     result = re.sub(r"\b([A-Za-z_][A-Za-z0-9_]*)\b", map_token, result)
     result = convert_math_expression(result)
 
-    for compartment in compartments:
-        if (
-            compartment in assignment_rule_variables
-            or standardize_name(compartment) in assignment_rule_variables
-        ):
-            continue
-        result = re.sub(
-            rf"\b{re.escape(compartment)}\b",
-            f"__compartment_{standardize_name(compartment)}__",
-            result,
-        )
-    for reaction_id, reaction_name in reaction_dict.items():
-        result = re.sub(
-            rf"\b{re.escape(reaction_id)}\b", f"netflux_{reaction_name}", result
-        )
-    for variable in assignment_rule_variables:
-        standard = standardize_name(variable)
-        if (
-            variable in observable_converted_rules
-            or standard in observable_converted_rules
-        ):
-            replacement = standard
-        elif variable in rate_rule_variables or standard in rate_rule_variables:
-            # Rate-rule targets materialized as synthetic state species are
-            # read through their amount observable, not as undefined calls.
-            replacement = standard + "_amt"
-        elif standard in species_with_conc_functions:
-            replacement = "_c_" + standard + "()"
-        else:
-            replacement = standard + "()"
-        if variable in rate_rule_variables or standard in rate_rule_variables:
-            result = re.sub(
-                rf"\b{re.escape(variable)}\b\s*\(\s*\)", replacement, result
+    if compartments:
+        comp_map = {
+            str(compartment): f"__compartment_{standardize_name(compartment)}__"
+            for compartment in compartments
+            if not (
+                compartment in assignment_rule_variables
+                or standardize_name(compartment) in assignment_rule_variables
             )
-            result = re.sub(rf"\b{re.escape(variable)}\b(?!\s*\()", replacement, result)
-        else:
-            result = re.sub(rf"\b{re.escape(variable)}\b(?!\s*\()", replacement, result)
+        }
+        if comp_map:
+            result = _substitute_id_map(result, comp_map)
+    if reaction_dict:
+        rxn_map = {
+            str(reaction_id): f"netflux_{reaction_name}"
+            for reaction_id, reaction_name in reaction_dict.items()
+        }
+        result = _substitute_id_map(result, rxn_map)
+    if assignment_rule_variables:
+        rate_replace: Dict[str, str] = {}
+        assign_replace: Dict[str, str] = {}
+        for variable in assignment_rule_variables:
+            standard = standardize_name(variable)
+            if (
+                variable in observable_converted_rules
+                or standard in observable_converted_rules
+            ):
+                replacement = standard
+            elif variable in rate_rule_variables or standard in rate_rule_variables:
+                replacement = standard + "_amt"
+            elif standard in species_with_conc_functions:
+                replacement = "_c_" + standard + "()"
+            else:
+                replacement = standard + "()"
+            if variable in rate_rule_variables or standard in rate_rule_variables:
+                rate_replace[str(variable)] = replacement
+            else:
+                assign_replace[str(variable)] = replacement
+        if rate_replace:
+            result = _substitute_id_map(
+                result,
+                rate_replace,
+                suffix_pattern=r"(?:\s*\(\s*\)|(?!\s*\())",
+            )
+        if assign_replace:
+            result = _substitute_id_map(
+                result,
+                assign_replace,
+                suffix_pattern=r"(?!\s*\()",
+            )
 
     # Sat/MM/Hill are factor-style laws in BNGL.  The Playground writer adds
     # the first reactant as substrate when the SBML expression omits it.
@@ -2599,36 +2765,78 @@ def _rate_for_reaction(
     preserved_compartment_flux = compartment_stripped_math != math
     reactant_names = {standardize_name(species_id) for species_id in reactants}
 
-    def references_species(expression: str, species_id: str) -> bool:
+    classification_math = compartment_stripped_math
+    classification_tokens = set(
+        re.findall(r"[A-Za-z_][A-Za-z0-9_]*", classification_math)
+    )
+    classification_tokens_lower = {token.lower() for token in classification_tokens}
+    classification_calls_lower = {
+        match.group(1).lower() for match in _CALL_SITE_RE.finditer(classification_math)
+    }
+
+    def references_species_in_classification(species_id: str) -> bool:
         standardized = standardize_name(species_id)
-        return bool(
-            re.search(rf"\b{re.escape(standardized)}\b", expression)
-            or re.search(
-                rf"_c_{re.escape(standardized)}\s*\(",
-                expression,
-                re.IGNORECASE,
-            )
-            or re.search(
-                rf"\b{re.escape(standardized)}_amt\b",
-                expression,
-                re.IGNORECASE,
-            )
+        low = standardized.lower()
+        return (
+            standardized in classification_tokens
+            or f"_c_{low}" in classification_calls_lower
+            or f"{low}_amt" in classification_tokens_lower
         )
 
-    classification_math = compartment_stripped_math
+    def references_species(expression: str, species_id: str) -> bool:
+        standardized = standardize_name(species_id)
+        low = standardized.lower()
+        tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression))
+        if standardized in tokens:
+            return True
+        tokens_lower = {token.lower() for token in tokens}
+        if f"{low}_amt" in tokens_lower:
+            return True
+        return any(
+            match.group(1).lower() == f"_c_{low}"
+            for match in _CALL_SITE_RE.finditer(expression)
+        )
+
     # A retained SBML flux is already a complete amount/time expression.  If
     # it omits any consumed species, it cannot be emitted as an elementary
     # BNGL coefficient: the reaction pattern would multiply the law by that
     # species a second time.  Treat this as a nonlinear/complete flux so the
     # caller can mark the rule TotalRate.
     has_missing_reactant = bool(reactants) and any(
-        not references_species(classification_math, species_id)
+        not references_species_in_classification(species_id)
         for species_id in set(reactants)
     )
-    has_nonreactant_species = any(
-        references_species(classification_math, species_id)
-        and standardize_name(species_id) not in reactant_names
-        for species_id in model.species
+    sp_keys = tuple(model.species.keys())
+    sp_index = getattr(model, "_cached_species_ref_index", None)
+    if sp_index is None or sp_index[0] is not model.species or sp_index[1] != sp_keys:
+        std_to_std: Dict[str, str] = {}
+        amt_to_std: Dict[str, str] = {}
+        conc_to_std: Dict[str, str] = {}
+        for species_id in sp_keys:
+            std = standardize_name(species_id)
+            low = std.lower()
+            std_to_std[std] = std
+            amt_to_std[f"{low}_amt"] = std
+            conc_to_std[f"_c_{low}"] = std
+        sp_index = (model.species, sp_keys, std_to_std, amt_to_std, conc_to_std)
+        try:
+            setattr(model, "_cached_species_ref_index", sp_index)
+        except Exception:
+            pass
+    std_to_std, amt_to_std, conc_to_std = sp_index[2], sp_index[3], sp_index[4]
+    has_nonreactant_species = (
+        any(
+            token in std_to_std and std_to_std[token] not in reactant_names
+            for token in classification_tokens
+        )
+        or any(
+            token in amt_to_std and amt_to_std[token] not in reactant_names
+            for token in classification_tokens_lower
+        )
+        or any(
+            token in conc_to_std and conc_to_std[token] not in reactant_names
+            for token in classification_calls_lower
+        )
     )
     # A law that names a species the reaction does not consume is a complete
     # flux: its value depends on that species' state, so it is not an
@@ -4789,6 +4997,42 @@ def _inline_reaction_fluxes(
 
     if not model.reactions:
         return expression
+    # Fast path: build reaction-alias lookup once per model snapshot and exit
+    # in O(|expression|) when the expression references no reaction ID at all.
+    initial_present = _id_runs(expression) | set(
+        re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)
+    )
+    if not initial_present:
+        return expression
+    rxn_keys = tuple(model.reactions.keys())
+    rxn_index = getattr(model, "_cached_reaction_alias_index", None)
+    if (
+        rxn_index is None
+        or rxn_index[0] is not model.reactions
+        or rxn_index[1] != rxn_keys
+    ):
+        alias_to_id: Dict[str, str] = {}
+        aliases_map: Dict[str, tuple[str, ...]] = {}
+        for reaction_id in rxn_keys:
+            raw_id = str(reaction_id)
+            std_id = standardize_name(raw_id)
+            aliases_map[raw_id] = (raw_id, std_id)
+            alias_to_id.setdefault(raw_id, raw_id)
+            alias_to_id.setdefault(std_id, raw_id)
+        rxn_index = (model.reactions, rxn_keys, alias_to_id, aliases_map)
+        try:
+            setattr(model, "_cached_reaction_alias_index", rxn_index)
+        except Exception:
+            pass
+    alias_to_id = rxn_index[2]
+    reaction_aliases = rxn_index[3]
+    if not any(
+        token in alias_to_id
+        and not (exclude_reaction_id and alias_to_id[token] == str(exclude_reaction_id))
+        for token in initial_present
+    ):
+        return expression
+
     defined = set(model.parameters) | set(model.species)
     defined.update(
         standardize_name(name) for name in (*model.parameters, *model.species)
@@ -4803,14 +5047,6 @@ def _inline_reaction_fluxes(
             defined.add(standardize_name(function.name))
 
     cache: Dict[str, Optional[str]] = {}
-
-    reaction_aliases: Dict[str, tuple[str, ...]] = {
-        str(reaction_id): (
-            str(reaction_id),
-            standardize_name(str(reaction_id)),
-        )
-        for reaction_id in model.reactions
-    }
 
     def reaction_flux(reaction_id: str, reaction: SBMLReaction) -> Optional[str]:
         if reaction_id in cache:
@@ -5948,6 +6184,14 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
     visiting: Set[str] = set()
     cycle = False
 
+    alias_to_var: Dict[str, str] = {}
+    non_plain_deps: List[str] = []
+    for dependency in by_name:
+        alias_to_var[dependency] = dependency
+        alias_to_var[standardize_name(dependency)] = dependency
+        if not _is_plain_ascii_ident(dependency):
+            non_plain_deps.append(dependency)
+
     def visit(name: str) -> None:
         nonlocal cycle
         if name in visited:
@@ -5957,15 +6201,28 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
             return
         visiting.add(name)
         expression = str(getattr(by_name[name], "math", "") or "")
+        tokens = _id_runs(expression) | set(
+            re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)
+        )
+        seen_deps: Set[str] = set()
+        for token in tokens:
+            dependency = alias_to_var.get(token)
+            if (
+                dependency is not None
+                and dependency != name
+                and dependency not in seen_deps
+            ):
+                seen_deps.add(dependency)
+        for dependency in non_plain_deps:
+            if (
+                dependency != name
+                and dependency not in seen_deps
+                and dependency in expression
+                and re.search(rf"\b{re.escape(dependency)}\b", expression)
+            ):
+                seen_deps.add(dependency)
         for dependency in by_name:
-            if dependency == name:
-                continue
-            raw_match = re.search(rf"\b{re.escape(dependency)}\b", expression)
-            standardized = standardize_name(dependency)
-            standardized_match = re.search(
-                rf"\b{re.escape(standardized)}\b", expression
-            )
-            if raw_match or standardized_match:
+            if dependency in seen_deps:
                 visit(dependency)
         visiting.remove(name)
         visited.add(name)
@@ -12649,6 +12906,28 @@ def generate_bngl(
             static_event_state=static_event_state,
             resolve_native_state=resolve_native_state,
             resolve_native_parameter=resolve_native_parameter,
+            resolve_native_assignment_function=lambda identifier: (
+                (
+                    standardize_name(identifier)
+                    if (
+                        identifier in observable_rule_variables
+                        or standardize_name(identifier) in observable_rule_variables
+                    )
+                    else f"{standardize_name(identifier)}()"
+                )
+                if any(
+                    rule.type == "assignment"
+                    and rule.variable
+                    and standardize_name(str(rule.variable))
+                    == standardize_name(identifier)
+                    and standardize_name(str(rule.variable))
+                    not in synthetic_rate_rule_variables
+                    and standardize_name(str(rule.variable))
+                    not in {standardize_name(str(sp_id)) for sp_id in model.species}
+                    for rule in model.rules
+                )
+                else None
+            ),
         )
         if _force_all_native_events:
             scheduled_result = (

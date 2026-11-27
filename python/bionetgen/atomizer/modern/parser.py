@@ -16,6 +16,7 @@ import copy
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from fractions import Fraction
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 from urllib.parse import unquote, urlsplit
@@ -36,8 +37,10 @@ from .types import (
     SBMLRule,
     SBMLSpecies,
     SBMLSpeciesReference,
-    standardize_name,
+    standardize_name as _raw_standardize_name,
 )
+
+standardize_name = lru_cache(maxsize=65536)(_raw_standardize_name)
 from .multi import parse_multi_package
 from .units import apply_unit_scaling
 from .helpers import logger, clone_ast
@@ -1366,13 +1369,31 @@ def _evaluate_static_arithmetic(
     """
 
     result = str(expression or "").strip()
-    for symbol in sorted(symbols, key=len, reverse=True):
-        value = symbols[symbol]
-        result = re.sub(
-            rf"\b{re.escape(symbol)}\b(?!\s*\()",
-            format_number(value),
-            result,
-        )
+    if symbols:
+        if all(
+            bool(str(key)) and str(key).isascii() and str(key).isidentifier()
+            for key in symbols
+        ):
+            result = re.sub(
+                r"\b([A-Za-z_][A-Za-z0-9_]*)\b(?!\s*\()",
+                lambda match: (
+                    format_number(symbols[match.group(1)])
+                    if match.group(1) in symbols
+                    else match.group(0)
+                ),
+                result,
+            )
+        else:
+            present = [key for key in symbols if key and key in result]
+            if present:
+                ordered = sorted(present, key=len, reverse=True)
+                pattern = re.compile(
+                    rf"\b({'|'.join(re.escape(key) for key in ordered)})\b(?!\s*\()"
+                )
+                result = pattern.sub(
+                    lambda match: format_number(symbols[match.group(1)]),
+                    result,
+                )
 
     def function_for(name: str) -> Optional[SBMLFunctionDefinition]:
         if functions is None:
@@ -2292,6 +2313,7 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         standardize_name(str(identifier)): function
         for identifier, function in model.function_definitions.items()
     }
+    parsed_function_bodies: Dict[str, Optional[ast.AST]] = {}
 
     def inline_user_functions(node: ast.AST, stack: tuple[str, ...] = ()) -> ast.AST:
         """Inline pure SBML functions so exact linearity can be established."""
@@ -2305,10 +2327,15 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
                 and len(node.args) == len(function.arguments)
                 and not node.keywords
             ):
-                try:
-                    body = parse_expression(function.math).body
-                except (SyntaxError, ValueError):
-                    body = None
+                if function_key not in parsed_function_bodies:
+                    try:
+                        parsed_function_bodies[function_key] = parse_expression(
+                            function.math
+                        ).body
+                    except (SyntaxError, ValueError):
+                        parsed_function_bodies[function_key] = None
+                body_template = parsed_function_bodies[function_key]
+                body = clone_ast(body_template) if body_template is not None else None
                 if body is not None:
                     arguments = {
                         standardize_name(str(name)): inline_user_functions(
@@ -2620,6 +2647,44 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
 
 def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
     """Lower delay calls for static values or closed-form time assignments."""
+
+    def _has_delay_or_rate_of_marker() -> bool:
+        def has_marker(text: Any) -> bool:
+            raw = str(text or "")
+            return _RATE_OF_MARKER in raw or "delay" in raw.lower()
+
+        for rule in model.rules:
+            if has_marker(rule.math):
+                return True
+        for reaction in model.reactions.values():
+            kl = reaction.kinetic_law
+            math_text = (
+                kl.get("math", "")
+                if isinstance(kl, Mapping)
+                else getattr(kl, "math", "")
+            )
+            if has_marker(math_text):
+                return True
+        for event in model.events:
+            if (
+                has_marker(event.trigger)
+                or has_marker(event.delay)
+                or has_marker(event.priority)
+            ):
+                return True
+            for assignment in event.assignments:
+                if has_marker(getattr(assignment, "math", "")):
+                    return True
+        for assignment in model.initial_assignments:
+            if has_marker(assignment.math):
+                return True
+        for function in model.function_definitions.values():
+            if has_marker(function.math):
+                return True
+        return False
+
+    if not _has_delay_or_rate_of_marker():
+        return
 
     controlled = {
         standardize_name(str(rule.variable)) for rule in model.rules if rule.variable
@@ -3851,14 +3916,34 @@ class SBMLParser:
         if not normalized:
             return normalized
         mapping: Dict[str, str] = {}
+        # Fast path: extract identifiers occurring in ``normalized`` once and
+        # check only those keys against the supplied alias maps.
+        present_runs = {
+            match.group(0)
+            for match in re.finditer(r"[A-Za-z_][A-Za-z0-9_-]*", normalized)
+        }
+        present_tokens = {
+            match.group(0)
+            for match in re.finditer(r"[A-Za-z_][A-Za-z0-9_]*", normalized)
+        }
+        present_all = present_runs | present_tokens
         for aliases in alias_maps:
             if not aliases:
                 continue
-            for alias, canonical in aliases.items():
-                alias = str(alias or "").strip()
-                canonical = str(canonical or "").strip()
-                if alias and canonical and alias != canonical:
-                    mapping.setdefault(alias, canonical)
+            if len(aliases) > len(present_all) * 2:
+                for token in present_all:
+                    canonical = aliases.get(token)
+                    if canonical is None:
+                        continue
+                    canonical = str(canonical).strip()
+                    if canonical and token != canonical:
+                        mapping.setdefault(token, canonical)
+            else:
+                for alias, canonical in aliases.items():
+                    alias = str(alias or "").strip()
+                    canonical = str(canonical or "").strip()
+                    if alias and canonical and alias != canonical:
+                        mapping.setdefault(alias, canonical)
         if mapping:
             # Longest alternative first. The trailing lookahead already makes
             # the match unambiguous, but ordering by length keeps the engine from

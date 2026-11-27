@@ -1822,6 +1822,53 @@ def test_playground_function_inlining_reuses_call_patterns_without_changing_outp
     assert second_info.hits > first_info.hits
 
 
+def test_extend_function_lookup_cache_ignores_freelist_address_reuse_and_in_place_mutation():
+    from bionetgen.atomizer.modern import SBMLFunctionDefinition, extend_function
+
+    def run_temporary(name: str, math_body: str, expr: str) -> str:
+        definitions = OrderedDict(
+            [
+                (
+                    name,
+                    SBMLFunctionDefinition(
+                        id=name, name=name, arguments=["x"], math=math_body
+                    ),
+                )
+            ]
+        )
+        return extend_function(expr, {}, definitions)
+
+    for index in range(16):
+        fn_name = f"temp_fn_{index}"
+        assert run_temporary(fn_name, f"x + {index}", f"{fn_name}(a)") == (
+            f"((a) + {index})"
+        )
+
+    mutable = OrderedDict(
+        [
+            (
+                "f",
+                SBMLFunctionDefinition(id="f", name="f", arguments=["x"], math="x + 1"),
+            )
+        ]
+    )
+    assert extend_function("f(a)", {}, mutable) == "((a) + 1)"
+
+    mutable["f"] = SBMLFunctionDefinition(
+        id="f", name="f", arguments=["x"], math="x * 3"
+    )
+    assert extend_function("f(a)", {}, mutable) == "((a) * 3)"
+
+    mutable["f"].math = "x - 5"
+    assert extend_function("f(a)", {}, mutable) == "((a) - 5)"
+
+    mutable.clear()
+    mutable["g"] = SBMLFunctionDefinition(
+        id="g", name="g", arguments=["x"], math="x * x"
+    )
+    assert extend_function("g(2)", {}, mutable) == "((2) * (2))"
+
+
 def test_playground_function_call_pattern_cache_is_bounded_for_many_names():
     from bionetgen.atomizer.modern import SBMLFunctionDefinition, extend_function
     from bionetgen.atomizer.modern.writer import _function_call_pattern

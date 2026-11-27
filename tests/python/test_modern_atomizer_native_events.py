@@ -984,8 +984,10 @@ end actions
     assert boundary[-1, header.index("A_count")] == pytest.approx(5.0)
 
 
-def test_ssa_refuses_native_triggers_that_can_change_between_jumps(tmp_path):
-    """Jump-only event detection cannot schedule a continuous clock crossing."""
+def test_ssa_schedules_affine_clock_triggers_and_refuses_nonlinear_clock_triggers(
+    tmp_path,
+):
+    """SSA schedules affine clock crossings exactly and refuses nonlinear ones."""
     from bionetgen.model import load
 
     path = tmp_path / "clock_event.bngl"
@@ -1010,7 +1012,33 @@ begin bng3_events version 1
 end bng3_events
 end model
 """)
+    result = load(path).simulate(method="ssa", t_end=1, n_steps=2, seed=17)
+    assert result.observables["x"][0] == pytest.approx(0.0)
+    assert result.observables["x"][-1] == pytest.approx(1.0)
+
+    nonlinear_path = tmp_path / "nonlinear_clock_event.bngl"
+    nonlinear_path.write_text("""begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules x X()
+end observables
+begin bng3_events version 1
+    event "clock"
+        trigger: time > time * time
+        initial_value: true
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: x = 1
+    end event
+end bng3_events
+end model
+""")
     with pytest.raises(
         RuntimeError, match="SSA does not support time-dependent native event triggers"
     ):
-        load(path).simulate(method="ssa", t_end=1, n_steps=2, seed=17)
+        load(nonlinear_path).simulate(method="ssa", t_end=1, n_steps=2, seed=17)

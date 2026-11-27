@@ -637,6 +637,12 @@ class EventTranslationContext:
     # Return the BNGL parameter name for an event-mutable global SBML
     # parameter, when its event assignment can be represented natively.
     resolve_native_parameter: Callable[[str], Optional[str]] = lambda _identifier: None
+    # Return the zero-argument BNGL function name for an SBML assignment rule
+    # symbol that is emitted in ``begin functions`` and can be referenced by a
+    # native event expression (for example an event-only discrete trigger).
+    resolve_native_assignment_function: Callable[[str], Optional[str]] = (
+        lambda _identifier: None
+    )
     # Return additional scheduled sets when a compartment volume changes by
     # event assignment. Used to rescale concentration-valued species amounts so
     # that concentrations remain continuous across a discrete volume change,
@@ -727,7 +733,7 @@ class NativeEventEntry:
     persistent: bool
     use_values_from_trigger_time: bool
     delay: Optional[str]
-    priority: Optional[float]
+    priority: Optional[str]
     assignments: Tuple[Tuple[str, str], ...]
 
 
@@ -3096,6 +3102,13 @@ def _native_continuous_expression(
                 return ast.copy_location(
                     ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
                 )
+            assignment_fn = context.resolve_native_assignment_function(node.id)
+            if assignment_fn is not None:
+                has_state = True
+                return ast.copy_location(
+                    ast.parse(assignment_fn, mode="eval").body,
+                    node,
+                )
             raise ValueError(f"non-static identifier {node.id}")
 
         def visit_Call(self, node: ast.Call) -> ast.AST:
@@ -3184,6 +3197,13 @@ def _native_piecewise_value_expression(
                 return ast.copy_location(
                     ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
                 )
+            assignment_fn = context.resolve_native_assignment_function(node.id)
+            if assignment_fn is not None:
+                has_state = True
+                return ast.copy_location(
+                    ast.parse(assignment_fn, mode="eval").body,
+                    node,
+                )
             raise ValueError(f"non-static identifier {node.id}")
 
         def visit_Call(self, node: ast.Call) -> ast.AST:
@@ -3271,10 +3291,6 @@ def _native_time_against_static(
     def is_time(text: str) -> bool:
         return _strip_outer_parens(text).strip().lower() in {"time", "t"}
 
-    if str(context.method or "ode").lower() in {"ssa", "stochastic"}:
-        # The native SSA runtime detects triggers after jumps and refuses
-        # one that reads the clock, so such an event stays untranslated.
-        return False
     if context.scheduled_events_present:
         # The other events are scheduled actions, which split the run into
         # phases at fixed times; a native fixed-time trigger at a phase
@@ -3446,23 +3462,16 @@ def _native_comparison_expression(
         if left_state.amount_factor != right_state.amount_factor:
             return None
         return f"{left_state.observable} {symbol} {right_state.observable}"
-    stochastic = str(context.method or "ode").lower() in {"ssa", "stochastic"}
     if left_state is not None:
         scaled = _native_scaled_static(right_text, left_state.amount_factor, context)
         if scaled is not None:
             return f"{left_state.observable} {symbol} {scaled}"
-        if stochastic:
-            return None
     elif right_state is not None:
         scaled = _native_scaled_static(left_text, right_state.amount_factor, context)
         if scaled is not None:
             return f"{scaled} {symbol} {right_state.observable}"
-        if stochastic:
-            return None
     # Otherwise the other side moves (it reads time or another state), and
-    # both sides are rendered in their SBML units below.  The native SSA
-    # runtime checks triggers only after jumps, so for a stochastic run the
-    # state against a moving side stays refused, as before.
+    # both sides are rendered in their SBML units below.
     time_rewrite = _native_time_minus_state_comparison(
         left_text, right_text, symbol, context
     )
@@ -3525,9 +3534,14 @@ def _native_conjunction_expression(
         return None
     # A conjunction whose every conjunct compares the clock with a literal
     # is a fixed time window. Its rising and falling edges are exact schedule
-    # times, which the action dispatcher represents directly; the native
-    # root finder can miss the opening edge of such a window.
-    if _native_is_clock_window(str(trigger or ""), context):
+    # times, which the action dispatcher represents directly; the native ODE
+    # root finder can miss the opening edge of such a window.  The native SSA
+    # scheduler solves affine time crossings analytically and handles them
+    # directly.
+    if str(context.method or "ode").lower() not in {
+        "ssa",
+        "stochastic",
+    } and _native_is_clock_window(str(trigger or ""), context):
         return None
     rendered: List[str] = []
     for term in terms:
@@ -3547,8 +3561,36 @@ def _native_conjunction_expression(
             left_text, right_text, operator, event, context
         )
         if expression is None:
+            # A conjunct whose two sides are both compile-time constants has a
+            # fixed truth value across the entire run.  Drop a provably-true
+            # constant gate so the remaining dynamic conjuncts determine the
+            # native trigger surface.
+            left_val = _native_fold_term_text(left_text, context)
+            right_val = _native_fold_term_text(right_text, context)
+            if (
+                left_val is not None
+                and right_val is not None
+                and math.isfinite(left_val)
+                and math.isfinite(right_val)
+            ):
+                holds = {
+                    "gt": left_val > right_val,
+                    "geq": left_val >= right_val,
+                    "lt": left_val < right_val,
+                    "leq": left_val <= right_val,
+                    "eq": left_val == right_val,
+                    "neq": left_val != right_val,
+                }.get(operator)
+                if holds is True:
+                    continue
             return None
         rendered.append(f"({expression})")
+    if not rendered:
+        return None
+    if len(rendered) == 1:
+        # Strip the extra outer parentheses when constant-gate simplification
+        # leaves a single comparison.
+        return rendered[0][1:-1]
     return " && ".join(rendered)
 
 
@@ -3569,26 +3611,36 @@ def _native_trigger_expression(
     if arguments is None or len(arguments) != 2:
         return None
     left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+    stochastic = str(context.method or "ode").lower() in {"ssa", "stochastic"}
     if operator == "eq":
-        # A positive, fixed clock instant produces one rising edge. With
-        # immediate execution its subsequent falling edge cannot cancel work.
-        if not instantaneous or not _native_time_against_static(
-            left_text, right_text, context
-        ):
+        if _native_time_against_static(left_text, right_text, context):
+            threshold = right_text if left_text.lower() in {"time", "t"} else left_text
+            instant = _native_fold_term_text(threshold, context)
+            if instant is not None and math.isfinite(instant):
+                # A positive, fixed clock instant produces one rising edge. With
+                # immediate execution its subsequent falling edge cannot cancel work.
+                if not instantaneous:
+                    return None
+                if instant > 0.0:
+                    return f"time >= {_format_number(instant)}"
+                if instant == 0.0:
+                    # The clock equals zero only at the initial instant.  The
+                    # native runtime's startup check executes a non-strict trigger
+                    # that holds at t=0 only when its initialValue is false, which
+                    # is exactly the SBML rising edge for eq(time, 0).  With
+                    # initialValue=true there is no edge, and the clock never
+                    # returns to zero, so this form never executes again.
+                    return "time <= 0"
             return None
-        threshold = right_text if left_text.lower() in {"time", "t"} else left_text
-        instant = _native_fold_term_text(threshold, context)
-        if instant is not None and math.isfinite(instant):
-            if instant > 0.0:
-                return f"time >= {_format_number(instant)}"
-            if instant == 0.0:
-                # The clock equals zero only at the initial instant.  The
-                # native runtime's startup check executes a non-strict trigger
-                # that holds at t=0 only when its initialValue is false, which
-                # is exactly the SBML rising edge for eq(time, 0).  With
-                # initialValue=true there is no edge, and the clock never
-                # returns to zero, so this form never executes again.
-                return "time <= 0"
+        if stochastic:
+            ge = _native_comparison_expression(
+                left_text, right_text, "geq", event, context
+            )
+            le = _native_comparison_expression(
+                left_text, right_text, "leq", event, context
+            )
+            if ge is not None and le is not None:
+                return f"({ge}) && ({le})"
         return None
     # A standalone non-strict inequality can fire on a tangential contact,
     # which the root finder cannot distinguish from a crossing.  Keep those
@@ -3623,7 +3675,8 @@ def _native_trigger_expression(
                 if static_threshold is not None:
                     return f"{inner[0]} >= {static_threshold}"
     if (
-        operator in {"leq", "geq"}
+        not stochastic
+        and operator in {"leq", "geq"}
         and not _native_time_against_static(left_text, right_text, context)
         and _native_time_minus_state_comparison(
             left_text,
@@ -3638,26 +3691,38 @@ def _native_trigger_expression(
         is None
     ):
         # A promoted, event-assigned SBML parameter with zero rate changes
-        # only at event execution points. The native runtime reevaluates all
-        # triggers after each assignment, so its non-strict comparison is an
-        # exact state gate even though no continuous root exists for it.
+        # only at event execution points, and a state with a provably monotone
+        # trajectory crosses its threshold transversally without tangential
+        # contact.
         try:
             left_state = ast.parse(left_text, mode="eval").body
             right_state = ast.parse(right_text, mode="eval").body
         except (TypeError, ValueError, SyntaxError):
             left_state = right_state = None
-        event_only_parameter = None
-        if isinstance(left_state, ast.Name) and context.is_param(left_state.id):
-            event_only_parameter = left_state.id
-        elif isinstance(right_state, ast.Name) and context.is_param(right_state.id):
-            event_only_parameter = right_state.id
-        rate = (
-            context.resolve_rate_rule_expression_for_event(event_only_parameter, event)
-            if event_only_parameter is not None
-            else None
+        monotone_crossing = (
+            isinstance(left_state, ast.Name)
+            and _native_static_text(right_text, context) is not None
+            and _native_state_is_monotone(left_state.id, event, context)
+        ) or (
+            isinstance(right_state, ast.Name)
+            and _native_static_text(left_text, context) is not None
+            and _native_state_is_monotone(right_state.id, event, context)
         )
-        if rate is None or _native_fold_term_text(rate, context) != 0.0:
-            return None
+        if not monotone_crossing:
+            event_only_parameter = None
+            if isinstance(left_state, ast.Name) and context.is_param(left_state.id):
+                event_only_parameter = left_state.id
+            elif isinstance(right_state, ast.Name) and context.is_param(right_state.id):
+                event_only_parameter = right_state.id
+            rate = (
+                context.resolve_rate_rule_expression_for_event(
+                    event_only_parameter, event
+                )
+                if event_only_parameter is not None
+                else None
+            )
+            if rate is None or _native_fold_term_text(rate, context) != 0.0:
+                return None
     return _native_comparison_expression(
         left_text, right_text, operator, event, context
     )
@@ -3779,6 +3844,25 @@ def _native_term_expression(
                             func=ast.Name(id="sqrt", ctx=ast.Load()),
                             args=[call.args[1]],
                             keywords=[],
+                        ),
+                        call,
+                    )
+                if (
+                    isinstance(call.func, ast.Name)
+                    and call.func.id == "exp"
+                    and len(call.args) == 1
+                    and isinstance(call.args[0], ast.Constant)
+                    and isinstance(call.args[0].value, (int, float))
+                    and float(call.args[0].value) >= 1000.0
+                ):
+                    # Represent MathML <infinity/> as pure arithmetic overflow
+                    # so native event validation accepts it as an unbounded
+                    # truncation limit for SBML distrib draws.
+                    return ast.copy_location(
+                        ast.BinOp(
+                            left=ast.Constant(value=1e308),
+                            op=ast.Mult(),
+                            right=ast.Constant(value=1e308),
                         ),
                         call,
                     )
@@ -3947,14 +4031,15 @@ def _lower_native_event(
 ) -> Optional[NativeEventEntry]:
     """Lower one SBML event to the native event runtime, or return ``None``."""
 
-    priority: Optional[float] = None
+    priority: Optional[str] = None
     if event.priority:
         # The priority orders the assignments of the events that are executed
         # simultaneously.  It has to be a static value, because the order of
         # two simultaneous events is decided before either of them runs.
-        priority = _native_fold_term_text(event.priority, context)
-        if priority is None or not math.isfinite(priority):
+        static_priority = _native_fold_term_text(event.priority, context)
+        if static_priority is None or not math.isfinite(static_priority):
             return None
+        priority = _format_number(static_priority)
     delay: Optional[str] = None
     delay_seconds = 0.0
     if event.delay:
@@ -4084,7 +4169,7 @@ def lower_native_events(
         if entry.delay:
             lines.append(f"    delay: {entry.delay}")
         if entry.priority is not None:
-            lines.append(f"    priority: {_format_number(entry.priority)}")
+            lines.append(f"    priority: {entry.priority}")
         for observable, value in entry.assignments:
             lines.append(f"    assignment: {observable} = {value}")
         lines.append("  end event")
@@ -9328,6 +9413,50 @@ def synthesize_event_actions(
             if item[3] is not None
             and str(getattr(item[3], "priority", "") or "").strip()
         )
+        if not conflicts:
+            # Equal-priority simultaneous events also conflict when one event's
+            # assignment modifies a symbol read by another equal-priority
+            # non-persistent event's trigger (SBML L3V2 Core Sec. 4.12.2/4.12.3):
+            # whichever fires first can cancel the other, so a deterministic
+            # action schedule cannot preserve the required random order.
+            by_tier: dict[float, List[SBMLEvent]] = {}
+            for item in group:
+                ev = item[3]
+                if ev is not None and str(getattr(ev, "priority", "") or "").strip():
+                    by_tier.setdefault(item[2], []).append(ev)
+            for tier_events in by_tier.values():
+                if len(tier_events) < 2:
+                    continue
+                if not any(ev.trigger_persistent is False for ev in tier_events):
+                    continue
+                tier_targets = [
+                    {standardize_name(_event_assignment(a)[0]) for a in ev.assignments}
+                    for ev in tier_events
+                ]
+                tier_reads = [
+                    {
+                        standardize_name(tok)
+                        for tok in re.findall(
+                            r"[A-Za-z_][A-Za-z0-9_]*", ev.trigger or ""
+                        )
+                    }
+                    for ev in tier_events
+                ]
+                for i, left_targets in enumerate(tier_targets):
+                    if not left_targets:
+                        continue
+                    for j, right_event in enumerate(tier_events):
+                        if i == j or right_event.trigger_persistent is not False:
+                            continue
+                        if left_targets & tier_reads[j]:
+                            conflicts.append(
+                                (right_event.id or "event", "non-persistent trigger")
+                            )
+                            break
+                    if conflicts:
+                        break
+                if conflicts:
+                    break
         if conflicts:
             # Two events that are executed simultaneously and declare the
             # same priority are executed in a random order, so their

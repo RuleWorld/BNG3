@@ -2184,3 +2184,181 @@ end bng3_events
     auto network = generator.generateNative();
     CHECK_THROWS_AS(engine::OdeIntegrator(*model, network), std::runtime_error);
 }
+
+TEST_CASE("SSA executes affine time triggers and cancels non-persistent delayed events",
+          "[ssa][events]") {
+    const std::string source = R"(
+begin molecule types
+    X()
+    Y()
+end molecule types
+begin seed species
+    X() 0
+    Y() 0
+end seed species
+begin observables
+    Molecules x X()
+    Molecules y Y()
+end observables
+begin bng3_events version 1
+    event "window_persistent"
+        trigger: (time >= 1) && (time <= 2)
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        delay: 2
+        assignment: x = 5
+    end event
+    event "window_nonpersistent"
+        trigger: (time >= 1) && (time <= 2)
+        initial_value: false
+        persistent: false
+        use_values_from_trigger_time: true
+        delay: 2
+        assignment: y = 7
+    end event
+end bng3_events
+)";
+    auto model = parser::parseModel(source);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions opts;
+    opts.method = "ssa";
+    opts.tStart = 0.0;
+    opts.tEnd = 4.0;
+    opts.nSteps = 8;
+    opts.seed = 42;
+    const auto result = integrator.integrate(opts);
+    REQUIRE(result.observables.size() == 9);
+    // Persistent event executes at t = 3 (delay 2 after t = 1).
+    CHECK_THAT(result.observables[4][0], Catch::Matchers::WithinAbs(0.0, 1e-12));  // t = 2.0
+    CHECK_THAT(result.observables[6][0], Catch::Matchers::WithinAbs(5.0, 1e-12));  // t = 3.0
+    CHECK_THAT(result.observables[8][0], Catch::Matchers::WithinAbs(5.0, 1e-12));  // t = 4.0
+    // Non-persistent event was cancelled when the window closed at t = 2+.
+    CHECK_THAT(result.observables[8][1], Catch::Matchers::WithinAbs(0.0, 1e-12));
+}
+
+TEST_CASE("SSA breaks equal-priority simultaneous event ties randomly using the run seed",
+          "[ssa][events]") {
+    const std::string source = R"(
+begin molecule types
+    W()
+end molecule types
+begin seed species
+    W() 0
+end seed species
+begin observables
+    Molecules w W()
+end observables
+begin bng3_events version 1
+    event "first"
+        trigger: time >= 0.5
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        priority: 3
+        assignment: w = 1
+    end event
+    event "second"
+        trigger: time >= 0.5
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        priority: 3
+        assignment: w = 2
+    end event
+end bng3_events
+)";
+    auto model = parser::parseModel(source);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+
+    auto runSeed = [&](unsigned int seed) {
+        engine::OdeOptions opts;
+        opts.method = "ssa";
+        opts.tStart = 0.0;
+        opts.tEnd = 1.0;
+        opts.nSteps = 2;
+        opts.seed = seed;
+        return integrator.integrate(opts).observables.back()[0];
+    };
+
+    // Fixed seed is deterministic.
+    CHECK_THAT(runSeed(99), Catch::Matchers::WithinAbs(runSeed(99), 1e-12));
+    int countOne = 0;
+    int countTwo = 0;
+    for (unsigned int s = 1; s <= 40; ++s) {
+        const double val = runSeed(s);
+        if (val == 1.0) ++countOne;
+        else if (val == 2.0) ++countTwo;
+    }
+    CHECK(countOne + countTwo == 40);
+    CHECK(countOne >= 10);
+    CHECK(countTwo >= 10);
+}
+
+TEST_CASE("SSA evaluates state triggers on jumps and cancels non-persistent events on intermediate jumps",
+          "[ssa][events]") {
+    const std::string source = R"(
+begin parameters
+    k 5
+end parameters
+begin molecule types
+    A()
+    P()
+    NP()
+end molecule types
+begin seed species
+    A() 20
+    P() 0
+    NP() 0
+end seed species
+begin observables
+    Molecules a A()
+    Molecules p P()
+    Molecules np NP()
+end observables
+begin reaction rules
+    decay: A() -> 0 k
+end reaction rules
+begin bng3_events version 1
+    event "persist_delay"
+        trigger: (a <= 15) && (a >= 14)
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        delay: 0.5
+        assignment: p = a
+    end event
+    event "nonpersist_delay"
+        trigger: (a <= 15) && (a >= 14)
+        initial_value: false
+        persistent: false
+        use_values_from_trigger_time: true
+        delay: 0.5
+        assignment: np = a
+    end event
+end bng3_events
+)";
+    auto model = parser::parseModel(source);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions opts;
+    opts.method = "ssa";
+    opts.tStart = 0.0;
+    opts.tEnd = 2.0;
+    opts.nSteps = 4;
+    opts.seed = 17;
+    const auto result = integrator.integrate(opts);
+    // By t = 2 with k = 5, A decays rapidly through [14, 15] to near 0 well
+    // before the 0.5 delay elapses.  The persistent event snapshots A = 15 and
+    // fires; the non-persistent event is cancelled when A drops below 14.
+    CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(15.0, 1e-12));
+    CHECK_THAT(result.observables.back()[2], Catch::Matchers::WithinAbs(0.0, 1e-12));
+}
