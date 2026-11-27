@@ -187,6 +187,25 @@ else:
                 **options,
             )
 
+        from bionetgen.compat.runner import (
+            _is_bngmodel_object,
+            _materialize_bngmodel,
+        )
+
+        if _is_bngmodel_object(path):
+            from pathlib import Path
+            from tempfile import TemporaryDirectory
+
+            with TemporaryDirectory(prefix="bng3-model-") as model_dir:
+                materialized = _materialize_bngmodel(path, Path(model_dir))
+                return _modern_run(
+                    materialized,
+                    method=method_name,
+                    t_end=t_end,
+                    n_steps=n_steps,
+                    **kwargs,
+                )
+
         return _modern_run(
             path, method=method_name, t_end=t_end, n_steps=n_steps, **kwargs
         )

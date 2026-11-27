@@ -42,7 +42,12 @@ def run(
             raise NotImplementedError(
                 "out is not supported with in-memory simulation overrides"
             )
-        from bionetgen.compat.runner import _normalize_time_options, _positive_steps
+        from bionetgen.compat.runner import (
+            _is_bngmodel_object,
+            _materialize_bngmodel,
+            _normalize_time_options,
+            _positive_steps,
+        )
         from bionetgen.model import load
 
         t_start, t_end, steps = _normalize_time_options(
@@ -67,6 +72,25 @@ def run(
             "backend": "bngsim" if simulator == "bngsim" else "native",
             "verbose": not suppress,
         }
+        if _is_bngmodel_object(inp):
+            from pathlib import Path
+            from tempfile import TemporaryDirectory
+
+            with TemporaryDirectory(prefix="bng3-model-") as model_dir:
+                source = _materialize_bngmodel(inp, Path(model_dir))
+                if simulator == "subprocess" or timeout is not None:
+                    from bionetgen.compat._native_process import execute_native
+
+                    with TemporaryDirectory(prefix="bng3-simulation-") as directory:
+                        return execute_native(
+                            source,
+                            directory,
+                            suppress=suppress,
+                            timeout=timeout,
+                            options=simulation_options,
+                            result_file=Path(directory) / "simulation.npz",
+                        )
+                return load(source).simulate(**simulation_options)
         if simulator == "subprocess" or timeout is not None:
             from pathlib import Path
             from tempfile import TemporaryDirectory

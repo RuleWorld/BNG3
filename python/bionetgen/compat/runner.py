@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 from pathlib import Path
 import shutil
 from tempfile import TemporaryDirectory
@@ -253,6 +254,29 @@ def _run_action_time_override(
     return result
 
 
+def _is_bngmodel_object(obj) -> bool:
+    """Return True for PyBioNetGen-style in-memory ``bngmodel`` objects."""
+    return (
+        not isinstance(obj, (str, os.PathLike))
+        and hasattr(obj, "write_model")
+        and hasattr(obj, "model_name")
+    )
+
+
+def _materialize_bngmodel(model_obj, directory: Path) -> Path:
+    """Serialize a ``bngmodel`` instance to ``<directory>/<model_name>.bngl``."""
+    raw_name = str(getattr(model_obj, "model_name", "") or "model").strip()
+    safe_name = Path(raw_name).name or "model"
+    if safe_name in {".", ".."}:
+        safe_name = "model"
+    if not safe_name.lower().endswith(".bngl"):
+        safe_name = f"{safe_name}.bngl"
+    target = Path(directory) / safe_name
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(str(model_obj), encoding="utf-8")
+    return target
+
+
 def run(
     inp,
     out=None,
@@ -294,6 +318,29 @@ def run(
         raise NotImplementedError(
             "only BNGL input is supported by the BNG3 compatibility runner"
         )
+    if _is_bngmodel_object(inp):
+        with TemporaryDirectory(prefix="bng3-model-") as model_dir:
+            materialized = _materialize_bngmodel(inp, Path(model_dir))
+            return run(
+                materialized,
+                out=out,
+                suppress=suppress,
+                timeout=timeout,
+                simulator=simulator,
+                format=format,
+                method=method,
+                t_span=t_span,
+                t_start=t_start,
+                n_points=n_points,
+                t_end=t_end,
+                n_steps=n_steps,
+                rtol=rtol,
+                atol=atol,
+                seed=seed,
+                pla_config=pla_config,
+                psa_poplevel=psa_poplevel,
+                log_file=log_file,
+            )
     inp_path = Path(inp).expanduser().resolve()
     if not inp_path.is_file():
         raise FileNotFoundError(inp_path)
