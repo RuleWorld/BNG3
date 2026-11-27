@@ -69,12 +69,28 @@ def test_sbml_export_preserves_the_native_event(event_model, tmp_path):
     assert 'eventAssignment variable="S1"' in text
 
 
-@pytest.mark.parametrize(
-    "consumer", ["jax_ode_flatten", "jax_ssa_flatten", "simulate_batch_ssa_cpu"]
-)
+@pytest.mark.parametrize("consumer", ["jax_ode_flatten", "jax_ssa_flatten"])
 def test_flattening_cannot_drop_events(event_model, consumer):
     with pytest.raises(RuntimeError, match="event"):
         getattr(cpp, consumer)(*event_model)
+
+
+def test_cpu_batch_ssa_executes_native_events(event_model):
+    model, network = event_model
+    result = cpp.simulate_batch_ssa_cpu(
+        model,
+        network,
+        t_end=3.0,
+        n_steps=6,
+        batch_size=8,
+        base_seed=42,
+    )
+    # Without the reset event (X <= 5 -> X = 10), A() -> 0 with k=1 decays
+    # from 10 toward ~0.5 by t=3. With native event execution, X resets back to
+    # 10 whenever it hits 5, so every mean and final trajectory value stays > 5.
+    assert all(val > 5.0 for val in result["observable_means"]["X"])
+    x_idx = result["observable_names"].index("X")
+    assert all(val > 5.0 for val in result["final_observables"][:, x_idx])
 
 
 def test_bngsim_capability_accepts_supported_and_refuses_unsupported_events(
