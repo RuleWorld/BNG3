@@ -1077,10 +1077,17 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
             return "rateOf"
         content = _mathml_text(element)
         representation = str(_attribute(element, "representationType", "") or "")
+        species_ref = str(_attribute(element, "speciesReference", "") or "")
         if representation == "sum":
+            if species_ref:
+                return f"__SBML_MULTI_SUMREF__{species_ref}__{content}__"
             return f"__SBML_MULTI_SUM__{content}__"
         if representation == "numericValue":
+            if species_ref:
+                return f"__SBML_MULTI_NUMREF__{species_ref}__{content}__"
             return f"__SBML_MULTI_NUMERIC__{content}__"
+        if species_ref:
+            return f"__SBML_MULTI_SREF__{species_ref}__{content}__"
         return content
     if tag == "cn":
         chunks: List[str] = []
@@ -4685,9 +4692,16 @@ class SBMLParser:
             f"{species}: {pattern}" for species, pattern in multi.seed_patterns
         ]
         result.multi_species_patterns = dict(multi.species_patterns)
+        result.multi_species_pattern_variants = {
+            key: list(value) for key, value in multi.species_pattern_variants.items()
+        }
         result.multi_species_component_positions = dict(
             multi.species_component_positions
         )
+        result.multi_species_variant_component_positions = {
+            key: [list(pos) for pos in value]
+            for key, value in multi.species_variant_component_positions.items()
+        }
         result.multi_species_explicit_binding_positions = dict(
             multi.species_explicit_binding_positions
         )
@@ -4698,6 +4712,11 @@ class SBMLParser:
         result.multi_compartment_references = dict(multi.compartment_references)
         result.multi_binding_site_placements = dict(multi.binding_site_placements)
         result.multi_numeric_values = dict(multi.numeric_values)
+        result.multi_species_ref_observables = dict(multi.species_ref_observables)
+        result.multi_feature_count_specs = dict(multi.feature_count_specs)
+        result.multi_anchor_links = {
+            key: list(value) for key, value in multi.anchor_links.items()
+        }
         result.multi_executable = multi.executable
         constraints = SBMLParser._xml_items(model, "listOfConstraints", "constraint")
         unresolved_constraints = []

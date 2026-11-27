@@ -524,12 +524,18 @@ def test_multi_full_domain_occur_gt_1_wildcard_and_partial_subset_refusal():
     assert positive_ic.executable is False
     assert any("positive initial pool" in w.message for w in positive_ic.warnings)
 
-    # Proper subset of 2 out of 3 values must still fail closed
+    # Proper subset of 2 out of 3 values lowers via exact orthogonal DNF
     partial = parse_multi_package(
         xml.replace('<multi:speciesFeatureValue multi:value="state_q"/>', "")
     )
-    assert partial.executable is False
-    assert any("multiple values" in w.message for w in partial.warnings)
+    assert partial.executable is True
+    assert partial.species_pattern_variants["Aany"] == [
+        "A(s_1~u,s_2~u)@cell",
+        "A(s_1~u,s_2~p)@cell",
+        "A(s_1~p,s_2~u)@cell",
+        "A(s_1~p,s_2~p)@cell",
+    ]
+    assert "Aany" in partial.abstract_species_ids
 
 
 def test_multi_locally_scoped_compartment_reference_resolves_per_parent_compartment():
@@ -645,7 +651,7 @@ def test_multi_compartment_type_child_specialization_unique_vs_ambiguous():
     )
 
 
-def test_multi_binding_site_with_multiple_feature_types_fails_closed():
+def test_multi_binding_site_with_multiple_feature_types_lowers_to_auxiliary_components():
     xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="{MULTI_NS}" level="3" version="1" multi:required="true">
   <model id="multi_feature_binding_site">
@@ -695,11 +701,9 @@ def test_multi_binding_site_with_multiple_feature_types_fails_closed():
 </sbml>"""
 
     result = parse_multi_package(xml)
-    assert result.executable is False
-    assert any(
-        w.severity == "dropped" and "defines multiple speciesFeatureTypes" in w.message
-        for w in result.warnings
-    )
+    assert result.executable is True
+    assert result.bngl_molecule_types == ["A(site,site__f1~a~b,site__f2~x~y)"]
+    assert result.species_patterns["A0"] == "A(site,site__f1~a,site__f2~x)"
 
 
 def test_multi_aliased_duplicate_outward_binding_site_fails_closed():

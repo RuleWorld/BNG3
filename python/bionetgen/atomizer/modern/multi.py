@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Set, Tuple, Union
 
 from .structures import read_from_string
 from .types import SBMLImportWarning, SBMLMultiComponentMap
@@ -123,7 +123,11 @@ class MultiParseResult:
     complex_patterns: List[MultiComplexPattern] = field(default_factory=list)
     seed_patterns: List[Tuple[str, str]] = field(default_factory=list)
     species_patterns: Dict[str, str] = field(default_factory=dict)
+    species_pattern_variants: Dict[str, List[str]] = field(default_factory=dict)
     species_component_positions: Dict[str, List[Tuple[int, int]]] = field(
+        default_factory=dict
+    )
+    species_variant_component_positions: Dict[str, List[List[Tuple[int, int]]]] = field(
         default_factory=dict
     )
     species_explicit_binding_positions: Dict[str, List[Tuple[int, int]]] = field(
@@ -131,7 +135,7 @@ class MultiParseResult:
     )
     abstract_species_ids: Set[str] = field(default_factory=set)
     type_patterns: Dict[str, str] = field(default_factory=dict)
-    component_aliases: Dict[str, Dict[str, List[Tuple[str, int, int]]]] = field(
+    component_aliases: Dict[str, Dict[str, List[Tuple[Any, ...]]]] = field(
         default_factory=dict
     )
     reaction_product_maps: Dict[str, Dict[str, List[Any]]] = field(default_factory=dict)
@@ -142,6 +146,13 @@ class MultiParseResult:
     # distinguishable even when their executable BNGL is identical.
     binding_site_placements: Dict[str, Dict[str, str]] = field(default_factory=dict)
     numeric_values: Dict[str, str] = field(default_factory=dict)
+    species_ref_observables: Dict[Tuple[str, str], Tuple[str, str]] = field(
+        default_factory=dict
+    )
+    feature_count_specs: Dict[Tuple[str, str, str], Dict[str, Any]] = field(
+        default_factory=dict
+    )
+    anchor_links: Dict[str, List[str]] = field(default_factory=dict)
     executable: bool = False
     warnings: List[SBMLImportWarning] = field(default_factory=list)
 
@@ -752,6 +763,8 @@ class _FlatComponent:
     binding_status: str = ""
     bonds: List[int] = field(default_factory=list)
     is_binding_site: bool = False
+    owner_binding_site: Optional["_FlatComponent"] = None
+    is_anchor_link: bool = False
 
 
 @dataclass
@@ -760,35 +773,124 @@ class _FlatMolecule:
     aliases: set = field(default_factory=set)
     components: List[_FlatComponent] = field(default_factory=list)
     compartment: str = ""
+    compartment_path: Tuple[str, ...] = ()
+    is_anchor: bool = False
 
 
 @dataclass
 class _FlatType:
     molecules: List[_FlatMolecule] = field(default_factory=list)
     bonds: List[Tuple[_FlatComponent, _FlatComponent]] = field(default_factory=list)
+    scopes: Dict[str, List[Tuple[_FlatMolecule, ...]]] = field(default_factory=dict)
+
+
+def _clone_flat_type(flat: _FlatType) -> _FlatType:
+    """Deep-copy a _FlatType while preserving bond and owner_binding_site identity."""
+
+    comp_map: Dict[int, _FlatComponent] = {}
+    mol_map: Dict[int, _FlatMolecule] = {}
+    cloned_molecules: List[_FlatMolecule] = []
+    for molecule in flat.molecules:
+        new_components: List[_FlatComponent] = []
+        for component in molecule.components:
+            copied = _FlatComponent(
+                label=component.label,
+                aliases=set(component.aliases),
+                binding_site_type_id=component.binding_site_type_id,
+                states=list(component.states),
+                feature_ids=set(component.feature_ids),
+                feature_values={
+                    k: dict(v) for k, v in component.feature_values.items()
+                },
+                active_state=component.active_state,
+                binding_status=component.binding_status,
+                bonds=list(component.bonds),
+                is_binding_site=component.is_binding_site,
+                owner_binding_site=None,
+                is_anchor_link=component.is_anchor_link,
+            )
+            comp_map[id(component)] = copied
+            new_components.append(copied)
+        for old_comp, new_comp in zip(molecule.components, new_components):
+            if old_comp.owner_binding_site is not None:
+                new_comp.owner_binding_site = comp_map.get(
+                    id(old_comp.owner_binding_site)
+                )
+        new_mol = _FlatMolecule(
+            name=molecule.name,
+            aliases=set(molecule.aliases),
+            components=new_components,
+            compartment=molecule.compartment,
+            compartment_path=tuple(molecule.compartment_path),
+            is_anchor=molecule.is_anchor,
+        )
+        mol_map[id(molecule)] = new_mol
+        cloned_molecules.append(new_mol)
+    cloned_bonds = [
+        (comp_map[id(left)], comp_map[id(right)])
+        for left, right in flat.bonds
+        if id(left) in comp_map and id(right) in comp_map
+    ]
+    cloned_scopes: Dict[str, List[Tuple[_FlatMolecule, ...]]] = {}
+    for alias, groups in flat.scopes.items():
+        cloned_scopes[alias] = [
+            tuple(mol_map[id(m)] for m in group if id(m) in mol_map) for group in groups
+        ]
+    return _FlatType(
+        molecules=cloned_molecules, bonds=cloned_bonds, scopes=cloned_scopes
+    )
 
 
 def _flat_component_aliases(
     flat: _FlatType,
-) -> Dict[str, List[Tuple[str, int, int]]]:
+) -> Dict[str, List[Tuple[Any, ...]]]:
     """Index Multi aliases by flattened BNGL location."""
 
-    result: Dict[str, List[Tuple[str, int, int]]] = {}
+    result: Dict[str, List[Tuple[Any, ...]]] = {}
+    mol_index_by_id = {id(molecule): idx for idx, molecule in enumerate(flat.molecules)}
 
-    def add(alias: str, kind: str, molecule_index: int, component_index: int) -> None:
+    def add(alias: str, location: Tuple[Any, ...]) -> None:
         alias = str(alias or "")
         if not alias:
             return
-        location = (kind, molecule_index, component_index)
         if location not in result.setdefault(alias, []):
             result[alias].append(location)
 
+    scoped_aliases: Set[str] = set()
+    for alias, groups in flat.scopes.items():
+        if not groups:
+            continue
+        scoped_aliases.add(alias)
+        for group in groups:
+            indices = tuple(
+                mol_index_by_id[id(m)] for m in group if id(m) in mol_index_by_id
+            )
+            if len(indices) == 1:
+                add(alias, ("molecule", indices[0], -1))
+            elif len(indices) > 1:
+                add(alias, ("molecule_group", indices, -1))
+
     for molecule_index, molecule in enumerate(flat.molecules):
         for alias in molecule.aliases:
-            add(alias, "molecule", molecule_index, -1)
+            if alias not in scoped_aliases:
+                add(alias, ("molecule", molecule_index, -1))
+        owned_by_site: Dict[int, List[int]] = {}
         for component_index, component in enumerate(molecule.components):
+            if component.owner_binding_site is not None:
+                owned_by_site.setdefault(id(component.owner_binding_site), []).append(
+                    component_index
+                )
+        for component_index, component in enumerate(molecule.components):
+            if component.owner_binding_site is not None:
+                continue
+            owned = owned_by_site.get(id(component), [])
+            location: Tuple[Any, ...] = (
+                ("component_group", molecule_index, (component_index, *owned))
+                if owned
+                else ("component", molecule_index, component_index)
+            )
             for alias in component.aliases:
-                add(alias, "component", molecule_index, component_index)
+                add(alias, location)
     return result
 
 
@@ -834,17 +936,26 @@ def _find_component(
 
 
 def _find_components(
-    flat_type: _FlatType, token: str, parent: str = ""
+    flat_type: _FlatType,
+    token: str,
+    parent: str = "",
+    *,
+    binding_only: bool = False,
+    primary_only: bool = False,
 ) -> List[Tuple[_FlatMolecule, _FlatComponent]]:
     candidates = flat_type.molecules
     if parent:
         candidates = [molecule for molecule in candidates if parent in molecule.aliases]
-    return [
-        (molecule, component)
-        for molecule in candidates
-        for component in molecule.components
-        if token in component.aliases
-    ]
+    result = []
+    for molecule in candidates:
+        for component in molecule.components:
+            if binding_only and not component.is_binding_site:
+                continue
+            if primary_only and component.owner_binding_site is not None:
+                continue
+            if token in component.aliases:
+                result.append((molecule, component))
+    return result
 
 
 def _find_molecule(flat_type: _FlatType, token: str) -> Optional[_FlatMolecule]:
@@ -854,6 +965,41 @@ def _find_molecule(flat_type: _FlatType, token: str) -> Optional[_FlatMolecule]:
 
 def _find_molecules(flat_type: _FlatType, token: str) -> List[_FlatMolecule]:
     return [molecule for molecule in flat_type.molecules if token in molecule.aliases]
+
+
+def _find_scope_groups(
+    flat_type: _FlatType, token: str, parent: str = ""
+) -> List[Tuple[_FlatMolecule, ...]]:
+    allowed_ids = (
+        {id(m) for m in flat_type.molecules if parent in m.aliases}
+        if parent
+        else {id(m) for m in flat_type.molecules}
+    )
+    groups = flat_type.scopes.get(token, [])
+    matched: List[Tuple[_FlatMolecule, ...]] = []
+    seen_keys: Set[Tuple[int, ...]] = set()
+    for group in groups:
+        if group and all(id(m) in allowed_ids for m in group):
+            key = tuple(id(m) for m in group)
+            if key not in seen_keys:
+                seen_keys.add(key)
+                matched.append(group)
+    if matched:
+        return matched
+    # Fallback for molecules whose alias wasn't registered in scopes.
+    mols = [
+        m for m in flat_type.molecules if id(m) in allowed_ids and token in m.aliases
+    ]
+    return [(m,) for m in mols]
+
+
+def _propagate_component_alias(
+    molecule: _FlatMolecule, component: _FlatComponent, alias: str
+) -> None:
+    component.aliases.add(alias)
+    for other in molecule.components:
+        if other.owner_binding_site is component:
+            other.aliases.add(alias)
 
 
 def _apply_component_indexes(
@@ -866,47 +1012,28 @@ def _apply_component_indexes(
         unresolved = []
         progress = False
         for index_id, (component, parent) in pending:
-            if parent:
-                molecule_matches = [
-                    molecule
-                    for molecule in flat_type.molecules
-                    if parent in molecule.aliases and component in molecule.aliases
-                ]
-                component_matches = _find_components(flat_type, component, parent)
-                match_count = len(molecule_matches) + len(component_matches)
-                if match_count == 1:
-                    if molecule_matches:
-                        molecule_matches[0].aliases.add(index_id)
-                    else:
-                        component_matches[0][1].aliases.add(index_id)
-                    progress = True
-                elif match_count > 1 and warnings is not None:
-                    warnings.append(
-                        _warning(
-                            f'Multi speciesTypeComponentIndex "{index_id}" in '
-                            f'speciesType "{species_type.id}" is ambiguous for '
-                            f'component "{component}" under parent "{parent}".',
-                            "dropped",
-                        )
-                    )
-                else:
-                    unresolved.append((index_id, component, parent))
-                continue
-            molecule_matches = _find_molecules(flat_type, component)
-            component_matches = _find_components(flat_type, component)
-            match_count = len(molecule_matches) + len(component_matches)
+            group_matches = _find_scope_groups(flat_type, component, parent)
+            component_matches = _find_components(
+                flat_type, component, parent, primary_only=True
+            )
+            match_count = len(group_matches) + len(component_matches)
             if match_count == 1:
-                if molecule_matches:
-                    molecule_matches[0].aliases.add(index_id)
+                if group_matches:
+                    matched_group = group_matches[0]
+                    for molecule in matched_group:
+                        molecule.aliases.add(index_id)
+                    flat_type.scopes.setdefault(index_id, []).append(matched_group)
                 else:
-                    component_matches[0][1].aliases.add(index_id)
+                    matched_mol, matched_comp = component_matches[0]
+                    _propagate_component_alias(matched_mol, matched_comp, index_id)
                 progress = True
             elif match_count > 1 and warnings is not None:
+                scope = f' under parent "{parent}"' if parent else ""
                 warnings.append(
                     _warning(
                         f'Multi speciesTypeComponentIndex "{index_id}" in '
                         f'speciesType "{species_type.id}" is ambiguous for '
-                        f'component "{component}".',
+                        f'component "{component}"{scope}.',
                         "dropped",
                     )
                 )
@@ -934,7 +1061,13 @@ def _apply_component_indexes(
 def _resolve_bond_endpoint(
     species_type: _SpeciesType, flat_type: _FlatType, reference: str
 ) -> Optional[Tuple[_FlatMolecule, _FlatComponent]]:
+    direct = _find_components(flat_type, reference, binding_only=True)
+    if len(direct) == 1:
+        return direct[0]
     component, parent = species_type.component_indexes.get(reference, (reference, ""))
+    found_list = _find_components(flat_type, component, parent, binding_only=True)
+    if len(found_list) == 1:
+        return found_list[0]
     found = _find_component(flat_type, component, parent)
     if found is not None:
         return found
@@ -949,7 +1082,7 @@ def _resolve_bond_endpoint(
         (molecule, candidate)
         for molecule in flat_type.molecules
         for candidate in molecule.components
-        if not parent or parent in molecule.aliases
+        if candidate.is_binding_site and (not parent or parent in molecule.aliases)
     ]
     if len(scoped) == 1:
         return scoped[0]
@@ -960,6 +1093,221 @@ def _bonded_component(flat_type: _FlatType, component: _FlatComponent) -> bool:
     return any(component is endpoint for bond in flat_type.bonds for endpoint in bond)
 
 
+def _compute_anchor_links_by_leaf(
+    types: Dict[str, _SpeciesType],
+) -> Dict[str, List[str]]:
+    """Map leaf atomic speciesTypes to anchor link component labels for anchored composites."""
+
+    def first_leaf_type(type_id: str, stack: Tuple[str, ...] = ()) -> Optional[str]:
+        if type_id in stack or type_id not in types:
+            return None
+        st = types[type_id]
+        children = [
+            inst
+            for inst in st.instances
+            if inst.type_id in types and not types[inst.type_id].is_binding_site
+        ]
+        if not children:
+            return type_id
+        return first_leaf_type(children[0].type_id, stack + (type_id,))
+
+    links: Dict[str, List[str]] = {}
+    for type_id, st in types.items():
+        if st.is_binding_site:
+            continue
+        children = [
+            inst
+            for inst in st.instances
+            if inst.type_id in types and not types[inst.type_id].is_binding_site
+        ]
+        if not children:
+            continue
+        has_direct_features = bool(st.feature_definitions)
+        has_direct_sites = any(
+            inst.type_id in types and types[inst.type_id].is_binding_site
+            for inst in st.instances
+        )
+        if not (has_direct_features or has_direct_sites):
+            continue
+        link_label = f"__in_{_clean(type_id)}"
+        for inst in children:
+            leaf = first_leaf_type(inst.type_id)
+            if leaf and link_label not in links.setdefault(leaf, []):
+                links[leaf].append(link_label)
+    return links
+
+
+def _add_binding_site_to_molecule(
+    molecule: _FlatMolecule,
+    instance: _Instance,
+    target: _SpeciesType,
+    parent_type_id: str,
+    effective_compartment: str,
+    warnings: List[SBMLImportWarning],
+    compartment_references: Optional[Dict[str, Dict[str, str]]],
+    compartment_types: Optional[Dict[str, str]],
+) -> None:
+    """Attach a bindingSiteSpeciesType instance (with 0, 1, or many features) to a molecule."""
+
+    if instance.compartment_reference:
+        resolved = (
+            (compartment_references or {})
+            .get(effective_compartment, {})
+            .get(instance.compartment_reference, "")
+        )
+        if not resolved:
+            warnings.append(
+                _warning(
+                    f'Multi speciesTypeInstance "{instance.id}" references '
+                    f'unknown compartmentReference "{instance.compartment_reference}".',
+                    "dropped",
+                )
+            )
+    target_compartment = target.compartment
+    if (
+        not instance.compartment_reference
+        and effective_compartment
+        and target_compartment
+        and effective_compartment != target_compartment
+        and (compartment_types or {}).get(effective_compartment) != target_compartment
+    ):
+        warnings.append(
+            _warning(
+                f'Multi binding-site instance "{instance.id}" in '
+                f'speciesType "{parent_type_id}" uses compartment '
+                f'"{target_compartment}" inconsistent with containing '
+                f'compartment "{effective_compartment}" without a '
+                "compartmentReference.",
+                "dropped",
+            )
+        )
+    instance_label = (
+        instance.name
+        if instance.name and instance.name != instance.id
+        else target.name or target.id
+    )
+    label = _clean_pattern_name(instance_label, instance.id or target.id)
+    aliases = {alias for alias in (instance.id, instance.type_id, target.id) if alias}
+    has_repeated_or_multi_features = len(target.feature_definitions) > 1 or any(
+        occurrence > 1 for occurrence in target.feature_occurs.values()
+    )
+    if not has_repeated_or_multi_features:
+        states: List[str] = []
+        feature_ids = set()
+        feature_values: Dict[str, Dict[str, str]] = {}
+        for feature_id, _feature_name, values, _occurrence in _feature_defs(target):
+            feature_ids.add(feature_id)
+            feature_values[feature_id] = dict(target.feature_definitions[feature_id][1])
+            states.extend(_clean(value) for value in values)
+        molecule.components.append(
+            _FlatComponent(
+                label=label,
+                aliases=aliases,
+                binding_site_type_id=instance.type_id,
+                states=list(dict.fromkeys(states)),
+                feature_ids=feature_ids,
+                feature_values=feature_values,
+                is_binding_site=True,
+            )
+        )
+        return
+
+    # Lossless lowering for bindingSiteSpeciesType with >1 independent
+    # speciesFeatureTypes or occur > 1: keep one binding-site component for the
+    # 1-to-1 bond, plus auxiliary state-only components attached to the same
+    # molecule. Repeated occurrences share the same component label so BNGL
+    # preserves exact multiset symmetry and statistical factors.
+    site_comp = _FlatComponent(
+        label=label,
+        aliases=set(aliases),
+        binding_site_type_id=instance.type_id,
+        states=[],
+        feature_ids=set(),
+        feature_values={},
+        is_binding_site=True,
+    )
+    molecule.components.append(site_comp)
+    existing_aux_labels = {
+        comp.label
+        for comp in molecule.components
+        if comp.owner_binding_site is not None
+    }
+    for feature_id, (raw_feature_name, value_map) in target.feature_definitions.items():
+        occur = target.feature_occurs.get(feature_id, 1)
+        clean_fname = _clean(raw_feature_name) or _clean(feature_id)
+        aux_label = f"{label}__{clean_fname}"
+        if aux_label in existing_aux_labels:
+            aux_label = f"{_clean(instance.id)}__{clean_fname}"
+        existing_aux_labels.add(aux_label)
+        cleaned_states = list(dict.fromkeys(_clean(v) for v in value_map.values()))
+        for _occ in range(occur):
+            molecule.components.append(
+                _FlatComponent(
+                    label=aux_label,
+                    aliases=set(aliases),
+                    binding_site_type_id="",
+                    states=list(cleaned_states),
+                    feature_ids={feature_id},
+                    feature_values={feature_id: dict(value_map)},
+                    is_binding_site=False,
+                    owner_binding_site=site_comp,
+                )
+            )
+
+
+def _attach_species_type_bonds(
+    species_type: _SpeciesType,
+    flat: _FlatType,
+    warnings: List[SBMLImportWarning],
+) -> None:
+    type_id = species_type.id
+    for site1, site2 in species_type.bonds:
+        endpoint1 = _resolve_bond_endpoint(species_type, flat, site1)
+        endpoint2 = _resolve_bond_endpoint(species_type, flat, site2)
+        if endpoint1 is None or endpoint2 is None:
+            warnings.append(
+                _warning(
+                    f'Multi bond in speciesType "{type_id}" could not resolve '
+                    f'its endpoints "{site1}" and "{site2}".',
+                    "dropped",
+                )
+            )
+            continue
+        if not endpoint1[1].is_binding_site or not endpoint2[1].is_binding_site:
+            warnings.append(
+                _warning(
+                    f'Multi bond in speciesType "{type_id}" must connect two '
+                    "binding-site components.",
+                    "dropped",
+                )
+            )
+            continue
+        if endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id:
+            warnings.append(
+                _warning(
+                    f'Multi bond in speciesType "{type_id}" uses endpoints '
+                    "of the same type; a bond must "
+                    "connect different BindingSiteSpeciesType objects.",
+                    "dropped",
+                )
+            )
+            continue
+        if (
+            endpoint1[1] is endpoint2[1]
+            or _bonded_component(flat, endpoint1[1])
+            or _bonded_component(flat, endpoint2[1])
+        ):
+            warnings.append(
+                _warning(
+                    f'Multi bond in speciesType "{type_id}" reuses a binding '
+                    "site; Multi bonds are one-to-one.",
+                    "dropped",
+                )
+            )
+            continue
+        flat.bonds.append((endpoint1[1], endpoint2[1]))
+
+
 def _flatten_type(
     type_id: str,
     types: Dict[str, _SpeciesType],
@@ -968,8 +1316,10 @@ def _flatten_type(
     compartment_references: Optional[Dict[str, Dict[str, str]]] = None,
     inherited_compartment: str = "",
     compartment_types: Optional[Dict[str, str]] = None,
+    compartment_path: Tuple[str, ...] = (),
+    anchor_links_by_leaf: Optional[Dict[str, List[str]]] = None,
 ) -> _FlatType:
-    """Resolve any Multi speciesType hierarchy into BNGL molecules."""
+    """Resolve any acyclic Multi speciesType hierarchy into BNGL molecules."""
 
     if type_id not in types:
         warnings.append(
@@ -988,40 +1338,32 @@ def _flatten_type(
 
     species_type = types[type_id]
     effective_compartment = inherited_compartment or species_type.compartment
+    current_comp_path = compartment_path
+    if effective_compartment and (
+        not current_comp_path or current_comp_path[-1] != effective_compartment
+    ):
+        current_comp_path = current_comp_path + (effective_compartment,)
     children = [
         instance
         for instance in species_type.instances
         if instance.type_id in types and not types[instance.type_id].is_binding_site
     ]
-    flat = _FlatType()
-    if children and species_type.feature_definitions:
-        warnings.append(
-            _warning(
-                f'Multi composite speciesType "{type_id}" defines its own '
-                "speciesFeatureTypes; the feature owner is ambiguous across "
-                "nested BNGL molecules.",
-                "dropped",
-            )
-        )
-    if children and any(
-        instance.type_id in types and types[instance.type_id].is_binding_site
+    direct_binding_instances = [
+        instance
         for instance in species_type.instances
-    ):
-        warnings.append(
-            _warning(
-                f'Multi composite speciesType "{type_id}" contains direct '
-                "binding-site instances; SBML Multi does not identify a unique "
-                "BNGL molecule owner for those sites.",
-                "dropped",
-            )
-        )
+        if instance.type_id in types and types[instance.type_id].is_binding_site
+    ]
+    flat = _FlatType()
     if not children:
         molecule = _FlatMolecule(
             name=_clean_pattern_name(species_type.name, species_type.id),
             aliases={species_type.id},
             compartment=effective_compartment,
+            compartment_path=current_comp_path,
         )
-        for feature_id, feature_name, values, occurrence in _feature_defs(species_type):
+        for feature_id, feature_name, values, _occurrence in _feature_defs(
+            species_type
+        ):
             molecule.components.append(
                 _FlatComponent(
                     label=_clean(feature_name),
@@ -1048,146 +1390,44 @@ def _flatten_type(
                 continue
             if not target.is_binding_site:
                 continue
-            if any(occurrence > 1 for occurrence in target.feature_occurs.values()):
-                warnings.append(
-                    _warning(
-                        f'Multi binding-site speciesType "{instance.type_id}" '
-                        "contains repeated speciesFeature occurrences; a BNGL "
-                        "binding-site component cannot represent those nested "
-                        "feature instances without changing the component graph.",
-                        "dropped",
-                    )
-                )
-            if len(target.feature_definitions) > 1:
-                warnings.append(
-                    _warning(
-                        f'Multi binding-site speciesType "{instance.type_id}" '
-                        "defines multiple speciesFeatureTypes; a BNGL "
-                        "binding-site component holds at most one state domain "
-                        "and cannot represent independent features on one site.",
-                        "dropped",
-                    )
-                )
-            if instance.compartment_reference:
-                resolved = (
-                    (compartment_references or {})
-                    .get(effective_compartment, {})
-                    .get(instance.compartment_reference, "")
-                )
-                if not resolved:
-                    warnings.append(
-                        _warning(
-                            f'Multi speciesTypeInstance "{instance.id}" references '
-                            f'unknown compartmentReference "{instance.compartment_reference}".',
-                            "dropped",
-                        )
-                    )
-                # SBML Multi L3V1 3.6/3.11.3: a compartmentReference declared by
-                # the containing compartment names a sub-compartment of that
-                # composite.  A binding-site instance placed there is part of the
-                # BNGL molecule in its parent compartment; the placement is
-                # retained in ``binding_site_placements`` by the package parser.
-                # An unknown reference is still refused above.
-            target_compartment = target.compartment
-            if (
-                not instance.compartment_reference
-                and effective_compartment
-                and target_compartment
-                and effective_compartment != target_compartment
-                and (compartment_types or {}).get(effective_compartment)
-                != target_compartment
-            ):
-                warnings.append(
-                    _warning(
-                        f'Multi binding-site instance "{instance.id}" in '
-                        f'speciesType "{type_id}" uses compartment '
-                        f'"{target_compartment}" inconsistent with containing '
-                        f'compartment "{effective_compartment}" without a '
-                        "compartmentReference.",
-                        "dropped",
-                    )
-                )
-            instance_label = (
-                instance.name
-                if instance.name and instance.name != instance.id
-                else target.name or target.id
+            _add_binding_site_to_molecule(
+                molecule,
+                instance,
+                target,
+                type_id,
+                effective_compartment,
+                warnings,
+                compartment_references,
+                compartment_types,
             )
-            label = _clean_pattern_name(instance_label, instance.id or target.id)
-            aliases = {
-                instance.id,
-                instance.type_id,
-                target.id,
-            }
-            states: List[str] = []
-            feature_ids = set()
-            feature_values: Dict[str, Dict[str, str]] = {}
-            for feature_id, feature_name, values, occurrence in _feature_defs(target):
-                feature_ids.add(feature_id)
-                feature_values[feature_id] = dict(
-                    target.feature_definitions[feature_id][1]
-                )
-                states.extend(_clean(value) for value in values)
+        for link_label in (anchor_links_by_leaf or {}).get(type_id, ()):
             molecule.components.append(
                 _FlatComponent(
-                    label=label,
-                    aliases={alias for alias in aliases if alias},
-                    binding_site_type_id=instance.type_id,
-                    states=list(dict.fromkeys(states)),
-                    feature_ids=feature_ids,
-                    feature_values=feature_values,
-                    is_binding_site=True,
+                    label=link_label,
+                    aliases=set(),
+                    is_binding_site=False,
+                    is_anchor_link=True,
                 )
             )
         flat.molecules.append(molecule)
+        flat.scopes.setdefault(type_id, []).append((molecule,))
         _apply_component_indexes(species_type, flat, warnings)
-        for site1, site2 in species_type.bonds:
-            endpoint1 = _resolve_bond_endpoint(species_type, flat, site1)
-            endpoint2 = _resolve_bond_endpoint(species_type, flat, site2)
-            if endpoint1 is None or endpoint2 is None:
-                warnings.append(
-                    _warning(
-                        f'Multi bond in speciesType "{type_id}" could not resolve '
-                        f'its endpoints "{site1}" and "{site2}".',
-                        "dropped",
-                    )
-                )
-                continue
-            if not endpoint1[1].is_binding_site or not endpoint2[1].is_binding_site:
-                warnings.append(
-                    _warning(
-                        f'Multi bond in speciesType "{type_id}" must connect two '
-                        "binding-site components.",
-                        "dropped",
-                    )
-                )
-                continue
-            if endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id:
-                warnings.append(
-                    _warning(
-                        f'Multi bond in speciesType "{type_id}" uses endpoints '
-                        "of the same type; a bond must "
-                        "connect different BindingSiteSpeciesType objects.",
-                        "dropped",
-                    )
-                )
-                continue
-            if (
-                endpoint1[1] is endpoint2[1]
-                or _bonded_component(flat, endpoint1[1])
-                or _bonded_component(flat, endpoint2[1])
-            ):
-                warnings.append(
-                    _warning(
-                        f'Multi bond in speciesType "{type_id}" reuses a binding '
-                        "site; Multi bonds are one-to-one.",
-                        "dropped",
-                    )
-                )
-                continue
-            flat.bonds.append((endpoint1[1], endpoint2[1]))
+        _attach_species_type_bonds(species_type, flat, warnings)
         return flat
 
-    for instance in children:
+    child_results: List[Tuple[_Instance, _FlatType]] = []
+    for instance in species_type.instances:
+        if instance.type_id not in types:
+            warnings.append(
+                _warning(
+                    f'SBML Multi speciesTypeInstance "{instance.id}" '
+                    f'references undefined speciesType "{instance.type_id}".',
+                    "dropped",
+                )
+            )
+            continue
+        if types[instance.type_id].is_binding_site:
+            continue
         instance_compartment = ""
         if instance.compartment_reference:
             instance_compartment = (
@@ -1244,6 +1484,8 @@ def _flatten_type(
             compartment_references,
             target_compartment,
             compartment_types,
+            current_comp_path,
+            anchor_links_by_leaf,
         )
         for molecule in child.molecules:
             molecule.aliases.update(
@@ -1252,60 +1494,97 @@ def _flatten_type(
                     instance.type_id,
                 }
             )
+        for alias, groups in child.scopes.items():
+            flat.scopes.setdefault(alias, []).extend(groups)
+        if child.molecules:
+            child_tuple = tuple(child.molecules)
+            flat.scopes.setdefault(instance.id, []).append(child_tuple)
+            flat.scopes.setdefault(instance.type_id, []).append(child_tuple)
         flat.molecules.extend(child.molecules)
         flat.bonds.extend(child.bonds)
+        child_results.append((instance, child))
+
+    # Composite speciesType owning direct speciesFeatureTypes or direct
+    # bindingSiteSpeciesType instances: attach a canonical symmetry-preserving
+    # anchor molecule bonded to each direct child's root leaf molecule.
+    if species_type.feature_definitions or direct_binding_instances:
+        anchor = _FlatMolecule(
+            name=f"__multi_comp_{_clean(type_id)}",
+            aliases={type_id},
+            compartment=effective_compartment,
+            compartment_path=current_comp_path,
+            is_anchor=True,
+        )
+        for feature_id, feature_name, values, _occurrence in _feature_defs(
+            species_type
+        ):
+            anchor.components.append(
+                _FlatComponent(
+                    label=_clean(feature_name),
+                    aliases=set(),
+                    states=[_clean(value) for value in values],
+                    feature_ids={feature_id},
+                    feature_values={
+                        feature_id: dict(
+                            species_type.feature_definitions[feature_id][1]
+                        )
+                    },
+                )
+            )
+        for instance in direct_binding_instances:
+            target = types[instance.type_id]
+            _add_binding_site_to_molecule(
+                anchor,
+                instance,
+                target,
+                type_id,
+                effective_compartment,
+                warnings,
+                compartment_references,
+                compartment_types,
+            )
+        link_label = f"__in_{_clean(type_id)}"
+        for instance, child in child_results:
+            if not child.molecules:
+                continue
+            child_root = child.molecules[0]
+            child_link = next(
+                (
+                    comp
+                    for comp in child_root.components
+                    if comp.is_anchor_link
+                    and comp.label == link_label
+                    and not _bonded_component(flat, comp)
+                ),
+                None,
+            )
+            if child_link is None:
+                child_link = _FlatComponent(
+                    label=link_label,
+                    aliases=set(),
+                    is_binding_site=False,
+                    is_anchor_link=True,
+                )
+                child_root.components.append(child_link)
+            anchor_link = _FlatComponent(
+                label=f"__child_{_clean(instance.type_id)}",
+                aliases=set(),
+                is_binding_site=False,
+                is_anchor_link=True,
+            )
+            anchor.components.append(anchor_link)
+            flat.bonds.append((anchor_link, child_link))
+        flat.molecules.append(anchor)
 
     # The containing SpeciesType itself is a valid identifying parent for
     # component references.  Give flattened molecules that scope alias before
     # resolving local indexes.
     for molecule in flat.molecules:
         molecule.aliases.add(type_id)
+    if flat.molecules:
+        flat.scopes.setdefault(type_id, []).append(tuple(flat.molecules))
     _apply_component_indexes(species_type, flat, warnings)
-    for site1, site2 in species_type.bonds:
-        endpoint1 = _resolve_bond_endpoint(species_type, flat, site1)
-        endpoint2 = _resolve_bond_endpoint(species_type, flat, site2)
-        if endpoint1 is None or endpoint2 is None:
-            warnings.append(
-                _warning(
-                    f'Multi bond in speciesType "{type_id}" could not resolve '
-                    f'its endpoints "{site1}" and "{site2}".',
-                    "dropped",
-                )
-            )
-            continue
-        if not endpoint1[1].is_binding_site or not endpoint2[1].is_binding_site:
-            warnings.append(
-                _warning(
-                    f'Multi bond in speciesType "{type_id}" must connect two '
-                    "binding-site components.",
-                    "dropped",
-                )
-            )
-            continue
-        if endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id:
-            warnings.append(
-                _warning(
-                    f'Multi bond in speciesType "{type_id}" uses endpoints '
-                    "of the same type; a bond must "
-                    "connect different BindingSiteSpeciesType objects.",
-                    "dropped",
-                )
-            )
-            continue
-        if (
-            endpoint1[1] is endpoint2[1]
-            or _bonded_component(flat, endpoint1[1])
-            or _bonded_component(flat, endpoint2[1])
-        ):
-            warnings.append(
-                _warning(
-                    f'Multi bond in speciesType "{type_id}" reuses a binding '
-                    "site; Multi bonds are one-to-one.",
-                    "dropped",
-                )
-            )
-            continue
-        flat.bonds.append((endpoint1[1], endpoint2[1]))
+    _attach_species_type_bonds(species_type, flat, warnings)
     return flat
 
 
@@ -1366,6 +1645,262 @@ def _source_pattern_is_usable(source: str, flat: _FlatType) -> bool:
     )
 
 
+_MAX_DNF_PATTERNS = 256
+
+
+class _DNFExpansionLimit(Exception):
+    pass
+
+
+def _bipartite_satisfiable(
+    slot_values: Sequence[str],
+    requirements: Sequence[Tuple[int, frozenset]],
+) -> bool:
+    """Return whether disjoint subsets of *slot_values* satisfy every (occur, allowed)."""
+
+    expanded_sets: List[frozenset] = []
+    for occur, allowed in requirements:
+        for _ in range(occur):
+            expanded_sets.append(allowed)
+    if len(expanded_sets) > len(slot_values):
+        return False
+    # Backtracking bipartite matching (slot count is small, typically <= 8).
+    n_req = len(expanded_sets)
+    used = [False] * len(slot_values)
+
+    def match(req_index: int) -> bool:
+        if req_index == n_req:
+            return True
+        allowed = expanded_sets[req_index]
+        for slot_index, value in enumerate(slot_values):
+            if not used[slot_index] and value in allowed:
+                used[slot_index] = True
+                if match(req_index + 1):
+                    return True
+                used[slot_index] = False
+        return False
+
+    return match(0)
+
+
+def _solve_orthogonal_dnf(
+    slots: List[Tuple[int, int]],
+    domains: Dict[Tuple[int, int], Tuple[str, ...]],
+    clauses: List[Tuple[str, List[Dict[str, Any]]]],
+) -> List[Dict[Tuple[int, int], str]]:
+    """Compute a pairwise-disjoint (orthogonal) DNF covering all satisfying states."""
+
+    def eval_atom(
+        atom: Dict[str, Any], assignment: Dict[Tuple[int, int], str]
+    ) -> Optional[bool]:
+        candidates: Tuple[Tuple[int, int], ...] = atom["targets"]
+        occur: int = atom["occur"]
+        allowed: frozenset = atom["allowed"]
+        definitely_in = sum(
+            1 for pos in candidates if pos in assignment and assignment[pos] in allowed
+        )
+        unassigned = sum(1 for pos in candidates if pos not in assignment)
+        if definitely_in >= occur:
+            return True
+        if definitely_in + unassigned < occur:
+            return False
+        return None
+
+    def eval_and_atoms(
+        atoms: List[Dict[str, Any]], assignment: Dict[Tuple[int, int], str]
+    ) -> Optional[bool]:
+        # Group atoms that share the same candidate slot tuple so multiple
+        # sibling speciesFeatures on an occur>1 feature consume disjoint slots.
+        grouped: Dict[Tuple[Tuple[int, int], ...], List[Dict[str, Any]]] = {}
+        for atom in atoms:
+            grouped.setdefault(atom["targets"], []).append(atom)
+        undecided = False
+        for target_tuple, group in grouped.items():
+            if len(group) == 1:
+                value = eval_atom(group[0], assignment)
+                if value is False:
+                    return False
+                if value is None:
+                    undecided = True
+                continue
+            # Multiple ANDed atoms on the same multi-occurrence slot group.
+            for atom in group:
+                if eval_atom(atom, assignment) is False:
+                    return False
+            if all(pos in assignment for pos in target_tuple):
+                slot_vals = [assignment[pos] for pos in target_tuple]
+                reqs = [(atom["occur"], atom["allowed"]) for atom in group]
+                if not _bipartite_satisfiable(slot_vals, reqs):
+                    return False
+            else:
+                undecided = True
+        return None if undecided else True
+
+    def eval_clause(
+        kind: str, atoms: List[Dict[str, Any]], assignment: Dict[Tuple[int, int], str]
+    ) -> Optional[bool]:
+        if kind == "and":
+            return eval_and_atoms(atoms, assignment)
+        if kind == "or":
+            undecided = False
+            for atom in atoms:
+                value = eval_atom(atom, assignment)
+                if value is True:
+                    return True
+                if value is None:
+                    undecided = True
+            return None if undecided else False
+        if kind == "not":
+            # SBML Multi §3.17.2: relation="not" on >=2 children forbids all
+            # child features from holding simultaneously: NOT(F1 AND ... AND Fk).
+            inner = eval_and_atoms(atoms, assignment)
+            return None if inner is None else (not inner)
+        return False
+
+    # Merge top-level single-atom / "and" clauses so repeated occur>1 siblings
+    # share one disjoint-slot check.
+    top_and_atoms: List[Dict[str, Any]] = []
+    other_clauses: List[Tuple[str, List[Dict[str, Any]]]] = []
+    for kind, atoms in clauses:
+        if kind == "and":
+            top_and_atoms.extend(atoms)
+        else:
+            other_clauses.append((kind, atoms))
+
+    def eval_all(assignment: Dict[Tuple[int, int], str]) -> Optional[bool]:
+        undecided = False
+        if top_and_atoms:
+            value = eval_and_atoms(top_and_atoms, assignment)
+            if value is False:
+                return False
+            if value is None:
+                undecided = True
+        for kind, atoms in other_clauses:
+            value = eval_clause(kind, atoms, assignment)
+            if value is False:
+                return False
+            if value is None:
+                undecided = True
+        return None if undecided else True
+
+    emitted_count = 0
+
+    def solve(
+        index: int, assignment: Dict[Tuple[int, int], str]
+    ) -> List[Dict[Tuple[int, int], str]]:
+        nonlocal emitted_count
+        status = eval_all(assignment)
+        if status is True:
+            emitted_count += 1
+            if emitted_count > _MAX_DNF_PATTERNS:
+                raise _DNFExpansionLimit()
+            return [dict(assignment)]
+        if status is False or index >= len(slots):
+            return []
+        pos = slots[index]
+        domain = domains[pos]
+        if not domain:
+            return []
+        per_value: List[List[Dict[Tuple[int, int], str]]] = []
+        for value in domain:
+            assignment[pos] = value
+            per_value.append(solve(index + 1, assignment))
+        del assignment[pos]
+        # Collapse don't-care slot when every domain value produces the exact
+        # same set of downstream partial assignments.
+        stripped_sets = [
+            tuple(
+                sorted(
+                    tuple(sorted((k, v) for k, v in branch.items() if k != pos))
+                    for branch in branches
+                )
+            )
+            for branches in per_value
+        ]
+        if stripped_sets and all(item == stripped_sets[0] for item in stripped_sets):
+            emitted_count -= max(0, (len(per_value) - 1) * len(per_value[0]))
+            return [
+                {k: v for k, v in branch.items() if k != pos} for branch in per_value[0]
+            ]
+        combined: List[Dict[Tuple[int, int], str]] = []
+        for branches in per_value:
+            combined.extend(branches)
+        return combined
+
+    return solve(0, {})
+
+
+def _specialize_flat_compartments(
+    flat: _FlatType,
+    species_id: str,
+    type_compartment: str,
+    species_compartment: str,
+    compartment_references: Optional[Dict[str, Dict[str, str]]],
+    compartment_types: Optional[Dict[str, str]],
+    compartment_is_type: Optional[Dict[str, str]],
+    warnings: List[SBMLImportWarning],
+) -> None:
+    """Resolve compartment types along arbitrary-depth compartmentReference paths."""
+
+    if not species_compartment or type_compartment == species_compartment:
+        return
+    if not type_compartment:
+        for molecule in flat.molecules:
+            if not molecule.compartment:
+                molecule.compartment = species_compartment
+        return
+    if (compartment_types or {}).get(species_compartment) != type_compartment:
+        return
+
+    for molecule in flat.molecules:
+        if molecule.compartment == type_compartment:
+            molecule.compartment = species_compartment
+            continue
+        if (
+            not molecule.compartment
+            or (compartment_is_type or {}).get(molecule.compartment) != "true"
+        ):
+            continue
+        path = list(molecule.compartment_path)
+        if not path:
+            path = [type_compartment, molecule.compartment]
+        elif path[0] != type_compartment:
+            path = [type_compartment] + path
+        current = species_compartment
+        failed = False
+        for step in path[1:]:
+            if not step or step == current:
+                continue
+            if (compartment_is_type or {}).get(step) != "true":
+                current = step
+                continue
+            refs = (compartment_references or {}).get(current, {})
+            matching_targets = sorted(
+                {
+                    target_comp
+                    for target_comp in refs.values()
+                    if (compartment_types or {}).get(target_comp) == step
+                }
+            )
+            if len(matching_targets) == 1:
+                current = matching_targets[0]
+            else:
+                warnings.append(
+                    _warning(
+                        f'Multi species "{species_id}" '
+                        f'in compartment "{species_compartment}" cannot '
+                        "unambiguously specialize nested compartmentType "
+                        f'"{step}" '
+                        f"({len(matching_targets)} concrete match(es)).",
+                        "dropped",
+                    )
+                )
+                failed = True
+                break
+        if not failed:
+            molecule.compartment = current
+
+
 def _species_pattern_from_multi(
     species: Any,
     type_id: str,
@@ -1382,6 +1917,13 @@ def _species_pattern_from_multi(
     species_explicit_binding_positions: Optional[
         Dict[str, List[Tuple[int, int]]]
     ] = None,
+    species_pattern_variants: Optional[Dict[str, List[str]]] = None,
+    species_variant_component_positions: Optional[
+        Dict[str, List[List[Tuple[int, int]]]]
+    ] = None,
+    anchor_links_by_leaf: Optional[Dict[str, List[str]]] = None,
+    force_expand_feature_ids: Optional[Set[str]] = None,
+    out_branch_assignments: Optional[List[Dict[Tuple[int, int], str]]] = None,
 ) -> Optional[str]:
     flat = _flatten_type(
         type_id,
@@ -1389,9 +1931,11 @@ def _species_pattern_from_multi(
         warnings,
         compartment_references=compartment_references,
         compartment_types=compartment_types,
+        anchor_links_by_leaf=anchor_links_by_leaf,
     )
     if not flat.molecules:
         return None
+    species_id = _attribute(species, "id")
     # Binding status belongs to each core Species, not its reusable
     # SpeciesType declaration.  An outward site with no explicit status is
     # unconstrained in this species; setting that here keeps it out of
@@ -1402,69 +1946,49 @@ def _species_pattern_from_multi(
             if component.is_binding_site and id(component) not in bonded_components:
                 component.binding_status = "either"
     type_compartment = types[type_id].compartment
-    if species_compartment and type_compartment != species_compartment:
-        if not type_compartment:
-            for molecule in flat.molecules:
-                if not molecule.compartment:
-                    molecule.compartment = species_compartment
-        elif (compartment_types or {}).get(species_compartment) == type_compartment:
-            concrete_refs = (compartment_references or {}).get(species_compartment, {})
-            for molecule in flat.molecules:
-                if molecule.compartment == type_compartment:
-                    molecule.compartment = species_compartment
-                elif (
-                    molecule.compartment
-                    and (compartment_is_type or {}).get(molecule.compartment) == "true"
-                ):
-                    matching_targets = sorted(
-                        {
-                            target_comp
-                            for target_comp in concrete_refs.values()
-                            if (compartment_types or {}).get(target_comp)
-                            == molecule.compartment
-                        }
-                    )
-                    if len(matching_targets) == 1:
-                        molecule.compartment = matching_targets[0]
-                    else:
-                        warnings.append(
-                            _warning(
-                                f'Multi species "{_attribute(species, "id")}" '
-                                f'in compartment "{species_compartment}" cannot '
-                                "unambiguously specialize nested compartmentType "
-                                f'"{molecule.compartment}" '
-                                f"({len(matching_targets)} concrete match(es)).",
-                                "dropped",
-                            )
-                        )
-    feature_entries: List[Tuple[Any, str]] = []
+    _specialize_flat_compartments(
+        flat,
+        species_id,
+        type_compartment,
+        species_compartment,
+        compartment_references,
+        compartment_types,
+        compartment_is_type,
+        warnings,
+    )
+
+    # Parse listOfSpeciesFeatures into structured logical clauses.
+    raw_clauses: List[Tuple[str, List[Tuple[Any, str]]]] = []
     feature_parent = _first_child(species, "listOfSpeciesFeatures", namespace)
     for child in list(feature_parent) if feature_parent is not None else []:
         if (
             _local_name(child.tag) == "speciesFeature"
             and _namespace(child.tag) == namespace
         ):
-            feature_entries.append((child, ""))
+            raw_clauses.append(("and", [(child, "")]))
         elif (
             _local_name(child.tag) == "subListOfSpeciesFeatures"
             and _namespace(child.tag) == namespace
         ):
             relation = _attribute(child, "relation", "").lower()
-            if relation == "and":
-                inherited_component = _attribute(child, "component")
-                for nested in _children(child, "speciesFeature", namespace):
-                    feature_entries.append((nested, inherited_component))
+            inherited_component = _attribute(child, "component")
+            nested = _children(child, "speciesFeature", namespace)
+            if relation in {"and", "or", "not"}:
+                raw_clauses.append(
+                    (relation, [(feat, inherited_component) for feat in nested])
+                )
             else:
                 warnings.append(
                     _warning(
                         f'SBML subListOfSpeciesFeatures relation "{relation}" '
-                        "cannot be represented by one BNGL pattern.",
+                        "is unsupported.",
                         "dropped",
                     )
                 )
 
-    used_feature_occurrences = set()
-    for feature, inherited_component in feature_entries:
+    def resolve_feature_atom(
+        feature: Any, inherited_component: str
+    ) -> Optional[Dict[str, Any]]:
         feature_id = _attribute(feature, "speciesFeatureType")
         component_token = _attribute(feature, "component") or inherited_component
         raw_occur = _attribute(feature, "occur")
@@ -1480,22 +2004,28 @@ def _species_pattern_from_multi(
                     "dropped",
                 )
             )
-            continue
+            return None
         values_parent = _first_child(feature, "listOfSpeciesFeatureValues", namespace)
         raw_values = [
             _attribute(value, "value")
             for value in _children(values_parent, "speciesFeatureValue", namespace)
         ]
-        targets: List[_FlatComponent] = []
-        for molecule in flat.molecules:
-            for component in molecule.components:
-                if component_token and component_token in component.aliases:
-                    targets.append(component)
-                elif component_token and component_token in molecule.aliases:
-                    if feature_id in component.feature_ids:
-                        targets.append(component)
-                elif not component_token and feature_id in component.feature_ids:
-                    targets.append(component)
+        target_positions: List[Tuple[int, int]] = []
+        target_components: List[_FlatComponent] = []
+        for mol_idx, molecule in enumerate(flat.molecules):
+            for comp_idx, component in enumerate(molecule.components):
+                if feature_id not in component.feature_ids:
+                    continue
+                if component_token:
+                    if (
+                        component_token in component.aliases
+                        or component_token in molecule.aliases
+                    ):
+                        target_positions.append((mol_idx, comp_idx))
+                        target_components.append(component)
+                else:
+                    target_positions.append((mol_idx, comp_idx))
+                    target_components.append(component)
         if not raw_values:
             warnings.append(
                 _warning(
@@ -1504,36 +2034,23 @@ def _species_pattern_from_multi(
                     "dropped",
                 )
             )
-            continue
-
-        available_targets = [
-            target
-            for target in targets
-            if (feature_id, id(target)) not in used_feature_occurrences
-        ]
-        # SpeciesFeature.occur is a count, not an ordinal. Multiple feature
-        # elements therefore consume subsequent repeated instances in the
-        # flattened species type, as in the specification's occur=1 example.
-        if len(available_targets) < occur:
+            return None
+        if len(target_components) < occur:
             warnings.append(
                 _warning(
                     f'Multi speciesFeature "{feature_id}" occur={occur} on '
-                    f'species "{_attribute(species, "id")}" is '
+                    f'species "{species_id}" is '
                     + (
                         "ambiguous or exceeds the remaining feature instances."
-                        if available_targets
+                        if target_components
                         else "not resolvable."
                     ),
                     "dropped",
                 )
             )
-            continue
-        occurrence_targets = available_targets[:occur]
-        used_feature_occurrences.update(
-            (feature_id, id(target)) for target in occurrence_targets
-        )
-        value_labels = occurrence_targets[0].feature_values.get(feature_id, {})
-        values = []
+            return None
+        value_labels = target_components[0].feature_values.get(feature_id, {})
+        values: List[str] = []
         for raw_value in raw_values:
             if raw_value not in value_labels:
                 warnings.append(
@@ -1546,26 +2063,38 @@ def _species_pattern_from_multi(
                 continue
             values.append(_clean(value_labels[raw_value]))
         if not values:
-            continue
-        # Multi §3.18.5 gives these values OR semantics. Listing the complete
-        # value domain imposes no state constraint for any valid occur count,
-        # matching an omitted feature and BNGL's state-less site pattern.
+            return None
         unique_values = list(dict.fromkeys(values))
         full_domain = bool(value_labels) and set(raw_values) == set(value_labels)
-        if len(unique_values) == 1:
-            for target in occurrence_targets:
-                target.active_state = unique_values[0]
-        elif len(unique_values) > 1 and not full_domain:
-            warnings.append(
-                _warning(
-                    f'Multi speciesFeature "{feature_id}" has multiple values; '
-                    "a single BNGL state cannot represent this value set.",
-                    "dropped",
-                )
-            )
+        return {
+            "feature_id": feature_id,
+            "targets": tuple(target_positions),
+            "components": target_components,
+            "occur": occur,
+            "unique_values": unique_values,
+            "allowed": frozenset(unique_values),
+            "full_domain": full_domain,
+        }
 
+    resolved_clauses: List[Tuple[str, List[Dict[str, Any]]]] = []
+    needs_dnf = False
+    for relation, entries in raw_clauses:
+        atoms: List[Dict[str, Any]] = []
+        for feature, inherited_component in entries:
+            atom = resolve_feature_atom(feature, inherited_component)
+            if atom is not None:
+                atoms.append(atom)
+                if len(atom["unique_values"]) > 1 and not atom["full_domain"]:
+                    needs_dnf = True
+        if relation in {"or", "not"}:
+            needs_dnf = True
+        if atoms:
+            resolved_clauses.append((relation, atoms))
+
+    # Apply outwardBindingSite annotations before DNF cloning so every DNF
+    # branch inherits exact outward binding constraints.
     explicit_binding_positions: List[Tuple[int, int]] = []
-    explicit_either_components = set()
+    explicit_either_positions: Set[Tuple[int, int]] = set()
     seen_outward_components = set()
     seen_outward_targets = set()
     for outward in _children(
@@ -1579,7 +2108,7 @@ def _species_pattern_from_multi(
         if not component_token or not raw_status:
             warnings.append(
                 _warning(
-                    f'Multi outwardBindingSite on species "{_attribute(species, "id")}" '
+                    f'Multi outwardBindingSite on species "{species_id}" '
                     "requires component and bindingStatus attributes.",
                     "dropped",
                 )
@@ -1599,28 +2128,30 @@ def _species_pattern_from_multi(
             warnings.append(
                 _warning(
                     f'Unsupported Multi bindingStatus "{status}" on species '
-                    f'"{_attribute(species, "id")}".',
+                    f'"{species_id}".',
                     "dropped",
                 )
             )
             continue
         targets = [
-            component
-            for molecule in flat.molecules
-            for component in molecule.components
+            (mol_idx, comp_idx, component)
+            for mol_idx, molecule in enumerate(flat.molecules)
+            for comp_idx, component in enumerate(molecule.components)
             if component_token in component.aliases
+            and component.owner_binding_site is None
         ]
         if len(targets) != 1:
             warnings.append(
                 _warning(
                     f'Multi outwardBindingSite component "{component_token}" on '
-                    f'species "{_attribute(species, "id")}" is '
+                    f'species "{species_id}" is '
                     + ("ambiguous." if targets else "not resolvable."),
                     "dropped",
                 )
             )
             continue
-        if not targets[0].is_binding_site:
+        mol_idx, comp_idx, target_comp = targets[0]
+        if not target_comp.is_binding_site:
             warnings.append(
                 _warning(
                     f'Multi outwardBindingSite component "{component_token}" '
@@ -1629,7 +2160,7 @@ def _species_pattern_from_multi(
                 )
             )
             continue
-        if any(targets[0] is endpoint for bond in flat.bonds for endpoint in bond):
+        if any(target_comp is endpoint for bond in flat.bonds for endpoint in bond):
             warnings.append(
                 _warning(
                     f'Multi outwardBindingSite component "{component_token}" is '
@@ -1638,49 +2169,137 @@ def _species_pattern_from_multi(
                 )
             )
             continue
-        if id(targets[0]) in seen_outward_targets:
+        if id(target_comp) in seen_outward_targets:
             warnings.append(
                 _warning(
                     f'Multi outwardBindingSite component "{component_token}" on '
-                    f'species "{_attribute(species, "id")}" refers to a binding '
+                    f'species "{species_id}" refers to a binding '
                     "site already listed via another alias.",
                     "dropped",
                 )
             )
             continue
-        seen_outward_targets.add(id(targets[0]))
-        targets[0].binding_status = status
+        seen_outward_targets.add(id(target_comp))
+        target_comp.binding_status = status
         if status in {"unbound", "bound"}:
-            for molecule_index, molecule in enumerate(flat.molecules):
-                for component_index, component in enumerate(molecule.components):
-                    if component is targets[0]:
-                        explicit_binding_positions.append(
-                            (molecule_index, component_index)
-                        )
-                        break
+            explicit_binding_positions.append((mol_idx, comp_idx))
         elif status == "either":
-            explicit_either_components.add(id(targets[0]))
+            explicit_either_positions.add((mol_idx, comp_idx))
 
-    if abstract_species_ids is not None:
-        bonded = {id(component) for bond in flat.bonds for component in bond}
-        is_abstract = any(
-            component.is_binding_site
-            and id(component) not in bonded
-            and component.binding_status != "unbound"
-            for molecule in flat.molecules
-            for component in molecule.components
-        ) or any(
-            component.feature_ids and not component.active_state
-            for molecule in flat.molecules
-            for component in molecule.components
-        )
-        if is_abstract:
-            abstract_species_ids.add(_attribute(species, "id"))
+    # Build branch assignments: either fast-path single assignment or exact
+    # pairwise-disjoint orthogonal DNF.
+    if force_expand_feature_ids:
+        needs_dnf = True
+    branch_assignments: List[Dict[Tuple[int, int], str]] = []
+    if not needs_dnf:
+        single_assignment: Dict[Tuple[int, int], str] = {}
+        used_feature_occurrences: Set[Tuple[str, Tuple[int, int]]] = set()
+        for _relation, atoms in resolved_clauses:
+            for atom in atoms:
+                feature_id = atom["feature_id"]
+                occur = atom["occur"]
+                available = [
+                    pos
+                    for pos in atom["targets"]
+                    if (feature_id, pos) not in used_feature_occurrences
+                ]
+                if len(available) < occur:
+                    warnings.append(
+                        _warning(
+                            f'Multi speciesFeature "{feature_id}" occur={occur} on '
+                            f'species "{species_id}" is '
+                            + (
+                                "ambiguous or exceeds the remaining feature instances."
+                                if available
+                                else "not resolvable."
+                            ),
+                            "dropped",
+                        )
+                    )
+                    continue
+                chosen = available[:occur]
+                used_feature_occurrences.update((feature_id, pos) for pos in chosen)
+                if len(atom["unique_values"]) == 1:
+                    val = atom["unique_values"][0]
+                    for pos in chosen:
+                        single_assignment[pos] = val
+        branch_assignments = [single_assignment]
+    else:
+        slots: List[Tuple[int, int]] = []
+        domains: Dict[Tuple[int, int], Tuple[str, ...]] = {}
+        for _relation, atoms in resolved_clauses:
+            for atom in atoms:
+                for pos in atom["targets"]:
+                    if pos not in domains:
+                        slots.append(pos)
+                        comp = flat.molecules[pos[0]].components[pos[1]]
+                        domains[pos] = tuple(comp.states)
+        if force_expand_feature_ids:
+            for mol_idx, molecule in enumerate(flat.molecules):
+                for comp_idx, comp in enumerate(molecule.components):
+                    if comp.feature_ids & force_expand_feature_ids:
+                        pos = (mol_idx, comp_idx)
+                        if pos not in domains:
+                            slots.append(pos)
+                            domains[pos] = tuple(comp.states)
+        try:
+            branch_assignments = _solve_orthogonal_dnf(slots, domains, resolved_clauses)
+        except _DNFExpansionLimit:
+            warnings.append(
+                _warning(
+                    f'Multi species "{species_id}" feature disjunction exceeds '
+                    f"the {_MAX_DNF_PATTERNS}-pattern DNF expansion limit.",
+                    "dropped",
+                )
+            )
+            return None
+        if not branch_assignments:
+            warnings.append(
+                _warning(
+                    f'Multi species "{species_id}" feature constraints are '
+                    "unsatisfiable (empty state set).",
+                    "dropped",
+                )
+            )
+            return None
+        if force_expand_feature_ids:
+            forced_slots = [
+                (mol_idx, comp_idx)
+                for mol_idx, molecule in enumerate(flat.molecules)
+                for comp_idx, comp in enumerate(molecule.components)
+                if comp.feature_ids & force_expand_feature_ids
+            ]
+            expanded: List[Dict[Tuple[int, int], str]] = []
+            for branch in branch_assignments:
+                missing = [pos for pos in forced_slots if pos not in branch]
+                if not missing:
+                    expanded.append(branch)
+                    continue
+                queue = [dict(branch)]
+                for pos in missing:
+                    next_queue: List[Dict[Tuple[int, int], str]] = []
+                    for item in queue:
+                        for value in domains.get(pos, ()):
+                            nxt = dict(item)
+                            nxt[pos] = value
+                            next_queue.append(nxt)
+                            if len(next_queue) > _MAX_DNF_PATTERNS:
+                                warnings.append(
+                                    _warning(
+                                        f'Multi species "{species_id}" feature-count '
+                                        f"stratification exceeds {_MAX_DNF_PATTERNS} patterns.",
+                                        "dropped",
+                                    )
+                                )
+                                return None
+                    queue = next_queue
+                expanded.extend(queue)
+            branch_assignments = expanded
+    if out_branch_assignments is not None:
+        out_branch_assignments.clear()
+        out_branch_assignments.extend(branch_assignments)
 
-    # A positive initial pool must denote one fully defined species, rather
-    # than a pattern that still stands for many pools.  Zero-valued pattern
-    # species are common and remain valid templates.  This mirrors Multi
-    # section 3.19 while keeping the BNGL wildcard mapping explicit.
+    # Determine abstractness and positive-initial validity.
     initial_values = [
         _attribute(species, "initialAmount"),
         _attribute(species, "initialConcentration"),
@@ -1693,64 +2312,110 @@ def _species_pattern_from_multi(
             has_positive_initial = has_positive_initial or float(raw_initial) > 0
         except (TypeError, ValueError):
             pass
+
+    multi_branch = len(branch_assignments) > 1
+    first_branch = branch_assignments[0]
+    bonded_ids = {id(endpoint) for bond in flat.bonds for endpoint in bond}
+    has_unconstrained_site = any(
+        component.is_binding_site
+        and id(component) not in bonded_ids
+        and component.binding_status != "unbound"
+        for molecule in flat.molecules
+        for component in molecule.components
+    )
+    has_unconstrained_feature = any(
+        component.feature_ids and (mol_idx, comp_idx) not in first_branch
+        for mol_idx, molecule in enumerate(flat.molecules)
+        for comp_idx, component in enumerate(molecule.components)
+    )
+    is_abstract = multi_branch or has_unconstrained_site or has_unconstrained_feature
+    if abstract_species_ids is not None and is_abstract:
+        abstract_species_ids.add(species_id)
+
     if has_positive_initial:
-        bonded_components = {id(endpoint) for bond in flat.bonds for endpoint in bond}
-        for molecule in flat.molecules:
-            for component in molecule.components:
+        if multi_branch:
+            warnings.append(
+                _warning(
+                    f'Multi species "{species_id}" has a positive initial pool '
+                    "but its feature disjunction matches multiple concrete states "
+                    "(not every speciesFeature occurrence has one value).",
+                    "dropped",
+                )
+            )
+        else:
+            for mol_idx, molecule in enumerate(flat.molecules):
+                for comp_idx, component in enumerate(molecule.components):
+                    if (
+                        component.is_binding_site
+                        and id(component) not in bonded_ids
+                        and component.binding_status != "unbound"
+                    ):
+                        warnings.append(
+                            _warning(
+                                f'Multi species "{species_id}" has a '
+                                "positive initial pool but not all outward binding "
+                                "sites are explicitly unbound.",
+                                "dropped",
+                            )
+                        )
+                    if (
+                        component.feature_ids
+                        and (mol_idx, comp_idx) not in first_branch
+                    ):
+                        warnings.append(
+                            _warning(
+                                f'Multi species "{species_id}" has a '
+                                "positive initial pool but not every speciesFeature "
+                                "occurrence has one value.",
+                                "dropped",
+                            )
+                        )
+
+    rendered_variants: List[str] = []
+    variant_positions: List[List[Tuple[int, int]]] = []
+    for assignment in branch_assignments:
+        branch_flat = _clone_flat_type(flat)
+        for (mol_idx, comp_idx), value in assignment.items():
+            branch_flat.molecules[mol_idx].components[comp_idx].active_state = value
+        branch_bonded = {id(ep) for bond in branch_flat.bonds for ep in bond}
+        retained_positions: List[Tuple[int, int]] = []
+        for mol_idx, molecule in enumerate(branch_flat.molecules):
+            retained: List[_FlatComponent] = []
+            for comp_idx, component in enumerate(molecule.components):
                 if (
                     component.is_binding_site
-                    and id(component) not in bonded_components
-                    and (component.binding_status != "unbound")
+                    and component.binding_status == "either"
+                    and id(component) not in branch_bonded
+                    and (mol_idx, comp_idx) not in explicit_either_positions
+                    and not component.active_state
                 ):
-                    warnings.append(
-                        _warning(
-                            f'Multi species "{_attribute(species, "id")}" has a '
-                            "positive initial pool but not all outward binding "
-                            "sites are explicitly unbound.",
-                            "dropped",
-                        )
-                    )
-                if component.feature_ids and not component.active_state:
-                    warnings.append(
-                        _warning(
-                            f'Multi species "{_attribute(species, "id")}" has a '
-                            "positive initial pool but not every speciesFeature "
-                            "occurrence has one value.",
-                            "dropped",
-                        )
-                    )
-    # An outward binding status of "either" imposes no bond constraint. In a
-    # BNGL pattern, omitting that site preserves the source's don't-care
-    # context; !? instead requires the site to be present in the pattern and
-    # changes reaction automorphisms. Keep explicitly state-constrained sites
-    # and sites participating in an in-species-type bond.
-    species_id = _attribute(species, "id")
-    bonded_components = {id(endpoint) for bond in flat.bonds for endpoint in bond}
-    retained_positions: List[Tuple[int, int]] = []
-    for molecule_index, molecule in enumerate(flat.molecules):
-        retained = []
-        for component_index, component in enumerate(molecule.components):
-            if (
-                component.is_binding_site
-                and component.binding_status == "either"
-                and id(component) not in bonded_components
-                and id(component) not in explicit_either_components
-                and not component.active_state
-            ):
-                continue
-            retained.append(component)
-            retained_positions.append((molecule_index, component_index))
-        molecule.components = retained
+                    continue
+                if (
+                    component.is_anchor_link
+                    and id(component) not in branch_bonded
+                    and is_abstract
+                ):
+                    continue
+                retained.append(component)
+                retained_positions.append((mol_idx, comp_idx))
+            molecule.components = retained
+        rendered_variants.append(_render_flat_type(branch_flat, show_states=False))
+        variant_positions.append(retained_positions)
+
     if species_component_positions is not None:
-        species_component_positions[species_id] = retained_positions
+        species_component_positions[species_id] = variant_positions[0]
+    if species_variant_component_positions is not None:
+        species_variant_component_positions[species_id] = variant_positions
     if species_explicit_binding_positions is not None:
         species_explicit_binding_positions[species_id] = explicit_binding_positions
+    if species_pattern_variants is not None:
+        species_pattern_variants[species_id] = rendered_variants
 
     # Core Species.name is a human-readable label, not a pattern-bearing
     # attribute.  A Multi speciesType is therefore always reconstructed from
     # the package graph and per-species annotations; accepting a parseable
     # name here would silently turn arbitrary labels into executable BNGL.
-    return _render_flat_type(flat, show_states=False)
+    return rendered_variants[0]
 
 
 _MULTI_ELEMENTS = {
@@ -2342,15 +3007,6 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     "dropped",
                 )
             )
-        if relation in {"or", "not"}:
-            warnings.append(
-                _warning(
-                    f"SBML subListOfSpeciesFeatures relation={relation} requires multiple "
-                    "alternative species patterns and is not representable by the "
-                    "single-pattern atomizer contract.",
-                    "dropped",
-                )
-            )
 
     list_types = _first_child(model, "listOfSpeciesTypes", namespace)
     if list_types is None:
@@ -2687,18 +3343,34 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             return types.get(typed_instances[0].type_id)
         if len(typed_instances) > 1:
             return None
-        if token not in owner.component_indexes:
-            return None
-        component, parent = owner.component_indexes[token]
-        scope = owner
-        if parent:
-            scope = resolve_component_scope(owner, parent, seen + (marker,))
-        if scope is None:
-            return None
-        return resolve_component_scope(scope, component, seen + (marker,))
+        if token in owner.component_indexes:
+            component, parent = owner.component_indexes[token]
+            scope = owner
+            if parent:
+                scope = resolve_component_scope(owner, parent, seen + (marker,))
+            if scope is None:
+                return None
+            return resolve_component_scope(scope, component, seen + (marker,))
+        # Search nested non-binding-site sub-types for unambiguous deep matches
+        # (valid in Multi when a deep component has a unique id in scope).
+        nested_matches: List[_SpeciesType] = []
+        for instance in owner.instances:
+            child_type = types.get(instance.type_id)
+            if child_type is None or child_type.is_binding_site:
+                continue
+            resolved = resolve_component_scope(child_type, token, seen + (marker,))
+            if resolved is not None:
+                nested_matches.append(resolved)
+        if len(nested_matches) == 1:
+            return nested_matches[0]
+        return None
 
     def scoped_component_tokens(
-        owner: _SpeciesType, identifying_parent: str = ""
+        owner: _SpeciesType,
+        identifying_parent: str = "",
+        *,
+        include_descendants: bool = False,
+        visited_types: Tuple[str, ...] = (),
     ) -> set:
         """Return component/index ids visible from a Multi component scope."""
 
@@ -2707,11 +3379,21 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             if not identifying_parent
             else resolve_component_scope(owner, identifying_parent)
         )
-        if scope is None:
+        if scope is None or scope.id in visited_types:
             return set()
         tokens = {scope.id} | set(scope.component_indexes)
         for instance in scope.instances:
             tokens.update({instance.id, instance.type_id})
+            if include_descendants:
+                child_type = types.get(instance.type_id)
+                if child_type is not None and not child_type.is_binding_site:
+                    tokens.update(
+                        scoped_component_tokens(
+                            child_type,
+                            include_descendants=True,
+                            visited_types=visited_types + (scope.id,),
+                        )
+                    )
         return tokens
 
     for species_type in types.values():
@@ -2729,7 +3411,11 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             component,
             identifying_parent,
         ) in species_type.component_indexes.items():
-            component_ids = scoped_component_tokens(species_type, identifying_parent)
+            component_ids = scoped_component_tokens(
+                species_type,
+                identifying_parent,
+                include_descendants=not bool(identifying_parent),
+            )
             if component not in component_ids:
                 warnings.append(
                     _warning(
@@ -2739,7 +3425,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                         "dropped",
                     )
                 )
-            parent_ids = scoped_component_tokens(species_type)
+            parent_ids = scoped_component_tokens(species_type, include_descendants=True)
             if identifying_parent and identifying_parent not in parent_ids:
                 warnings.append(
                     _warning(
@@ -3074,8 +3760,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
                 )
 
+    anchor_links_by_leaf = _compute_anchor_links_by_leaf(types)
     type_patterns: Dict[str, str] = {}
-    component_aliases: Dict[str, Dict[str, List[Tuple[str, int, int]]]] = {}
+    component_aliases: Dict[str, Dict[str, List[Tuple[Any, ...]]]] = {}
     molecule_types: List[str] = []
     complex_patterns: List[MultiComplexPattern] = []
     structure_warnings: List[SBMLImportWarning] = []
@@ -3088,6 +3775,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             structure_warnings,
             compartment_references=compartment_references,
             compartment_types=compartment_types,
+            anchor_links_by_leaf=anchor_links_by_leaf,
         )
         if not flat.molecules:
             continue
@@ -3115,6 +3803,13 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         type_patterns[type_id] = rendered
         if _is_complex_type(type_id, types):
             complex_patterns.append(MultiComplexPattern(type_id, rendered))
+            for mol in flat.molecules:
+                if mol.is_anchor:
+                    anchor_decl = _render_flat_type(
+                        _FlatType(molecules=[mol], bonds=[]), show_states=True
+                    ).split("@", 1)[0]
+                    if anchor_decl not in molecule_types:
+                        molecule_types.append(anchor_decl)
         else:
             if rendered not in molecule_types:
                 molecule_types.append(rendered)
@@ -3126,35 +3821,18 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         )
         for species_type in types.values()
     )
-    if deep_hierarchy:
-        # Multi permits arbitrary SpeciesType trees, but BNGL requires an
-        # explicit molecule boundary.  A deep tree (for example,
-        # complex->component->molecule->binding-site) does not provide one
-        # structurally; flattening it would silently merge or split molecules.
-        # Preserve the diagnostic and fail closed for both required and
-        # optional packages rather than manufacturing a different network.
-        return MultiParseResult(
-            present=True,
-            deep=True,
-            warnings=[
-                _warning(
-                    "SBML Multi package uses a multi-layer hierarchy; molecule "
-                    "boundaries cannot be inferred safely, so executable BNGL "
-                    "structures were not reconstructed.",
-                    "dropped" if package_valid else "approximated",
-                )
-            ]
-            + warnings,
-        )
 
     species_patterns: Dict[str, str] = {}
+    species_pattern_variants: Dict[str, List[str]] = {}
     species_component_positions: Dict[str, List[Tuple[int, int]]] = {}
+    species_variant_component_positions: Dict[str, List[List[Tuple[int, int]]]] = {}
     species_explicit_binding_positions: Dict[str, List[Tuple[int, int]]] = {}
     abstract_species_ids: Set[str] = set()
     seed_patterns: List[Tuple[str, str]] = []
     species_type_by_species: Dict[str, str] = {}
     species_compartments: Dict[str, str] = {}
     species_feature_ids_by_species: Dict[str, set] = {}
+    species_feature_details_by_species: Dict[str, Dict[str, Dict[str, Any]]] = {}
     species_parent = _first_child(model, "listOfSpecies")
     initial_assignment_symbols: set = set()
     initial_assignment_parent = _first_child(
@@ -3337,27 +4015,37 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 feature_elements.append((child, ""))
             elif _local_name(child.tag) == "subListOfSpeciesFeatures":
                 inherited_component = _attribute(child, "component")
-                if _attribute(child, "relation", "").lower() == "and":
-                    nested_feature_ids = {
-                        _attribute(feature, "speciesFeatureType")
-                        for feature in _children(child, "speciesFeature", namespace)
-                    }
-                    if not any(
-                        known_occur > 1
-                        for feature_id in nested_feature_ids
-                        for known_occur, _values in [
-                            known_feature_types.get(feature_id, (0, set()))
-                        ]
-                    ):
-                        warnings.append(
-                            _warning(
-                                "SBML subListOfSpeciesFeatures relation=and is "
-                                "only valid when at least one referenced "
-                                "speciesFeatureType has occur>1.",
-                                "dropped",
-                            )
-                        )
+                sub_relation = _attribute(child, "relation", "").lower()
                 nested_features = _children(child, "speciesFeature", namespace)
+                nested_feature_ids = {
+                    _attribute(feature, "speciesFeatureType")
+                    for feature in nested_features
+                }
+                has_occur_gt_1 = any(
+                    known_occur > 1
+                    for feature_id in nested_feature_ids
+                    for known_occur, _values in [
+                        known_feature_types.get(feature_id, (0, set()))
+                    ]
+                )
+                if sub_relation == "and" and not has_occur_gt_1:
+                    warnings.append(
+                        _warning(
+                            "SBML subListOfSpeciesFeatures relation=and is "
+                            "only valid when at least one referenced "
+                            "speciesFeatureType has occur>1.",
+                            "dropped",
+                        )
+                    )
+                elif sub_relation in {"or", "not"} and has_occur_gt_1:
+                    warnings.append(
+                        _warning(
+                            f"SBML subListOfSpeciesFeatures relation={sub_relation} "
+                            "cannot reference a speciesFeatureType with occur>1 "
+                            "(SBML Multi v1.1 §3.17.2).",
+                            "dropped",
+                        )
+                    )
                 feature_elements.extend(
                     (feature, inherited_component) for feature in nested_features
                 )
@@ -3489,6 +4177,16 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                             "dropped",
                         )
                     )
+            if feature_object_id:
+                species_feature_details_by_species.setdefault(species_id, {})[
+                    feature_object_id
+                ] = {
+                    "feature_id": feature_id,
+                    "component": component_token,
+                    "occur": occur,
+                    "max_occur": max_occur,
+                    "values": [_attribute(v, "value") for v in values],
+                }
         seen_outward_ids = set()
         for outward in _children(outward_list, "outwardBindingSite", namespace):
             outward_id = _attribute(outward, "id")
@@ -3518,6 +4216,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             abstract_species_ids=abstract_species_ids,
             species_component_positions=species_component_positions,
             species_explicit_binding_positions=species_explicit_binding_positions,
+            species_pattern_variants=species_pattern_variants,
+            species_variant_component_positions=species_variant_component_positions,
+            anchor_links_by_leaf=anchor_links_by_leaf,
         )
         if pattern:
             species_patterns[species_id] = pattern
@@ -3953,6 +4654,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 )
             )
 
+    species_ref_observables: Dict[Tuple[str, str], Tuple[str, str]] = {}
+    feature_count_specs: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
     math_namespace = "http://www.w3.org/1998/Math/MathML"
     for reaction in (list(reaction_parent) if reaction_parent is not None else []):
         if _local_name(reaction.tag) not in {"reaction", "intraSpeciesReaction"}:
@@ -4065,28 +4768,51 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 and referenced_reference is not None
             ):
                 if content_is_referenced_feature:
-                    warnings.append(
-                        _warning(
-                            f'Reaction "{reaction_id}" MathML ci references '
-                            f'speciesFeature "{content}" through '
-                            "multi:speciesReference; feature-count rate laws "
-                            "are not representable by the BNGL writer.",
-                            "dropped",
+                    detail = species_feature_details_by_species.get(
+                        referenced_species, {}
+                    ).get(content)
+                    if detail is not None:
+                        # Check whether all max_occur slots for this feature on
+                        # referenced_species are accounted for (static count) or
+                        # whether the count can vary across concrete states.
+                        same_feat_details = [
+                            item
+                            for item in species_feature_details_by_species.get(
+                                referenced_species, {}
+                            ).values()
+                            if item["feature_id"] == detail["feature_id"]
+                            and item["component"] == detail["component"]
+                        ]
+                        total_accounted = sum(
+                            item["occur"] for item in same_feat_details
                         )
-                    )
+                        fixed_count = (
+                            detail["occur"]
+                            if total_accounted >= detail["max_occur"]
+                            else None
+                        )
+                        feature_count_specs[
+                            (reaction_id, species_reference, content)
+                        ] = {
+                            **detail,
+                            "species": referenced_species,
+                            "fixed_count": fixed_count,
+                        }
                 elif _namespaced_attribute(
                     referenced_reference, namespace, "compartmentReference"
                 ):
-                    warnings.append(
-                        _warning(
-                            f'Reaction "{reaction_id}" MathML ci uses '
-                            f'multi:speciesReference="{species_reference}" '
-                            "for a sub-compartment species reference; the "
-                            "reference-specific amount is not representable by "
-                            "the BNGL rate-law contract.",
-                            "dropped",
-                        )
+                    comp_ref = _namespaced_attribute(
+                        referenced_reference, namespace, "compartmentReference"
                     )
+                    parent_comp = species_compartments.get(referenced_species, "")
+                    resolved_comp = compartment_references.get(parent_comp, {}).get(
+                        comp_ref, ""
+                    )
+                    if resolved_comp:
+                        species_ref_observables[(reaction_id, species_reference)] = (
+                            referenced_species,
+                            resolved_comp,
+                        )
             if representation == "numericValue" and content in possible_value_owner:
                 numeric_parameter = next(
                     (
@@ -4104,6 +4830,78 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                             "dropped",
                         )
                     )
+
+    # Stratify any species referenced by a dynamic feature-count MathML ci
+    # (occur < max_occur) so every DNF variant carries an exact integer count.
+    dynamic_by_species: Dict[str, Set[str]] = {}
+    for (_rxn_id, _sref, _sf_id), spec in feature_count_specs.items():
+        if spec.get("fixed_count") is None:
+            dynamic_by_species.setdefault(spec["species"], set()).add(
+                spec["feature_id"]
+            )
+    for sp_id, forced_fids in dynamic_by_species.items():
+        sp_el = species_elements.get(sp_id)
+        sp_type_id = species_type_by_species.get(sp_id, "")
+        if sp_el is None or not sp_type_id:
+            continue
+        sp_comp = species_compartments.get(sp_id, "")
+        branch_assigns: List[Dict[Tuple[int, int], str]] = []
+        pattern = _species_pattern_from_multi(
+            sp_el,
+            sp_type_id,
+            types,
+            namespace,
+            structure_warnings,
+            compartment_references=compartment_references,
+            compartment_types=compartment_types,
+            compartment_is_type=compartment_is_type,
+            species_compartment=(
+                sp_comp if package_valid and not namespace_violation else ""
+            ),
+            initialized_by_assignment=sp_id in initial_assignment_symbols,
+            abstract_species_ids=abstract_species_ids,
+            species_component_positions=species_component_positions,
+            species_explicit_binding_positions=species_explicit_binding_positions,
+            species_pattern_variants=species_pattern_variants,
+            species_variant_component_positions=species_variant_component_positions,
+            anchor_links_by_leaf=anchor_links_by_leaf,
+            force_expand_feature_ids=forced_fids,
+            out_branch_assignments=branch_assigns,
+        )
+        if pattern:
+            species_patterns[sp_id] = pattern
+        flat_for_count = _flatten_type(
+            sp_type_id,
+            types,
+            [],
+            compartment_references=compartment_references,
+            compartment_types=compartment_types,
+            anchor_links_by_leaf=anchor_links_by_leaf,
+        )
+        for (_rxn_id, _sref, _sf_id), spec in feature_count_specs.items():
+            if spec["species"] != sp_id or spec.get("fixed_count") is not None:
+                continue
+            fid = spec["feature_id"]
+            comp_tok = spec["component"]
+            target_positions: List[Tuple[int, int]] = []
+            allowed_cleaned: Set[str] = set()
+            for mol_idx, mol in enumerate(flat_for_count.molecules):
+                for comp_idx, comp in enumerate(mol.components):
+                    if fid not in comp.feature_ids:
+                        continue
+                    if comp_tok and not (
+                        comp_tok in comp.aliases or comp_tok in mol.aliases
+                    ):
+                        continue
+                    target_positions.append((mol_idx, comp_idx))
+                    vlabels = comp.feature_values.get(fid, {})
+                    for raw_val in spec["values"]:
+                        if raw_val in vlabels:
+                            allowed_cleaned.add(_clean(vlabels[raw_val]))
+            spec["variant_counts"] = [
+                sum(1 for pos in target_positions if assign.get(pos) in allowed_cleaned)
+                for assign in branch_assigns
+            ]
 
     warnings.extend(structure_warnings)
     if molecule_types:
@@ -4139,7 +4937,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         complex_patterns=complex_patterns,
         seed_patterns=seed_patterns,
         species_patterns=species_patterns,
+        species_pattern_variants=species_pattern_variants,
         species_component_positions=species_component_positions,
+        species_variant_component_positions=species_variant_component_positions,
         species_explicit_binding_positions=species_explicit_binding_positions,
         abstract_species_ids=abstract_species_ids,
         type_patterns=type_patterns,
@@ -4166,6 +4966,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             for species_type in types.values()
             for value_id, parameter_id in species_type.feature_numeric_values.items()
         },
+        species_ref_observables=species_ref_observables,
+        feature_count_specs=feature_count_specs,
+        anchor_links=anchor_links_by_leaf,
         executable=executable,
         warnings=warnings,
     )

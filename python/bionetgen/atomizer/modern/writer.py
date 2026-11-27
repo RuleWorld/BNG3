@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import copy
 import dataclasses
+import itertools
 import json
 import math
 import os
@@ -76,7 +77,16 @@ _PROTECTED_BUILTIN_OPERANDS = frozenset({"time", "_pi", "_e", "true", "false"})
 # factor and is 1, so the two quantities are not interchangeable.
 _SBML_AVOGADRO = 6.02214179e23
 _MULTI_SUM_TOKEN = re.compile(r"__SBML_MULTI_SUM__([A-Za-z_][A-Za-z0-9_]*)__")
+_MULTI_SUMREF_TOKEN = re.compile(
+    r"__SBML_MULTI_SUMREF__([A-Za-z_][A-Za-z0-9_]*)__([A-Za-z_][A-Za-z0-9_]*)__"
+)
 _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]*)__")
+_MULTI_NUMREF_TOKEN = re.compile(
+    r"__SBML_MULTI_NUMREF__([A-Za-z_][A-Za-z0-9_]*)__([A-Za-z_][A-Za-z0-9_]*)__"
+)
+_MULTI_SREF_TOKEN = re.compile(
+    r"__SBML_MULTI_SREF__([A-Za-z_][A-Za-z0-9_]*)__([A-Za-z_][A-Za-z0-9_]*)__"
+)
 
 # ``standardize_name`` runs on a raw SBML id only at emission, so a species,
 # reaction, rule-variable or function id such as ``A-B`` reaches the writer in
@@ -463,6 +473,22 @@ def _molecule_pattern(molecule: Molecule) -> str:
     if "(" not in value:
         value = value + "()"
     return value
+
+
+def _override_structure_compartment(
+    structure: Species, compartment_override: str, default_compartment: str = ""
+) -> None:
+    """Apply a Multi compartmentReference override, replacing the species default compartment."""
+
+    if not compartment_override:
+        return
+    target = standardize_name(compartment_override)
+    default_std = standardize_name(default_compartment) if default_compartment else ""
+    for molecule in structure.molecules:
+        if not molecule.compartment or (
+            not default_std or standardize_name(molecule.compartment) == default_std
+        ):
+            molecule.set_compartment(target)
 
 
 def _pattern(species: Species, compartment: str = "") -> str:
@@ -2138,6 +2164,7 @@ def _prepared_kinetic_math(
     model: SBMLModel,
     replace_loc_params: bool = True,
     reaction_id: Optional[str] = None,
+    feature_count_overrides: Optional[Mapping[Tuple[str, str], int]] = None,
 ) -> str:
     """Inline functions and substitute reaction-local parameters once."""
 
@@ -2146,20 +2173,15 @@ def _prepared_kinetic_math(
         {},
         model.function_definitions,
     )
+    resolved_reaction_id = reaction_id or getattr(reaction, "id", "") or ""
 
-    def replace_sum(match: re.Match[str]) -> str:
-        species_id = match.group(1)
+    def _emit_sum_for(species_id: str, compartment_override: str = "") -> str:
         if model.multi_executable and model.multi_species_patterns.get(species_id):
             observable = f"__multi_sum_{standardize_name(species_id)}"
             species = model.species.get(species_id)
             if species is not None and not species.has_only_substance_units:
-                compartment_id = species.compartment
+                compartment_id = compartment_override or species.compartment
                 if compartment_id and compartment_id in model.compartments:
-                    # Multi's sum representation has the same quantity as
-                    # the referenced SBML species: concentration when
-                    # hasOnlySubstanceUnits is false.  The BNGL Molecules
-                    # observable is an amount, so use the current compartment
-                    # size to recover that concentration.
                     volume = _current_compartment_size_expression(compartment_id, model)
                     return f"({observable} / {volume})"
                 _record_import_warning(
@@ -2180,6 +2202,29 @@ def _prepared_kinetic_math(
         )
         return standardize_name(species_id)
 
+    def replace_sum(match: re.Match[str]) -> str:
+        return _emit_sum_for(match.group(1))
+
+    def replace_sumref(match: re.Match[str]) -> str:
+        sref_id = match.group(1)
+        species_id = match.group(2)
+        sref_entry = (getattr(model, "multi_species_ref_observables", {}) or {}).get(
+            (resolved_reaction_id, sref_id)
+        )
+        if sref_entry is not None:
+            ref_sp, ref_comp = sref_entry
+            obs = (
+                f"__multi_sref_{standardize_name(resolved_reaction_id)}_"
+                f"{standardize_name(sref_id)}"
+            )
+            species = model.species.get(ref_sp)
+            if species is not None and not species.has_only_substance_units:
+                if ref_comp and ref_comp in model.compartments:
+                    volume = _current_compartment_size_expression(ref_comp, model)
+                    return f"({obs} / {volume})"
+            return obs
+        return _emit_sum_for(species_id)
+
     def replace_numeric(match: re.Match[str]) -> str:
         value_id = match.group(1)
         parameter_id = model.multi_numeric_values.get(value_id)
@@ -2193,8 +2238,56 @@ def _prepared_kinetic_math(
         )
         return standardize_name(value_id)
 
+    def replace_numref(match: re.Match[str]) -> str:
+        value_id = match.group(2)
+        parameter_id = model.multi_numeric_values.get(value_id)
+        if parameter_id:
+            return standardize_name(parameter_id)
+        _record_import_warning(
+            model,
+            f'Multi numericValue "{value_id}" has no referenced parameter.',
+            category="package:multi",
+            severity="dropped",
+        )
+        return standardize_name(value_id)
+
+    def replace_sref(match: re.Match[str]) -> str:
+        sref_id = match.group(1)
+        content = match.group(2)
+        if feature_count_overrides and (sref_id, content) in feature_count_overrides:
+            return str(feature_count_overrides[(sref_id, content)])
+        fc_spec = (getattr(model, "multi_feature_count_specs", {}) or {}).get(
+            (resolved_reaction_id, sref_id, content)
+        )
+        if fc_spec is not None:
+            if fc_spec.get("fixed_count") is not None:
+                return str(fc_spec["fixed_count"])
+            variant_counts = fc_spec.get("variant_counts") or []
+            if variant_counts:
+                return str(variant_counts[0])
+            return str(fc_spec.get("occur", 1))
+        sref_entry = (getattr(model, "multi_species_ref_observables", {}) or {}).get(
+            (resolved_reaction_id, sref_id)
+        )
+        if sref_entry is not None:
+            ref_sp, ref_comp = sref_entry
+            obs = (
+                f"__multi_sref_{standardize_name(resolved_reaction_id)}_"
+                f"{standardize_name(sref_id)}"
+            )
+            species = model.species.get(ref_sp)
+            if species is not None and not species.has_only_substance_units:
+                if ref_comp and ref_comp in model.compartments:
+                    volume = _current_compartment_size_expression(ref_comp, model)
+                    return f"({obs} / {volume})"
+            return obs
+        return content
+
+    math_expression = _MULTI_SUMREF_TOKEN.sub(replace_sumref, math_expression)
     math_expression = _MULTI_SUM_TOKEN.sub(replace_sum, math_expression)
+    math_expression = _MULTI_NUMREF_TOKEN.sub(replace_numref, math_expression)
     math_expression = _MULTI_NUMERIC_TOKEN.sub(replace_numeric, math_expression)
+    math_expression = _MULTI_SREF_TOKEN.sub(replace_sref, math_expression)
     kinetic_law = reaction.kinetic_law
     local_parameters = (
         kinetic_law.get("localParameters", [])
@@ -2771,9 +2864,10 @@ def _rate_for_reaction(
         math = _extract_statistical_factor(
             convert_math_expression(math, protected=protected), reactant_structures
         )
-    # Multi sums are source amount/concentration projections. Keep explicit
-    # volume factors rather than treating them as elementary reactant factors.
-    multi_sum_rate = "__multi_sum_" in math
+    # Multi sums and sub-compartment species references are source
+    # amount/concentration projections. Keep explicit volume factors rather
+    # than treating them as elementary reactant factors.
+    multi_sum_rate = "__multi_sum_" in math or "__multi_sref_" in math
     compartment_stripped_math = (
         math
         if multi_sum_rate
@@ -3293,6 +3387,7 @@ def process_reaction_rate(
     conversion_factor: Optional[str] = None,
     replace_loc_params: bool = True,
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
+    feature_count_overrides: Optional[Mapping[Tuple[str, str], int]] = None,
 ) -> ProcessedRate:
     """Process one SBML rate using the source-shaped reversible pipeline."""
 
@@ -3301,6 +3396,7 @@ def process_reaction_rate(
         model,
         replace_loc_params=replace_loc_params,
         reaction_id=reaction_id,
+        feature_count_overrides=feature_count_overrides,
     )
     structures = reactant_structures or {}
     # A law whose reactants draw from different compartments cannot be
@@ -5273,15 +5369,40 @@ def write_parameters(
 
 def write_compartments(model: SBMLModel) -> List[str]:
     lines = []
+    # For SBML L3 Multi models (where Core's L2 ``outside`` attribute no longer
+    # exists), infer cBNGL parent-child adjacency from unique concrete
+    # multi:compartmentReference edges whose spatialDimensions differ by 1.
+    inferred_outside: Dict[str, str] = {}
+    if model.multi_executable and model.multi_compartment_references:
+        parent_candidates: Dict[str, Set[str]] = {}
+        for parent_id, refs in model.multi_compartment_references.items():
+            parent_comp = model.compartments.get(parent_id)
+            if parent_comp is None or parent_comp.is_type is True:
+                continue
+            parent_dim = max(1, int(parent_comp.spatial_dimensions or 3))
+            for child_id in refs.values():
+                child_comp = model.compartments.get(child_id)
+                if child_comp is None or child_comp.is_type is True:
+                    continue
+                child_dim = max(1, int(child_comp.spatial_dimensions or 3))
+                if abs(parent_dim - child_dim) == 1:
+                    parent_candidates.setdefault(child_id, set()).add(parent_id)
+        for child_id, parents in parent_candidates.items():
+            if len(parents) == 1:
+                inferred_outside[child_id] = next(iter(parents))
+
     for compartment_id, compartment in model.compartments.items():
+        if model.multi_executable and compartment.is_type is True:
+            continue
         dimension = max(1, int(compartment.spatial_dimensions or 3))
         size = _numeric_value(compartment.size)
         line = (
             f"{standardize_name(compartment_id)} {dimension} "
             f"{_number(size if size is not None else 1)}"
         )
-        if compartment.outside and compartment.outside in model.compartments:
-            parent = model.compartments[compartment.outside]
+        outside = compartment.outside or inferred_outside.get(compartment_id)
+        if outside and outside in model.compartments:
+            parent = model.compartments[outside]
             parent_dimension = int(parent.spatial_dimensions or 3)
             # BNGL declares the enclosing compartment for both nesting
             # directions: a 2D membrane encloses a 3D volume and is itself
@@ -5289,7 +5410,7 @@ def write_compartments(model: SBMLModel) -> List[str]:
             # drops volume-inside-membrane parents (e.g. cyto -> cyto_mem),
             # breaking the topology so cross-compartment rules are rejected.
             if abs(parent_dimension - dimension) == 1:
-                line += " " + standardize_name(compartment.outside)
+                line += " " + standardize_name(outside)
         lines.append(line)
     return lines
 
@@ -5872,13 +5993,28 @@ def write_observables(
             name += "_id"
         used.add(name)
         entry = sct.entries.get(species_id)
-        pattern = species_to_pattern.get(species_id)
-        if not pattern and entry is not None:
-            pattern = _pattern(entry.structure, species.compartment)
-        if not pattern:
-            pattern = "M_" + standardize_name(species_id) + "()"
-            if species.compartment:
-                pattern = f"@{standardize_name(species.compartment)}:{pattern}"
+        multi_variants = (
+            (getattr(model, "multi_species_pattern_variants", {}) or {}).get(species_id)
+            if model.multi_executable
+            else None
+        )
+        if multi_variants and len(multi_variants) > 1:
+            formatted_variants: List[str] = []
+            for variant_text in multi_variants:
+                try:
+                    variant_struct = read_from_string(variant_text)
+                except (TypeError, ValueError):
+                    continue
+                formatted_variants.append(_pattern(variant_struct, species.compartment))
+            pattern = ", ".join(formatted_variants)
+        else:
+            pattern = species_to_pattern.get(species_id)
+            if not pattern and entry is not None:
+                pattern = _pattern(entry.structure, species.compartment)
+            if not pattern:
+                pattern = "M_" + standardize_name(species_id) + "()"
+                if species.compartment:
+                    pattern = f"@{standardize_name(species.compartment)}:{pattern}"
         # Keep both amount and concentration-facing observable names.  The
         # amount alias is used by saturation laws; the plain name remains the
         # historical/public observable used by callers.
@@ -5890,6 +6026,12 @@ def write_observables(
         match.group(1)
         for reaction in model.reactions.values()
         for match in _MULTI_SUM_TOKEN.finditer(get_kinetic_math(reaction.kinetic_law))
+    } | {
+        match.group(2)
+        for reaction in model.reactions.values()
+        for match in _MULTI_SUMREF_TOKEN.finditer(
+            get_kinetic_math(reaction.kinetic_law)
+        )
     }
     for species_id in sorted(sum_species_ids):
         # The Multi parser retains the source type's name (e.g. A(x~u)),
@@ -5898,15 +6040,65 @@ def write_observables(
         # pattern or the sum observable silently counts zero molecules.  A
         # wildcard Multi species does not necessarily have its own seed;
         # construct its pattern exactly as for the ordinary observables.
-        pattern = species_to_pattern.get(species_id)
-        if not pattern:
-            entry = sct.entries.get(species_id)
-            species = model.species.get(species_id)
-            if entry is not None and species is not None:
-                pattern = _pattern(entry.structure, species.compartment)
+        multi_variants = (
+            (getattr(model, "multi_species_pattern_variants", {}) or {}).get(species_id)
+            if model.multi_executable
+            else None
+        )
+        species = model.species.get(species_id)
+        if multi_variants and len(multi_variants) > 1 and species is not None:
+            formatted_variants = []
+            for variant_text in multi_variants:
+                try:
+                    variant_struct = read_from_string(variant_text)
+                except (TypeError, ValueError):
+                    continue
+                formatted_variants.append(_pattern(variant_struct, species.compartment))
+            pattern = ", ".join(formatted_variants)
+        else:
+            pattern = species_to_pattern.get(species_id)
+            if not pattern:
+                entry = sct.entries.get(species_id)
+                if entry is not None and species is not None:
+                    pattern = _pattern(entry.structure, species.compartment)
         if not pattern:
             continue
         lines.append(f"Molecules __multi_sum_{standardize_name(species_id)} {pattern}")
+
+    for (rxn_id, sref_id), (ref_species_id, ref_compartment) in sorted(
+        (getattr(model, "multi_species_ref_observables", {}) or {}).items()
+    ):
+        multi_variants = (
+            (getattr(model, "multi_species_pattern_variants", {}) or {}).get(
+                ref_species_id
+            )
+            if model.multi_executable
+            else None
+        )
+        if multi_variants:
+            formatted_variants = []
+            for variant_text in multi_variants:
+                try:
+                    variant_struct = read_from_string(variant_text)
+                except (TypeError, ValueError):
+                    continue
+                default_comp = getattr(
+                    model.species.get(ref_species_id), "compartment", ""
+                )
+                _override_structure_compartment(
+                    variant_struct, ref_compartment, default_comp
+                )
+                formatted_variants.append(_pattern(variant_struct))
+            sref_pattern = ", ".join(formatted_variants)
+        else:
+            sref_pattern = _reaction_pattern(
+                ref_species_id, sct, model, ref_compartment
+            )
+        if sref_pattern:
+            obs_name = (
+                f"__multi_sref_{standardize_name(rxn_id)}_{standardize_name(sref_id)}"
+            )
+            lines.append(f"Species {obs_name} {sref_pattern}")
 
     # A simple assignment rule such as ``total = A + 2 * B`` is a BNGL
     # observable, not a dynamic function.  Preserve this losslessly when all
@@ -6945,7 +7137,10 @@ def _reaction_pattern(
             structure = None
         if structure is not None:
             if compartment_override:
-                structure.add_compartment(standardize_name(compartment_override))
+                default_comp = getattr(model.species.get(species_id), "compartment", "")
+                _override_structure_compartment(
+                    structure, compartment_override, default_comp
+                )
             return render(_pattern(structure))
     entry = sct.entries.get(species_id)
     species = model.species.get(species_id)
@@ -7052,6 +7247,9 @@ def _multi_product_structure(
     species_id: str,
     reaction: SBMLReaction,
     reference: object,
+    *,
+    variant_index: int = 0,
+    reactant_variant_overrides: Optional[Mapping[str, int]] = None,
 ) -> Optional[Species]:
     """Reconstruct a mapped Multi product while retaining don't-care fields."""
 
@@ -7059,7 +7257,13 @@ def _multi_product_structure(
     if species is None or not model.multi_executable:
         return None
     type_pattern = model.multi_type_patterns.get(species.species_type or "")
-    species_pattern = model.multi_species_patterns.get(species_id)
+    variants = (getattr(model, "multi_species_pattern_variants", {}) or {}).get(
+        species_id
+    )
+    if variants and 0 <= variant_index < len(variants):
+        species_pattern = variants[variant_index]
+    else:
+        species_pattern = model.multi_species_patterns.get(species_id)
     if not type_pattern or not species_pattern:
         return None
     try:
@@ -7079,7 +7283,13 @@ def _multi_product_structure(
         )
     }
     mapped_positions = set()
-    retained_positions = model.multi_species_component_positions.get(species_id)
+    variant_positions_list = (
+        getattr(model, "multi_species_variant_component_positions", {}) or {}
+    ).get(species_id)
+    if variant_positions_list and 0 <= variant_index < len(variant_positions_list):
+        retained_positions = variant_positions_list[variant_index]
+    else:
+        retained_positions = model.multi_species_component_positions.get(species_id)
     for target_index, target in enumerate(result.molecules):
         candidate = None
         if target_index < len(explicit.molecules):
@@ -7098,6 +7308,8 @@ def _multi_product_structure(
             continue
         candidate_index = explicit.molecules.index(candidate)
         used_explicit.add(candidate_index)
+        if candidate.compartment:
+            target.compartment = candidate.compartment
         explicit_by_index = {}
         if retained_positions is not None:
             component_ordinals = [
@@ -7171,6 +7383,39 @@ def _multi_product_structure(
             else:
                 _copy_multi_component_state(source_component, component)
 
+    def _source_components_for_molecule(
+        src_sp_id: str,
+        src_struct: Species,
+        src_mol_idx: int,
+        src_variant_idx: int,
+    ) -> Optional[Dict[int, object]]:
+        if src_mol_idx >= len(src_struct.molecules):
+            return None
+        src_mol = src_struct.molecules[src_mol_idx]
+        src_vpos = (
+            getattr(model, "multi_species_variant_component_positions", {}) or {}
+        ).get(src_sp_id)
+        if src_vpos and 0 <= src_variant_idx < len(src_vpos):
+            src_positions = src_vpos[src_variant_idx]
+        else:
+            src_positions = model.multi_species_component_positions.get(src_sp_id)
+        if src_positions is None:
+            src_indices = list(range(len(src_mol.components)))
+        else:
+            src_indices = [
+                c_idx for m_idx, c_idx in src_positions if m_idx == src_mol_idx
+            ]
+            if len(src_indices) != len(src_mol.components):
+                _record_import_warning(
+                    model,
+                    f'Multi species "{src_sp_id}" has inconsistent '
+                    "retained component positions; mapped products cannot be reconstructed.",
+                    category="package:multi",
+                    severity="dropped",
+                )
+                return None
+        return dict(zip(src_indices, src_mol.components))
+
     for mapping in getattr(reference, "multi_component_maps", []) or []:
         source_reference = next(
             (
@@ -7191,7 +7436,14 @@ def _multi_product_structure(
             continue
         source_species = model.species.get(source_reference.species)
         source_type = source_species.species_type if source_species else None
-        source_pattern = model.multi_species_patterns.get(source_reference.species)
+        source_variant_idx = (reactant_variant_overrides or {}).get(mapping.reactant, 0)
+        source_variants = (
+            getattr(model, "multi_species_pattern_variants", {}) or {}
+        ).get(source_reference.species)
+        if source_variants and 0 <= source_variant_idx < len(source_variants):
+            source_pattern = source_variants[source_variant_idx]
+        else:
+            source_pattern = model.multi_species_patterns.get(source_reference.species)
         if not source_type or not source_pattern:
             continue
         try:
@@ -7214,61 +7466,85 @@ def _multi_product_structure(
                 severity="dropped",
             )
             continue
-        source_kind, source_molecule_index, source_component_index = source_location
-        target_kind, target_molecule_index, target_component_index = target_location
-        if source_molecule_index >= len(source_structure.molecules):
-            continue
-        if target_molecule_index >= len(result.molecules):
-            continue
-        source_molecule = source_structure.molecules[source_molecule_index]
-        target_molecule = result.molecules[target_molecule_index]
-        source_positions = model.multi_species_component_positions.get(
-            source_reference.species
-        )
-        if source_positions is None:
-            source_indices = list(range(len(source_molecule.components)))
-        else:
-            source_indices = [
-                component_index
-                for molecule_index, component_index in source_positions
-                if molecule_index == source_molecule_index
-            ]
-            if len(source_indices) != len(source_molecule.components):
-                _record_import_warning(
-                    model,
-                    f'Multi species "{source_reference.species}" has inconsistent '
-                    "retained component positions; mapped products cannot be reconstructed.",
-                    category="package:multi",
-                    severity="dropped",
-                )
-                continue
-        source_components = dict(zip(source_indices, source_molecule.components))
+        source_kind, source_mol_spec, source_comp_spec = source_location
+        target_kind, target_mol_spec, target_comp_spec = target_location
+
         if source_kind == "molecule" and target_kind == "molecule":
+            src_comps = _source_components_for_molecule(
+                source_reference.species,
+                source_structure,
+                source_mol_spec,
+                source_variant_idx,
+            )
+            if src_comps is None or target_mol_spec >= len(result.molecules):
+                continue
+            target_molecule = result.molecules[target_mol_spec]
             for index, target_component in enumerate(target_molecule.components):
-                source_component = source_components.get(index)
+                source_component = src_comps.get(index)
                 if source_component is not None:
                     _copy_multi_component_state(
                         source_component,
                         target_component,
                         inherit_only=True,
-                        explicit_product_binding=(target_molecule_index, index)
+                        explicit_product_binding=(target_mol_spec, index)
                         in explicit_binding_positions,
                     )
-                    mapped_positions.add((target_molecule_index, index))
-        elif (
-            source_kind == "component"
-            and target_kind == "component"
-            and source_component_index in source_components
-            and target_component_index < len(target_molecule.components)
-        ):
-            _copy_multi_component_state(
-                source_components[source_component_index],
-                target_molecule.components[target_component_index],
-                inherit_only=True,
-                explicit_product_binding=(target_molecule_index, target_component_index)
-                in explicit_binding_positions,
+                    mapped_positions.add((target_mol_spec, index))
+        elif source_kind == "molecule_group" and target_kind == "molecule_group":
+            for s_midx, t_midx in zip(source_mol_spec, target_mol_spec):
+                src_comps = _source_components_for_molecule(
+                    source_reference.species,
+                    source_structure,
+                    s_midx,
+                    source_variant_idx,
+                )
+                if src_comps is None or t_midx >= len(result.molecules):
+                    continue
+                target_molecule = result.molecules[t_midx]
+                for index, target_component in enumerate(target_molecule.components):
+                    source_component = src_comps.get(index)
+                    if source_component is not None:
+                        _copy_multi_component_state(
+                            source_component,
+                            target_component,
+                            inherit_only=True,
+                            explicit_product_binding=(t_midx, index)
+                            in explicit_binding_positions,
+                        )
+                        mapped_positions.add((t_midx, index))
+        elif source_kind in {"component", "component_group"} and target_kind in {
+            "component",
+            "component_group",
+        }:
+            src_comps = _source_components_for_molecule(
+                source_reference.species,
+                source_structure,
+                source_mol_spec,
+                source_variant_idx,
             )
-            mapped_positions.add((target_molecule_index, target_component_index))
+            if src_comps is None or target_mol_spec >= len(result.molecules):
+                continue
+            target_molecule = result.molecules[target_mol_spec]
+            src_c_list = (
+                source_comp_spec
+                if source_kind == "component_group"
+                else (source_comp_spec,)
+            )
+            tgt_c_list = (
+                target_comp_spec
+                if target_kind == "component_group"
+                else (target_comp_spec,)
+            )
+            for s_cidx, t_cidx in zip(src_c_list, tgt_c_list):
+                if s_cidx in src_comps and t_cidx < len(target_molecule.components):
+                    _copy_multi_component_state(
+                        src_comps[s_cidx],
+                        target_molecule.components[t_cidx],
+                        inherit_only=True,
+                        explicit_product_binding=(target_mol_spec, t_cidx)
+                        in explicit_binding_positions,
+                    )
+                    mapped_positions.add((target_mol_spec, t_cidx))
     if retained_positions is not None:
         retained = set(tuple(position) for position in retained_positions)
         retained.update(mapped_positions)
@@ -7280,6 +7556,442 @@ def _multi_product_structure(
             ]
     result.renumber_bonds()
     return result
+
+
+def _align_multi_anchor_links(
+    reactants: List[str], products: List[str]
+) -> Tuple[List[str], List[str]]:
+    """Ensure unbound __in_<comp> anchor links appear on LHS/RHS when a rule creates/destroys an anchor molecule."""
+
+    lhs_links = set(re.findall(r"\b(__in_[A-Za-z0-9_]+)!\d+", " ".join(reactants)))
+    rhs_links = set(re.findall(r"\b(__in_[A-Za-z0-9_]+)!\d+", " ".join(products)))
+    if lhs_links == rhs_links:
+        return reactants, products
+
+    def add_unbound_links(patterns: List[str], needed: Set[str]) -> List[str]:
+        if not needed:
+            return patterns
+        updated: List[str] = []
+        for pat in patterns:
+            cur = pat
+            for link in sorted(needed):
+                if link in cur:
+                    continue
+                # Attach unbound link onto each non-anchor molecule in the pattern.
+                cur = re.sub(
+                    r"(M_(?!__multi_comp_)[A-Za-z0-9_]+)\(([^)]*)\)",
+                    lambda m, lnk=link: (
+                        f"{m.group(1)}({m.group(2)},{lnk})"
+                        if m.group(2).strip()
+                        else f"{m.group(1)}({lnk})"
+                    ),
+                    cur,
+                )
+            updated.append(cur)
+        return updated
+
+    return (
+        add_unbound_links(reactants, rhs_links - lhs_links),
+        add_unbound_links(products, lhs_links - rhs_links),
+    )
+
+
+def _try_factor_elementary_multi_rate(
+    rate_expr: str,
+    reactant_species_ids: List[str],
+    model: SBMLModel,
+) -> Optional[str]:
+    """Factor reactant concentration/amount terms out of a TotalRate expression for DNF elementary rules."""
+
+    if not reactant_species_ids:
+        return None
+    counts: "OrderedDict[str, int]" = OrderedDict()
+    for sp_id in reactant_species_ids:
+        counts[sp_id] = counts.get(sp_id, 0) + 1
+    try:
+        tree = ast.parse(rate_expr.replace("^", "**"), mode="eval")
+    except SyntaxError:
+        return None
+
+    # Flatten top-level multiplicative factors.
+    factors: List[ast.AST] = []
+
+    def collect_mul(node: ast.AST) -> None:
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mult):
+            collect_mul(node.left)
+            collect_mul(node.right)
+        else:
+            factors.append(node)
+
+    collect_mul(tree.body)
+    remaining = list(factors)
+    extra_scalar = 1.0
+    extra_divisors: List[str] = []
+    for sp_id, stoich in counts.items():
+        std = standardize_name(sp_id)
+        sp = model.species.get(sp_id)
+        amt_name = f"{std}_amt"
+        conc_call = f"_c_{std}"
+        matched = 0
+        next_remaining: List[ast.AST] = []
+        for fac in remaining:
+            if matched < stoich:
+                if isinstance(fac, ast.Name) and fac.id in {amt_name, std}:
+                    matched += 1
+                    continue
+                if (
+                    isinstance(fac, ast.Call)
+                    and isinstance(fac.func, ast.Name)
+                    and fac.func.id == conc_call
+                    and not fac.args
+                ):
+                    matched += 1
+                    if sp is not None and sp.compartment:
+                        extra_divisors.append(
+                            _current_compartment_size_expression(sp.compartment, model)
+                        )
+                    continue
+                if (
+                    isinstance(fac, ast.BinOp)
+                    and isinstance(fac.op, ast.Div)
+                    and isinstance(fac.left, ast.Name)
+                    and fac.left.id in {amt_name, std}
+                ):
+                    matched += 1
+                    extra_divisors.append(ast.unparse(fac.right))
+                    continue
+            next_remaining.append(fac)
+        if matched != stoich:
+            return None
+        remaining = next_remaining
+        if stoich > 1:
+            extra_scalar *= math.factorial(stoich)
+
+    # Confirm no residual dependence on any factored reactant species.
+    residual_parts = [ast.unparse(fac).replace("**", "^") for fac in remaining]
+    residual = " * ".join(f"({p})" for p in residual_parts) if residual_parts else "1"
+    for sp_id in counts:
+        std = standardize_name(sp_id)
+        if re.search(
+            rf"\b(?:{re.escape(std)}_amt|_c_{re.escape(std)}|{re.escape(std)})\b",
+            residual,
+        ):
+            return None
+    if extra_scalar != 1.0:
+        residual = f"({_number(extra_scalar)}) * ({residual})"
+    for div in extra_divisors:
+        residual = f"({residual}) / ({div})"
+    return residual
+
+
+def _expand_multi_reaction_rules(
+    reaction_id: str,
+    reaction: SBMLReaction,
+    candidate: str,
+    model: SBMLModel,
+    sct: SpeciesCompositionTable,
+    structures: Mapping[str, Species],
+    non_reaction_state_species: Set[str],
+    used_labels: Set[str],
+    observable_converted_rules: Optional[Set[str]],
+    time_rate_functions: Optional[List[str]],
+    replace_loc_params: bool,
+    species_compartment_prefix: bool,
+    synthetic_rate_rule_variables: Optional[Set[str]],
+) -> Optional[List[str]]:
+    """Expand a Multi reaction involving DNF multi-variant species or dynamic feature counts."""
+
+    if not model.multi_executable:
+        return None
+    variants_map = getattr(model, "multi_species_pattern_variants", {}) or {}
+    fc_specs = getattr(model, "multi_feature_count_specs", {}) or {}
+    dynamic_fc_entries = {
+        (sref, sf_id): spec
+        for (rxn, sref, sf_id), spec in fc_specs.items()
+        if rxn == reaction_id and spec.get("fixed_count") is None
+    }
+    active_reactants = [
+        ref
+        for ref in reaction.reactants
+        if ref.species != "EmptySet" and ref.species not in non_reaction_state_species
+    ]
+    active_products = [
+        ref
+        for ref in reaction.products
+        if ref.species != "EmptySet" and ref.species not in non_reaction_state_species
+    ]
+    has_multi_variant = any(
+        len(variants_map.get(ref.species, ())) > 1
+        for ref in (*active_reactants, *active_products)
+    )
+    if not has_multi_variant and not dynamic_fc_entries:
+        return None
+
+    # Identify reactant refs named by product component maps or dynamic feature counts.
+    mapped_ref_ids = {
+        mapping.reactant
+        for prod in active_products
+        for mapping in (getattr(prod, "multi_component_maps", []) or [])
+    } | {sref for sref, _sf in dynamic_fc_entries}
+
+    # Build reactant choice groups: identical unmapped reactant copies use
+    # combinations_with_replacement so BNGL's symmetry factor reproduces the
+    # exact multinomial expansion of (P_1 + ... + P_K)^m.
+    reactant_groups: List[Tuple[List[Tuple[object, str]], List[Tuple[int, ...]]]] = []
+    consumed_ref_indices: Set[int] = set()
+    for idx, ref in enumerate(active_reactants):
+        if idx in consumed_ref_indices:
+            continue
+        stoich = int(round(ref.stoichiometry))
+        comp = _multi_reference_compartment(
+            ref, model, getattr(model.species.get(ref.species), "compartment", "")
+        )
+        n_vars = max(1, len(variants_map.get(ref.species, ())))
+        ref_id = getattr(ref, "id", None) or ""
+        if ref_id in mapped_ref_ids:
+            for _ in range(stoich):
+                reactant_groups.append(([(ref, comp)], [(v,) for v in range(n_vars)]))
+            consumed_ref_indices.add(idx)
+        else:
+            # Merge any identical unmapped reactant references of the same species/compartment.
+            group_refs = [(ref, comp)] * stoich
+            consumed_ref_indices.add(idx)
+            for j in range(idx + 1, len(active_reactants)):
+                if j in consumed_ref_indices:
+                    continue
+                other = active_reactants[j]
+                other_id = getattr(other, "id", None) or ""
+                other_comp = _multi_reference_compartment(
+                    other,
+                    model,
+                    getattr(model.species.get(other.species), "compartment", ""),
+                )
+                if (
+                    other_id not in mapped_ref_ids
+                    and other.species == ref.species
+                    and other_comp == comp
+                ):
+                    group_refs.extend(
+                        [(other, other_comp)] * int(round(other.stoichiometry))
+                    )
+                    consumed_ref_indices.add(j)
+            total_k = len(group_refs)
+            combos = list(
+                itertools.combinations_with_replacement(range(n_vars), total_k)
+            )
+            reactant_groups.append((group_refs, combos))
+
+    def render_species_variant(sp_id: str, v_idx: int, comp_override: str) -> str:
+        vars_for_sp = variants_map.get(sp_id)
+        if vars_for_sp and 0 <= v_idx < len(vars_for_sp):
+            struct = read_from_string(vars_for_sp[v_idx])
+            if comp_override:
+                default_comp = getattr(model.species.get(sp_id), "compartment", "")
+                _override_structure_compartment(struct, comp_override, default_comp)
+            rendered = _pattern(struct)
+            if species_compartment_prefix and comp_override:
+                rendered = _species_compartment_prefix(rendered, comp_override)
+            return rendered
+        return _reaction_pattern(
+            sp_id,
+            sct,
+            model,
+            comp_override,
+            species_compartment_prefix=species_compartment_prefix,
+        )
+
+    def _state_map(struct: Species) -> Dict[Tuple[int, str], str]:
+        return {
+            (m_idx, comp.name): comp.active_state
+            for m_idx, mol in enumerate(struct.molecules)
+            for comp in mol.components
+            if comp.active_state
+        }
+
+    emitted_lines: List[str] = []
+    all_reactant_combos = list(
+        itertools.product(*(combos for _refs, combos in reactant_groups))
+    )
+    if len(all_reactant_combos) > 256:
+        _record_import_warning(
+            model,
+            f'Reaction "{reaction_id}" DNF expansion exceeds 256 rules; omitted.',
+            category="package:multi",
+            severity="dropped",
+        )
+        return []
+
+    branch_num = 0
+    for group_choices in all_reactant_combos:
+        branch_num += 1
+        chosen_reactants: List[str] = []
+        chosen_reactant_sp_ids: List[str] = []
+        ref_variant_overrides: Dict[str, int] = {}
+        chosen_reactant_structs: List[Tuple[str, Species]] = []
+        for (group_refs, _combos), choice_tuple in zip(reactant_groups, group_choices):
+            for (ref, comp), v_idx in zip(group_refs, choice_tuple):
+                ref_id = getattr(ref, "id", None) or ""
+                if ref_id:
+                    ref_variant_overrides[ref_id] = v_idx
+                pat = render_species_variant(ref.species, v_idx, comp)
+                chosen_reactants.append(pat)
+                chosen_reactant_sp_ids.append(ref.species)
+                vars_for_sp = variants_map.get(ref.species)
+                if vars_for_sp and 0 <= v_idx < len(vars_for_sp):
+                    chosen_reactant_structs.append(
+                        (ref.species, read_from_string(vars_for_sp[v_idx]))
+                    )
+
+        # Resolve dynamic feature-count overrides for this branch.
+        fc_overrides: Dict[Tuple[str, str], int] = {}
+        for (sref, sf_id), spec in dynamic_fc_entries.items():
+            v_idx = ref_variant_overrides.get(sref, 0)
+            v_counts = spec.get("variant_counts") or []
+            if 0 <= v_idx < len(v_counts):
+                fc_overrides[(sref, sf_id)] = v_counts[v_idx]
+
+        # Specialize every product reference for this branch.
+        chosen_products: List[str] = []
+        product_failed = False
+        for prod_ref in active_products:
+            prod_comp = _multi_reference_compartment(
+                prod_ref,
+                model,
+                getattr(model.species.get(prod_ref.species), "compartment", ""),
+            )
+            prod_variants = variants_map.get(prod_ref.species, ())
+            if len(prod_variants) <= 1:
+                mapped = _multi_product_structure(
+                    model,
+                    prod_ref.species,
+                    reaction,
+                    prod_ref,
+                    variant_index=0,
+                    reactant_variant_overrides=ref_variant_overrides,
+                )
+                if mapped is not None:
+                    _override_structure_compartment(
+                        mapped,
+                        prod_comp,
+                        getattr(model.species.get(prod_ref.species), "compartment", ""),
+                    )
+                    p_pat = _pattern(mapped, prod_comp)
+                    if species_compartment_prefix:
+                        p_pat = _species_compartment_prefix(p_pat, prod_comp)
+                else:
+                    p_pat = render_species_variant(prod_ref.species, 0, prod_comp)
+                chosen_products.extend([p_pat] * int(round(prod_ref.stoichiometry)))
+                continue
+
+            # Disjunctive product: match uniquely against reactant variant states.
+            prod_species = model.species.get(prod_ref.species)
+            prod_type = prod_species.species_type if prod_species else None
+            matching_indices: List[int] = []
+            # Build expected inherited state map from same-speciesType reactant or maps.
+            expected_states: Dict[Tuple[int, str], str] = {}
+            if len(chosen_reactant_structs) == 1:
+                r_sp_id, r_struct = chosen_reactant_structs[0]
+                r_species = model.species.get(r_sp_id)
+                if r_species and r_species.species_type == prod_type:
+                    expected_states = _state_map(r_struct)
+            for p_idx, p_text in enumerate(prod_variants):
+                p_struct = read_from_string(p_text)
+                p_states = _state_map(p_struct)
+                # Product matches if every state constrained in BOTH agrees (except
+                # states explicitly changed by the product species across all variants).
+                if expected_states:
+                    shared_keys = set(p_states) & set(expected_states)
+                    # Determine keys fixed to one value across all product variants
+                    # (those are explicitly changed by the reaction).
+                    all_p_states = [
+                        _state_map(read_from_string(vt)) for vt in prod_variants
+                    ]
+                    changed_keys = {
+                        k
+                        for k in shared_keys
+                        if len({st.get(k) for st in all_p_states}) == 1
+                        and all_p_states[0].get(k) != expected_states.get(k)
+                    }
+                    preserved_keys = shared_keys - changed_keys
+                    if all(p_states[k] == expected_states[k] for k in preserved_keys):
+                        matching_indices.append(p_idx)
+            if len(matching_indices) != 1:
+                _record_import_warning(
+                    model,
+                    f'Reaction "{reaction_id}" product "{prod_ref.species}" has '
+                    f"{len(matching_indices)} matching disjunctive variants; "
+                    "non-deterministic disjunctive products are not representable.",
+                    category="package:multi",
+                    severity="dropped",
+                )
+                product_failed = True
+                break
+            p_vidx = matching_indices[0]
+            mapped = _multi_product_structure(
+                model,
+                prod_ref.species,
+                reaction,
+                prod_ref,
+                variant_index=p_vidx,
+                reactant_variant_overrides=ref_variant_overrides,
+            )
+            if mapped is not None:
+                p_pat = _pattern(mapped, prod_comp)
+                if species_compartment_prefix:
+                    p_pat = _species_compartment_prefix(p_pat, prod_comp)
+            else:
+                p_pat = render_species_variant(prod_ref.species, p_vidx, prod_comp)
+            chosen_products.extend([p_pat] * int(round(prod_ref.stoichiometry)))
+        if product_failed:
+            return []
+
+        chosen_reactants, chosen_products = _align_multi_anchor_links(
+            chosen_reactants, chosen_products
+        )
+        processed = process_reaction_rate(
+            reaction,
+            reaction_id,
+            model,
+            observable_converted_rules=observable_converted_rules,
+            reactant_structures=structures,
+            conversion_factor=_conversion_factor_for_reaction(reaction, model),
+            replace_loc_params=replace_loc_params,
+            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
+            feature_count_overrides=fc_overrides or None,
+        )
+        rate = processed.rate_string
+        is_total = processed.is_total_rate
+
+        # When a multi-variant reactant appears in a TotalRate law (e.g.
+        # multiplied by __multi_sum_... or a modifier), factor the reactant
+        # linearly into an elementary BNGL functional rate so each DNF branch
+        # fires strictly in proportion to its own matched species.
+        if is_total and "," not in rate:
+            factored = _try_factor_elementary_multi_rate(
+                rate, chosen_reactant_sp_ids, model
+            )
+            if factored is not None:
+                is_total = False
+                if time_rate_functions is not None:
+                    fn_name = f"_mrate_{candidate}_dnf{branch_num}"
+                    time_rate_functions.append(f"{fn_name}() = {factored}")
+                    rate = f"{fn_name}()"
+                else:
+                    rate = factored
+
+        rule_label = f"{candidate}_dnf{branch_num}"
+        suffix = 2
+        while rule_label in used_labels:
+            rule_label = f"{candidate}_dnf{branch_num}_{suffix}"
+            suffix += 1
+        used_labels.add(rule_label)
+        total_mod = " TotalRate" if is_total else ""
+        emitted_lines.append(
+            f"{rule_label}: {' + '.join(chosen_reactants) if chosen_reactants else '0'} "
+            f"-> {' + '.join(chosen_products) if chosen_products else '0'} {rate}{total_mod}"
+        )
+
+    return emitted_lines
 
 
 def _compartments_are_adjacent(
@@ -7669,6 +8381,11 @@ def write_reaction_rules(
                 getattr(model.species.get(reference.species), "compartment", ""),
             )
             if mapped is not None:
+                _override_structure_compartment(
+                    mapped,
+                    product_compartment,
+                    getattr(model.species.get(reference.species), "compartment", ""),
+                )
                 product_pattern = _pattern(mapped, product_compartment)
                 if species_compartment_prefix:
                     product_pattern = _species_compartment_prefix(
@@ -7710,6 +8427,26 @@ def write_reaction_rules(
             for species_id, entry in sct.entries.items()
             if entry.structure is not None
         }
+        if model.multi_executable and not deterministic_flux_lowering:
+            expanded_multi = _expand_multi_reaction_rules(
+                reaction_id,
+                reaction,
+                candidate,
+                model,
+                sct,
+                structures,
+                non_reaction_state_species,
+                used_labels,
+                observable_converted_rules,
+                time_rate_functions,
+                replace_loc_params,
+                species_compartment_prefix,
+                synthetic_rate_rule_variables,
+            )
+            if expanded_multi is not None:
+                lines.extend(expanded_multi)
+                continue
+            reactants, products = _align_multi_anchor_links(reactants, products)
 
         # A time-only rate has no species/observable marker for BNG2's
         # functional-rate path. Keep it live by emitting a zero-argument

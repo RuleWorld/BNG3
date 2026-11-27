@@ -366,7 +366,13 @@ class SBMLModel:
     # Executable SBML Multi reconstruction.  The legacy string fields above
     # remain for callers that only consume diagnostics/comments.
     multi_species_patterns: Mapping[str, str] = field(default_factory=OrderedDict)
+    multi_species_pattern_variants: Mapping[str, List[str]] = field(
+        default_factory=OrderedDict
+    )
     multi_species_component_positions: Mapping[str, Any] = field(
+        default_factory=OrderedDict
+    )
+    multi_species_variant_component_positions: Mapping[str, Any] = field(
         default_factory=OrderedDict
     )
     multi_species_explicit_binding_positions: Mapping[str, Any] = field(
@@ -381,6 +387,13 @@ class SBMLModel:
         default_factory=OrderedDict
     )
     multi_numeric_values: Mapping[str, str] = field(default_factory=OrderedDict)
+    multi_species_ref_observables: Mapping[Tuple[str, str], Tuple[str, str]] = field(
+        default_factory=OrderedDict
+    )
+    multi_feature_count_specs: Mapping[Tuple[str, str], Any] = field(
+        default_factory=OrderedDict
+    )
+    multi_anchor_links: Mapping[str, List[str]] = field(default_factory=OrderedDict)
     multi_executable: bool = False
     # The BNGL function that states each reaction's rate, keyed by the
     # source reaction id.  SBML Level 3 Version 2 Core, Sec. 4.11.8: the

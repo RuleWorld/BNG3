@@ -162,11 +162,12 @@ def test_atomizer_multi_explicit_full_value_domain_is_a_wildcard():
     assert pattern == "M_A(x)@cell"
 
     partial = parse_multi_package(_partial_domain_source())
-    assert partial.executable is False
-    assert any(
-        warning.severity == "dropped" and "multiple values" in warning.message
-        for warning in partial.warnings
-    )
+    assert partial.executable is True
+    assert partial.species_pattern_variants["Aany"] == [
+        "M_A(x~u)@cell",
+        "M_A(x~p)@cell",
+    ]
+    assert "Aany" in partial.abstract_species_ids
 
 
 def test_atomizer_multi_full_domain_matches_core_oracle_through_sbml_export(
