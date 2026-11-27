@@ -69,6 +69,13 @@ from .archive import (
     extract_sbml_from_combine_archive,
     extract_sbml_from_omex,
 )
+from .arrays import (
+    ARRAYS_NAMESPACE_V1,
+    ArraysFlatteningError,
+    flatten_arrays_package,
+    flatten_arrays_sbml,
+    has_arrays_constructs,
+)
 from .multi import MultiParseResult, parse_multi_package
 from .metadata import (
     metadata_payload,
@@ -834,6 +841,11 @@ __all__ = [
     "reconcileSCT",
     "parse_time_threshold",
     "parseTimeThreshold",
+    "ARRAYS_NAMESPACE_V1",
+    "ArraysFlatteningError",
+    "flatten_arrays_package",
+    "flatten_arrays_sbml",
+    "has_arrays_constructs",
     "parse_multi_package",
     "metadata_payload",
     "source_metadata_summary",

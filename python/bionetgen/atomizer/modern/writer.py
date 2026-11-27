@@ -8261,7 +8261,7 @@ def generate_bngl(
         (
             warning
             for warning in map(coerce_import_warning, model.import_warnings)
-            if warning.category in {"constraint", "compFlattening"}
+            if warning.category in {"constraint", "compFlattening", "arraysFlattening"}
             and warning.severity == "dropped"
         ),
         None,

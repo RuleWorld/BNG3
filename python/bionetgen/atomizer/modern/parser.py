@@ -41,6 +41,7 @@ from .types import (
 )
 
 standardize_name = lru_cache(maxsize=65536)(_raw_standardize_name)
+from .arrays import flatten_arrays_package, has_arrays_constructs
 from .multi import parse_multi_package
 from .units import apply_unit_scaling
 from .helpers import logger, clone_ast
@@ -3529,6 +3530,8 @@ class SBMLParser:
             else []
         )
         sbml_string, comp_failure = _flatten_comp_package(sbml_string, source_path)
+        original_arrays_constructs = has_arrays_constructs(sbml_string)
+        sbml_string, arrays_failure = flatten_arrays_package(sbml_string)
         try:
             root = ET.fromstring(sbml_string)
         except ET.ParseError as exc:
@@ -3608,6 +3611,31 @@ class SBMLParser:
                     {
                         "category": "compFlattening",
                         "message": comp_failure,
+                        "count": 1,
+                        "severity": "dropped",
+                    }
+                )
+            result.import_warnings = [
+                coerce_import_warning(warning) for warning in result.import_warnings
+            ]
+        if original_arrays_constructs:
+            if arrays_failure is None:
+                result.import_warnings.append(
+                    {
+                        "category": "arraysFlattened",
+                        "message": (
+                            "SBML arrays package was statically flattened before "
+                            "Atomizer import."
+                        ),
+                        "count": 1,
+                        "severity": "info",
+                    }
+                )
+            else:
+                result.import_warnings.append(
+                    {
+                        "category": "arraysFlattening",
+                        "message": arrays_failure,
                         "count": 1,
                         "severity": "dropped",
                     }
