@@ -490,10 +490,28 @@ def to_bngir(
             "native BNGIR v0.2 imports cannot be exported as v0.1 because their "
             "source pattern text is intentionally unavailable"
         )
+    effective_provenance: dict[str, Any] | None = (
+        dict(provenance) if provenance is not None else None
+    )
+    source_meta = getattr(model, "_source_metadata", "")
+    if source_meta:
+        try:
+            parsed_meta = json.loads(source_meta)
+        except ValueError:
+            parsed_meta = None
+        if isinstance(parsed_meta, Mapping) and (
+            parsed_meta.get("packageMetadata")
+            or parsed_meta.get("packages")
+            or parsed_meta.get("entities")
+            or parsed_meta.get("model")
+        ):
+            if effective_provenance is None:
+                effective_provenance = {}
+            effective_provenance.setdefault("sbml_source_metadata", dict(parsed_meta))
     if version == VERSION:
-        payload = _payload_v01(model, provenance)
+        payload = _payload_v01(model, effective_provenance)
     elif version == STRUCTURAL_VERSION:
-        payload = _payload_v02(model, provenance)
+        payload = _payload_v02(model, effective_provenance)
     else:
         raise ValueError(f"unsupported BNGIR version: {version}")
     return json.dumps(
@@ -3711,7 +3729,15 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
         )
 
     native = _cpp.parse_string(source)
-    result = BioNetGenModel(native)
+    raw_provenance = root.get("provenance")
+    source_metadata = ""
+    if isinstance(raw_provenance, Mapping):
+        sbml_meta = raw_provenance.get("sbml_source_metadata")
+        if isinstance(sbml_meta, Mapping):
+            source_metadata = json.dumps(
+                sbml_meta, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            )
+    result = BioNetGenModel(native, source_metadata=source_metadata)
     if name:
         result._model.set_model_name(name)
     return result
@@ -6819,7 +6845,9 @@ def semantic_equal(left: Any, right: Any, *, version: str = DEFAULT_VERSION) -> 
             f"Right model cannot be serialized for exact equality: {exc}",
             {"error": str(exc)},
         ) from exc
-    if left_doc == right_doc:
+    left_semantic = {k: v for k, v in left_doc.items() if k != "provenance"}
+    right_semantic = {k: v for k, v in right_doc.items() if k != "provenance"}
+    if left_semantic == right_semantic:
         return True
     return exact_process_equal(
         left, right, left_doc=left_doc, right_doc=right_doc, version=version

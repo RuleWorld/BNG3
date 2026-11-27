@@ -43,6 +43,11 @@ from .types import (
 standardize_name = lru_cache(maxsize=65536)(_raw_standardize_name)
 from .arrays import flatten_arrays_package, has_arrays_constructs
 from .multi import parse_multi_package
+from .metadata import (
+    METADATA_PACKAGE_NAMES,
+    extract_package_metadata,
+    recover_package_metadata_from_payload,
+)
 from .units import apply_unit_scaling
 from .helpers import logger, clone_ast
 from .events import complement_negated_comparison
@@ -4130,6 +4135,17 @@ class SBMLParser:
                         supported_distrib_csymbol_count += 1
 
         model_metadata = _source_metadata(model)
+        raw_source_metadata_payload = _source_metadata_payload(model)
+        package_metadata = extract_package_metadata(
+            root,
+            declared_packages=declared_package_uris,
+            package_required=package_required,
+            package_counts=package_counts,
+        )
+        if not package_metadata and raw_source_metadata_payload:
+            package_metadata = recover_package_metadata_from_payload(
+                raw_source_metadata_payload
+            )
         result = SBMLModel(
             id=model_id,
             name=str(_attribute(model, "name", model_id) or model_id),
@@ -4160,7 +4176,8 @@ class SBMLParser:
                 SBMLParser._xml_items(model, "listOfConstraints", "constraint")
             ),
             **model_metadata,
-            source_metadata_payload=_source_metadata_payload(model),
+            source_metadata_payload=raw_source_metadata_payload,
+            package_metadata=package_metadata,
             declared_packages=declared_package_uris,
             package_required=package_required,
             package_counts=package_counts,
@@ -4478,12 +4495,20 @@ class SBMLParser:
         for package, description in benign_packages.items():
             if package not in package_counts:
                 continue
+            if package in METADATA_PACKAGE_NAMES:
+                status_note = (
+                    "imported as preserved non-kinetic metadata"
+                    if package in package_metadata
+                    else "declared as non-kinetic metadata"
+                )
+            else:
+                status_note = "not imported"
             result.import_warnings.append(
                 {
                     "category": f"package:{package}",
                     "message": (
                         f'SBML "{package}" package detected ({description}); '
-                        "not imported. This does not affect the mathematical model."
+                        f"{status_note}. This does not affect the mathematical model."
                     ),
                     "count": package_counts[package] or 1,
                     "severity": "info",

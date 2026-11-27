@@ -6990,6 +6990,9 @@ def _multi_reference_compartment(
     reference_id = getattr(reference, "compartment_reference", None)
     if not reference_id:
         return default
+    scoped = model.multi_compartment_references.get(default, {})
+    if reference_id in scoped:
+        return scoped[reference_id]
     for compartment_id, references in model.multi_compartment_references.items():
         if reference_id in references:
             return references[reference_id]

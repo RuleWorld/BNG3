@@ -356,6 +356,7 @@ class SBMLModel:
     notes_xml: str = ""
     annotation_xml: str = ""
     source_metadata_payload: str = ""
+    package_metadata: Mapping[str, Any] = field(default_factory=OrderedDict)
     declared_packages: Mapping[str, str] = field(default_factory=OrderedDict)
     package_required: Mapping[str, bool] = field(default_factory=OrderedDict)
     package_counts: Mapping[str, int] = field(default_factory=OrderedDict)
@@ -471,6 +472,7 @@ class AtomizerResult:
     success: bool = True
     error: Optional[str] = None
     archive_metadata: Mapping[str, Any] = field(default_factory=OrderedDict)
+    package_metadata: Mapping[str, Any] = field(default_factory=OrderedDict)
     # Machine-readable structural atomization record.  Present for the
     # atomized translation; ``None`` for the flat translation.
     structural_inference: Optional[Mapping[str, Any]] = None
@@ -563,6 +565,7 @@ SBMLModel.constraintCount = _alias_property("constraint_count")
 SBMLModel.metaId = _alias_property("metaid")
 SBMLModel.sboTerm = _alias_property("sbo_term")
 SBMLModel.declaredPackages = _alias_property("declared_packages")
+SBMLModel.packageMetadata = _alias_property("package_metadata")
 SBMLModel.packageRequired = _alias_property("package_required")
 SBMLModel.packageCounts = _alias_property("package_counts")
 SBMLModel.multiMoleculeTypes = _alias_property("multi_molecule_types")
@@ -584,6 +587,7 @@ SpeciesCompositionTable.reverseDependencies = _alias_property("reverse_dependenc
 SpeciesCompositionTable.sortedSpecies = _alias_property("sorted_species")
 SeedSpeciesEntry.sbmlId = _alias_property("sbml_id")
 AtomizerResult.observableMap = _alias_property("observable_map")
+AtomizerResult.packageMetadata = _alias_property("package_metadata")
 AtomizerResult.structuralInference = _alias_property("structural_inference")
 NamingConventions.modificationList = _alias_property("modification_list")
 NamingConventions.reactionSite = _alias_property("reaction_site")

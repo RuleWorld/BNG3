@@ -1058,6 +1058,16 @@ def _flatten_type(
                         "dropped",
                     )
                 )
+            if len(target.feature_definitions) > 1:
+                warnings.append(
+                    _warning(
+                        f'Multi binding-site speciesType "{instance.type_id}" '
+                        "defines multiple speciesFeatureTypes; a BNGL "
+                        "binding-site component holds at most one state domain "
+                        "and cannot represent independent features on one site.",
+                        "dropped",
+                    )
+                )
             if instance.compartment_reference:
                 resolved = (
                     (compartment_references or {})
@@ -1364,6 +1374,7 @@ def _species_pattern_from_multi(
     warnings: List[SBMLImportWarning],
     compartment_references: Optional[Dict[str, Dict[str, str]]] = None,
     compartment_types: Optional[Dict[str, str]] = None,
+    compartment_is_type: Optional[Dict[str, str]] = None,
     species_compartment: str = "",
     initialized_by_assignment: bool = False,
     abstract_species_ids: Optional[Set[str]] = None,
@@ -1397,9 +1408,35 @@ def _species_pattern_from_multi(
                 if not molecule.compartment:
                     molecule.compartment = species_compartment
         elif (compartment_types or {}).get(species_compartment) == type_compartment:
+            concrete_refs = (compartment_references or {}).get(species_compartment, {})
             for molecule in flat.molecules:
                 if molecule.compartment == type_compartment:
                     molecule.compartment = species_compartment
+                elif (
+                    molecule.compartment
+                    and (compartment_is_type or {}).get(molecule.compartment) == "true"
+                ):
+                    matching_targets = sorted(
+                        {
+                            target_comp
+                            for target_comp in concrete_refs.values()
+                            if (compartment_types or {}).get(target_comp)
+                            == molecule.compartment
+                        }
+                    )
+                    if len(matching_targets) == 1:
+                        molecule.compartment = matching_targets[0]
+                    else:
+                        warnings.append(
+                            _warning(
+                                f'Multi species "{_attribute(species, "id")}" '
+                                f'in compartment "{species_compartment}" cannot '
+                                "unambiguously specialize nested compartmentType "
+                                f'"{molecule.compartment}" '
+                                f"({len(matching_targets)} concrete match(es)).",
+                                "dropped",
+                            )
+                        )
     feature_entries: List[Tuple[Any, str]] = []
     feature_parent = _first_child(species, "listOfSpeciesFeatures", namespace)
     for child in list(feature_parent) if feature_parent is not None else []:
@@ -1510,18 +1547,15 @@ def _species_pattern_from_multi(
             values.append(_clean(value_labels[raw_value]))
         if not values:
             continue
-        # Multi §3.18.5 gives these values OR semantics. The complete
-        # occur=1 domain imposes no state constraint, matching an omitted
-        # feature and BNGL's state-less site pattern.
-        full_domain = (
-            occur == 1
-            and len(raw_values) == len(value_labels)
-            and set(raw_values) == set(value_labels)
-        )
-        if len(values) == 1:
+        # Multi §3.18.5 gives these values OR semantics. Listing the complete
+        # value domain imposes no state constraint for any valid occur count,
+        # matching an omitted feature and BNGL's state-less site pattern.
+        unique_values = list(dict.fromkeys(values))
+        full_domain = bool(value_labels) and set(raw_values) == set(value_labels)
+        if len(unique_values) == 1:
             for target in occurrence_targets:
-                target.active_state = values[0]
-        elif len(values) > 1 and not full_domain:
+                target.active_state = unique_values[0]
+        elif len(unique_values) > 1 and not full_domain:
             warnings.append(
                 _warning(
                     f'Multi speciesFeature "{feature_id}" has multiple values; '
@@ -1533,6 +1567,7 @@ def _species_pattern_from_multi(
     explicit_binding_positions: List[Tuple[int, int]] = []
     explicit_either_components = set()
     seen_outward_components = set()
+    seen_outward_targets = set()
     for outward in _children(
         _first_child(species, "listOfOutwardBindingSites", namespace),
         "outwardBindingSite",
@@ -1603,6 +1638,17 @@ def _species_pattern_from_multi(
                 )
             )
             continue
+        if id(targets[0]) in seen_outward_targets:
+            warnings.append(
+                _warning(
+                    f'Multi outwardBindingSite component "{component_token}" on '
+                    f'species "{_attribute(species, "id")}" refers to a binding '
+                    "site already listed via another alias.",
+                    "dropped",
+                )
+            )
+            continue
+        seen_outward_targets.add(id(targets[0]))
         targets[0].binding_status = status
         if status in {"unbound", "bound"}:
             for molecule_index, molecule in enumerate(flat.molecules):
@@ -3464,6 +3510,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             structure_warnings,
             compartment_references=compartment_references,
             compartment_types=compartment_types,
+            compartment_is_type=compartment_is_type,
             species_compartment=(
                 species_compartment if package_valid and not namespace_violation else ""
             ),

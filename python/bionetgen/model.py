@@ -1873,7 +1873,20 @@ class BioNetGenModel:
             self.generate_network()
         _cpp.io.write_net(self._model, self._network, path)
 
-    def write_sbml(self, path: str) -> None:
+    @property
+    def sbml_metadata(self) -> dict:
+        """Return parsed SBML source metadata (including layout/render/groups), if any."""
+        if not self._source_metadata:
+            return {}
+        import json
+
+        try:
+            parsed = json.loads(self._source_metadata)
+        except ValueError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    def write_sbml(self, path: str, *, preserve_packages: bool = True) -> None:
         self._require_export_supported("SBML export")
         if self._network is None:
             self.generate_network()
@@ -1883,6 +1896,18 @@ class BioNetGenModel:
             path,
             source_metadata=self._source_metadata,
         )
+        if preserve_packages and self._source_metadata:
+            from bionetgen.atomizer.modern.metadata import (
+                attach_preserved_package_metadata,
+            )
+
+            out_path = Path(path)
+            original_xml = out_path.read_text(encoding="utf-8")
+            updated_xml = attach_preserved_package_metadata(
+                original_xml, self._source_metadata
+            )
+            if updated_xml != original_xml:
+                out_path.write_text(updated_xml, encoding="utf-8")
 
     def write_matlab(self, path: str) -> None:
         self._require_export_supported("MATLAB export")

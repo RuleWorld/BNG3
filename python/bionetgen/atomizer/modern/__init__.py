@@ -78,7 +78,11 @@ from .arrays import (
 )
 from .multi import MultiParseResult, parse_multi_package
 from .metadata import (
+    METADATA_PACKAGE_NAMES,
+    attach_preserved_package_metadata,
+    extract_package_metadata,
     metadata_payload,
+    recover_package_metadata_from_payload,
     source_metadata_payload,
     source_metadata_summary,
 )
@@ -460,6 +464,7 @@ class Atomizer:
                     reaction_rate_functions=dict(self.model.reaction_rate_functions),
                     log=logger.getMessages(),
                     success=True,
+                    package_metadata=dict(self.model.package_metadata),
                 )
             logger.info("ATM005", "Building species composition table...")
             self.sct = build_species_composition_table(
@@ -525,6 +530,7 @@ class Atomizer:
                 reaction_rate_functions=dict(self.model.reaction_rate_functions),
                 log=logger.getMessages(),
                 success=True,
+                package_metadata=dict(self.model.package_metadata),
                 structural_inference=structural,
             )
         except Exception as exc:
@@ -847,7 +853,11 @@ __all__ = [
     "flatten_arrays_sbml",
     "has_arrays_constructs",
     "parse_multi_package",
+    "METADATA_PACKAGE_NAMES",
+    "attach_preserved_package_metadata",
+    "extract_package_metadata",
     "metadata_payload",
+    "recover_package_metadata_from_payload",
     "source_metadata_summary",
     "source_metadata_payload",
     "parse_resource_uri",
