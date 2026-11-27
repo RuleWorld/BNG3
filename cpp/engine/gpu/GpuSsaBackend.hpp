@@ -36,7 +36,10 @@ struct GpuSimParams {
     float tStart = 0.0f;
     float tEnd = 0.0f;
     uint64_t baseSeed = 0;
+    uint32_t hasFunctional = 0;
+    uint32_t pad0 = 0;
 };
+static_assert(sizeof(GpuSimParams) == 48);
 
 // One accelerator that can run a batch of SSA trajectories.
 class GpuSsaBackend {

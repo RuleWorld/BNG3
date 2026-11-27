@@ -71,14 +71,65 @@ struct BatchSsaMetrics {
     std::vector<double> timePointsDouble;
 };
 
+// Per-reaction execution flags in FlattenedReactionNetwork::reactionFlags.
+enum : uint8_t {
+    kBatchRxnFlagAbsoluteFlux = 1u << 0,
+    kBatchRxnFlagFunctional = 1u << 1,
+};
+
+// Stack bytecode VM opcodes for observable/species-dependent functional rates
+// in finite batch SSA GPU kernels (0..24 match NfnextGraphKernel).
+enum : uint8_t {
+    kBatchVmConst = 0,
+    kBatchVmObservable = 1,
+    kBatchVmAdd = 2,
+    kBatchVmSub = 3,
+    kBatchVmMul = 4,
+    kBatchVmDiv = 5,
+    kBatchVmPow = 6,
+    kBatchVmNeg = 7,
+    kBatchVmExp = 8,
+    kBatchVmLog = 9,
+    kBatchVmSqrt = 10,
+    kBatchVmSin = 11,
+    kBatchVmCos = 12,
+    kBatchVmTan = 13,
+    kBatchVmAbs = 14,
+    kBatchVmMin = 15,
+    kBatchVmMax = 16,
+    kBatchVmLess = 17,
+    kBatchVmLessEq = 18,
+    kBatchVmGreater = 19,
+    kBatchVmGreaterEq = 20,
+    kBatchVmEqual = 21,
+    kBatchVmNotEqual = 22,
+    kBatchVmJumpIfZero = 23,
+    kBatchVmJump = 24,
+    kBatchVmSpeciesCount = 25,
+};
+
+struct alignas(4) BatchVmInstr {
+    uint8_t op = 0;
+    uint8_t pad0 = 0;
+    uint16_t pad1 = 0;
+    uint32_t index = 0; // observable index, species index, or jump target
+    float value = 0.0f; // constant value or species stoich offset
+};
+static_assert(sizeof(BatchVmInstr) == 12);
+
 // Flattened representation of a generated reaction network for GPU execution
 struct FlattenedReactionNetwork {
     uint32_t numSpecies = 0;
     uint32_t numReactions = 0;
     uint32_t numObservables = 0;
+    bool hasFunctional = false;
 
     std::vector<int32_t> initialSpecies;
     std::vector<float> rateConstants;
+    std::vector<uint8_t> reactionFlags;
+    std::vector<uint32_t> rxnVmOffsets;
+    std::vector<uint32_t> rxnVmLens;
+    std::vector<BatchVmInstr> vmCode;
 
     // Reactants (CSR)
     std::vector<uint32_t> reactantOffsets;
@@ -99,8 +150,8 @@ struct FlattenedReactionNetwork {
     std::vector<uint32_t> obsSpecies;
     std::vector<float> obsWeights;
 
-    // Fails closed on any model the direct method cannot reproduce exactly
-    // (functional rates, TotalRate rules, non-finite rate constants).
+    // Fails closed on any model the direct GPU kernel cannot reproduce exactly
+    // (time-varying/TFUN rates, events, delays, non-finite constants, unsupported ops).
     static FlattenedReactionNetwork fromModelAndNetwork(
         const ast::Model& model,
         const GeneratedNetwork& network

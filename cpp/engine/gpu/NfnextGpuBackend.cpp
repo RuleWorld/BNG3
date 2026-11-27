@@ -456,9 +456,6 @@ detail::NfnextGraphPlan compileGraphPlan(
         refuse("event-triggered protocols are outside the GPU graph kernel slice");
     if (!source.compartments().empty() || !model.compartments.empty())
         refuse("compartments are outside the GPU graph kernel slice");
-    if (!source.energyFactors().empty() || !source.barrierFactors().empty() ||
-        !model.energy_patterns.empty())
-        refuse("energy-modulated rules are outside the GPU graph kernel slice");
     if (!source.populationMaps().empty() || !model.population_maps.empty())
         refuse("population maps are outside the GPU graph kernel slice");
     for (const auto& parameter : source.parameters()) {
@@ -535,19 +532,30 @@ detail::NfnextGraphPlan compileGraphPlan(
     // Track which molecule types can be dynamically created by rules.
     std::set<std::uint32_t> createdTypes;
     std::size_t expectedRuleCount = 0;
+    const bool hasEnergyFactors =
+        !source.energyFactors().empty() || !source.barrierFactors().empty() ||
+        !model.energy_patterns.empty();
     for (const auto& rule : source.rules()) {
         ++expectedRuleCount;
         if (rule.reverse()) ++expectedRuleCount;
         if (rule.delayExpression() || rule.resolvedDelayExpression()) {
             refuse("delayed rules are outside the GPU graph kernel slice");
         }
-        if (!rule.forward().filters.empty() ||
-            (rule.reverse() && !rule.reverse()->filters.empty())) {
-            refuse("rule include/exclude filters are outside the GPU graph kernel slice");
-        }
+        auto checkFilters = [&](const bng::compile::CompiledRuleDirection& dir) {
+            for (const auto& filter : dir.filters) {
+                if (filter.products) {
+                    refuse("product include/exclude filters are outside the GPU graph kernel slice");
+                }
+            }
+        };
+        checkFilters(rule.forward());
+        if (rule.reverse()) checkFilters(*rule.reverse());
     }
-    if (model.expanded_rules.size() != expectedRuleCount) {
+    if (!hasEnergyFactors && model.expanded_rules.size() != expectedRuleCount) {
         refuse("NFIR did not preserve every rule direction for the GPU graph kernel");
+    }
+    if (hasEnergyFactors && model.expanded_rules.size() < expectedRuleCount) {
+        refuse("NFIR did not preserve every energy-expanded rule direction for the GPU graph kernel");
     }
     for (const auto& rule : model.expanded_rules) {
         for (const auto& action : rule.actions) {
@@ -699,6 +707,126 @@ detail::NfnextGraphPlan compileGraphPlan(
         return {offset, static_cast<std::uint32_t>(keys.size())};
     };
 
+    // Helper to expand a PatternIR (observable term or reactant filter pattern)
+    // across same-name site permutations and append canonical GpuObsTermDef rows.
+    auto appendPatternTerms = [&](const nfnext::PatternIR& basePat, bool isSpecies,
+                                  std::uint32_t baseWeight) -> std::size_t {
+        if (basePat.nodes.empty() || basePat.nodes.size() > detail::kGpuMaxObsPatternNodes ||
+            basePat.bonds.size() > detail::kGpuMaxObsPatternBonds) {
+            refuse("pattern node/bond count exceeds bounded GPU graph kernel capacity");
+        }
+        for (const auto& nd : basePat.nodes) {
+            if (nd.compartment.has_value()) {
+                refuse("compartmental pattern is outside the GPU graph kernel slice");
+            }
+        }
+        if (!basePat.molecularity.empty() || !basePat.aliases.empty() ||
+            !basePat.connected_to.empty()) {
+            refuse("topological pattern constraints are outside the GPU graph kernel slice");
+        }
+        std::vector<std::vector<std::vector<std::uint16_t>>> nodePerms(basePat.nodes.size());
+        for (std::size_t ni = 0; ni < basePat.nodes.size(); ++ni) {
+            nodePerms[ni] = sitePermutationsForType(
+                model.molecule_types.at(basePat.nodes[ni].molecule_type));
+        }
+        std::vector<std::size_t> idx(basePat.nodes.size(), 0);
+        using ObsTermKey = std::tuple<
+            std::vector<std::pair<std::int32_t, std::vector<CanonicalConstraintKey>>>,
+            std::vector<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t, std::uint16_t>>>;
+        std::set<ObsTermKey> seenTerms;
+
+        for (;;) {
+            std::vector<std::pair<std::int32_t, std::vector<CanonicalConstraintKey>>> nodeKeys;
+            nodeKeys.reserve(basePat.nodes.size());
+            for (std::size_t ni = 0; ni < basePat.nodes.size(); ++ni) {
+                nodeKeys.emplace_back(
+                    static_cast<std::int32_t>(basePat.nodes[ni].molecule_type),
+                    canonicalizeNodeConstraints(basePat.nodes[ni], nodePerms[ni][idx[ni]]));
+            }
+            std::vector<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t, std::uint16_t>> bondKeys;
+            bondKeys.reserve(basePat.bonds.size());
+            for (const auto& b : basePat.bonds) {
+                auto n0 = static_cast<std::uint16_t>(b.first);
+                auto s0 = nodePerms[b.first][idx[b.first]][b.first_site];
+                auto n1 = static_cast<std::uint16_t>(b.second);
+                auto s1 = nodePerms[b.second][idx[b.second]][b.second_site];
+                if (std::tie(n1, s1) < std::tie(n0, s0)) {
+                    std::swap(n0, n1);
+                    std::swap(s0, s1);
+                }
+                bondKeys.emplace_back(n0, s0, n1, s1);
+            }
+            std::vector<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t, std::uint16_t>> canonBonds = bondKeys;
+            if (basePat.nodes.size() >= 3) {
+                bool tailIdentical = true;
+                for (std::size_t ni = 2; ni < basePat.nodes.size(); ++ni) {
+                    if (nodeKeys[ni] != nodeKeys[1]) {
+                        tailIdentical = false;
+                        break;
+                    }
+                }
+                if (tailIdentical) {
+                    bool allStarTo0 = true;
+                    for (const auto& [n0, s0, n1, s1] : canonBonds) {
+                        if (n0 != 0 || n1 == 0) {
+                            allStarTo0 = false;
+                            break;
+                        }
+                    }
+                    if (allStarTo0) {
+                        std::sort(canonBonds.begin(), canonBonds.end(),
+                                  [](const auto& a, const auto& b) {
+                                      return std::tie(std::get<1>(a), std::get<3>(a)) <
+                                             std::tie(std::get<1>(b), std::get<3>(b));
+                                  });
+                        for (std::size_t bi = 0; bi < canonBonds.size(); ++bi) {
+                            std::get<2>(canonBonds[bi]) = static_cast<std::uint16_t>(bi + 1);
+                        }
+                    }
+                }
+            }
+            std::sort(canonBonds.begin(), canonBonds.end());
+            ObsTermKey key{nodeKeys, canonBonds};
+            if (seenTerms.insert(key).second) {
+                detail::GpuObsTermDef tdef;
+                tdef.nodeOffset = static_cast<std::uint32_t>(plan.obsNodes.size());
+                tdef.nodeCount = static_cast<std::uint32_t>(nodeKeys.size());
+                for (const auto& [mtype, ckeys] : nodeKeys) {
+                    const auto [cOff, cCnt] = appendConstraints(ckeys);
+                    plan.obsNodes.push_back({mtype, cOff, cCnt});
+                }
+                tdef.bondOffset = static_cast<std::uint32_t>(plan.obsBonds.size());
+                tdef.bondCount = static_cast<std::uint32_t>(canonBonds.size());
+                for (const auto& [n0, s0, n1, s1] : canonBonds) {
+                    plan.obsBonds.push_back({n0, s0, n1, s1});
+                }
+                tdef.weight = baseWeight;
+                plan.obsTerms.push_back(tdef);
+            }
+
+            std::size_t pos = basePat.nodes.size();
+            while (pos > 0) {
+                --pos;
+                if (++idx[pos] < nodePerms[pos].size()) break;
+                idx[pos] = 0;
+                if (pos == 0) goto done_pat_perms;
+            }
+            if (basePat.nodes.empty()) break;
+        }
+    done_pat_perms:
+        if (!isSpecies && seenTerms.size() > 1 && baseWeight > 1) {
+            const std::size_t added = seenTerms.size();
+            if (baseWeight % added == 0) {
+                for (std::size_t k = plan.obsTerms.size() - added;
+                     k < plan.obsTerms.size(); ++k) {
+                    plan.obsTerms[k].weight =
+                        static_cast<std::uint32_t>(baseWeight / added);
+                }
+            }
+        }
+        return seenTerms.size();
+    };
+
     // Compile Observables first so dynamic rate laws can bind observable indices!
     std::unordered_map<nfnext::ObservableId, std::uint32_t> obsIdToGpuIndex;
     nfnext::FunctionEnvironment funcEnv;
@@ -727,122 +855,7 @@ detail::NfnextGraphPlan compileGraphPlan(
             const auto basePat = lowerObservablePatternToIr(term.pattern, model);
             const std::uint32_t baseWeight =
                 def.isSpecies ? 1u : observableAutomorphismWeight(basePat, model);
-
-            // Expand same-name site permutations on each node of the observable term,
-            // deduplicating canonically so symmetric species/molecule patterns match
-            // any bound/free site subset (e.g. AB1/AB2/AB_motif on A(b,b,b)).
-            std::vector<std::vector<std::vector<std::uint16_t>>> nodePerms(basePat.nodes.size());
-            for (std::size_t ni = 0; ni < basePat.nodes.size(); ++ni) {
-                nodePerms[ni] = sitePermutationsForType(
-                    model.molecule_types.at(basePat.nodes[ni].molecule_type));
-            }
-            std::vector<std::size_t> idx(basePat.nodes.size(), 0);
-            using ObsTermKey = std::tuple<
-                std::vector<std::pair<std::int32_t, std::vector<CanonicalConstraintKey>>>,
-                std::vector<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t, std::uint16_t>>>;
-            std::set<ObsTermKey> seenTerms;
-
-            for (;;) {
-                std::vector<std::pair<std::int32_t, std::vector<CanonicalConstraintKey>>> nodeKeys;
-                nodeKeys.reserve(basePat.nodes.size());
-                for (std::size_t ni = 0; ni < basePat.nodes.size(); ++ni) {
-                    nodeKeys.emplace_back(
-                        static_cast<std::int32_t>(basePat.nodes[ni].molecule_type),
-                        canonicalizeNodeConstraints(basePat.nodes[ni], nodePerms[ni][idx[ni]]));
-                }
-                std::vector<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t, std::uint16_t>> bondKeys;
-                bondKeys.reserve(basePat.bonds.size());
-                for (const auto& b : basePat.bonds) {
-                    auto n0 = static_cast<std::uint16_t>(b.first);
-                    auto s0 = nodePerms[b.first][idx[b.first]][b.first_site];
-                    auto n1 = static_cast<std::uint16_t>(b.second);
-                    auto s1 = nodePerms[b.second][idx[b.second]][b.second_site];
-                    if (std::tie(n1, s1) < std::tie(n0, s0)) {
-                        std::swap(n0, n1);
-                        std::swap(s0, s1);
-                    }
-                    bondKeys.emplace_back(n0, s0, n1, s1);
-                }
-                // For canonical species/molecule deduplication when non-root nodes are
-                // identical (e.g. AB2 with two B(a!0), B(a!1) attached to A(b,b,b)),
-                // canonicalize the bond tuple list by sorting partner-site pairs if
-                // nodes 1..k have identical type & constraints.
-                std::vector<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t, std::uint16_t>> canonBonds = bondKeys;
-                if (basePat.nodes.size() >= 3) {
-                    bool tailIdentical = true;
-                    for (std::size_t ni = 2; ni < basePat.nodes.size(); ++ni) {
-                        if (nodeKeys[ni] != nodeKeys[1]) {
-                            tailIdentical = false;
-                            break;
-                        }
-                    }
-                    if (tailIdentical) {
-                        bool allStarTo0 = true;
-                        for (const auto& [n0, s0, n1, s1] : canonBonds) {
-                            if (n0 != 0 || n1 == 0) {
-                                allStarTo0 = false;
-                                break;
-                            }
-                        }
-                        if (allStarTo0) {
-                            std::sort(canonBonds.begin(), canonBonds.end(),
-                                      [](const auto& a, const auto& b) {
-                                          return std::tie(std::get<1>(a), std::get<3>(a)) <
-                                                 std::tie(std::get<1>(b), std::get<3>(b));
-                                      });
-                            for (std::size_t bi = 0; bi < canonBonds.size(); ++bi) {
-                                std::get<2>(canonBonds[bi]) = static_cast<std::uint16_t>(bi + 1);
-                            }
-                        }
-                    }
-                }
-                std::sort(canonBonds.begin(), canonBonds.end());
-                ObsTermKey key{nodeKeys, canonBonds};
-                if (seenTerms.insert(key).second) {
-                    detail::GpuObsTermDef tdef;
-                    tdef.nodeOffset = static_cast<std::uint32_t>(plan.obsNodes.size());
-                    tdef.nodeCount = static_cast<std::uint32_t>(nodeKeys.size());
-                    for (const auto& [mtype, ckeys] : nodeKeys) {
-                        const auto [cOff, cCnt] = appendConstraints(ckeys);
-                        plan.obsNodes.push_back({mtype, cOff, cCnt});
-                    }
-                    tdef.bondOffset = static_cast<std::uint32_t>(plan.obsBonds.size());
-                    tdef.bondCount = static_cast<std::uint32_t>(canonBonds.size());
-                    for (const auto& [n0, s0, n1, s1] : canonBonds) {
-                        plan.obsBonds.push_back({n0, s0, n1, s1});
-                    }
-                    // When multiple same-name site permutations produced distinct variants
-                    // (e.g. AB_motif has 3 variants on A(b,b,b)), each variant is matched
-                    // once without double-counting; when only 1 variant exists (e.g. R(l,l)
-                    // or L(r,r,r)), preserve the BNG2/NFsim automorphism weight (2!, 3!).
-                    tdef.weight = baseWeight;
-                    plan.obsTerms.push_back(tdef);
-                }
-
-                // Advance multi-node permutation odometer.
-                std::size_t pos = basePat.nodes.size();
-                while (pos > 0) {
-                    --pos;
-                    if (++idx[pos] < nodePerms[pos].size()) break;
-                    idx[pos] = 0;
-                    if (pos == 0) goto done_obs_perms;
-                }
-                if (basePat.nodes.empty()) break;
-            }
-        done_obs_perms:
-            // Adjust weight if distinct site variants already split an automorphism class
-            // (for Species observables weight is always 1).
-            if (!def.isSpecies && seenTerms.size() > 1 && baseWeight > 1) {
-                // Only divide out exact factor when every variant has identical multiplicity.
-                const std::size_t added = seenTerms.size();
-                if (baseWeight % added == 0) {
-                    for (std::size_t k = plan.obsTerms.size() - added;
-                         k < plan.obsTerms.size(); ++k) {
-                        plan.obsTerms[k].weight =
-                            static_cast<std::uint32_t>(baseWeight / added);
-                    }
-                }
-            }
+            appendPatternTerms(basePat, def.isSpecies != 0, baseWeight);
         }
         def.termCount = static_cast<std::uint32_t>(plan.obsTerms.size()) - def.termOffset;
         plan.observables.push_back(def);
@@ -886,10 +899,10 @@ detail::NfnextGraphPlan compileGraphPlan(
 
     // Compile each expanded rule with canonical same-name site expansion.
     for (const auto& rule : model.expanded_rules) {
-        if (rule.volume_factor != 1.0 || rule.match_once || rule.total_rate ||
-            rule.move_connected || !rule.filters.empty() ||
+        if (rule.volume_factor != 1.0 || rule.match_once ||
+            rule.move_connected ||
             !rule.pattern.aliases.empty() || !rule.pattern.connected_to.empty()) {
-            refuse("rule modifiers/filters/aliases are outside GPU graph kernel slice");
+            refuse("rule modifiers/aliases are outside GPU graph kernel slice");
         }
         // Allow SameComplex when the two nodes are already directly bonded in the pattern;
         // allow DifferentComplex between 2 unbound reactant nodes (enforced in kernel).
@@ -919,6 +932,36 @@ detail::NfnextGraphPlan compileGraphPlan(
         if (nNodes == 1 && nBonds != 0) {
             refuse("self-bonded single-node reactant is outside GPU graph kernel slice");
         }
+
+        // Compile reactant include/exclude filters (exact Gillespie thinning on GPU).
+        const auto ruleFilterOffset = static_cast<std::uint32_t>(plan.ruleFilters.size());
+        if (!rule.filters.empty()) {
+            if (rule.total_rate) {
+                refuse("TotalRate combined with include/exclude filters is outside GPU graph kernel slice");
+            }
+            for (const auto& filter : rule.filters) {
+                if (filter.products) {
+                    refuse("product include/exclude filters are outside GPU graph kernel slice");
+                }
+                if (filter.reactant_node_offset >= nNodes) {
+                    refuse("reactant filter node offset out of range in GPU graph kernel");
+                }
+                if (filter.patterns.empty()) {
+                    refuse("empty include/exclude filter pattern in GPU graph kernel");
+                }
+                detail::GpuRuleFilter gf{};
+                gf.termOffset = static_cast<std::uint32_t>(plan.obsTerms.size());
+                gf.reactantNode = static_cast<std::uint16_t>(filter.reactant_node_offset);
+                gf.include = filter.include ? 1u : 0u;
+                for (const auto& fPat : filter.patterns) {
+                    appendPatternTerms(fPat, false, 1u);
+                }
+                gf.termCount = static_cast<std::uint32_t>(plan.obsTerms.size()) - gf.termOffset;
+                plan.ruleFilters.push_back(gf);
+            }
+        }
+        const auto ruleFilterCount = static_cast<std::uint16_t>(
+            plan.ruleFilters.size() - ruleFilterOffset);
 
         // Compile rate (static elementary or dynamic FunctionVM bytecode).
         bool isDynamic = false;
@@ -1037,7 +1080,15 @@ detail::NfnextGraphPlan compileGraphPlan(
 
         const bool isInterchangeable =
             (nNodes == 2 && nBonds == 0 && !rule.pattern.interchangeable.empty());
+        if (isInterchangeable && ruleFilterCount > 0u) {
+            refuse("interchangeable reactants with include/exclude filters are outside GPU graph kernel slice");
+        }
+        if (rule.total_rate && nNodes == 2 && nBonds == 0 && !isInterchangeable &&
+            rule.pattern.nodes[0].molecule_type == rule.pattern.nodes[1].molecule_type) {
+            refuse("TotalRate on non-interchangeable same-type unbound reactants is outside GPU graph kernel slice");
+        }
 
+        const std::size_t rulesBeforeExpand = plan.rules.size();
         std::vector<std::size_t> idx(nNodes, 0);
         for (;;) {
             std::vector<std::vector<CanonicalConstraintKey>> nodeC(nNodes);
@@ -1118,6 +1169,10 @@ detail::NfnextGraphPlan compileGraphPlan(
                 gr.rate = staticRate;
                 gr.isDynamicRate = isDynamic ? 1 : 0;
                 gr.createdCount = createdCount;
+                gr.filterOffset = ruleFilterOffset;
+                gr.filterCount = ruleFilterCount;
+                gr.isTotalRate = rule.total_rate ? 1u : 0u;
+                gr.pad0 = 0u;
 
                 if (nNodes == 1) {
                     gr.isTwoComponent = 0;
@@ -1153,7 +1208,10 @@ detail::NfnextGraphPlan compileGraphPlan(
                 if (pos == 0) goto done_rule_perms;
             }
         }
-    done_rule_perms:;
+    done_rule_perms:
+        if (rule.total_rate && (plan.rules.size() - rulesBeforeExpand) != 1) {
+            refuse("TotalRate on multivalent site-expanded rule is outside GPU graph kernel slice");
+        }
     }
 
     if (plan.rules.size() > 256 || plan.matchLists.size() > 256) {

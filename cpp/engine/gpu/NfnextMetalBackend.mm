@@ -461,6 +461,14 @@ struct GpuRuleAction {
     int value;
 };
 
+struct GpuRuleFilter {
+    uint termOffset;
+    uint termCount;
+    ushort reactantNode;
+    uchar include;
+    uchar pad;
+};
+
 struct GpuGraphRule {
     uint matchList0;
     uint matchList1;
@@ -474,7 +482,10 @@ struct GpuGraphRule {
     uchar isDynamicRate;
     uchar hasLocalObservable;
     uint createdCount;
-    uint pad;
+    uint filterOffset;
+    ushort filterCount;
+    uchar isTotalRate;
+    uchar pad0;
 };
 
 struct GpuVmInstr {
@@ -924,6 +935,7 @@ kernel void nfnext_graph_batch(
     device float* outputs [[buffer(27)]],
     device ulong* eventCounts [[buffer(28)]],
     device uint* errorFlags [[buffer(29)]],
+    constant GpuRuleFilter* ruleFilters [[buffer(30)]],
     uint trajectory [[thread_position_in_grid]])
 {
     if (trajectory >= params.batchSize) return;
@@ -1003,7 +1015,9 @@ kernel void nfnext_graph_batch(
                     const uint c1 = mlCounts[trajectory * params.numMatchLists + rule.matchList1];
                     countF = (float)c0 * (float)c1;
                 }
-                const float prop = rate * countF;
+                const float prop = (rule.isTotalRate != 0u)
+                    ? ((countF > 0.0f) ? rate : 0.0f)
+                    : (rate * countF);
                 ruleProps[r] = prop;
                 total += prop;
             }
@@ -1059,6 +1073,57 @@ kernel void nfnext_graph_batch(
                 nodes[1] = m1;
             } else if (ml0.partnerType >= 0) {
                 nodes[1] = siteBondMol[(pBase + (uint)m0) * params.maxSites + (uint)ml0.bondSite0];
+            }
+
+            if (rule.filterCount > 0u) {
+                bool filterPassed = true;
+                for (uint fi = 0u; fi < (uint)rule.filterCount; ++fi) {
+                    const GpuRuleFilter filt = ruleFilters[rule.filterOffset + fi];
+                    const int root = nodes[filt.reactantNode];
+                    if (root < 0) { filterPassed = false; break; }
+                    int comp[32];
+                    uint compHead = 0u, compTail = 0u;
+                    comp[compTail++] = root;
+                    while (compHead < compTail) {
+                        const int cur = comp[compHead++];
+                        const uint sc = typeSiteCounts[(uint)molType[pBase + (uint)cur]];
+                        for (uint s = 0u; s < sc; ++s) {
+                            const int p = siteBondMol[(pBase + (uint)cur) * params.maxSites + s];
+                            if (p < 0 || alive[pBase + (uint)p] == 0) continue;
+                            bool seen = false;
+                            for (uint k = 0u; k < compTail; ++k) {
+                                if (comp[k] == p) { seen = true; break; }
+                            }
+                            if (!seen) {
+                                if (compTail >= 32u) {
+                                    errorFlags[trajectory] = 4u;
+                                    eventCounts[trajectory] = events;
+                                    return;
+                                }
+                                comp[compTail++] = p;
+                            }
+                        }
+                    }
+                    bool anyMatched = false;
+                    for (uint ti = 0u; ti < filt.termCount; ++ti) {
+                        const GpuObsTermDef term = obsTerms[filt.termOffset + ti];
+                        for (uint ci = 0u; ci < compTail; ++ci) {
+                            if (matchObsTermFromRoot(pBase, params.maxSites, comp[ci], term,
+                                                     obsNodes, obsBonds, constraints, typeSiteCounts,
+                                                     alive, molType, siteState, siteBondMol, siteBondSite,
+                                                     false)) {
+                                anyMatched = true;
+                                break;
+                            }
+                        }
+                        if (anyMatched) break;
+                    }
+                    if ((filt.include != 0u && !anyMatched) || (filt.include == 0u && anyMatched)) {
+                        filterPassed = false;
+                        break;
+                    }
+                }
+                if (!filterPassed) continue;
             }
 
             int touched[32];
@@ -1307,14 +1372,16 @@ NfnextDeviceOutput simulateNfnextGraphMetal(
         id<MTLBuffer> b27 = makeBuffer(device, nullptr, outputBytes);
         id<MTLBuffer> b28 = makeBuffer(device, nullptr, eventBytes);
         id<MTLBuffer> b29 = makeBuffer(device, nullptr, flagBytes);
+        id<MTLBuffer> b30 = makeBuffer(device, plan.ruleFilters.data(), checkedBytes(plan.ruleFilters.size(), sizeof(GpuRuleFilter)));
 
-        id<MTLBuffer> allBuffers[30] = {
+        id<MTLBuffer> allBuffers[31] = {
             b0, b1, b2, b3, b4, b5, b6, b7, b8, b9,
             b10, b11, b12, b13, b14, b15, b16, b17, b18, b19,
-            b20, b21, b22, b23, b24, b25, b26, b27, b28, b29
+            b20, b21, b22, b23, b24, b25, b26, b27, b28, b29,
+            b30
         };
         std::size_t totalBytes = 0;
-        for (int i = 0; i < 30; ++i) {
+        for (int i = 0; i < 31; ++i) {
             if (!allBuffers[i]) {
                 throw std::runtime_error("NFnext Metal graph backend: failed to allocate device buffer " + std::to_string(i));
             }
@@ -1327,7 +1394,7 @@ NfnextDeviceOutput simulateNfnextGraphMetal(
         id<MTLCommandBuffer> command = [queue commandBuffer];
         id<MTLComputeCommandEncoder> encoder = [command computeCommandEncoder];
         [encoder setComputePipelineState:pipeline];
-        for (NSUInteger i = 0; i < 30; ++i) {
+        for (NSUInteger i = 0; i < 31; ++i) {
             [encoder setBuffer:allBuffers[i] offset:0 atIndex:i];
         }
         const MTLSize grid = MTLSizeMake(batchSize, 1, 1);
@@ -1350,6 +1417,8 @@ NfnextDeviceOutput simulateNfnextGraphMetal(
                 throw std::runtime_error("NFnext Metal graph backend: particle capacity exceeded in trajectory " + std::to_string(t));
             if (flags[t] == 3u)
                 throw std::runtime_error("NFnext Metal graph backend: invalid dynamic rate in trajectory " + std::to_string(t));
+            if (flags[t] == 4u)
+                throw std::runtime_error("NFnext Metal graph backend: complex size exceeded bounded BFS limit in trajectory " + std::to_string(t));
         }
 
         NfnextDeviceOutput output;

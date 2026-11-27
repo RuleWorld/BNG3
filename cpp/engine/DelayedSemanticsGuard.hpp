@@ -4,6 +4,7 @@
 #include <cctype>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #include "ast/Model.hpp"
 #include "NetworkGenerator.hpp"
@@ -116,6 +117,33 @@ inline void requireNoDelayedRuleSemantics(const ast::Model& model,
             throw std::runtime_error("delay(x, tau) expressions are not supported by " + backend);
         }
     }
+}
+
+// Validate constant reaction-level delays for DDE-capable exporters while keeping
+// delay(x, tau) rate expressions strictly fail-closed.
+inline std::vector<double> collectConstantReactionDelays(
+    const ast::Model& model,
+    const GeneratedNetwork& network,
+    const std::string& backend) {
+    requireNoExpressionDelaySemantics(model, network, backend);
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.getDelayExpression()) {
+            (void)delayedTime(*rule.getDelayExpression(), model);
+        }
+        for (const auto& rate : rule.getRates()) {
+            if (expressionUsesDelay(rate)) {
+                throw std::runtime_error("delay(x, tau) expressions are not supported by " + backend);
+            }
+        }
+    }
+    std::vector<double> delays(network.reactions.size(), 0.0);
+    for (std::size_t r = 0; r < network.reactions.size(); ++r) {
+        const auto& reaction = network.reactions.all()[r];
+        if (reaction.getDelayExpression()) {
+            delays[r] = delayedTime(*reaction.getDelayExpression(), model);
+        }
+    }
+    return delays;
 }
 
 }  // namespace bng::engine

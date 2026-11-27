@@ -70,12 +70,26 @@ struct SimParams {
     float tStart;
     float tEnd;
     ulong baseSeed;
+    uint hasFunctional;
+    uint pad0;
+};
+
+struct BatchVmInstr {
+    uchar op;
+    uchar pad0;
+    ushort pad1;
+    uint index;
+    float value;
 };
 
 struct TrajectoryContext {
     uint trajId;
     constant SimParams& params;
     constant float* rateConstants;
+    constant uchar* reactionFlags;
+    constant uint* rxnVmOffsets;
+    constant uint* rxnVmLens;
+    constant BatchVmInstr* vmCode;
     constant uint* reactantOffsets;
     constant uint* reactantSpecies;
     constant float* reactantStoichOffsets;
@@ -91,14 +105,122 @@ struct TrajectoryContext {
     device float* trajectoryObservables;
     device uint* trajectoryEventCounts;
     device int* trajectorySpecies;
+    device uint* errorFlags;
     int local_y[64];
+    float obsCache[64];
 
-    float compute_prop(uint r) {
+    int get_pop(uint s) {
+        return (params.numSpecies <= 64) ? local_y[s] : y[s];
+    }
+
+    float eval_obs(uint g) {
+        float sum = 0.0f;
+        uint start = obsOffsets[g];
+        uint end = obsOffsets[g + 1];
+        for (uint i = start; i < end; ++i) {
+            sum += obsWeights[i] * (float)get_pop(obsSpecies[i]);
+        }
+        return sum;
+    }
+
+    void refresh_obs_cache() {
+        uint limit = (params.numObservables < 64u) ? params.numObservables : 64u;
+        for (uint g = 0; g < limit; ++g) {
+            obsCache[g] = eval_obs(g);
+        }
+    }
+
+    float eval_vm(uint vmOffset, uint vmLen, thread bool& ok) {
+        float stack[32];
+        uint top = 0u;
+        uint pc = 0u;
+        while (pc < vmLen) {
+            const BatchVmInstr ins = vmCode[vmOffset + pc++];
+            const uchar op = ins.op;
+            if (op == 0u) {
+                stack[top++] = ins.value;
+            } else if (op == 1u) {
+                stack[top++] = (ins.index < 64u) ? obsCache[ins.index] : eval_obs(ins.index);
+            } else if (op == 2u) {
+                float b = stack[--top]; stack[top - 1u] += b;
+            } else if (op == 3u) {
+                float b = stack[--top]; stack[top - 1u] -= b;
+            } else if (op == 4u) {
+                float b = stack[--top]; stack[top - 1u] *= b;
+            } else if (op == 5u) {
+                float b = stack[--top];
+                if (b == 0.0f) { ok = false; return 0.0f; }
+                stack[top - 1u] /= b;
+            } else if (op == 6u) {
+                float b = stack[--top]; stack[top - 1u] = pow(stack[top - 1u], b);
+            } else if (op == 7u) {
+                stack[top - 1u] = -stack[top - 1u];
+            } else if (op == 8u) {
+                stack[top - 1u] = exp(stack[top - 1u]);
+            } else if (op == 9u) {
+                stack[top - 1u] = log(stack[top - 1u]);
+            } else if (op == 10u) {
+                stack[top - 1u] = sqrt(stack[top - 1u]);
+            } else if (op == 11u) {
+                stack[top - 1u] = sin(stack[top - 1u]);
+            } else if (op == 12u) {
+                stack[top - 1u] = cos(stack[top - 1u]);
+            } else if (op == 13u) {
+                stack[top - 1u] = tan(stack[top - 1u]);
+            } else if (op == 14u) {
+                stack[top - 1u] = fabs(stack[top - 1u]);
+            } else if (op == 15u) {
+                float b = stack[--top]; stack[top - 1u] = min(stack[top - 1u], b);
+            } else if (op == 16u) {
+                float b = stack[--top]; stack[top - 1u] = max(stack[top - 1u], b);
+            } else if (op == 17u) {
+                float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] < b) ? 1.0f : 0.0f;
+            } else if (op == 18u) {
+                float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] <= b) ? 1.0f : 0.0f;
+            } else if (op == 19u) {
+                float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] > b) ? 1.0f : 0.0f;
+            } else if (op == 20u) {
+                float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] >= b) ? 1.0f : 0.0f;
+            } else if (op == 21u) {
+                float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] == b) ? 1.0f : 0.0f;
+            } else if (op == 22u) {
+                float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] != b) ? 1.0f : 0.0f;
+            } else if (op == 23u) {
+                if (stack[--top] == 0.0f) pc = ins.index;
+            } else if (op == 24u) {
+                pc = ins.index;
+            } else if (op == 25u) {
+                stack[top++] = max(0.0f, (float)get_pop(ins.index) - ins.value);
+            } else {
+                ok = false;
+                return 0.0f;
+            }
+        }
+        if (top != 1u || !isfinite(stack[0]) || stack[0] < 0.0f) {
+            ok = false;
+            return 0.0f;
+        }
+        return stack[0];
+    }
+
+    float compute_prop(uint r, thread bool& ok) {
+        const uchar flags = reactionFlags[r];
         float prop = rateConstants[r];
+        if ((flags & 2u) != 0u) {
+            prop = eval_vm(rxnVmOffsets[r], rxnVmLens[r], ok);
+            if (!ok) return 0.0f;
+        }
         uint rStart = reactantOffsets[r];
         uint rEnd = reactantOffsets[r + 1];
+        if ((flags & 1u) != 0u) {
+            for (uint i = rStart; i < rEnd; ++i) {
+                int pop = get_pop(reactantSpecies[i]);
+                if ((float)pop <= reactantStoichOffsets[i]) return 0.0f;
+            }
+            return prop;
+        }
         for (uint i = rStart; i < rEnd; ++i) {
-            int pop = (params.numSpecies <= 64) ? local_y[reactantSpecies[i]] : y[reactantSpecies[i]];
+            int pop = get_pop(reactantSpecies[i]);
             float offset = reactantStoichOffsets[i];
             float eff = max(0.0f, (float)pop - offset);
             prop *= eff;
@@ -124,14 +246,7 @@ struct TrajectoryContext {
             ((ulong)trajId * (ulong)params.numOutputPoints + (ulong)timeIdx) *
                 (ulong)params.numObservables;
         for (uint g = 0; g < params.numObservables; ++g) {
-            float sum = 0.0f;
-            uint start = obsOffsets[g];
-            uint end = obsOffsets[g + 1];
-            for (uint i = start; i < end; ++i) {
-                int pop = (params.numSpecies <= 64) ? local_y[obsSpecies[i]] : y[obsSpecies[i]];
-                sum += obsWeights[i] * (float)pop;
-            }
-            obsOut[g] = sum;
+            obsOut[g] = eval_obs(g);
         }
     }
 
@@ -170,10 +285,20 @@ struct TrajectoryContext {
                 break;
             }
 
+            if (params.hasFunctional != 0u) {
+                refresh_obs_cache();
+            }
+
             // Pass 1: compute total propensity
+            bool ok = true;
             float totalPropensity = 0.0f;
             for (uint r = 0; r < params.numReactions; ++r) {
-                totalPropensity += compute_prop(r);
+                totalPropensity += compute_prop(r, ok);
+                if (!ok) {
+                    errorFlags[trajId] = 1u;
+                    trajectoryEventCounts[trajId] = ssaStepCount;
+                    return;
+                }
             }
 
             if (totalPropensity <= 0.0f) {
@@ -203,7 +328,12 @@ struct TrajectoryContext {
             float cum = 0.0f;
             uint selected = params.numReactions - 1;
             for (uint r = 0; r < params.numReactions; ++r) {
-                cum += compute_prop(r);
+                cum += compute_prop(r, ok);
+                if (!ok) {
+                    errorFlags[trajId] = 1u;
+                    trajectoryEventCounts[trajId] = ssaStepCount;
+                    return;
+                }
                 if (cum >= target) {
                     selected = r;
                     break;
@@ -283,16 +413,22 @@ kernel void metal_batch_direct_ssa(
     device float* trajectoryObservables [[buffer(15)]],
     device uint* trajectoryEventCounts [[buffer(16)]],
     device int* trajectorySpecies [[buffer(17)]],
+    constant uchar* reactionFlags [[buffer(18)]],
+    constant uint* rxnVmOffsets [[buffer(19)]],
+    constant uint* rxnVmLens [[buffer(20)]],
+    constant BatchVmInstr* vmCode [[buffer(21)]],
+    device uint* errorFlags [[buffer(22)]],
     uint trajId [[thread_position_in_grid]])
 {
     if (trajId >= params.batchSize) return;
 
     device int* y = trajectoryStates + ((ulong)trajId * (ulong)params.numSpecies);
     TrajectoryContext ctx{
-        trajId, params, rateConstants, reactantOffsets, reactantSpecies, reactantStoichOffsets,
+        trajId, params, rateConstants, reactionFlags, rxnVmOffsets, rxnVmLens, vmCode,
+        reactantOffsets, reactantSpecies, reactantStoichOffsets,
         reactChangeOffsets, reactChangeSpecies, prodChangeOffsets, prodChangeSpecies,
         obsOffsets, obsSpecies, obsWeights, outputTimes, y, trajectoryObservables, trajectoryEventCounts,
-        trajectorySpecies, {}
+        trajectorySpecies, errorFlags, {}, {}
     };
     ctx.run(initialSpecies);
 }
@@ -313,6 +449,10 @@ struct MetalSimulatorImpl {
 
     // GPU buffers holding the network structure
     id<MTLBuffer> bufRateConstants = nil;
+    id<MTLBuffer> bufReactionFlags = nil;
+    id<MTLBuffer> bufRxnVmOffsets = nil;
+    id<MTLBuffer> bufRxnVmLens = nil;
+    id<MTLBuffer> bufVmCode = nil;
     id<MTLBuffer> bufReactantOffsets = nil;
     id<MTLBuffer> bufReactantSpecies = nil;
     id<MTLBuffer> bufReactantStoichOffsets = nil;
@@ -368,7 +508,24 @@ struct MetalSimulatorImpl {
                 return [device newBufferWithBytes:data length:bytes options:MTLResourceStorageModeShared];
             };
 
+            std::vector<uint8_t> rxnFlags = flatNet.reactionFlags;
+            if (rxnFlags.size() < flatNet.numReactions) {
+                rxnFlags.resize(flatNet.numReactions, 0u);
+            }
+            std::vector<uint32_t> vmOffsets = flatNet.rxnVmOffsets;
+            if (vmOffsets.size() < flatNet.numReactions) {
+                vmOffsets.resize(flatNet.numReactions, 0u);
+            }
+            std::vector<uint32_t> vmLens = flatNet.rxnVmLens;
+            if (vmLens.size() < flatNet.numReactions) {
+                vmLens.resize(flatNet.numReactions, 0u);
+            }
+
             bufRateConstants = makeBuf(flatNet.rateConstants.data(), flatNet.rateConstants.size() * sizeof(float));
+            bufReactionFlags = makeBuf(rxnFlags.data(), rxnFlags.size() * sizeof(uint8_t));
+            bufRxnVmOffsets = makeBuf(vmOffsets.data(), vmOffsets.size() * sizeof(uint32_t));
+            bufRxnVmLens = makeBuf(vmLens.data(), vmLens.size() * sizeof(uint32_t));
+            bufVmCode = makeBuf(flatNet.vmCode.data(), flatNet.vmCode.size() * sizeof(BatchVmInstr));
             bufReactantOffsets = makeBuf(flatNet.reactantOffsets.data(), flatNet.reactantOffsets.size() * sizeof(uint32_t));
             bufReactantSpecies = makeBuf(flatNet.reactantSpecies.data(), flatNet.reactantSpecies.size() * sizeof(uint32_t));
             bufReactantStoichOffsets = makeBuf(flatNet.reactantStoichOffsets.data(), flatNet.reactantStoichOffsets.size() * sizeof(float));
@@ -451,6 +608,8 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
     params.tStart = static_cast<float>(options.tStart);
     params.tEnd = static_cast<float>(options.tEnd);
     params.baseSeed = options.baseSeed;
+    params.hasFunctional = impl_->flatNet.hasFunctional ? 1u : 0u;
+    params.pad0 = 0u;
 
     const std::size_t stateBytes = checkedBufferBytes(batchSize, numSpecies * sizeof(int32_t));
     const std::size_t obsBytes = checkedBufferBytes(
@@ -458,10 +617,11 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
     const std::size_t speciesBytes = checkedBufferBytes(
         checkedBufferBytes(batchSize, numPoints), numSpecies * sizeof(int32_t));
     const std::size_t eventBytes = batchSize * sizeof(uint32_t);
+    const std::size_t errorBytes = batchSize * sizeof(uint32_t);
     const std::size_t timesBytes = numPoints * sizeof(float);
 
     metrics.memoryUsageBytes = impl_->staticMemoryBytes + stateBytes + obsBytes +
-        speciesBytes + eventBytes + timesBytes;
+        speciesBytes + eventBytes + errorBytes + timesBytes;
 
     // Host -> Device Transfer
     const auto tStartH2D = std::chrono::high_resolution_clock::now();
@@ -472,6 +632,7 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
     id<MTLBuffer> bufObservables = nil;
     id<MTLBuffer> bufEventCounts = nil;
     id<MTLBuffer> bufSpeciesHistory = nil;
+    id<MTLBuffer> bufErrorFlags = nil;
 
     @autoreleasepool {
         bufParams = [impl_->device newBufferWithBytes:&params length:sizeof(GpuSimParams) options:MTLResourceStorageModeShared];
@@ -480,11 +641,13 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
         bufObservables = [impl_->device newBufferWithLength:(obsBytes > 0 ? obsBytes : sizeof(float)) options:MTLResourceStorageModeShared];
         bufEventCounts = [impl_->device newBufferWithLength:eventBytes options:MTLResourceStorageModeShared];
         bufSpeciesHistory = [impl_->device newBufferWithLength:(speciesBytes > 0 ? speciesBytes : sizeof(int32_t)) options:MTLResourceStorageModeShared];
+        bufErrorFlags = [impl_->device newBufferWithLength:errorBytes options:MTLResourceStorageModeShared];
     }
     if (!bufParams || !bufOutputTimes || !bufStates || !bufObservables ||
-        !bufEventCounts || !bufSpeciesHistory) {
+        !bufEventCounts || !bufSpeciesHistory || !bufErrorFlags) {
         throw std::runtime_error("Metal backend: failed to allocate batch buffers");
     }
+    std::memset([bufErrorFlags contents], 0, errorBytes);
 
     const auto tEndH2D = std::chrono::high_resolution_clock::now();
     metrics.hostToDeviceTransferMs =
@@ -522,6 +685,11 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
         [enc setBuffer:bufObservables offset:0 atIndex:15];
         [enc setBuffer:bufEventCounts offset:0 atIndex:16];
         [enc setBuffer:bufSpeciesHistory offset:0 atIndex:17];
+        [enc setBuffer:impl_->bufReactionFlags offset:0 atIndex:18];
+        [enc setBuffer:impl_->bufRxnVmOffsets offset:0 atIndex:19];
+        [enc setBuffer:impl_->bufRxnVmLens offset:0 atIndex:20];
+        [enc setBuffer:impl_->bufVmCode offset:0 atIndex:21];
+        [enc setBuffer:bufErrorFlags offset:0 atIndex:22];
 
         MTLSize gridSize = MTLSizeMake(batchSize, 1, 1);
         const NSUInteger maxThreads = impl_->pipelineState.maxTotalThreadsPerThreadgroup;
@@ -538,6 +706,14 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
                 ? [[cmdBuf.error localizedDescription] UTF8String]
                 : "unknown command buffer error";
             throw std::runtime_error("Metal backend: command execution failed: " + detail);
+        }
+        const auto* errFlags = static_cast<const uint32_t*>([bufErrorFlags contents]);
+        for (uint32_t b = 0; b < batchSize; ++b) {
+            if (errFlags[b] != 0u) {
+                throw std::runtime_error(
+                    "Metal backend: invalid/non-finite functional rate in trajectory " +
+                    std::to_string(b));
+            }
         }
     }
 
