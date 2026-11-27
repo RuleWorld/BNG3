@@ -1163,6 +1163,57 @@ def test_a_persistent_competing_event_is_not_a_random_order_case():
     assert validator._random_event_execution_verdict(parsed) is None
 
 
+def test_mutually_cancelling_initial_false_equal_priority_events_are_random_order():
+    """Distinct-trigger non-persistent events that cancel each other at t=0 are random-order."""
+
+    validator = _load_validator("validate_sbml_test_suite")
+    model = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="mutual_cancel">
+    <listOfParameters>
+      <parameter id="trig" value="1" constant="true"/>
+      <parameter id="A0" value="0" constant="false"/>
+      <parameter id="B0" value="0" constant="false"/>
+    </listOfParameters>
+    <listOfEvents>
+      <event id="E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="false" persistent="false">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><and/><apply><gt/><ci>trig</ci><cn>0</cn></apply><apply><lt/><ci>A0</ci><cn>1</cn></apply></apply>
+          </math>
+        </trigger>
+        <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math></priority>
+        <listOfEventAssignments>
+          <eventAssignment variable="B0"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="Eb0" useValuesFromTriggerTime="true">
+        <trigger initialValue="false" persistent="false">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><and/><apply><gt/><ci>trig</ci><cn>0</cn></apply><apply><lt/><ci>B0</ci><cn>1</cn></apply></apply>
+          </math>
+        </trigger>
+        <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math></priority>
+        <listOfEventAssignments>
+          <eventAssignment variable="A0"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    parsed = _parse_sbml(model)
+    verdict = validator._random_event_execution_verdict(parsed)
+    assert verdict is not None
+    assert verdict["status"] == "unsupported"
+    assert "executed in a random order" in verdict["reason"]
+    assert "E0" in verdict["reason"] and "Eb0" in verdict["reason"]
+
+    persistent_parsed = _parse_sbml(
+        model.replace('persistent="false"', 'persistent="true"')
+    )
+    assert validator._random_event_execution_verdict(persistent_parsed) is None
+
+
 def test_a_boundary_species_the_reference_does_not_track_is_not_comparable(
     tmp_path, monkeypatch
 ):

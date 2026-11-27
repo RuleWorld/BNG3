@@ -1751,6 +1751,80 @@ def _random_event_execution_verdict(parsed: Any) -> dict[str, Any] | None:
                 "case is not comparable point-wise"
             ),
         }
+    # Also detect mutually cancelling equal-priority non-persistent events
+    # whose triggers can fire simultaneously at t = 0 (initialValue=false):
+    # even when their trigger formulas differ textually (e.g. A_i < 1 vs
+    # B_i < 1), if event i assigns a variable read by event j's trigger and
+    # vice versa, whichever executes first cancels the other (SBML L3V2 Core
+    # Sec. 4.12.2/4.12.3), making individual assigned variables a random draw.
+    tier_groups: dict[tuple[Any, str], list[Any]] = {}
+    for event in getattr(parsed, "events", []) or []:
+        if (
+            getattr(event, "trigger_persistent", None) is not False
+            or getattr(event, "trigger_initial_value", None) is not False
+        ):
+            continue
+        priority_text, priority_value = _event_priority_key(parsed, event)
+        tier_key = (
+            priority_value if priority_value is not None else priority_text,
+            str(event.delay or "").strip(),
+        )
+        tier_groups.setdefault(tier_key, []).append(event)
+    for group in tier_groups.values():
+        if len(group) < 2:
+            continue
+        targets_by_idx = [
+            {
+                str(
+                    a.get("variable", "")
+                    if isinstance(a, dict)
+                    else getattr(a, "variable", "")
+                )
+                for a in (getattr(ev, "assignments", None) or [])
+                if (
+                    a.get("variable")
+                    if isinstance(a, dict)
+                    else getattr(a, "variable", None)
+                )
+            }
+            for ev in group
+        ]
+        reads_by_idx = [
+            set(
+                re.findall(
+                    r"[A-Za-z_][A-Za-z0-9_]*", str(getattr(ev, "trigger", "") or "")
+                )
+            )
+            for ev in group
+        ]
+        competing: list[str] = []
+        for i in range(len(group)):
+            if not targets_by_idx[i]:
+                continue
+            for j in range(i + 1, len(group)):
+                if not targets_by_idx[j]:
+                    continue
+                if (targets_by_idx[i] & reads_by_idx[j]) and (
+                    targets_by_idx[j] & reads_by_idx[i]
+                ):
+                    competing.append(str(getattr(group[i], "id", "")))
+                    competing.append(str(getattr(group[j], "id", "")))
+                    break
+            if competing:
+                break
+        if competing:
+            names = ", ".join(sorted(set(competing)))
+            return {
+                "status": "unsupported",
+                "reason": (
+                    f"the source model's events {names} have equal priority with "
+                    "mutually cancelling non-persistent triggers, so SBML Level 3 "
+                    "Version 2 Core, Release 2, section 4.12.3 requires them to be "
+                    "executed in a random order; individual event-assigned states "
+                    "are a draw of that random process, so the case is not "
+                    "comparable point-wise"
+                ),
+            }
     return None
 
 
