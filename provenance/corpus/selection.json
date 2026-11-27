@@ -4,7 +4,7 @@
   "selection_status": "approved",
   "source_lock": {
     "path": "provenance/upstreams.lock.yml",
-    "sha256": "sha256:786ef8d641c6eb76a77367e65752999727c5e1d539584a8115e7035b4bab69fb"
+    "sha256": "sha256:cf3b652c72767a07fc515e29eb1f1d6974704eb10f429b96c534800b601eb78d"
   },
   "rulehub": {
     "repository": "https://github.com/RuleWorld/RuleHub.git",

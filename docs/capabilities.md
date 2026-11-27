@@ -100,10 +100,10 @@ Requires `bionetgen[full]` (specifically `python-libsbml`). Entry points: `bione
 
 - **SBML Level 3 Core & `comp` (129 rows: `sbml.core.*`, `sbml.comp.*`; #159, #160):**
   - Supports reactions, kinetic laws, compartments (including dynamic volumes via rate/assignment rules), initial assignments, assignment/rate rules, bounded linear algebraic rules, fast reactions reducible to pseudo-steady state (L3V1), events (fixed-time, state-triggered root finding, priorities, persistent/initialValue semantics, delays), and hierarchical `comp` flattening.
-  - **Measured official SBML Test Suite (`3.5.0` @ `cf38585f`, 1,923 cases; recorded at `d6f26cc9` in [`provenance/sbml-campaign/expectations.json`](../provenance/sbml-campaign/expectations.json)):**
-    - Conversion: **1,823 passed / 100 unsupported**
-    - Official reference comparison: **1,805 passed / 117 unsupported / 1 failed** (`stochastic/00003`; see [SBML_CONFORMANCE_FINDINGS.md](SBML_CONFORMANCE_FINDINGS.md))
-    - Structural round trip: **1,828 passed / 95 not_tested**
+  - **Measured official SBML Test Suite (`3.5.0` @ `cf38585f`, 1,923 cases; recorded at `9106de1a` in [`provenance/sbml-campaign/expectations.json`](../provenance/sbml-campaign/expectations.json)):**
+    - Conversion: **1,884 passed / 39 unsupported** (all 1,889 non-`fbc` cases convert and round-trip; 5 harness-only random-order event cases sit under `conversion: unsupported` with `side: harness`)
+    - Official reference comparison: **1,862 passed / 60 unsupported / 1 failed** (`stochastic/00003`; see [SBML_CONFORMANCE_FINDINGS.md](SBML_CONFORMANCE_FINDINGS.md))
+    - Structural round trip: **1,889 passed / 34 not_tested** (only the 34 non-kinetic `fbc` cases)
   - Exact refusal taxonomy (Atomizer vs. harness vs. not-applicable) is generated directly from the manifest in [ATOMIZER_LIMITATIONS.md](ATOMIZER_LIMITATIONS.md).
 - **SBML Multi (`sbml.multi.*`, 45 rows; #161):**
   - Structured species-type, feature/state, binding-site, and rule reconstruction with fail-closed diagnostics for unsupported nested compartment-reference placements.

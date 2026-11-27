@@ -551,6 +551,981 @@
      }
     }
    }
+  },
+  {
+   "suite_revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+   "tested_commit": "9106de1a77012b2ee4769c0f03e4948a15080a0e",
+   "report_sha256": "c938d56904dcbac8bcaa402fde79720bd8b37b31f3563f245c22a59fb6a4007e",
+   "workflow_run_id": 46063431106,
+   "job_id": 140722926801,
+   "artifact_id": 15229847209,
+   "note": "Exact-main full SSTS campaign 46063431106; hybrid continuous-clock rateRule + SSA distrib events and CPU batch SSA native events advance stochastic/00033 and stochastic/00040..00100 (57 new official_reference passes, 61 new conversion/roundtrip passes) while preserving stochastic/00003 official failure at pinned seed base 1000000.",
+   "cases": {
+    "stochastic/00033": {
+     "stages": {
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00040": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00041": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00042": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00043": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00044": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00045": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00046": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00047": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00048": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00049": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00050": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00051": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00052": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00053": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00054": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00055": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00056": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00057": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00058": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00059": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00060": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00061": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00062": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00063": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00064": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00065": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00066": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00067": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00068": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00069": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00070": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00071": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00072": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00073": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00074": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00075": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00076": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00077": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00078": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00079": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00080": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00081": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00082": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00083": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00084": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00085": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00086": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00087": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00088": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00089": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00090": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00091": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00092": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00093": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00094": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00095": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00096": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00097": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00098": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00099": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00100": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    }
+   }
   }
  ]
 }

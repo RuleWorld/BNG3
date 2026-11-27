@@ -35,6 +35,10 @@
     {
       "change": "Exact-main full SSTS campaign 46043978792 (d6f26cc9): piecewise L3V1 fast-reaction equilibrium lowering (PR #1068) resolved semantic/01568 and semantic/01570 across all four stages, and semantic/01466 now lowers and round-trips cleanly with its equal-priority mutually cancelling events classified as harness:random-event-execution. The official suite no longer exercises fast-reaction:no-fast-equilibrium-solve or events:state-trigger-not-schedulable (the refusals remain in the Atomizer for non-reducible cases).",
       "date": "2026-11-27"
+    },
+    {
+      "change": "Exact-main full SSTS campaign 46063431106 (9106de1a): exact hybrid affine rateRule clocks, SBML distrib event draws, and CPU batch SSA native events (e1705f05) resolved stochastic/00033 and 56 of stochastic/00040..00100 against official DSMTS references (1,862 official passes; 1,889 conversions). Zero kinetic Atomizer limitations remain exercised in the official suite (only 34 non-kinetic fbc cases remain on the atomizer side); the 3 Cauchy (undefined-variance) cases and 2 lognormal ln(X) transformed-output cases now convert and surface as harness-side comparison limits.",
+      "date": "2026-11-27"
     }
   ],
   "constructs": {
@@ -59,12 +63,14 @@
       "title": "A state trigger the runtime cannot schedule"
     },
     "events:untranslated": {
-      "bng3_does": "The Atomizer lowers an event whose trigger is a constant time threshold to a scheduled BNGL action and refuses the rest: it reports \"N SBML event(s) parsed; M fixed-time event(s) lowered to scheduled actions, while K state-dependent or non-constant event(s) remain untranslated\", and the case is not claimed to be supported. The refusal names the specific condition, for example \"state-triggered SBML events require stochastic jump scheduling\", \"the model's algebraic rule is not applied, so the event's trigger cannot be evaluated\", \"volume change can cause the state trigger to re-enter within the simulation horizon\" or \"trigger time ... does not reduce to a constant\".",
+      "bng3_does": "The Atomizer lowers constant-time, continuous-ODE, and hybrid affine-clock SSA events (including SBML distrib draws) and refuses the rest, naming the specific condition (for example nonlinear continuous rateRules coupled to discrete SSA reactions or unlowered dynamic triggers).",
       "citation": "SBML Level 3 Version 2 Core Sec. 4.12, Sec. 4.12.2, Sec. 4.12.3, Sec. 4.12.7",
       "first_recorded": "2026-10-20",
-      "reducible": "Partly reduced, and the work is continuing. A state trigger the native event runtime can evaluate is now lowered (PR #328, 2026-10-21) and several simultaneous events execute in the order the specification defines (PR #371, 2026-10-21), and a simultaneous group whose priority is read from the model state is now ordered by the priority it has at the execution instant, which SBML L3V2 Core Sec. 4.12.3 requires (PR #376, 2026-10-21). What remains needs a trigger value the engine does not poll, a trigger whose value depends on a construct the Atomizer does not apply, or an event whose effect is not a scheduled action.",
+      "last_exercised": "2026-11-27",
+      "reducible": "The official suite no longer exercises this refusal as of run 46063431106 (2026-11-27, commit e1705f05). The refusal remains in the Atomizer for non-hybridizable event/rateRule combinations outside the official suite (such as in Curated BioModels).",
+      "resolved_note": "The refusal still exists in the Atomizer for unlowered event combinations; the official suite no longer reaches it as of full SSTS campaign 46063431106 (2026-11-27), after exact hybrid affine rateRule clocks and SBML distrib SSA events resolved stochastic/00040..00100.",
       "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.12 defines an Event as a two-phase operation: a Trigger (Sec. 4.12.2) decides when the event may fire, and the execution phase applies the EventAssignments (Sec. 4.12.5). Sec. 4.12.7 says the order in which events occur is resolved, that this order can be significant for a simulation's outcome, and that an event may carry a special priority through a Priority subobject (Sec. 4.12.3).",
-      "status": "open",
+      "status": "not-exercised",
       "title": "An event the Atomizer cannot lower, or cannot order"
     },
     "fast-reaction:no-fast-equilibrium-solve": {
@@ -106,7 +112,7 @@
       "title": "The official reference is one draw of a random execution order"
     },
     "harness:reference-does-not-track-variable": {
-      "bng3_does": "Nothing was refused: the model converted, but the direct SSA path decremented and incremented a boundary species like any other, so the species' value drifted away from the value the reference reports. The direct SSA path now skips a constant species in its state update — the propensity is untouched, so a boundary species still contributes its amount to the rate law it appears in — and the batched accelerator path does the same, so every engine agrees.",
+      "bng3_does": "Nothing was refused: the model converted, but the direct SSA path decremented and incremented a boundary species like any other, so the species' value drifted away from the value the reference reports. The direct SSA path now skips a constant species in its state update \u2014 the propensity is untouched, so a boundary species still contributes its amount to the rate law it appears in \u2014 and the batched accelerator path does the same, so every engine agrees.",
       "citation": "SBML Level 3 Version 2 Core Sec. 4.6.6",
       "closed": "2026-10-21",
       "closed_by": "PR #380, validated 2026-10-21, first measured as closed on 2026-10-21",
@@ -130,16 +136,13 @@
       "title": "The reference runner could not execute a model with actions"
     },
     "harness:stochastic-ensemble-not-evaluated": {
-      "bng3_does": "Nothing was refused. The harness reported that official stochastic conformance requires a repeated-run mean and standard deviation, which it did not evaluate.",
-      "citation": "SBML Level 3 Version 2 Core Sec. 4.11.7 (stochastic reaction semantics)",
-      "closed": "2026-10-21",
-      "closed_by": "PR #337, validated 2026-10-20, first measured as closed on 2026-10-21",
+      "bng3_does": "Nothing is refused by the Atomizer: the model converts and executes. The DSMTS mean/SD ensemble test requires both mean and standard-deviation columns, whereas Cauchy distribution cases (stochastic/00048, 00049, 00059) have undefined variance and provide no SD reference column for the standard Z-test.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.11.7; DSMTS stochastic test specification",
       "first_recorded": "2026-10-20",
-      "reducible": "Closed: the harness now evaluates the official stochastic references (PR #337, validated 2026-10-20), so these cases are compared rather than skipped.",
-      "resolved_note": "Closed by PR #337, validated 2026-10-20: the harness now evaluates the official stochastic references, so these cases are compared rather than skipped. First measured as closed on 2026-10-21.",
-      "sbml_requires": "Nothing: this was a limit of the measurement, not of the model.",
-      "status": "closed",
-      "title": "The official reference needed an ensemble the harness did not run"
+      "reducible": "Yes, on the harness side: add a nonparametric/quantile distributional comparator for heavy-tailed distributions without finite variance.",
+      "sbml_requires": "A heavy-tailed distribution without finite variance (such as Cauchy) cannot be compared with a mean/standard-deviation Z-test.",
+      "status": "open",
+      "title": "The official reference needs a non-mean/SD ensemble comparator"
     },
     "mathml:infinity": {
       "bng3_does": "The Atomizer reports \"<infinity> constant encountered in math; the source is valid SBML (validation rule 10202 permits <infinity>), but an infinite value cannot be represented in BNG3's finite-double model, so it is emitted as a large finite value and the model is not claimed to be supported\".",
@@ -163,9 +166,11 @@
       "bng3_does": "The Atomizer refuses the case and reports the reason; the campaign's classification records it as \"other\" because no known construct class matches.",
       "citation": "SBML Level 3 Version 2 Core, the section the case's own reason names",
       "first_recorded": "2026-10-20",
-      "reducible": "Unknown until each reason is read. This bucket is a request to extend the taxonomy, not a claim that the cases are alike.",
+      "last_exercised": "2026-11-27",
+      "reducible": "No longer exercised in the official suite as of run 46063431106 (2026-11-27), after CPU batch SSA native event support resolved stochastic/00033.",
+      "resolved_note": "No longer exercised in the official suite as of full SSTS campaign 46063431106 (2026-11-27), after CPU batch SSA native event support (e1705f05) resolved stochastic/00033.",
       "sbml_requires": "No single construct: each case is refused for a reason the campaign's cause taxonomy has no label for yet.",
-      "status": "open",
+      "status": "not-exercised",
       "title": "Refusals the cause taxonomy does not yet name"
     },
     "package:fbc": {
@@ -178,16 +183,13 @@
       "title": "The fbc package: a flux-balance model, not a time course"
     },
     "reference:no-result-mapping": {
-      "bng3_does": "The Atomizer states each reaction's rate as a zero-argument function in the generated model, and the harness maps a reference variable naming a reaction onto that function, so the quantity is compared. A rate that cannot be stated in the model's own symbols states no rate, and the refusal is preserved rather than approximated.",
-      "citation": "SBML Level 3 Version 2 Core Sec. 4.11.8",
-      "closed": "2026-10-21",
-      "closed_by": "PR #378, validated 2026-10-21, first measured as closed on 2026-10-21",
+      "bng3_does": "The Atomizer states reaction rates as zero-argument functions (closing the 22 reaction-rate cases in PR #378). The remaining 2 cases (stochastic/00056, 00064) convert and execute cleanly, but their official DSMTS CSVs report transformed log-scale statistics (ln(X)-mean, ln(X)-sd) that the harness's observable-to-column mapper does not yet transform.",
+      "citation": "SBML Level 3 Version 2 Core Sec. 4.11.8; DSMTS transformed-output columns",
       "first_recorded": "2026-10-20",
-      "reducible": "Closed: the Atomizer states a reaction's rate as a zero-argument function (PR #378, 2026-10-21), and the harness maps the reference's reaction id onto it, so these cases are compared rather than skipped. The boundary that remains is a rate that cannot be stated in the model's own symbols, which is still refused.",
-      "resolved_note": "Closed by PR #378, validated 2026-10-21: the Atomizer states each reaction's rate as a zero-argument function and the harness maps a reference variable naming a reaction onto it, so the twenty-two cases are compared against the official reference instead of being skipped. First measured as closed on 2026-10-21.",
-      "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.11.8 says the id of a Reaction may be used in a MathML formula and then represents that reaction's rate. The official SBML Test Suite's results file for such a case reports that rate as the quantity to compare.",
-      "status": "closed",
-      "title": "The official reference names a quantity BNG3 cannot observe"
+      "reducible": "Yes, on the harness side: add log-transform column mapping for ln(X)-mean / ln(X)-sd in the stochastic comparison harness.",
+      "sbml_requires": "The official stochastic reference reports moments of a transformed output expression (such as ln(X)) rather than the raw species amount.",
+      "status": "open",
+      "title": "The official reference names a transformed quantity the harness does not yet map"
     },
     "reference:not-applicable": {
       "bng3_does": "Nothing is refused and nothing is claimed. The case is recorded as having no official reference, which is not a limitation of the Atomizer and not a defect.",
