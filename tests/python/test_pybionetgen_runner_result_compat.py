@@ -60,3 +60,27 @@ def test_modelapi_runner_run_returns_bngresult_with_gdat_access():
     np.testing.assert_allclose(
         gdat["A_tot"], 10.0 * np.exp(-0.5 * expected_t), rtol=1e-6, atol=1e-9
     )
+
+
+def test_modelapi_runner_run_accepts_mutated_bngmodel_object(tmp_path: Path):
+    model_path = _action_decay_model(tmp_path / "decay.bngl")
+    model = bionetgen.bngmodel(str(model_path))
+    model.parameters.k = 1.0
+
+    result_action = runner_run(model, suppress=True)
+    assert isinstance(result_action, bionetgen.BNGResult)
+    gdat = result_action.gdat
+    expected_t = np.array([0.0, 0.5, 1.0, 1.5, 2.0])
+    np.testing.assert_allclose(gdat["time"], expected_t)
+    np.testing.assert_allclose(
+        gdat["A_tot"], 10.0 * np.exp(-1.0 * expected_t), rtol=1e-6, atol=1e-9
+    )
+
+    result_sim = runner_run(model, method="ode", t_span=(0.0, 2.0), n_points=4)
+    assert isinstance(result_sim, bionetgen.SimResult)
+    np.testing.assert_allclose(
+        result_sim.observables["A_tot"],
+        10.0 * np.exp(-1.0 * expected_t),
+        rtol=1e-6,
+        atol=1e-9,
+    )
