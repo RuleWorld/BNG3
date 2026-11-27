@@ -383,6 +383,11 @@ std::optional<bng::compile::ResolvedExpression> expandZeroArgumentRateFunctions(
 double energyFactorValue(const bng::compile::CompiledEnergyFactor& ep,
                          const bng::compile::CompiledModel& source) {
     if (ep.evaluatedValue) return *ep.evaluatedValue;
+    std::set<std::size_t> activeFunctions;
+    if (const auto expanded = expandZeroArgumentRateFunctions(
+            source.expandFunctions(ep.expression), source, activeFunctions)) {
+        if (const auto value = constantExpression(*expanded, source)) return *value;
+    }
     if (const auto value = constantExpression(ep.expression, source)) return *value;
     return 0.0;
 }
@@ -392,7 +397,13 @@ double energyFactorValue(const bng::compile::CompiledEnergyFactor& ep,
 // rate; folding it to zero would silently change the model semantics.
 bool isDynamicEnergyFactor(const bng::compile::CompiledEnergyFactor& ep,
                            const bng::compile::CompiledModel& source) {
-    return !ep.evaluatedValue && !constantExpression(ep.expression, source);
+    if (ep.evaluatedValue) return false;
+    std::set<std::size_t> activeFunctions;
+    if (const auto expanded = expandZeroArgumentRateFunctions(
+            source.expandFunctions(ep.expression), source, activeFunctions)) {
+        if (constantExpression(*expanded, source)) return false;
+    }
+    return !constantExpression(ep.expression, source);
 }
 
 std::optional<std::string> observableRateExpression(
@@ -426,19 +437,30 @@ std::optional<std::string> observableRateExpression(
         return "observable_" + std::to_string(index);
     }
     case Kind::Unary: {
-        if (!expression.unaryOp || expression.arguments.size() != 1 ||
-            (*expression.unaryOp != Unary::Plus &&
-             *expression.unaryOp != Unary::Negate))
+        if (!expression.unaryOp || expression.arguments.size() != 1)
             return std::nullopt;
         const auto child = observableRateExpression(
             expression.arguments.front(), model, observableIds);
         if (!child) return std::nullopt;
-        return *expression.unaryOp == Unary::Negate
-            ? "(-" + *child + ")" : "(" + *child + ")";
+        if (*expression.unaryOp == Unary::Negate) return "(-" + *child + ")";
+        if (*expression.unaryOp == Unary::Plus) return "(" + *child + ")";
+        if (*expression.unaryOp == Unary::LogicalNot) return "if(" + *child + ",0,1)";
+        return std::nullopt;
     }
     case Kind::Binary: {
         if (!expression.binaryOp || expression.arguments.size() != 2)
             return std::nullopt;
+        const auto left = observableRateExpression(
+            expression.arguments[0], model, observableIds);
+        const auto right = observableRateExpression(
+            expression.arguments[1], model, observableIds);
+        if (!left || !right) return std::nullopt;
+        if (*expression.binaryOp == Binary::LogicalAnd) {
+            return "if(" + *left + ",if(" + *right + ",1,0),0)";
+        }
+        if (*expression.binaryOp == Binary::LogicalOr) {
+            return "if(" + *left + ",1,if(" + *right + ",1,0))";
+        }
         const char* operation = nullptr;
         switch (*expression.binaryOp) {
         case Binary::Add: operation = "+"; break;
@@ -454,15 +476,24 @@ std::optional<std::string> observableRateExpression(
         case Binary::NotEqual: operation = "!="; break;
         default: return std::nullopt;
         }
-        const auto left = observableRateExpression(
-            expression.arguments[0], model, observableIds);
-        const auto right = observableRateExpression(
-            expression.arguments[1], model, observableIds);
-        if (!left || !right) return std::nullopt;
         return "(" + *left + operation + *right + ")";
     }
     case Kind::BuiltinCall: {
         if (!expression.builtin) return std::nullopt;
+        if (*expression.builtin == bng::compile::BuiltinFunction::Log10 &&
+            expression.arguments.size() == 1) {
+            const auto child = observableRateExpression(
+                expression.arguments.front(), model, observableIds);
+            if (!child) return std::nullopt;
+            return "(log(" + *child + ")/log(10))";
+        }
+        if (*expression.builtin == bng::compile::BuiltinFunction::Log2 &&
+            expression.arguments.size() == 1) {
+            const auto child = observableRateExpression(
+                expression.arguments.front(), model, observableIds);
+            if (!child) return std::nullopt;
+            return "(log(" + *child + ")/log(2))";
+        }
         const char* name = nullptr;
         std::size_t arity = 0;
         switch (*expression.builtin) {
@@ -1371,7 +1402,27 @@ void addDirection(const bng::compile::CompiledRule& rule,
         direction.mutations.front().newStateId.has_value() &&
         direction.mutations.front().source.side == BngPatternSide::Reactant &&
         (!drivingWorkValue || hasStaticDrivingWork);
-    if (energyModulatedArrhenius && !expandableEnergyStateChange) {
+    const bool expandableEnergyBinding =
+        energyModulatedArrhenius &&
+        direction.mutations.size() == 1 &&
+        direction.reactantPatterns.size() == 2 &&
+        direction.reactantPatterns[0].molecules().size() == 1 &&
+        direction.reactantPatterns[1].molecules().size() == 1 &&
+        direction.mutations.front().kind == BngMutationKind::AddBond &&
+        direction.mutations.front().source.side == BngPatternSide::Reactant &&
+        direction.mutations.front().partner.side == BngPatternSide::Reactant &&
+        (!drivingWorkValue || hasStaticDrivingWork);
+    const bool expandableEnergyUnbinding =
+        energyModulatedArrhenius &&
+        direction.mutations.size() == 1 &&
+        direction.reactantPatterns.size() == 1 &&
+        direction.reactantPatterns[0].molecules().size() == 2 &&
+        direction.mutations.front().kind == BngMutationKind::DeleteBond &&
+        direction.mutations.front().source.side == BngPatternSide::Reactant &&
+        direction.mutations.front().partner.side == BngPatternSide::Reactant &&
+        (!drivingWorkValue || hasStaticDrivingWork);
+    if (energyModulatedArrhenius && !expandableEnergyStateChange &&
+        !expandableEnergyBinding && !expandableEnergyUnbinding) {
         issue(result, BngLoweringSeverity::Error, entity,
               "energy-modulated Arrhenius rule form is not yet supported in NFnext lowering");
         return;
@@ -1451,12 +1502,33 @@ void addDirection(const bng::compile::CompiledRule& rule,
     }
     lowered.volume_factor = volumeFactor;
 
+    if (source.features().contains(bng::compile::Feature::Units) &&
+        (!direction.rateLaw || !direction.rateLaw->unit.has_value())) {
+        issue(result, BngLoweringSeverity::Error, entity,
+              "every rate in a unit-bearing NFnext model must have a typed physical unit");
+        return;
+    }
+
     if (direction.rateLaw && direction.rateLaw->unit.has_value()) {
         if (!constant || lowered.rate_law.kind != RateLawKind::Elementary) {
             issue(result, BngLoweringSeverity::Error, entity,
                   "physical unit rate conversion requires a constant elementary rate in NFnext");
             return;
         }
+        const auto validStaticVolume = [&](bng::compile::CompartmentId cid) {
+            const auto* comp = source.compartment(cid);
+            return comp != nullptr && comp->dimension == 3 &&
+                   !comp->volumeTimeDependent &&
+                   std::isfinite(comp->volume) && comp->volume > 0.0 &&
+                   comp->declaredUnit.has_value() &&
+                   comp->declaredUnit->dimension.length == 3 &&
+                   comp->declaredUnit->dimension.substance == 0 &&
+                   comp->declaredUnit->dimension.time == 0;
+        };
+        const auto patternMolComp = [](const BngPattern& pat,
+                                       const bng::compile::PatternMoleculeDescriptor& mol) {
+            return mol.compartmentId.has_value() ? mol.compartmentId : pat.compartmentId();
+        };
         bng::units::ConversionContext baseContext;
         if (const auto option = source.metadata().options.find("NumberPerQuantityUnit");
             option != source.metadata().options.end()) {
@@ -1472,23 +1544,35 @@ void addDirection(const bng::compile::CompiledRule& rule,
         bng::units::ConversionContext context = baseContext;
         if (molecularity == 0) {
             std::optional<bng::compile::CompartmentId> pCompId;
-            if (!direction.productPatterns.empty()) {
-                const auto& prod = direction.productPatterns.front();
-                pCompId = prod.compartmentId();
-                if (!pCompId && !prod.molecules().empty()) pCompId = prod.molecules().front().compartmentId;
+            std::size_t productMols = 0;
+            for (const auto& prod : direction.productPatterns) {
+                for (const auto& mol : prod.molecules()) {
+                    ++productMols;
+                    const auto cid = patternMolComp(prod, mol);
+                    if (!cid) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "physical zero-order rate requires one declared product compartment");
+                        return;
+                    }
+                    if (pCompId && *pCompId != *cid) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "physical zero-order products in multiple compartments are ambiguous");
+                        return;
+                    }
+                    pCompId = cid;
+                }
             }
-            if (!pCompId) {
+            if (productMols == 0 || !pCompId) {
                 issue(result, BngLoweringSeverity::Error, entity,
                       "physical zero-order rate requires one declared product compartment");
                 return;
             }
-            const auto* decl = source.compartment(*pCompId);
-            if (!decl || decl->volumeTimeDependent || !decl->declaredUnit.has_value() ||
-                !std::isfinite(decl->volume) || decl->volume <= 0.0) {
+            if (!validStaticVolume(*pCompId)) {
                 issue(result, BngLoweringSeverity::Error, entity,
                       "physical zero-order rate requires a static declared product volume unit");
                 return;
             }
+            const auto* decl = source.compartment(*pCompId);
             context.compartmentVolume = decl->volume;
             context.volumeUnit = decl->declaredUnit;
             const auto conversion = bng::units::stochasticRateFactor(*direction.rateLaw->unit, 0, context);
@@ -1502,6 +1586,26 @@ void addDirection(const bng::compile::CompiledRule& rule,
             // Typed conversion includes volume and any required mole/item bridge.
             lowered.volume_factor = 1.0;
         } else if (molecularity == 1) {
+            for (const auto& pat : direction.reactantPatterns) {
+                for (const auto& mol : pat.molecules()) {
+                    const auto cid = patternMolComp(pat, mol);
+                    if (cid && !validStaticVolume(*cid)) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "physical unimolecular rate requires a positive static declared 3D compartment");
+                        return;
+                    }
+                }
+            }
+            for (const auto& pat : direction.productPatterns) {
+                for (const auto& mol : pat.molecules()) {
+                    const auto cid = patternMolComp(pat, mol);
+                    if (cid && !validStaticVolume(*cid)) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "physical unimolecular rate requires a positive static declared 3D compartment");
+                        return;
+                    }
+                }
+            }
             const auto conversion = bng::units::stochasticRateFactor(*direction.rateLaw->unit, 1, context);
             if (!conversion || !conversion.factor.has_value() || !std::isfinite(*conversion.factor) ||
                 *conversion.factor < 0.0) {
@@ -1510,37 +1614,54 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 return;
             }
             lowered.rate = *constant * *conversion.factor;
-            // geometric volume factor (usually 1) retained
-        } else if (molecularity == 2) {
-            const auto& rPat = direction.reactantPatterns.front();
-            auto rCompId = rPat.compartmentId();
-            if (!rCompId && !rPat.molecules().empty()) rCompId = rPat.molecules().front().compartmentId;
-            const auto* decl = rCompId ? source.compartment(*rCompId) : nullptr;
-            if (!decl || !decl->declaredUnit.has_value()) {
-                issue(result, BngLoweringSeverity::Error, entity,
-                      "physical bimolecular rate requires one declared reactant volume unit");
+            lowered.volume_factor = 1.0;
+        } else {
+            const std::string missingVolumeMessage =
+                molecularity == 2
+                    ? "physical bimolecular rate requires one declared reactant volume unit"
+                    : "physical multi-reactant rate requires one declared reactant volume unit";
+            std::optional<bng::compile::CompartmentId> sharedCompId;
+            for (const auto& rPat : direction.reactantPatterns) {
+                for (const auto& mol : rPat.molecules()) {
+                    const auto cid = patternMolComp(rPat, mol);
+                    if (!cid) {
+                        issue(result, BngLoweringSeverity::Error, entity, missingVolumeMessage);
+                        return;
+                    }
+                    if (sharedCompId && *sharedCompId != *cid) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "physical multi-reactant rate spanning multiple compartments is ambiguous");
+                        return;
+                    }
+                    sharedCompId = cid;
+                }
+            }
+            if (!sharedCompId || !validStaticVolume(*sharedCompId)) {
+                issue(result, BngLoweringSeverity::Error, entity, missingVolumeMessage);
                 return;
             }
-            // The physical rate k [M^-1 s^-1] must become a count-rate
-            // coefficient k / (N_A * V). stochasticRateFactor with a unit
-            // compartment volume supplies the mole/item bridge and the
-            // declared-volume basis (1 / (N_A * 1 volume unit)); the geometric
-            // reactant compartment factor computed above supplies 1 / V.
-            // Both are required: dropping either leaves the propensity wrong.
-            context.compartmentVolume = 1.0;
+            const auto* decl = source.compartment(*sharedCompId);
+            // Convert directly using the full compartment volume and volume
+            // unit so every molecularity >= 2 gets exact 1/(N_A*V)^(m-1)
+            // count-rate scaling once, and reset geometric volume_factor to 1.
+            context.compartmentVolume = decl->volume;
             context.volumeUnit = decl->declaredUnit;
             const auto conversion = bng::units::stochasticRateFactor(
-                *direction.rateLaw->unit, 2, context);
+                *direction.rateLaw->unit, molecularity, context);
             if (!conversion || !conversion.factor.has_value() ||
                 !std::isfinite(*conversion.factor) || *conversion.factor < 0.0) {
                 issue(result, BngLoweringSeverity::Error, entity,
-                      "physical bimolecular rate unit cannot be converted to a count rate");
+                      molecularity == 2
+                          ? "physical bimolecular rate unit cannot be converted to a count rate"
+                          : "physical multi-reactant rate unit cannot be converted to a count rate");
                 return;
             }
             lowered.rate = *constant * (*conversion.factor);
-        } else {
+            lowered.volume_factor = 1.0;
+        }
+        if (!std::isfinite(lowered.rate) || lowered.rate < 0.0) {
             issue(result, BngLoweringSeverity::Error, entity,
-                  "physical rate conversion for molecularity > 2 is not yet supported in NFnext");
+                  "converted physical count rate must be finite and non-negative");
             return;
         }
         std::ostringstream rateText;
@@ -1622,14 +1743,27 @@ void addDirection(const bng::compile::CompiledRule& rule,
                                            const bng::compile::CompiledEnergyFactor& ep,
                                            std::vector<std::string>& terms) -> bool {
             if (coefficient == 0) return true;
+            std::set<std::size_t> activeFunctions;
+            const auto expandedEp = expandZeroArgumentRateFunctions(
+                source.expandFunctions(ep.expression), source, activeFunctions);
+            if (!expandedEp) return false;
             std::set<std::size_t> observableIds;
-            const auto expression = observableRateExpression(ep.expression, source, observableIds);
+            const auto expression = observableRateExpression(*expandedEp, source, observableIds);
             if (!expression) return false;
             std::ostringstream term;
             term << '(' << coefficient << "*(" << *expression << "))";
             terms.push_back(term.str());
             return true;
         };
+
+        struct StateCond {
+            std::string key;
+            std::uint32_t site{0};
+            std::int32_t state{0};
+            std::vector<std::int32_t> otherStates;
+            std::vector<int> gated;
+        };
+        std::map<std::string, StateCond> stateCondMap;
 
         for (std::size_t pi = 0; pi < source.energyFactors().size(); ++pi) {
             const auto& ep = source.energyFactors()[pi];
@@ -1675,21 +1809,52 @@ void addDirection(const bng::compile::CompiledRule& rule,
 
             if (hasExtra) {
                 conditional.push_back(static_cast<int>(pi));
+                bool attachedCondition = false;
                 for (const auto& mol : ep.pattern.molecules()) {
                     if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
                     for (const auto& site : mol.sites) {
-                        if (site.componentType && site.componentType->index == centerSiteTypeId) continue;
+                        if (!site.componentType || site.componentType->index == centerSiteTypeId) continue;
                         const bool isBound = site.bondKind == bng::compile::BondConstraintKind::Exact ||
                             std::any_of(site.bondConstraints.begin(), site.bondConstraints.end(),
                                 [](const auto& b){ return b.kind == bng::compile::BondConstraintKind::Exact; });
-                        if (!isBound) continue;
-                        if (!site.componentType) continue;
-                        const auto cname = source.component(*site.componentType)->name;
-                        auto& cc = condMap[cname];
-                        cc.compName = cname;
-                        cc.site = static_cast<std::uint32_t>(site.componentType->index);
-                        cc.gated.push_back(static_cast<int>(pi));
+                        if (isBound) {
+                            const auto cname = source.component(*site.componentType)->name;
+                            auto& cc = condMap[cname];
+                            cc.compName = cname;
+                            cc.site = static_cast<std::uint32_t>(site.componentType->index);
+                            cc.gated.push_back(static_cast<int>(pi));
+                            attachedCondition = true;
+                        }
+                        if (site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact &&
+                            site.stateConstraintResolved.exact.has_value()) {
+                            const auto* compDecl = source.component(*site.componentType);
+                            if (!compDecl || compDecl->stateNames.size() < 2) {
+                                issue(result, BngLoweringSeverity::Error, entity,
+                                      "state-conditioned energy pattern requires a multi-state site");
+                                return;
+                            }
+                            const auto requiredState = static_cast<std::int32_t>(
+                                site.stateConstraintResolved.exact->index);
+                            const auto key = compDecl->name + "~" + std::to_string(requiredState);
+                            auto& sc = stateCondMap[key];
+                            if (sc.key.empty()) {
+                                sc.key = key;
+                                sc.site = static_cast<std::uint32_t>(site.componentType->index);
+                                sc.state = requiredState;
+                                for (std::size_t si = 0; si < compDecl->stateNames.size(); ++si) {
+                                    if (static_cast<std::int32_t>(si) != requiredState)
+                                        sc.otherStates.push_back(static_cast<std::int32_t>(si));
+                                }
+                            }
+                            sc.gated.push_back(static_cast<int>(pi));
+                            attachedCondition = true;
+                        }
                     }
+                }
+                if (!attachedCondition) {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "energy pattern condition could not be lowered for state-change expansion");
+                    return;
                 }
             } else {
                 always.push_back(static_cast<int>(pi));
@@ -1743,6 +1908,15 @@ void addDirection(const bng::compile::CompiledRule& rule,
             }
         }
 
+        std::vector<StateCond> stateConditions;
+        stateConditions.reserve(stateCondMap.size());
+        for (auto& kv : stateCondMap) {
+            std::sort(kv.second.gated.begin(), kv.second.gated.end());
+            kv.second.gated.erase(std::unique(kv.second.gated.begin(), kv.second.gated.end()), kv.second.gated.end());
+            stateConditions.push_back(std::move(kv.second));
+        }
+        std::sort(stateConditions.begin(), stateConditions.end(), [](const auto& a, const auto& b){ return a.key < b.key; });
+
         std::vector<Cond> conditions;
         conditions.reserve(condMap.size());
         for (auto& kv : condMap) {
@@ -1751,14 +1925,15 @@ void addDirection(const bng::compile::CompiledRule& rule,
             conditions.push_back(std::move(kv.second));
         }
         std::sort(conditions.begin(), conditions.end(), [](const auto& a, const auto& b){ return a.compName < b.compName; });
-        if (conditions.size() >= 20) {
+        const std::size_t totalConditionCount = conditions.size() + stateConditions.size();
+        if (totalConditionCount >= 20) {
             issue(result, BngLoweringSeverity::Error, entity,
                   "energy-modulated state change expansion too large for NFnext");
             return;
         }
 
         const std::size_t targetNode = mutation.source.moleculeIndex;
-        const int combos = 1 << static_cast<int>(conditions.size());
+        const int combos = 1 << static_cast<int>(totalConditionCount);
         for (int combo = 0; combo < combos; ++combo) {
             ExpandedRuleIR variant = lowered;
             variant.id = static_cast<RuleId>(id * 1024u + static_cast<RuleId>(combo));
@@ -1775,6 +1950,20 @@ void addDirection(const bng::compile::CompiledRule& rule,
                     variant.pattern.nodes[targetNode].siteFree(conditions[ci].site);
                 }
             }
+            for (std::size_t si = 0; si < stateConditions.size(); ++si) {
+                const bool met = (combo >> (conditions.size() + si)) & 1;
+                const auto& sc = stateConditions[si];
+                if (met) {
+                    variant.pattern.nodes[targetNode].siteState(sc.site, sc.state);
+                    for (int pi : sc.gated) active.insert(pi);
+                } else if (sc.otherStates.size() == 1) {
+                    variant.pattern.nodes[targetNode].siteState(sc.site, sc.otherStates.front());
+                } else {
+                    variant.pattern.nodes[targetNode].siteStateSet(sc.site, sc.otherStates);
+                }
+            }
+            variant.predicates.clear();
+            addPredicates(variant.pattern, variant.predicates);
             double deltaG = baseEnergy;
             std::vector<std::string> dynamicTerms = baseDynamicTerms;
             for (int pi : active) {
@@ -1818,6 +2007,329 @@ void addDirection(const bng::compile::CompiledRule& rule,
             } else {
                 // Dynamic energy factors are evaluated from current observables
                 // by the same Function rate machinery used for dynamic rates.
+                std::ostringstream dynamicDelta;
+                for (std::size_t i = 0; i < dynamicTerms.size(); ++i) {
+                    if (i != 0) dynamicDelta << '+';
+                    dynamicDelta << dynamicTerms[i];
+                }
+                std::ostringstream rateText;
+                rateText.precision(17);
+                rateText << "exp(-(" << constantPart << " + (" << phiEff
+                         << ")*(" << dynamicDelta.str() << ")))";
+                variant.rate = 0.0;
+                variant.rate_law.kind = RateLawKind::Function;
+                variant.rate_law.expression = rateText.str();
+            }
+            result.model.expanded_rules.push_back(std::move(variant));
+        }
+        return;
+    }
+
+    if (expandableEnergyBinding || expandableEnergyUnbinding) {
+        const auto& mutation = direction.mutations.front();
+        const auto nodeA = nodeFor(mutation.source, *flattened);
+        const auto nodeB = nodeFor(mutation.partner, *flattened);
+        if (!nodeA || !nodeB ||
+            mutation.source.patternIndex >= direction.reactantPatterns.size() ||
+            mutation.partner.patternIndex >= direction.reactantPatterns.size()) {
+            issue(result, BngLoweringSeverity::Error, entity, "invalid energy bond mutation endpoints");
+            return;
+        }
+        const auto& molA = direction.reactantPatterns[mutation.source.patternIndex]
+                               .molecules().at(mutation.source.moleculeIndex);
+        const auto& molB = direction.reactantPatterns[mutation.partner.patternIndex]
+                               .molecules().at(mutation.partner.moleculeIndex);
+        if (mutation.source.siteIndex >= molA.sites.size() ||
+            mutation.partner.siteIndex >= molB.sites.size() ||
+            !molA.moleculeTypeId || !molB.moleculeTypeId ||
+            !molA.sites[mutation.source.siteIndex].componentType ||
+            !molB.sites[mutation.partner.siteIndex].componentType) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "energy-modulated binding/unbinding requires typed reaction-center sites");
+            return;
+        }
+        const auto& rateExpr = direction.rateLaw->resolvedExpression();
+        if (rateExpr.arguments.size() != 2) {
+            issue(result, BngLoweringSeverity::Error, entity, "Arrhenius requires phi and activation energy");
+            return;
+        }
+        const auto phi = constantExpression(rateExpr.arguments[0], source);
+        const auto ea = constantExpression(rateExpr.arguments[1], source);
+        if (!phi || !ea) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "energy-modulated Arrhenius requires static phi and activation energy");
+            return;
+        }
+
+        const auto molTypeA = molA.moleculeTypeId->value();
+        const auto siteA = molA.sites[mutation.source.siteIndex].componentType->index;
+        const auto molTypeB = molB.moleculeTypeId->value();
+        const auto siteB = molB.sites[mutation.partner.siteIndex].componentType->index;
+        const int bondSign = expandableEnergyBinding ? 1 : -1;
+
+        const auto* molDeclA = source.moleculeType(*molA.moleculeTypeId);
+        const auto* compDeclA = source.component(*molA.sites[mutation.source.siteIndex].componentType);
+        const auto* molDeclB = source.moleculeType(*molB.moleculeTypeId);
+        const auto* compDeclB = source.component(*molB.sites[mutation.partner.siteIndex].componentType);
+        if (!molDeclA || !compDeclA || !molDeclB || !compDeclB) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "energy-modulated binding/unbinding declarations could not be resolved");
+            return;
+        }
+
+        double barrierContribution = 0.0;
+        if (!source.barrierFactors().empty()) {
+            const auto centerKey = bng::compile::energy::ReactionCenterKey::binding(
+                molDeclA->name, compDeclA->name, molDeclB->name, compDeclB->name);
+            for (const auto& barrier : source.barrierFactors()) {
+                if (!barrier.centerResolved) {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "barrier pattern has no supported reaction center");
+                    return;
+                }
+                if (barrier.reactionCenter == centerKey) {
+                    if (!barrier.evaluatedValue) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "barrier pattern energy is not statically evaluable");
+                        return;
+                    }
+                    barrierContribution += *barrier.evaluatedValue;
+                }
+            }
+        }
+
+        auto appendDynamicEnergyTerm = [&](int coefficient,
+                                           const bng::compile::CompiledEnergyFactor& ep,
+                                           std::vector<std::string>& terms) -> bool {
+            if (coefficient == 0) return true;
+            std::set<std::size_t> activeFunctions;
+            const auto expandedEp = expandZeroArgumentRateFunctions(
+                source.expandFunctions(ep.expression), source, activeFunctions);
+            if (!expandedEp) return false;
+            std::set<std::size_t> observableIds;
+            const auto expression = observableRateExpression(*expandedEp, source, observableIds);
+            if (!expression) return false;
+            std::ostringstream term;
+            term << '(' << coefficient << "*(" << *expression << "))";
+            terms.push_back(term.str());
+            return true;
+        };
+
+        struct BondCond {
+            std::string key;
+            std::size_t targetNode{0};
+            std::uint32_t site{0};
+            bool isState{false};
+            std::int32_t state{0};
+            std::vector<std::int32_t> otherStates;
+            std::vector<std::pair<int, int>> gated; // (energyPatternIndex, coeff)
+        };
+        std::map<std::string, BondCond> condMap;
+        std::vector<std::pair<int, int>> alwaysTerms; // (energyPatternIndex, coeff)
+
+        for (std::size_t pi = 0; pi < source.energyFactors().size(); ++pi) {
+            const auto& ep = source.energyFactors()[pi];
+            const auto& mols = ep.pattern.molecules();
+            if (mols.size() == 2) {
+                // Collect exact bond groups connecting the two molecules.
+                struct EpEnd { std::size_t molIdx; std::size_t molType; std::size_t siteIdx; };
+                std::map<std::size_t, std::vector<EpEnd>> bondGroups;
+                for (std::size_t mi = 0; mi < 2; ++mi) {
+                    if (!mols[mi].moleculeTypeId) continue;
+                    for (const auto& s : mols[mi].sites) {
+                        if (!s.componentType) continue;
+                        for (const auto& b : patternBonds(s)) {
+                            if (b.kind == bng::compile::BondConstraintKind::Exact) {
+                                bondGroups[b.group.value].push_back(
+                                    {mi, mols[mi].moleculeTypeId->value(), s.componentType->index});
+                            }
+                        }
+                    }
+                }
+                int matchOrient = -1; // 0: mol0=A,mol1=B; 1: mol0=B,mol1=A
+                for (const auto& [grp, ends] : bondGroups) {
+                    if (ends.size() != 2 || ends[0].molIdx == ends[1].molIdx) continue;
+                    const auto& e0 = ends[0].molIdx == 0 ? ends[0] : ends[1];
+                    const auto& e1 = ends[0].molIdx == 0 ? ends[1] : ends[0];
+                    if (e0.molType == molTypeA && e0.siteIdx == siteA &&
+                        e1.molType == molTypeB && e1.siteIdx == siteB) {
+                        matchOrient = 0;
+                        break;
+                    }
+                    if (e0.molType == molTypeB && e0.siteIdx == siteB &&
+                        e1.molType == molTypeA && e1.siteIdx == siteA) {
+                        matchOrient = 1;
+                        break;
+                    }
+                }
+                if (matchOrient < 0) continue;
+
+                // Collect any extra state or bond constraints on the two molecules.
+                std::vector<BondCond> epConditions;
+                const std::array<std::size_t, 2> epToNode =
+                    matchOrient == 0
+                        ? std::array<std::size_t, 2>{static_cast<std::size_t>(*nodeA), static_cast<std::size_t>(*nodeB)}
+                        : std::array<std::size_t, 2>{static_cast<std::size_t>(*nodeB), static_cast<std::size_t>(*nodeA)};
+                const std::array<std::size_t, 2> epCenterSite =
+                    matchOrient == 0
+                        ? std::array<std::size_t, 2>{siteA, siteB}
+                        : std::array<std::size_t, 2>{siteB, siteA};
+                for (std::size_t mi = 0; mi < 2; ++mi) {
+                    for (const auto& s : mols[mi].sites) {
+                        if (!s.componentType) continue;
+                        if (s.componentType->index == epCenterSite[mi]) continue;
+                        const bool isExtraBound = s.bondKind == bng::compile::BondConstraintKind::Exact ||
+                            std::any_of(s.bondConstraints.begin(), s.bondConstraints.end(),
+                                [](const auto& b){ return b.kind == bng::compile::BondConstraintKind::Exact; });
+                        if (isExtraBound) {
+                            BondCond c;
+                            c.targetNode = epToNode[mi];
+                            c.site = static_cast<std::uint32_t>(s.componentType->index);
+                            c.isState = false;
+                            c.key = "n" + std::to_string(c.targetNode) + ":b:" + std::to_string(c.site);
+                            epConditions.push_back(std::move(c));
+                        }
+                        if (s.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact &&
+                            s.stateConstraintResolved.exact.has_value()) {
+                            const auto* cDecl = source.component(*s.componentType);
+                            if (!cDecl || cDecl->stateNames.size() < 2) {
+                                issue(result, BngLoweringSeverity::Error, entity,
+                                      "state-conditioned bond energy pattern requires a multi-state site");
+                                return;
+                            }
+                            BondCond c;
+                            c.targetNode = epToNode[mi];
+                            c.site = static_cast<std::uint32_t>(s.componentType->index);
+                            c.isState = true;
+                            c.state = static_cast<std::int32_t>(s.stateConstraintResolved.exact->index);
+                            for (std::size_t si = 0; si < cDecl->stateNames.size(); ++si) {
+                                if (static_cast<std::int32_t>(si) != c.state)
+                                    c.otherStates.push_back(static_cast<std::int32_t>(si));
+                            }
+                            c.key = "n" + std::to_string(c.targetNode) + ":s:" + std::to_string(c.site) + "~" + std::to_string(c.state);
+                            epConditions.push_back(std::move(c));
+                        }
+                    }
+                }
+                if (epConditions.empty()) {
+                    alwaysTerms.emplace_back(static_cast<int>(pi), bondSign);
+                } else if (epConditions.size() == 1) {
+                    if (molTypeA == molTypeB && siteA == siteB) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "asymmetric conditional energy pattern on homodimer bond is not supported in NFnext");
+                        return;
+                    }
+                    auto& slot = condMap[epConditions.front().key];
+                    if (slot.key.empty()) slot = std::move(epConditions.front());
+                    slot.gated.emplace_back(static_cast<int>(pi), bondSign);
+                } else {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "multi-condition bond energy pattern is not yet supported in NFnext");
+                    return;
+                }
+            } else if (mols.size() == 1 && mols[0].moleculeTypeId) {
+                // Free-site single-molecule energy pattern whose center site becomes bound/unbound.
+                const auto mType = mols[0].moleculeTypeId->value();
+                for (const auto& s : mols[0].sites) {
+                    if (!s.componentType) continue;
+                    const auto bkind = normalizedBondKind(s.bondKind);
+                    const bool isUnboundConstraint =
+                        bkind == bng::compile::BondConstraintKind::Unbound &&
+                        s.bondConstraints.empty();
+                    if (!isUnboundConstraint) continue;
+                    int coeff = 0;
+                    if (mType == molTypeA && s.componentType->index == siteA) coeff -= bondSign;
+                    if (mType == molTypeB && s.componentType->index == siteB) coeff -= bondSign;
+                    if (coeff != 0) alwaysTerms.emplace_back(static_cast<int>(pi), coeff);
+                }
+            }
+        }
+
+        double baseEnergy = 0.0;
+        std::vector<std::string> baseDynamicTerms;
+        for (const auto& [pi, coeff] : alwaysTerms) {
+            const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
+            if (isDynamicEnergyFactor(ep, source)) {
+                if (!appendDynamicEnergyTerm(coeff, ep, baseDynamicTerms)) {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "dynamic energy expression could not be resolved to NFIR arithmetic");
+                    return;
+                }
+            } else {
+                baseEnergy += static_cast<double>(coeff) * energyFactorValue(ep, source);
+            }
+        }
+
+        std::vector<BondCond> conditions;
+        conditions.reserve(condMap.size());
+        for (auto& kv : condMap) conditions.push_back(std::move(kv.second));
+        if (conditions.size() >= 20) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "energy-modulated binding/unbinding expansion too large for NFnext");
+            return;
+        }
+
+        const int combos = 1 << static_cast<int>(conditions.size());
+        for (int combo = 0; combo < combos; ++combo) {
+            ExpandedRuleIR variant = lowered;
+            variant.id = static_cast<RuleId>(id * 1024u + static_cast<RuleId>(combo));
+            variant.name = entity + (reverseDirection ? "_rev_v" : "_v") + std::to_string(combo);
+            variant.rate_law.kind = RateLawKind::Elementary;
+            double deltaG = baseEnergy;
+            std::vector<std::string> dynamicTerms = baseDynamicTerms;
+            for (std::size_t ci = 0; ci < conditions.size(); ++ci) {
+                const bool met = (combo >> ci) & 1;
+                const auto& c = conditions[ci];
+                if (c.targetNode >= variant.pattern.nodes.size()) continue;
+                if (met) {
+                    if (c.isState) variant.pattern.nodes[c.targetNode].siteState(c.site, c.state);
+                    else variant.pattern.nodes[c.targetNode].siteBound(c.site);
+                    for (const auto& [pi, coeff] : c.gated) {
+                        const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
+                        if (isDynamicEnergyFactor(ep, source)) {
+                            if (!appendDynamicEnergyTerm(coeff, ep, dynamicTerms)) {
+                                issue(result, BngLoweringSeverity::Error, entity,
+                                      "dynamic energy expression could not be resolved to NFIR arithmetic");
+                                return;
+                            }
+                        } else {
+                            deltaG += static_cast<double>(coeff) * energyFactorValue(ep, source);
+                        }
+                    }
+                } else {
+                    if (c.isState) {
+                        if (c.otherStates.size() == 1)
+                            variant.pattern.nodes[c.targetNode].siteState(c.site, c.otherStates.front());
+                        else
+                            variant.pattern.nodes[c.targetNode].siteStateSet(c.site, c.otherStates);
+                    } else {
+                        variant.pattern.nodes[c.targetNode].siteFree(c.site);
+                    }
+                }
+            }
+            variant.predicates.clear();
+            addPredicates(variant.pattern, variant.predicates);
+
+            const double work = drivingWorkValue ? *drivingWorkValue : 0.0;
+            const double phiEff = reverseDirection ? (1.0 - *phi) : *phi;
+            const double constantPart = *ea + barrierContribution + phiEff * deltaG +
+                                         (reverseDirection ? phiEff * work : -phiEff * work);
+            if (!std::isfinite(constantPart)) {
+                issue(result, BngLoweringSeverity::Error, entity, "expanded energy-modulated rate is invalid");
+                return;
+            }
+            if (dynamicTerms.empty()) {
+                const double rate = std::exp(-constantPart);
+                if (!std::isfinite(rate) || rate < 0.0) {
+                    issue(result, BngLoweringSeverity::Error, entity, "expanded energy-modulated rate is invalid");
+                    return;
+                }
+                variant.rate = rate;
+                std::ostringstream rateText;
+                rateText.precision(17);
+                rateText << rate;
+                variant.rate_law.expression = rateText.str();
+            } else {
                 std::ostringstream dynamicDelta;
                 for (std::size_t i = 0; i < dynamicTerms.size(); ++i) {
                     if (i != 0) dynamicDelta << '+';
@@ -1952,6 +2464,23 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         issue(result, BngLoweringSeverity::Error, source.metadata().name,
               "native events are not executable by NFnext");
         return result;
+    }
+    if (const auto declaredTime = source.metadata().unitDefaults.find("timeUnits");
+        declaredTime != source.metadata().unitDefaults.end()) {
+        const auto resolved = source.metadata().resolvedUnitReferences.find(declaredTime->second);
+        bng::units::UnitSystem unitSystem;
+        const auto second = unitSystem.parse("second");
+        if (resolved == source.metadata().resolvedUnitReferences.end() || !second) {
+            issue(result, BngLoweringSeverity::Error, source.metadata().name,
+                  "declared timeUnits cannot be resolved for NFnext's second clock");
+            return result;
+        }
+        const auto conv = bng::units::conversionFactor(resolved->second.unit, *second.unit);
+        if (!conv || !conv.factor.has_value() || !std::isfinite(*conv.factor) || *conv.factor <= 0.0) {
+            issue(result, BngLoweringSeverity::Error, source.metadata().name,
+                  "declared timeUnits cannot be converted to seconds");
+            return result;
+        }
     }
     if (!validateNFnextIdPacking(source, result)) return result;
     // Lower compartment declarations into NFIR. Compartments are carried as
@@ -2104,6 +2633,20 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
                 if (const auto compartment = popMap.pattern.compartmentId()) {
                     executable.product_compartment =
                         static_cast<CompartmentId>(compartment->value());
+                } else {
+                    std::optional<CompartmentId> molComp;
+                    for (const auto& mol : popMap.pattern.molecules()) {
+                        if (!mol.compartmentId.has_value()) continue;
+                        const auto cid = static_cast<CompartmentId>(mol.compartmentId->value());
+                        if (molComp && *molComp != cid) {
+                            unsupported = "population map reactant spans multiple compartments";
+                            break;
+                        }
+                        molComp = cid;
+                    }
+                    if (unsupported.empty() && molComp) {
+                        executable.product_compartment = molComp;
+                    }
                 }
                 if (rateValue) {
                     if (!std::isfinite(*rateValue) || *rateValue < 0.0) {
@@ -2346,8 +2889,19 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             auto check = [&](const bng::compile::CompiledRuleDirection& d) {
                 if (!d.rateLaw) { all_expanded = false; return; }
                 if (d.rateLaw->kind == bng::compile::RateLawKind::ArrheniusEnergy) {
-                    if (d.mutations.size() != 1 || d.reactantPatterns.size() != 1 ||
-                        d.mutations.front().kind != BngMutationKind::ChangeState ||
+                    const bool validStateChange =
+                        d.mutations.size() == 1 && d.reactantPatterns.size() == 1 &&
+                        d.mutations.front().kind == BngMutationKind::ChangeState;
+                    const bool validBinding =
+                        d.mutations.size() == 1 && d.reactantPatterns.size() == 2 &&
+                        d.reactantPatterns[0].molecules().size() == 1 &&
+                        d.reactantPatterns[1].molecules().size() == 1 &&
+                        d.mutations.front().kind == BngMutationKind::AddBond;
+                    const bool validUnbinding =
+                        d.mutations.size() == 1 && d.reactantPatterns.size() == 1 &&
+                        d.reactantPatterns[0].molecules().size() == 2 &&
+                        d.mutations.front().kind == BngMutationKind::DeleteBond;
+                    if ((!validStateChange && !validBinding && !validUnbinding) ||
                         d.rateLaw->resolvedExpression().arguments.size() != 2)
                         all_expanded = false;
                 }
@@ -2453,15 +3007,67 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     };
     reconcilePopulationThresholds();
     const std::vector<bng::compile::CompiledSeed> noSeeds;
+    bng::units::ConversionContext seedUnitContext;
+    if (const auto option = source.metadata().options.find("NumberPerQuantityUnit");
+        option != source.metadata().options.end()) {
+        try {
+            std::size_t consumed = 0;
+            const double value = std::stod(option->second, &consumed);
+            if (consumed == option->second.size() && std::isfinite(value) && value > 0.0)
+                seedUnitContext.numberPerQuantityUnit = value;
+        } catch (...) {
+        }
+    }
     for (const auto& seed : continuation ? noSeeds : source.seeds()) {
-        const auto amount = constantExpression(seed.amount, source);
+        auto amount = constantExpression(seed.amount, source);
         // A constant seed species only marks the species as immutable for
         // concentration-assignment actions; it still initializes particles
         // exactly like a non-constant seed, including a zero-count sink.
-        if (seed.declaredUnit ||
-            !amount || !std::isfinite(*amount) || *amount < 0.0 ||
-            std::floor(*amount) != *amount)
+        if (!amount || !std::isfinite(*amount) || *amount < 0.0)
             refuse("seeds require bounded static integer particle counts");
+        if (seed.declaredUnit.has_value()) {
+            const auto& unit = *seed.declaredUnit;
+            bng::units::ConversionResult converted;
+            if (unit.dimension.length == -3 && unit.dimension.time == 0) {
+                std::optional<bng::compile::CompartmentId> compId = seed.compartmentId;
+                if (!compId.has_value()) compId = seed.pattern.compartmentId();
+                if (!compId.has_value()) {
+                    for (const auto& mol : seed.pattern.molecules()) {
+                        if (!mol.compartmentId.has_value()) continue;
+                        if (compId.has_value() && *compId != *mol.compartmentId)
+                            refuse("concentration seed species spans multiple compartments");
+                        compId = mol.compartmentId;
+                    }
+                }
+                const auto* comp = compId.has_value() ? source.compartment(*compId) : nullptr;
+                if (!comp || comp->dimension != 3 || comp->volumeTimeDependent ||
+                    !std::isfinite(comp->volume) || comp->volume <= 0.0 ||
+                    !comp->declaredUnit.has_value() ||
+                    comp->declaredUnit->dimension.length != 3 ||
+                    comp->declaredUnit->dimension.substance != 0 ||
+                    comp->declaredUnit->dimension.time != 0) {
+                    refuse("concentration seed requires a positive static declared 3D compartment");
+                }
+                converted = bng::units::concentrationToItemAmount(
+                    *amount, unit, comp->volume, *comp->declaredUnit, seedUnitContext);
+            } else if (unit.dimension.length == 0 && unit.dimension.time == 0 &&
+                       unit.dimension.substance == 1) {
+                bng::units::Unit item;
+                item.name = "item";
+                item.dimension.substance = 1;
+                item.baseExponents[bng::units::BaseUnit::Item] = 1;
+                converted = bng::units::convertValue(*amount, unit, item, seedUnitContext);
+            } else {
+                refuse("unit-bearing seed species must have amount or concentration units");
+            }
+            if (!converted || !converted.factor.has_value() ||
+                !std::isfinite(*converted.factor) || *converted.factor < 0.0) {
+                refuse("unit-bearing seed conversion failed: " + converted.error);
+            }
+            amount = std::floor(*converted.factor + 0.5);
+        } else if (std::floor(*amount) != *amount) {
+            refuse("seeds require bounded static integer particle counts");
+        }
         for (const auto& molecule : seed.pattern.molecules()) {
             for (const auto& site : molecule.sites) {
                 const auto allowedBond = [](bng::compile::BondConstraintKind kind) {
@@ -2828,7 +3434,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         return !rule.pattern.nodes.empty() &&
                std::all_of(rule.pattern.nodes.begin(), rule.pattern.nodes.end(), [&](const auto& node) {
                    return model.molecule_types.at(node.molecule_type).is_population;
-               }) && rule.pattern.bonds.empty() && rule.filters.empty() && !rule.match_once && !rule.total_rate;
+               }) && rule.pattern.bonds.empty() && rule.filters.empty() && !rule.match_once;
     };
     auto populationCombinationFactor = [&](const PopulationCounts& required) {
         double comb = 1.0;
@@ -2914,7 +3520,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         matches.emplace_back();
                         const double popFactor = populationReactantPropensity(rule);
                         populationFactors[index] = popFactor;
-                        const double prop = rate * popFactor;
+                        const double prop = rule.total_rate
+                            ? (popFactor > 0.0 ? rate : 0.0)
+                            : rate * popFactor;
                         rulePropensities[index] = prop;
                         total += prop;
                         continue;
@@ -3694,6 +4302,91 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             std::move(compartmentalized_populations), request.sample_times.back(), seed, stream});
     }
     return output;
+}
+
+std::string formatFinalSpecies(const BngExecutionState& state) {
+    if (!state.model) return {};
+    const auto& model = *state.model;
+    const auto& graph = state.graph;
+
+    std::map<std::uint32_t, std::vector<ParticleId>> complexes;
+    for (const auto p : graph.liveParticles()) {
+        complexes[graph.complexId(p)].push_back(p);
+    }
+
+    const auto compartmentName = [&](CompartmentId cid) -> std::string {
+        if (cid < model.compartments.size()) return model.compartments[cid].name;
+        return {};
+    };
+
+    std::map<std::string, std::uint64_t> speciesCounts;
+    for (auto& [_, members] : complexes) {
+        std::sort(members.begin(), members.end(), [&](ParticleId a, ParticleId b) {
+            const auto& ta = model.molecule_types.at(graph.type(a)).name;
+            const auto& tb = model.molecule_types.at(graph.type(b)).name;
+            if (ta != tb) return ta < tb;
+            return a.index < b.index;
+        });
+
+        using EndpointKey = std::pair<std::uint32_t, std::uint16_t>;
+        std::map<std::pair<EndpointKey, EndpointKey>, std::size_t> bondIds;
+        std::size_t nextBond = 1;
+        auto bondIdFor = [&](ParticleId a, std::uint16_t sa, ParticleId b, std::uint16_t sb) {
+            EndpointKey k1{a.index, sa};
+            EndpointKey k2{b.index, sb};
+            if (k2 < k1) std::swap(k1, k2);
+            auto [it, inserted] = bondIds.emplace(std::make_pair(k1, k2), nextBond);
+            if (inserted) ++nextBond;
+            return it->second;
+        };
+
+        std::ostringstream complexText;
+        for (std::size_t mi = 0; mi < members.size(); ++mi) {
+            if (mi != 0) complexText << '.';
+            const auto p = members[mi];
+            const auto& type = model.molecule_types.at(graph.type(p));
+            complexText << type.name << '(';
+            for (std::size_t si = 0; si < type.sites.size(); ++si) {
+                if (si != 0) complexText << ',';
+                const auto site = static_cast<std::uint16_t>(si);
+                complexText << type.sites[si].name;
+                if (!type.sites[si].states.empty()) {
+                    const auto st = graph.siteState(p, site);
+                    if (st >= 0 && static_cast<std::size_t>(st) < type.sites[si].states.size()) {
+                        complexText << '~' << type.sites[si].states[static_cast<std::size_t>(st)];
+                    }
+                }
+                if (graph.bound(p, site)) {
+                    const auto partner = graph.bond(p, site);
+                    complexText << '!' << bondIdFor(p, site, partner.particle, partner.site);
+                }
+            }
+            complexText << ')';
+            if (!model.compartments.empty()) {
+                const auto cname = compartmentName(graph.compartment(p));
+                if (!cname.empty()) complexText << '@' << cname;
+            }
+        }
+        ++speciesCounts[complexText.str()];
+    }
+
+    for (const auto& [loc, count] : state.populations) {
+        if (count == 0) continue;
+        const auto& type = model.molecule_types.at(loc.first);
+        std::string label;
+        if (loc.second.has_value()) {
+            const auto cname = compartmentName(*loc.second);
+            if (!cname.empty()) label = "@" + cname + "::";
+        }
+        label += type.name + "()";
+        speciesCounts[label] += count;
+    }
+
+    std::ostringstream out;
+    for (const auto& [species, count] : speciesCounts) {
+        out << species << ' ' << count << '\n';
+    }
+    return out.str();
 }
 
 } // namespace nfnext

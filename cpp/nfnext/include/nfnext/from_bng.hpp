@@ -65,4 +65,8 @@ struct BngExecutionResult {
 BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& model,
                                       const BngExecutionRequest& request);
 
+// Format the final particle and population species counts in BNG/NFsim
+// .species text format (`<species> <count>` per line).
+std::string formatFinalSpecies(const BngExecutionState& state);
+
 } // namespace nfnext
