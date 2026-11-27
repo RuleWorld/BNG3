@@ -2,9 +2,12 @@
 
 **Release scope:** [Capability inventory](CAPABILITY_UNION_INVENTORY.md) · [Machine-readable capability matrix](../provenance/capability-matrix.yml). **Final policy:** [Maintainer decisions](DECISIONS.md). Every inventory row is a release requirement; completion requires the issue acceptance checks and exact-main evidence recorded in [current progress](CURRENT_PROGRESS.md).
 
-**Status:** task index only. Issue state and exact-main check evidence are tracked in
-[current progress](CURRENT_PROGRESS.md) and each live issue. The historical audit
-baseline (`e1836c3274e685996d5e86883761e00e98257e09`) is preserved in the
+**Status (reconciled 2026-11-26 at `90832910`):** task index — **all 55 convergence
+issues (`#132`–`#186`) and follow-up release issues (`#470`–`#475`) are CLOSED
+(`0` open issues in `RuleWorld/BNG3`)**. Live verification evidence and exact-main
+check receipts are tracked in [current progress](CURRENT_PROGRESS.md) and the
+closed issue records. The historical audit baseline
+(`e1836c3274e685996d5e86883761e00e98257e09`) is preserved in the
 [archived audit](archive/reports/REPOSITORY_AUDIT_2026-10-07.md); it is not a
 current qualification snapshot.
 
@@ -14,57 +17,57 @@ representation, compilation and execution; Python owns APIs, orchestration and
 suitable translation/tools. Backends share a resolved semantic contract and
 reject constructs they cannot preserve.
 
-This is the current task index. Issues own scope, acceptance criteria, sequencing,
-assignees and closure evidence. [Current progress](CURRENT_PROGRESS.md) records
-verification boundaries; the [audit](archive/reports/REPOSITORY_AUDIT_2026-10-07.md) explains the
-55 tasks. The former append-only checklist is preserved at its
+This is the convergence task index. Issues own scope, acceptance criteria,
+sequencing, assignees and closure evidence. [Current progress](CURRENT_PROGRESS.md)
+records verification boundaries; the
+[audit](archive/reports/REPOSITORY_AUDIT_2026-10-07.md) explains the 55 tasks.
+The former append-only checklist is preserved at its
 [audited revision](https://github.com/RuleWorld/BNG3/blob/e1836c3274e685996d5e86883761e00e98257e09/docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md).
-Historical unchecked boxes are not current defects.
 
 ## Implemented foundations
 
-These capabilities exist; the open work below qualifies their completeness and
-supported scope rather than reimplementing them.
+These capabilities were established before or during the convergence campaign
+and qualified through the closed issues indexed below:
 
 - [x] Native BNGL parser, network generation, ODE/SSA/PLA/PSA, embedded NFsim,
   Python bindings/API, CLI, builders, scans, local sensitivities and exporters.
 - [x] Compile-owned model declarations, typed symbols/pattern constraints,
   mutation endpoints and separate forward/reverse rule directions.
-- [x] Restricted `CompiledModel -> NFIR` lowering and an enforced architecture
-  dependency ratchet; 43 compatibility files remain at the audited revision.
-- [x] One bundled nauty build and shared expression infrastructure replacing
-  NFsim's ExprTk dependency. Graph-identity unification remains open (B05).
+- [x] `CompiledModel -> NFIR` lowering, architecture dependency ratchet, and
+  compiled-input runtime migration (closed under `#138`, `#147`, `#148`, `#149`).
+- [x] One bundled nauty build, shared expression infrastructure replacing
+  NFsim's ExprTk dependency, and unified graph-identity semantics (closed under
+  `#142`).
 - [x] Direct NFsim initialization by default; explicit opt-in XML fallback.
-- [x] BNGIR 0.1/0.2 serialization, structural snapshots and validation;
-  native structural import remains open (D01).
-- [x] Modern Atomizer, supported SBML Core/Multi lowerings, physical-unit
-  infrastructure, analytic event lowerings, and a bounded native ODE event
-  runtime with continuous trigger/root and queued-execution semantics.
-  Stochastic event execution, general event classes, and complete official
-  conformance remain separate unqualified obligations (E01–E02); see
-  [ADR 0004](adr/0004-native-sbml-event-runtime.md).
-- [x] Lean semantic/reference modules, scoped interpreter-refinement proofs,
-  explicit Smoke/Coverage/axiom gates and native NFnext contract tests.
-- [x] SSTS revision-lock and official-reference comparison machinery;
-  bounded hosted conformance CI has permanent receipts (H05); full aggregate qualification remains open (E03).
-- [x] CPU/Metal/CUDA batch-SSA infrastructure and platform/package CI;
-  real CUDA-device qualification remains open (G05).
+- [x] BNGIR 0.1/0.2 serialization, structural snapshots, validation, and direct
+  native structural deserialization (closed under `#153`–`#156`).
+- [x] Modern Atomizer, supported SBML Core/Multi/comp lowerings, physical-unit
+  infrastructure, analytic event lowerings, native ODE event runtime with
+  continuous per-conjunct root detection and queued-execution semantics, and
+  stochastic/priority/delay event handling (closed under `#157`, `#159`–`#164`);
+  see [ADR 0004](adr/0004-native-sbml-event-runtime.md).
+- [x] Lean semantic/reference modules, scoped interpreter-refinement and
+  correspondence proofs, explicit Smoke/Coverage/axiom gates and native NFnext
+  contract tests (closed under `#165`–`#170`).
+- [x] SSTS revision-lock, official-reference comparison machinery, and hosted
+  conformance CI with permanent receipts (closed under `#159`, `#183`).
+- [x] CPU/Metal/CUDA batch-SSA infrastructure and platform/package CI (closed
+  under `#175` and `#474`).
 
-## Outstanding work
+## Convergence work items (all issues closed)
 
 P0: immediate failure triage; P1: core convergence; P2: broader qualification
 and maintenance; P3: optional expansion. D: defect/comparison failure;
 I: implementation; Q: qualification; R: refactoring/documentation;
-M: maintainer/product decision. R/M items require a reviewed scope decision,
-not automatic expansion. Estimates and detailed acceptance tests live in issues.
+M: maintainer/product decision.
 
-An unchecked item remains open until its issue has a verified implementation or
-an approved disposition. A03 is the closed review/disposition issue; #128 and its required pyparsing repair
-#204 subsequently landed together after combined source review.
-A01 closed after #130 merged and its scoped regression, installed independent and three-platform corpus gates passed. A04 closed after #187 merged and its issue-linked documentation criteria were reviewed. A02 and G03 closed after the exact-source installed JAX qualification and explicit SSA-unavailable disposition; H05 closed after bounded official-suite CI and durable receipts were reviewed. A05, B08, F01 and F05 closed after their documentation, shared capability, reference-matcher and trust-accounting acceptance criteria were met; broader semantic/proof issues remain open. H04 closed after the exact-source manual ensemble gate executed and its red results were retained in a permanent receipt; scientific qualification remains open. Other bounded merged runtime and BNGIR repairs are listed in current progress and did not close their broader audit issues.
-The pushed candidate ledger and next dependency order are in
-[current progress](CURRENT_PROGRESS.md); no other item is completed merely by
-an open PR or by filing an issue.
+All 55 items below (`#132`–`#186`) and the follow-up release issues (`#470`–`#475`)
+were verified `CLOSED` on 2026-11-26 (`gh issue list --repo RuleWorld/BNG3 --state open`
+returns `0` open issues). Note that `#158` (E02) was merged into `#157` (E01),
+`#470` was merged into `#178` (G08), and GPU-specific implementation/device
+qualification from `#175` (G05) was completed under `#474`. Closure commits,
+check receipts, and remaining explicit scope boundaries live in the closed
+issue threads and [current progress](CURRENT_PROGRESS.md).
 
 ### Triage, documentation and product scope
 
@@ -73,77 +76,86 @@ an open PR or by filing an issue.
 - [x] **A03 · P1 Q** — Review and disposition the legacy parser optimizations in PR #128. [#134](https://github.com/RuleWorld/BNG3/issues/134)
 - [x] **A04 · P1 R** — Replace historical convergence logs with a current issue-linked checklist. [#135](https://github.com/RuleWorld/BNG3/issues/135)
 - [x] **A05 · P1 R** — Correct stale architecture and validation documentation. [#136](https://github.com/RuleWorld/BNG3/issues/136)
-- [ ] **A06 · P1 M** — Approve the BNG3 capability-union inventory and support policy. [#137](https://github.com/RuleWorld/BNG3/issues/137)
+- [x] **A06 · P1 M** — Approve the BNG3 capability-union inventory and support policy. [#137](https://github.com/RuleWorld/BNG3/issues/137)
 
 ### C++ semantic and runtime boundaries
 
-- [ ] **B01 · P1 I** — Migrate remaining runtime consumers to the resolved semantic model. [#138](https://github.com/RuleWorld/BNG3/issues/138) Merged PR [#233](https://github.com/RuleWorld/BNG3/pull/233) migrates NET observable groups and preserves shared graph-prefix/counting semantics; its pre-#237 hosted Python matrix had 18 failed jobs, all involving Counter/Fraction handling. Merged [PR #237](https://github.com/RuleWorld/BNG3/pull/237) now rejects those unsupported kinds before opening the NET destination and preserves existing output, without adding runtime support. Root's focused source/CLI/native checks pass; no PR-head hosted checks ran after retargeting. The 2026-10-11 20:49:40–20:49:44 UTC merge-push snapshot for run 38171605273 was 9 successes/22 queued/no failures; a 2026-10-12 exact-run refresh showed 39 successes and one skipped job. This e3 run predates #238/#241 and is not current-main qualification ([run](https://github.com/RuleWorld/BNG3/actions/runs/38171605273)). The compatibility allowlist contains 41 explicit files and broader migration remains open. See [current progress](CURRENT_PROGRESS.md) for evidence and limits.
-- [ ] **B02 · P1 I** — Separate network-rule execution from reconstructed AST rules. [#139](https://github.com/RuleWorld/BNG3/issues/139) A demonstrated product unbound-site graph mismatch remains at current main; see [current progress](CURRENT_PROGRESS.md).
-- [ ] **B03 · P1 I** — Type simulation protocol actions and share option semantics. [#140](https://github.com/RuleWorld/BNG3/issues/140) Merged PR [#236](https://github.com/RuleWorld/BNG3/pull/236) adds the finite ODE/SSA `n_steps` expression slice; [PR #241](https://github.com/RuleWorld/BNG3/pull/241) adds static numeric `setParameter` arithmetic in top-level and protocol actions; [PR #244](https://github.com/RuleWorld/BNG3/pull/244) corrects a bounded unlimited-stoichiometry sentinel case with one-generation pinned-BNG2 parity; [PR #248](https://github.com/RuleWorld/BNG3/pull/248) adds numeric-only static `max_stoich` compilation with nine pinned-BNG2 cases; [PR #254](https://github.com/RuleWorld/BNG3/pull/254) rejects trailing tokens and lexer errors in standalone expression parsing; [PR #257](https://github.com/RuleWorld/BNG3/pull/257) preserves D/d identifier spelling in scalar `setParameter` expressions while retaining numeric-token D-exponent normalization. Historical main `e13ed95` still stopped an initially-true default-grid `stop_if=>"2^N"` after its first step. Merged [PR #260](https://github.com/RuleWorld/BNG3/pull/260) (source `3a353c76e5bc86becf2d5934c0c944790a6d5dab`, main `3ec99904afed69631808556c5646fed99328bb26`) now checks the initial state before advancing on the default grid; exact-source parity and test receipts are in [current progress](CURRENT_PROGRESS.md). The corrected explicit `sample_times=>[0,0.25,1]` fixture still returns two BNG3 rows versus pinned BNG2's initial row only. Dynamic parameter-backed arithmetic, functions/names, quoted numeric text, non-finite values, Safe-Perl caret semantics, general raw-option/typed-dispatch, sequential-action/default/entrypoint coverage, CLI/Python equivalence, invalid-option coverage and installed-package qualification remain open; #140 remains open. Product-only limits preserve seed amounts, matching pinned BNG2.
-- [ ] **B04 · P1 Q** — Qualify compile-once model reuse and independent trajectory state. [#141](https://github.com/RuleWorld/BNG3/issues/141)
-- [ ] **B05 · P1 I** — Unify network and NFsim graph-identity semantics. [#142](https://github.com/RuleWorld/BNG3/issues/142) Merged PR [#211](https://github.com/RuleWorld/BNG3/pull/211) repairs compartmental seed association and exact identity checks; separate backend encodings and broader qualification remain open.
-- [ ] **B06 · P1 I** — Complete the shared rate-law and local-function semantic contract. [#143](https://github.com/RuleWorld/BNG3/issues/143)
-- [ ] **B07 · P1 M** — Resolve and execute the canonical finite-backend migration. [#144](https://github.com/RuleWorld/BNG3/issues/144)
+- [x] **B01 · P1 I** — Migrate remaining runtime consumers to the resolved semantic model. [#138](https://github.com/RuleWorld/BNG3/issues/138)
+- [x] **B02 · P1 I** — Separate network-rule execution from reconstructed AST rules. [#139](https://github.com/RuleWorld/BNG3/issues/139)
+- [x] **B03 · P1 I** — Type simulation protocol actions and share option semantics. [#140](https://github.com/RuleWorld/BNG3/issues/140)
+- [x] **B04 · P1 Q** — Qualify compile-once model reuse and independent trajectory state. [#141](https://github.com/RuleWorld/BNG3/issues/141)
+- [x] **B05 · P1 I** — Unify network and NFsim graph-identity semantics. [#142](https://github.com/RuleWorld/BNG3/issues/142)
+- [x] **B06 · P1 I** — Complete the shared rate-law and local-function semantic contract. [#143](https://github.com/RuleWorld/BNG3/issues/143)
+- [x] **B07 · P1 M** — Resolve and execute the canonical finite-backend migration. [#144](https://github.com/RuleWorld/BNG3/issues/144)
 - [x] **B08 · P2 R** — Use one BNGsim capability and rejection implementation. [#145](https://github.com/RuleWorld/BNG3/issues/145)
 
 ### NFsim, NFcore2, NFnext and hybrid execution
 
-- [ ] **C01 · P1 Q** — Expand independent direct-NFsim and XML-path qualification. [#146](https://github.com/RuleWorld/BNG3/issues/146) Merged PR [#210](https://github.com/RuleWorld/BNG3/pull/210) repairs a bounded deletion slice; [#235](https://github.com/RuleWorld/BNG3/pull/235) adds canonical leading %label: local-function XML scope and [#238](https://github.com/RuleWorld/BNG3/pull/238) binds compiled local-function scope in direct NFsim. Independent native parity now covers four scoped cases, while the original unmapped conditional remains unsupported and the composite XML case is unsupported by native NFsim. Strict native -oSteps final-endpoint rows remain red; full #146 qualification remains open.
-- [ ] **C02 · P1 I** — Extend NFnext lowering for approved unsupported semantic families. [#147](https://github.com/RuleWorld/BNG3/issues/147)
-- [ ] **C03 · P1 I** — Qualify a complete model-to-NFnext execution boundary. [#148](https://github.com/RuleWorld/BNG3/issues/148)
-- [ ] **C04 · P2 M** — Decide maintained roles for NFcore, NFcore2 and NFnext. [#149](https://github.com/RuleWorld/BNG3/issues/149)
-- [ ] **C05 · P1 I** — Complete or disposition hybrid particle-population execution. [#150](https://github.com/RuleWorld/BNG3/issues/150)
-- [ ] **C06 · P1 I** — Implement the verified NFsim physical-unit count-rate bridge. [#151](https://github.com/RuleWorld/BNG3/issues/151)
-- [ ] **C07 · P2 Q** — Reconcile newer NFsim energy, Rasi and protocol capabilities. [#152](https://github.com/RuleWorld/BNG3/issues/152)
+- [x] **C01 · P1 Q** — Expand independent direct-NFsim and XML-path qualification. [#146](https://github.com/RuleWorld/BNG3/issues/146)
+- [x] **C02 · P1 I** — Extend NFnext lowering for approved unsupported semantic families. [#147](https://github.com/RuleWorld/BNG3/issues/147)
+- [x] **C03 · P1 I** — Qualify a complete model-to-NFnext execution boundary. [#148](https://github.com/RuleWorld/BNG3/issues/148)
+- [x] **C04 · P2 M** — Decide maintained roles for NFcore, NFcore2 and NFnext. [#149](https://github.com/RuleWorld/BNG3/issues/149)
+- [x] **C05 · P1 I** — Complete or disposition hybrid particle-population execution. [#150](https://github.com/RuleWorld/BNG3/issues/150)
+- [x] **C06 · P1 I** — Implement the verified NFsim physical-unit count-rate bridge. [#151](https://github.com/RuleWorld/BNG3/issues/151)
+- [x] **C07 · P2 Q** — Reconcile newer NFsim energy, Rasi and protocol capabilities. [#152](https://github.com/RuleWorld/BNG3/issues/152)
 
 ### BNG-IR
 
-- [ ] **D01 · P1 I** — Deserialize structural BNGIR directly into the native semantic model. [#153](https://github.com/RuleWorld/BNG3/issues/153) Merged PR [#209](https://github.com/RuleWorld/BNG3/pull/209) qualifies a narrow parser-free v0.2 import subset with explicit unqualified-export refusal; observables and the remaining model families are still open. [PR #242](https://github.com/RuleWorld/BNG3/pull/242) rejects unknown model properties on the default route; [PR #246](https://github.com/RuleWorld/BNG3/pull/246) rejects unknown feature/protocol/action properties while retaining string-valued action arguments. [PR #251](https://github.com/RuleWorld/BNG3/pull/251) adds one minimal default-Python v0.1-to-v0.2 bridge fixture; this does not expand the native semantic subset. [PR #252](https://github.com/RuleWorld/BNG3/pull/252) rejects non-finite direct-native numeric values but does not complete the broader C++ reader contract. [PR #255](https://github.com/RuleWorld/BNG3/pull/255) installs the bridge test's `jsonschema` dependency in the separate Python integration job after collection failures; this is CI setup, not expanded native import support. [PR #258](https://github.com/RuleWorld/BNG3/pull/258) refuses nonempty component/site payloads that the direct-native importer would otherwise discard; it adds no component, site or bond lowering.
-- [ ] **D02 · P1 Q** — Qualify BNGIR round trips across the supported semantic surface. [#154](https://github.com/RuleWorld/BNG3/issues/154) Merged [PR #246](https://github.com/RuleWorld/BNG3/pull/246) closes unknown action-envelope fields. [PR #251](https://github.com/RuleWorld/BNG3/pull/251) pins deterministic schema-valid v0.2 output for one frozen v0.1 Python bridge fixture with semantic round-trip checks; broad model and protocol round trips remain open.
-- [ ] **D03 · P1 I** — Add independent native BNGIR contracts and adversarial fixtures. [#155](https://github.com/RuleWorld/BNG3/issues/155) Merged [PR #246](https://github.com/RuleWorld/BNG3/pull/246) adds default-route envelope rejection tests; merged [PR #247](https://github.com/RuleWorld/BNG3/pull/247) adds direct-native parameter required/allowed-key checks; [PR #249](https://github.com/RuleWorld/BNG3/pull/249) adds raw-native expression-property, boolean-number and exact unary/binary-arity guards; [PR #250](https://github.com/RuleWorld/BNG3/pull/250) constrains direct-native `parameter_ref.symbol` to exactly `kind,index` with `kind == "parameter"`; [PR #252](https://github.com/RuleWorld/BNG3/pull/252) rejects non-finite direct-native numeric values; [PR #256](https://github.com/RuleWorld/BNG3/pull/256) rejects rules with more than one pattern on either side rather than silently discarding extra patterns; [PR #258](https://github.com/RuleWorld/BNG3/pull/258) refuses components and molecule sites rather than silently discarding them. These enforce a bounded native subset, not the broader published schema. [PR #251](https://github.com/RuleWorld/BNG3/pull/251) adds one default-Python frozen v0.1-to-v0.2 bridge contract; it does not validate the direct-native C++ reader or complete #155. The published #250 head passed 225 tests with two existing xfails; #252 adds a bounded 329-test source-mode receipt, #256 adds 334 passes/two existing xfails with the #255 CI contract, and #258 adds 338 selected source tests/two existing xfails; #155 remains open. Deeper nested validation, generated adversarial references, independent C++ reader validation and broader version-migration coverage remain open.
-- [ ] **D04 · P2 M** — Define BNGIR version defaults, compatibility and semantic equality. [#156](https://github.com/RuleWorld/BNG3/issues/156)
+- [x] **D01 · P1 I** — Deserialize structural BNGIR directly into the native semantic model. [#153](https://github.com/RuleWorld/BNG3/issues/153)
+- [x] **D02 · P1 Q** — Qualify BNGIR round trips across the supported semantic surface. [#154](https://github.com/RuleWorld/BNG3/issues/154)
+- [x] **D03 · P1 I** — Add independent native BNGIR contracts and adversarial fixtures. [#155](https://github.com/RuleWorld/BNG3/issues/155)
+- [x] **D04 · P2 M** — Define BNGIR version defaults, compatibility and semantic equality. [#156](https://github.com/RuleWorld/BNG3/issues/156)
 
 ### Atomizer, SBML, events and exporters
 
-- [ ] **E01 · P1 I** — Execute native dynamic events with continuous root detection. [#157](https://github.com/RuleWorld/BNG3/issues/157)
-- [ ] **E02 · P1 I** — Complete delayed, prioritized and stochastic event-queue semantics. [#158](https://github.com/RuleWorld/BNG3/issues/158)
-- [ ] **E03 · P1 Q** — Publish current revision-locked official SBML conformance evidence. [#159](https://github.com/RuleWorld/BNG3/issues/159)
-- [ ] **E04 · P1 I** — Disposition unsupported SBML semantics by feature class. [#160](https://github.com/RuleWorld/BNG3/issues/160)
-- [ ] **E05 · P2 Q** — Expand structural Atomizer and SBML Multi execution qualification. [#161](https://github.com/RuleWorld/BNG3/issues/161)
-- [ ] **E06 · P2 Q** — Resume curated BioModels and cross-engine Atomizer qualification when authorized. [#162](https://github.com/RuleWorld/BNG3/issues/162)
-- [ ] **E07 · P1 Q** — Populate format Tier-X with semantic and consumer-level checks. [#163](https://github.com/RuleWorld/BNG3/issues/163)
-- [ ] **E08 · P2 R** — Split Atomizer lowering and emission by semantic responsibility. [#164](https://github.com/RuleWorld/BNG3/issues/164)
+- [x] **E01 · P1 I** — Execute native dynamic events with continuous root detection. [#157](https://github.com/RuleWorld/BNG3/issues/157)
+- [x] **E02 · P1 I** — Complete delayed, prioritized and stochastic event-queue semantics (merged into `#157`). [#158](https://github.com/RuleWorld/BNG3/issues/158)
+- [x] **E03 · P1 Q** — Publish current revision-locked official SBML conformance evidence. [#159](https://github.com/RuleWorld/BNG3/issues/159)
+- [x] **E04 · P1 I** — Disposition unsupported SBML semantics by feature class. [#160](https://github.com/RuleWorld/BNG3/issues/160)
+- [x] **E05 · P2 Q** — Expand structural Atomizer and SBML Multi execution qualification. [#161](https://github.com/RuleWorld/BNG3/issues/161)
+- [x] **E06 · P2 Q** — Resume curated BioModels and cross-engine Atomizer qualification when authorized. [#162](https://github.com/RuleWorld/BNG3/issues/162)
+- [x] **E07 · P1 Q** — Populate format Tier-X with semantic and consumer-level checks. [#163](https://github.com/RuleWorld/BNG3/issues/163)
+- [x] **E08 · P2 R** — Split Atomizer lowering and emission by semantic responsibility. [#164](https://github.com/RuleWorld/BNG3/issues/164)
 
 ### Lean and mathematical checks
 
 - [x] **F01 · P1 I** — Prove ReferenceMatcherCorrect soundness and completeness. [#165](https://github.com/RuleWorld/BNG3/issues/165)
-- [ ] **F02 · P1 I** — Establish production lowering correspondence for a named supported subset. [#166](https://github.com/RuleWorld/BNG3/issues/166)
-- [ ] **F03 · P2 I** — Extend formal rate, propensity and stochastic execution semantics. [#167](https://github.com/RuleWorld/BNG3/issues/167)
-- [ ] **F04 · P2 I** — Qualify and formalize canonicalization and bounded network equivalence. [#168](https://github.com/RuleWorld/BNG3/issues/168)
+- [x] **F02 · P1 I** — Establish production lowering correspondence for a named supported subset. [#166](https://github.com/RuleWorld/BNG3/issues/166)
+- [x] **F03 · P2 I** — Extend formal rate, propensity and stochastic execution semantics. [#167](https://github.com/RuleWorld/BNG3/issues/167)
+- [x] **F04 · P2 I** — Qualify and formalize canonicalization and bounded network equivalence. [#168](https://github.com/RuleWorld/BNG3/issues/168)
 - [x] **F05 · P1 Q** — Maintain explicit proof trust accounting and harness qualification. [#169](https://github.com/RuleWorld/BNG3/issues/169)
-- [ ] **F06 · P3 M** — Decide the optional CRNT model-property verification bridge. [#170](https://github.com/RuleWorld/BNG3/issues/170)
+- [x] **F06 · P3 M** — Decide the optional CRNT model-property verification bridge. [#170](https://github.com/RuleWorld/BNG3/issues/170)
 
 ### Python compatibility, performance and maintainability
 
-- [ ] **G01 · P1 Q** — Complete the PyBioNetGen public compatibility matrix. [#171](https://github.com/RuleWorld/BNG3/issues/171) Merged documentation-only [PR #245](https://github.com/RuleWorld/BNG3/pull/245) clarifies that `BIONETGEN_USE_PERL=1` selects Perl for Python API `bionetgen.run(path)` and `bionetgen.load(path).execute()`; `bionetgen run MODEL` is unavailable in that mode. This source-mode reproduction does not complete the public API/installed-CLI matrix.
-- [ ] **G02 · P2 R** — Retire redundant legacy Python paths after compatibility qualification. [#172](https://github.com/RuleWorld/BNG3/issues/172) Merged PR [#208](https://github.com/RuleWorld/BNG3/pull/208) preserves defaults without optional Cement but does not retire `modelapi`, legacy imports, or compatibility fallbacks.
+- [x] **G01 · P1 Q** — Complete the PyBioNetGen public compatibility matrix. [#171](https://github.com/RuleWorld/BNG3/issues/171)
+- [x] **G02 · P2 R** — Retire redundant legacy Python paths after compatibility qualification. [#172](https://github.com/RuleWorld/BNG3/issues/172)
 - [x] **G03 · P1 D** — Disposition JAX SSA stubs and gate optional backends and undefined names. [#173](https://github.com/RuleWorld/BNG3/issues/173)
-- [ ] **G04 · P2 Q** — Publish current representative speed and memory baselines. [#174](https://github.com/RuleWorld/BNG3/issues/174)
-- [ ] **G05 · P2 Q** — Qualify CUDA batch SSA on actual NVIDIA hardware. [#175](https://github.com/RuleWorld/BNG3/issues/175)
-- [ ] **G06 · P2 M** — Refresh the NFsim CPU, ensemble and GPU roadmap from measurements. [#176](https://github.com/RuleWorld/BNG3/issues/176)
-- [ ] **G07 · P2 Q** — Independently qualify barrier and reservoir energy extensions. [#177](https://github.com/RuleWorld/BNG3/issues/177)
-- [ ] **G08 · P2 R** — Consolidate action, numerical and exporter semantic decisions. [#178](https://github.com/RuleWorld/BNG3/issues/178)
+- [x] **G04 · P2 Q** — Publish current representative speed and memory baselines. [#174](https://github.com/RuleWorld/BNG3/issues/174)
+- [x] **G05 · P2 Q** — Qualify CUDA batch SSA on actual NVIDIA hardware (GPU work consolidated into `#474`, also closed). [#175](https://github.com/RuleWorld/BNG3/issues/175)
+- [x] **G06 · P2 M** — Refresh the NFsim CPU, ensemble and GPU roadmap from measurements. [#176](https://github.com/RuleWorld/BNG3/issues/176)
+- [x] **G07 · P2 Q** — Independently qualify barrier and reservoir energy extensions. [#177](https://github.com/RuleWorld/BNG3/issues/177)
+- [x] **G08 · P2 R** — Consolidate action, numerical and exporter semantic decisions (includes merged `#470`). [#178](https://github.com/RuleWorld/BNG3/issues/178)
 
 ### Validation, provenance and release
 
-- [ ] **H01 · P1 M** — Resolve strict provenance approvals and enforce the release gate. [#179](https://github.com/RuleWorld/BNG3/issues/179)
-- [ ] **H02 · P1 Q** — Refresh upstream reconciliation and map behavior claims to tests. [#180](https://github.com/RuleWorld/BNG3/issues/180)
-- [ ] **H03 · P1 Q** — Approve complete capability-based corpus tiers and budgets. [#181](https://github.com/RuleWorld/BNG3/issues/181)
+- [x] **H01 · P1 M** — Resolve strict provenance approvals and enforce the release gate. [#179](https://github.com/RuleWorld/BNG3/issues/179)
+- [x] **H02 · P1 Q** — Refresh upstream reconciliation and map behavior claims to tests. [#180](https://github.com/RuleWorld/BNG3/issues/180)
+- [x] **H03 · P1 Q** — Approve complete capability-based corpus tiers and budgets. [#181](https://github.com/RuleWorld/BNG3/issues/181)
 - [x] **H04 · P1 Q** — Wire numerical, expression and export parity into explicit CI gates. [#182](https://github.com/RuleWorld/BNG3/issues/182)
 - [x] **H05 · P1 Q** — Add budgeted official SBML conformance CI with durable artifacts. [#183](https://github.com/RuleWorld/BNG3/issues/183)
-- [ ] **H06 · P2 Q** — Complete release-candidate scientific and packaging qualification. [#184](https://github.com/RuleWorld/BNG3/issues/184)
-- [ ] **H07 · P2 M** — Assign scientific, formal and compatibility review ownership. [#185](https://github.com/RuleWorld/BNG3/issues/185)
-- [ ] **H08 · P2 M** — Publish alpha migration, backend-support and repository-maintenance guidance. [#186](https://github.com/RuleWorld/BNG3/issues/186)
+- [x] **H06 · P2 Q** — Complete release-candidate scientific and packaging qualification. [#184](https://github.com/RuleWorld/BNG3/issues/184)
+- [x] **H07 · P2 M** — Assign scientific, formal and compatibility review ownership. [#185](https://github.com/RuleWorld/BNG3/issues/185)
+- [x] **H08 · P2 M** — Publish alpha migration, backend-support and repository-maintenance guidance. [#186](https://github.com/RuleWorld/BNG3/issues/186)
+
+### Follow-up release issues
+
+- [x] **#470** — Merged into `#178` (common backend interface). [#470](https://github.com/RuleWorld/BNG3/issues/470)
+- [x] **#471** — Anti-gaming policy and oracle consolidation. [#471](https://github.com/RuleWorld/BNG3/issues/471)
+- [x] **#472** — Documentation standardization and acceptance checks. [#472](https://github.com/RuleWorld/BNG3/issues/472)
+- [x] **#473** — Optional JAX backend qualification. [#473](https://github.com/RuleWorld/BNG3/issues/473)
+- [x] **#474** — GPU implementation and Metal/CUDA device qualification. [#474](https://github.com/RuleWorld/BNG3/issues/474)
+- [x] **#475** — Delayed-rule interchange and native execution completion. [#475](https://github.com/RuleWorld/BNG3/issues/475)
 
 ## Execution and completion rules
 
@@ -167,7 +179,9 @@ an open PR or by filing an issue.
 - Keep model semantics and capability checks centralized; unsupported behavior
   must fail explicitly. Performance changes require correctness evidence and
   controlled measurements.
-- The full BioModels run remains stopped until explicit user resumption (E06).
+- Curated BioModels qualification (E06 / `#162`) was resumed and closed; see
+  [curated BioModels corpus](CURATED_BIOMODELS_CORPUS.md) and
+  [current progress](CURRENT_PROGRESS.md) for current manifest status.
 - Do not merge/publish a release merely because the configured main CI is green.
   Approval locks, complete supported-surface coverage and exact-candidate release
   evidence remain required.

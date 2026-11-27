@@ -214,14 +214,14 @@ Core specification:
 | `BIOMD0000000638` | atomizer | compartment size in a scaled unit | The unit conversion rounded the scaled size twice, so the emitted size was one unit in the last place away from the value the source states; the record's rate laws divide by it, and the independent oracle failed to converge. **Fixed.** |
 | `BIOMD0000000954` | atomizer | rate law that names a species the reaction does not consume | The numeric mass-action probe replaced the state-dependent rate law with a fitted constant, so the exported model was a snapshot of the law rather than the law, and the record's status was not reproducible at a fixed commit. **Fixed.** |
 | `BIOMD0000001098` | atomizer | MathML `<apply>` without an operator | Every reaction's kinetic law is an `<apply>` whose operator is a `<ci>` naming a parameter. MathML reads that as a call to an undeclared function, the Atomizer translated it faithfully, and the emitted rule does not parse. **Now reported as unsupported.** |
-| `BIOMD0000000674` | writer | reversible rule with a `TotalRate` modifier | The Atomizer's translation matches the source (see below), but the C++ SBML writer writes the reverse direction of a reversible `TotalRate` rule with an extra factor for the product species and without the `bng:totalRate` annotation, so the written SBML does not reproduce the source's mathematics. **Not fixed here: the defect is in `cpp/io/SbmlWriter.cpp`, not in the Atomizer.** |
-| `BIOMD0000000338`, `BIOMD0000000339` | harness | event-driven compartment size with a species rate rule | The Atomizer refuses explicitly: a species rate rule in a compartment whose size an event changes has no exact BNGL lowering. The harness does not recognise the refusal string and records the record as failed rather than unsupported. |
-| `BIOMD0000000404` | harness | ill-conditioned product observable | The failing observable is a seven-fold product of species concentrations in a 1.41e-15 L compartment. The comparison sits at the edge of the tolerance, and the stored failure does not reproduce on the merged tree with the rebuilt native extension: three consecutive re-runs pass. |
-| `BIOMD0000000451` | harness | stiff model rejected by the independent oracle | libRoadRunner's CVODE fails to converge on the written SBML at t ≈ 1.5e-8; BNG3's own solver produces a trajectory. The comparison needs both. |
-| `BIOMD0000000601` | harness | stiff model rejected by a solver | A CVODE convergence failure that does not reproduce on the merged tree with the rebuilt native extension. |
-| `BIOMD0000000731` | source | observable undefined at t=0 | The observable is `ln` of a quantity that is zero at t=0, so BNG3 and libRoadRunner both return `-inf`. The corpus comparison requires finite values in both engines. |
-| `BIOMD0000000803` | source | observable undefined at t=0 | The observable is a ratio of two species that both start at zero, so both engines return NaN. |
-| `BIOMD0000000973` | source | observable undefined at t=0 | The observable divides by a species that starts at zero, so both engines return NaN. |
+| `BIOMD0000000674` | writer | reversible rule with a `TotalRate` modifier | The Atomizer's translation matches the source (see below), but the C++ SBML writer writes the reverse direction of a reversible `TotalRate` rule with an extra factor for the product species and without the `bng:totalRate` annotation, so the written SBML does not reproduce the source's mathematics. **Subsequently FIXED on `main`** (`557479b8` / `0c80d125` / `333d5ecf`, PR #458): `cpp/io/SbmlWriter.cpp` (`hasTotalRateModifier`) delegates to `bng::compile::isTotalRateReaction`, resolving `_reverse__`/`__reverse__` rule origins; `passed` across all stages in `provenance/curated-biomodels-corpus-expectations.json` (measured 2026-11-24 at `11b9e732`). |
+| `BIOMD0000000338`, `BIOMD0000000339` | harness | event-driven compartment size with a species rate rule | The Atomizer refuses explicitly: a species rate rule in a compartment whose size an event changes has no exact BNGL lowering. The harness does not recognise the refusal string and records the record as failed rather than unsupported. **Reclassified on `main`:** now recorded as `unsupported` (`events:untranslated`) in `provenance/curated-biomodels-corpus-expectations.json` (`11b9e732`). |
+| `BIOMD0000000404` | harness | ill-conditioned product observable | The failing observable is a seven-fold product of species concentrations in a 1.41e-15 L compartment. The comparison sits at the edge of the tolerance, and the stored failure does not reproduce on the merged tree with the rebuilt native extension: three consecutive re-runs pass. **Current manifest (`11b9e732`):** `passed`. |
+| `BIOMD0000000451` | harness | stiff model rejected by the independent oracle | libRoadRunner's CVODE fails to converge on the written SBML at t ≈ 1.5e-8; BNG3's own solver produces a trajectory. The comparison needs both. **Current manifest (`11b9e732`):** `passed`. |
+| `BIOMD0000000601` | harness | stiff model rejected by a solver | A CVODE convergence failure that does not reproduce on the merged tree with the rebuilt native extension. **Current manifest (`11b9e732`):** `passed`. |
+| `BIOMD0000000731` | source | observable undefined at t=0 | The observable is `ln` of a quantity that is zero at t=0, so BNG3 and libRoadRunner both return `-inf`. The corpus comparison requires finite values in both engines. **Current manifest (`11b9e732`):** `passed`. |
+| `BIOMD0000000803` | source | observable undefined at t=0 | The observable is a ratio of two species that both start at zero, so both engines return NaN. **Current manifest (`11b9e732`):** `passed`. |
+| `BIOMD0000000973` | source | observable undefined at t=0 | The observable divides by a species that starts at zero, so both engines return NaN. **Current manifest (`11b9e732`):** `passed`. |
 
 For the three `source` records the two engines *agree*: BNG3 and libRoadRunner
 return the same non-finite value at the same time point, and every other
@@ -230,6 +230,17 @@ value, so the record is reported as failed even though the translation is
 faithful.
 
 ### The `BIOMD0000000674` evidence
+
+> **Status on `main` (verified 2026-11-26): FIXED.** `cpp/io/SbmlWriter.cpp:183-189`
+> (`hasTotalRateModifier`) now delegates to
+> `bng::compile::isTotalRateReaction(model, origin)` (commits `557479b8`,
+> `0c80d125`, and `333d5ecf`, PR #458), which normalizes `_reverse__`/`__reverse__`
+> origin names through `resolveOriginRule` so reverse directions of reversible
+> `TotalRate` rules preserve `<bng:totalRate/>` without multiplying by the
+> product species. In `provenance/curated-biomodels-corpus-expectations.json`
+> (measured 2026-11-24 at `11b9e732`), `BIOMD0000000674` passes `conversion`,
+> `roundtrip_structure`, and `independent_comparison`. The historical
+> diagnostic output from the pre-fix measurement is preserved below.
 
 `BIOMD0000000674` (Reyes-Palomares2012) is the one failure whose cause is
 neither the Atomizer nor the harness. The generated BNGL and the *source*

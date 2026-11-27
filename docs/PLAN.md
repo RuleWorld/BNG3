@@ -1,14 +1,16 @@
 # BNG3 Phase 2 release plan
 
-> **Plan versus verified status (reviewed 2026-11-06).** This document
+> **Plan versus verified status (reviewed 2026-11-26).** This document
 > contains a historical sequencing proposal and acceptance targets. Its
 > delegation schedules, selected baselines, and task order are not a live
-> report of branches, merged work, or issue closure. The most recent source
-> commit inspected for this documentation pass is
-> [`29d8320`](https://github.com/RuleWorld/BNG3/commit/29d8320659832fb2d411e2a51972e227559a9499),
-> merging the legacy Atomizer copy optimization (PR #602). Consult the
-> [issue-keyed status](CURRENT_PROGRESS.md), [capability inventory](CAPABILITY_UNION_INVENTORY.md),
-> and exact-head CI receipts before claiming a work package complete.
+> report of open work: as of `origin/main` at
+> [`90832910`](https://github.com/RuleWorld/BNG3/commit/90832910), all Phase 2
+> release issues listed below (`#137`–`#186`, `#470`–`#475`) are `CLOSED`
+> (`0` open issues in `RuleWorld/BNG3`). The tables and check IDs below are
+> retained as the canonical plan mapping referenced by documentation acceptance
+> checks. Consult the [issue-keyed status](CURRENT_PROGRESS.md),
+> [capability inventory](CAPABILITY_UNION_INVENTORY.md), and exact-head CI
+> receipts for live verification evidence.
 
 BNG3 will deliver the entire [capability inventory](CAPABILITY_UNION_INVENTORY.md) with the source semantics of BNG2, NFsim and PyBioNetGen and the BNG3 additions. Exact-main independent checks determine release readiness.
 
@@ -171,7 +173,7 @@ Issue-specific worktree/branch names follow the package rule above, e.g. `checks
 | #159 Qualify every SBML Core requirement against official expectations | `scripts/ci/validate_sbml_test_suite.py`; `tests/validation/release/cases/issue-159/` | `release-ssts`, `release-ssts-coverage`, `release-obligation-159` |
 | #160 Complete SBML Core and comp semantics | `python/bionetgen/atomizer/modern/parser.py`; `python/bionetgen/atomizer/modern/writer.py`; `python/bionetgen/atomizer/modern/fast_reactions.py`; `tests/validation/release/cases/issue-160/` | `release-sbml-core-comp`, `release-sbml-source-fidelity`, `release-capability-coverage-160` |
 | #161 Complete structural Atomizer and SBML Multi execution | `python/bionetgen/atomizer/modern/multi.py`; `tests/validation/release/cases/issue-161/` | `release-sbml-multi`, `release-atomizer-structure`, `release-capability-coverage-161` |
-| #162 Complete curated BioModels source qualification | `scripts/ci/validate_biomodels.py`; `python/bionetgen/atomizer/modern/writer.py`; `tests/validation/release/cases/issue-162/` | `release-biomodels`, `release-biomodels-triage`, `release-obligation-162` |
+| #162 Complete curated BioModels source qualification | `scripts/ci/validate_published_biomodels.py`; `python/bionetgen/atomizer/modern/writer.py`; `tests/validation/release/cases/issue-162/` | `release-biomodels`, `release-biomodels-triage`, `release-obligation-162` |
 | #163 Qualify every export and interchange format through its consumer | `cpp/io/`; `tests/validation/release/cases/issue-163/` | `release-formats`, `release-format-semantics`, `release-capability-coverage-163` |
 | #164 Separate Atomizer responsibilities without duplicating semantics | `python/bionetgen/atomizer/modern/parser.py`; `python/bionetgen/atomizer/modern/writer.py`; `tests/validation/release/cases/issue-164/` | `release-atomizer-modules`, `release-atomizer-refactor`, `release-obligation-164` |
 | #166 Prove production lowering correspondence | `formal/lean/BNG/Correspondence.lean`; `formal/lean/BNG/Lowering.lean`; `formal/lean/cpp_contract/nfnext_contract.cpp`; `tests/validation/release/cases/issue-166/` | `release-lowering-proof`, `release-lowering-bridge`, `release-obligation-166` |

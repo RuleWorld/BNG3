@@ -30,9 +30,19 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
 
 ---
 
-## 1. `setConcentration` sets the species amount, not its concentration
+## 1. `setConcentration` sets the species amount, not its concentration - FIXED on `main`
 
-* **Classification:** engine defect (BNG2 parity).
+* **Status on `main` (verified 2026-11-26): FIXED** in PR #361 (`bef88c1c`),
+  with regression coverage in `tests/python/test_atomizer_event_action_semantics.py`.
+  Re-inspection showed BNG2's `setConcentration` writes the species' state
+  (amount) without scaling by compartment volume, so
+  `cpp/actions/ActionDispatch.cpp:3677-3691` retains `setAmount(value)` while
+  the Atomizer (`python/bionetgen/atomizer/modern/events.py`,
+  `_assignment_action`) converts concentration assignments to amounts across
+  all scheduled-action paths. All 25 listed cases are `passed` in
+  `provenance/sbml-campaign/expectations.json` (measured 2026-11-24 at
+  `d8d21dfc`). The original pre-fix record is preserved below.
+* **Classification:** engine defect (BNG2 parity) — reclassified to Atomizer lowering in PR #361.
 * **Cases:** 25 official-reference failures, all of them action-bearing
   semantic cases whose trajectory diverges at the first scheduled action:
   `00369 00370 00371 00373 00426 00427 00428 00429 00430 00431 00682 00683
@@ -66,9 +76,17 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   compartment size differs from 1; with a unit compartment the amount and the
   concentration coincide.
 
-## 2. A `boundaryCondition` species is unreachable by the scheduled action
+## 2. A `boundaryCondition` species is unreachable by the scheduled action - FIXED on `main`
 
-* **Classification:** Atomizer defect.
+* **Status on `main` (verified 2026-11-26): FIXED** in PR #361 (`bef88c1c`),
+  with regression coverage in `tests/python/test_atomizer_event_action_semantics.py`.
+  Matching BNG2's `SpeciesGraph` lookup, `cpp/actions/ActionDispatch.cpp:1536-1559`
+  (Pass 1b of `findSpeciesIndex`) now resolves a target omitting the `$` seed
+  marker to the matching constant species, and `regeneratePreservingAmounts`
+  (`cpp/actions/ActionDispatch.cpp:1598-1609`) preserves inter-phase amounts
+  across `setParameter`/`setVolume`/`resetParameters`. All 14 listed cases are
+  `passed` in `provenance/sbml-campaign/expectations.json` (`d8d21dfc`).
+* **Classification:** Atomizer defect — resolved in the action dispatcher in PR #361.
 * **Cases:** 14 official-reference failures, all with the same dispatcher
   refusal: `00375 00377 00378 00380 00381 00383 00432 00434 00435 00437
   00438 00440 01779 01780`.
@@ -155,8 +173,14 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   shapes were 83%, 28% and 80% off.
 
 
-## 4. The multi-worker CPU batch SSA is not reproducible for a fixed seed
+## 4. The multi-worker CPU batch SSA is not reproducible for a fixed seed - FIXED on `main`
 
+* **Status on `main` (verified 2026-11-26): FIXED** in PR #362 (`b4171576`;
+  see also Section 14) and `cpp/engine/BatchSsa.cpp:456-502` (each worker uses
+  an independent `OdeIntegrator`, per-trajectory decorrelated
+  `batchTrajectoryEngineSeed(options.baseSeed, b)` matching the single-worker
+  path, and deterministic pairwise `RunningMoments::merge`), verified by
+  `tests/cpp/test_batch_ssa_reproducibility.cpp`.
 * **Classification:** engine defect (reproducibility).
 * **Cases:** not a per-case verdict - it invalidates the *measurement* of
   every stochastic case that uses the CPU batched sampler.
@@ -180,8 +204,12 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   worker so that a verdict is reproducible, and records the engine and the
   seed policy with every case.
 
-## 5. `semantic/01592` is a random-event-execution test
+## 5. `semantic/01592` is a random-event-execution test - SCOPE BOUNDARY (open by design)
 
+* **Status on `main` (verified 2026-11-26):** unchanged scope boundary;
+  `semantic/01592` and its companions remain classified `unsupported`
+  (`harness:random-event-execution`) in
+  `provenance/sbml-campaign/expectations.json` (`d8d21dfc`).
 * **Classification:** scope boundary, now reported as *not comparable*.
 * **Cases:** `semantic/01592` and the other cases of the same construct
   (`00952 00953 00962 00964 01589 01591 01599 01605 01626 01627`).
@@ -376,8 +404,12 @@ PYTHONPATH=python:build/cpp python scripts/ci/validate_sbml_test_suite.py \
   comparable*, with the reason naming the boundary rather than reporting a
   failure that is not a statement about the model.
 
-### 8b-2. A phase-boundary sample is taken before the assignment - KNOWN
+### 8b-2. A phase-boundary sample is taken before the assignment - KNOWN (still open)
 
+* **Status on `main` (verified 2026-11-26):** still open for
+  `stochastic/00028` and `stochastic/00032`
+  (`harness:scheduled-action-phase-boundary` in
+  `provenance/sbml-campaign/expectations.json` at `d8d21dfc`).
 * **Cases:** `semantic/00967` (inside the official tolerance, so it passes),
   `stochastic/00028`, `stochastic/00032` (outside it, so they are *not
   comparable*).
@@ -595,6 +627,13 @@ matches, so the construct they are filed under does not change.
 
 ### Rate constants and stoichiometries that change during the run
 
+> **Status on `main` (verified 2026-11-26): PARTIALLY FIXED.** Following
+> commits `981a5536`, `f42c7d36`, `12e3288b`, `8134de34`, and `3b97ca07`,
+> `provenance/sbml-campaign/expectations.json` (measured 2026-11-24 at
+> `d8d21dfc`) records `semantic/00987`, `00988`, `01398`, and `01539` as
+> `passed` across all stages, while `semantic/01568` and `01570` remain
+> `unsupported` (`fast-reaction:no-fast-equilibrium-solve`).
+
 The refusals in the last four rows of the table above are no longer reached.
 The table records the outcome measured when this section was written; the
 official-reference verdicts of these cases after the change below have not
@@ -683,8 +722,18 @@ test.
 
 ---
 
-## 10. The remaining official-suite event gap is not a scheduling gap - KNOWN
+## 10. The remaining official-suite event gap is not a scheduling gap - PARTIALLY FIXED on `main` (remaining cases open / scope-bounded)
 
+* **Status on `main` (verified 2026-11-26):** native dynamic event parameter
+  assignments (`c078350f`, `cpp/engine/OdeIntegrator.cpp:314-316`) and
+  mixed/fast event lowerings (`f42c7d36`, `12e3288b`, `d82931d5`) landed on
+  `main`. In `provenance/sbml-campaign/expectations.json` (`d8d21dfc`):
+  `semantic/00988` and `semantic/01000` are now `passed`; `semantic/00965`,
+  `00966`, and `01590` are classified `unsupported` under the
+  `harness:random-event-execution` scope boundary; `semantic/01466`
+  (`events:state-trigger-not-schedulable`) and `stochastic/00033`
+  (stochastic state-triggered event, `official_reference: unsupported`) remain
+  open.
 * **Cases:** `semantic/00965`, `00966`, `01000`, `01466`, `01590`
   (`events:untranslated`), `semantic/00988`, `01466` (`events:state-trigger-not-schedulable`),
   and `stochastic/00033`.
@@ -734,8 +783,14 @@ test.
   stays *not comparable*, and a model the runtime cannot execute stays an
   explicit refusal that names the construct.
 
-## 11. A conjunction's root function is not monotone - KNOWN
+## 11. A conjunction's root function is not monotone - FIXED on `main`
 
+* **Status on `main` (verified 2026-11-26): FIXED** (`6c52c737`, `f251f439`).
+  `cpp/engine/OdeIntegrator.cpp:309-313, 3335-3346` (`triggerConjuncts`) now
+  registers one continuous root function per conjunct in `nativeEventRoots_`
+  (and evaluates discrete conjuncts via post-event `retestTriggers`), avoiding
+  the non-monotone minimum kink. Both `semantic/01575` and `semantic/01576`
+  are `passed` in `provenance/sbml-campaign/expectations.json` (`d8d21dfc`).
 * **Cases:** none of the pinned suite's cases is *failing* because of it; the
   cases that use a conjunction trigger (`semantic/00932`, `00933`, `01511`,
   `01675`-`01680`, `01703`, `01704`, `01710`, `01711`, `01717`, `01718`, ...)
@@ -759,8 +814,14 @@ test.
   decide the conjunction's rising edge from the conjuncts' truth at the
   crossing, which is also what removes the dependence on the output grid.
 
-## 12. An algebraic rule the Atomizer cannot solve is a different construct - KNOWN
+## 12. An algebraic rule the Atomizer cannot solve is a different construct - PARTIALLY FIXED on `main`
 
+* **Status on `main` (verified 2026-11-26):** `semantic/00761` (PR #485
+  `dc473999` and native IDA algebraic-rule support `7abb3be1`),
+  `semantic/01575`, and `semantic/01576` are now `passed` in
+  `provenance/sbml-campaign/expectations.json` (`d8d21dfc`). Unsupported
+  nonlinear or multi-equation algebraic rules outside the lowered/IDA-supported
+  classes remain explicitly refused.
 * **Cases:** `semantic/00761` (an algebraic rule the Atomizer does not
   apply), `semantic/01575` and `semantic/01576` (a rule it does apply).
 * **Mechanism:** an `AlgebraicRule` states an equation, not a value, and the
@@ -1225,7 +1286,13 @@ test.
 ## Measurements that are *not* findings
 
 * **The base commit fails 63 of the 1923 pinned cases, and this branch does
-  not change that.**  `origin/main` (`51fe8e00`) reports
+  not change that (subsequently FIXED on `main`).** PR #379 (`9213008f`)
+  reverted the `#315` regression, and `cpp/engine/OdeIntegrator.cpp:939, 1258, 1295`
+  guards statistical-factor scaling with `!crxn.isTotalRate` (shared via
+  `bng::compile::isTotalRateReaction` in `557479b8` / `333d5ecf`).
+  `semantic/00069` and the companion cases are `passed` in
+  `provenance/sbml-campaign/expectations.json` (`d8d21dfc`). Historically,
+  `origin/main` (`51fe8e00`) reported
   `1735 passed / 125 unsupported / 63 failed / 0 timeout` where the committed
   expectation manifest (`provenance/sbml-campaign/current-2026-10-22.json`,
   measured at `5d8e78b0`) reports no failure.  The regression is in the
