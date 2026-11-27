@@ -296,7 +296,7 @@ private:
     bool triggerHolds(const ast::Expression& trigger, double time,
                       const double* state) const;
     // True when the trigger expression is affine in time and any continuous
-    // rate-rule species for a fixed discrete state (used by exact hybrid SSA
+    // rateRule species for a fixed discrete state (used by exact hybrid SSA
     // trigger scheduling between jumps).
     bool isAffineInTime(
         const ast::Expression& expression,
@@ -321,8 +321,8 @@ private:
         bool rightLimit = false,
         const std::vector<double>* continuousRates = nullptr,
         const std::vector<bool>* continuousSpecies = nullptr);
-    // Earliest time in (time, tLimit] at which any affine-in-time / continuous-
-    // rate-rule trigger changes truth value relative to triggerHeld, or +inf if none.
+    // Earliest time in (time, tLimit] at which any affine-in-time / continuous
+    // rateRule trigger changes truth value relative to triggerHeld, or +inf if none.
     double nextSsaTimeTriggerTime(
         double time, double tLimit,
         const std::vector<double>& state,

@@ -9743,7 +9743,7 @@ def generate_bngl(
             trigger or the assignment can be expressed in BNGL.  A species
             that reports concentrations contributes its compartment size as
             the conversion factor (or dynamic compartment observable when the
-            compartment is tracked as a state species); a rate-rule parameter
+            compartment is tracked as a state species); a rateRule parameter
             or compartment keeps its own value.
             """
             species = model.species.get(identifier)
@@ -9796,7 +9796,7 @@ def generate_bngl(
                 if len(synthetic_aliases) == 1:
                     return resolve_native_state(synthetic_aliases[0])
             if identifier in synthetic_state_variables:
-                # A rate-rule parameter or compartment becomes a state species
+                # A rateRule parameter or compartment becomes a state species
                 # whose seed is its SBML value.
                 parameter_state = (
                     identifier in synthetic_rate_rule_variables

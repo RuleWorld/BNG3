@@ -388,7 +388,9 @@ def _reduce_bimolecular_equilibrium(
         return refuse("the fast reaction's species must use the same quantity kind")
     for item in species:
         if item.constant or item.boundary_condition:
-            return refuse(f'species "{item.id}" must be mutable and non-boundary')
+            return refuse(
+                f'species "{item.id}" must be mutable with boundaryCondition=false'
+            )
         if not (item.initial_amount_set or item.initial_concentration_set):
             return refuse(f'species "{item.id}" has no initial value')
         if item.conversion_factor or getattr(model, "conversion_factor", None):
@@ -631,7 +633,9 @@ def _reduce_homodimer_equilibrium(
         return refuse("the fast reaction's species must use the same quantity kind")
     for item in (a_species, c_species):
         if item.constant or item.boundary_condition:
-            return refuse(f'species "{item.id}" must be mutable and non-boundary')
+            return refuse(
+                f'species "{item.id}" must be mutable with boundaryCondition=false'
+            )
         if not (item.initial_amount_set or item.initial_concentration_set):
             return refuse(f'species "{item.id}" has no initial value')
         if item.conversion_factor or getattr(model, "conversion_factor", None):
@@ -814,7 +818,9 @@ def _reduce_bimolecular_exchange_equilibrium(
         return refuse("the fast reaction's species must use the same quantity kind")
     for item in species:
         if item.constant or item.boundary_condition:
-            return refuse(f'species "{item.id}" must be mutable and non-boundary')
+            return refuse(
+                f'species "{item.id}" must be mutable with boundaryCondition=false'
+            )
         if not (item.initial_amount_set or item.initial_concentration_set):
             return refuse(f'species "{item.id}" has no initial value')
         if item.conversion_factor or getattr(model, "conversion_factor", None):

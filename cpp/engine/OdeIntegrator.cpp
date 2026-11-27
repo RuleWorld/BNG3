@@ -3332,7 +3332,7 @@ OdeIntegrator::HybridSsaPlan OdeIntegrator::analyzeHybridSsa() const {
                 "delayed rateRule channel is not supported in hybrid SSA";
             return plan;
         }
-        // A promoted event-assigned parameter carries a synthetic zero-rate
+        // A promoted event-assigned parameter carries a synthetic zero drift
         // channel (dx/dt = 0). It is piecewise constant between events and
         // does not drift continuously, so discrete reactions may read it.
         if (!rxn.isFunctional && rxn.rateConstant == 0.0) {
@@ -4391,7 +4391,7 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
             }
             if (hybridPlan.allRateRuleChannels && !nativeEvents_.empty()) {
                 // A model with no stochastic reaction channels can still have
-                // nonlinear or time-varying continuous SBML rate-rule states
+                // nonlinear or time-varying continuous SBML rateRule states
                 // that drive discrete events. Preserve those trajectories with
                 // CVODE and let event assignments consume the seeded RNG.
                 return integrateCvode(options);

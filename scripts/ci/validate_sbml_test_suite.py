@@ -3970,25 +3970,46 @@ def _validate_case(
             record["unsupported_reason"] = " ".join(limitations)
         else:
             record["status"] = "passed"
-        with _case_phase_scope("independent-simulation-comparison"):
-            comparison = _simulate_and_compare(
-                cpp_model,
-                output_path,
-                t_end=simulation_t_end,
-                n_steps=simulation_n_steps,
-                rtol=simulation_rtol,
-                atol=simulation_atol,
-                function_names={
-                    standardize_name(str(rule.variable))
-                    for rule in parsed.rules
-                    if rule.type == "assignment" and rule.variable
-                }
-                | {
-                    standardize_name(str(assignment.symbol))
-                    for assignment in parsed.initial_assignments
-                    if assignment.symbol
-                },
-            )
+        has_lowered_distrib_draws = any(
+            warning.get("category") == "package:distrib"
+            and warning.get("severity") == "info"
+            and "distrib draw expression" in str(warning.get("message", ""))
+            for warning in warnings
+        )
+        if has_lowered_distrib_draws:
+            comparison = {
+                "status": "not-tested",
+                "skipped": True,
+                "reason": (
+                    "Source model contains stochastic SBML distrib draws; "
+                    "single-trajectory pointwise ODE comparison across "
+                    "independent RNGs (BNG3 vs libRoadRunner) is non-comparable. "
+                    "The distributional official SBML Test Suite reference "
+                    "comparison runs separately."
+                ),
+                "method_bngl": "BNG3 CVODE (simulate method='ode')",
+                "method_sbml": "libRoadRunner CVODE",
+            }
+        else:
+            with _case_phase_scope("independent-simulation-comparison"):
+                comparison = _simulate_and_compare(
+                    cpp_model,
+                    output_path,
+                    t_end=simulation_t_end,
+                    n_steps=simulation_n_steps,
+                    rtol=simulation_rtol,
+                    atol=simulation_atol,
+                    function_names={
+                        standardize_name(str(rule.variable))
+                        for rule in parsed.rules
+                        if rule.type == "assignment" and rule.variable
+                    }
+                    | {
+                        standardize_name(str(assignment.symbol))
+                        for assignment in parsed.initial_assignments
+                        if assignment.symbol
+                    },
+                )
         record["simulation_comparison"] = comparison
         if (
             not _apply_noncomparable_verdict(

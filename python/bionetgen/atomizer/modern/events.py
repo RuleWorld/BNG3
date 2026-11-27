@@ -646,7 +646,7 @@ class EventTranslationContext:
     # Return the explicit SBML <rateRule> math expression for an identifier, or
     # None when the identifier has no explicit SBML rateRule (distinct from
     # resolve_rate_rule_expression_for_event, which also synthesizes net
-    # reaction derivatives for ordinary species).
+    # reaction derivatives for standard species).
     resolve_explicit_rate_rule_expression: Callable[[str], Optional[str]] = (
         lambda _identifier: None
     )
