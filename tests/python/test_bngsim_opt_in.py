@@ -267,6 +267,8 @@ ENERGY_BNGL = textwrap.dedent("""
 begin model
 begin parameters
     RT 0.6
+    phi 0.5
+    Ea 1.0
 end parameters
 begin molecule types
     A(x~u~p)
@@ -275,11 +277,168 @@ begin seed species
     A(x~u) 10
 end seed species
 begin energy patterns
-    A(x~p) 1.0
+    A(x~p) 1.0+time
 end energy patterns
 begin reaction rules
-    A(x~u) -> A(x~p) 1.0
+    A(x~u) -> A(x~p) Arrhenius(phi,Ea)
 end reaction rules
+end model
+""")
+
+SAT_MM_HILL_BNGL = textwrap.dedent("""
+begin model
+begin parameters
+    kcat 2.0
+    Km 5.0
+    Vmax 3.0
+    Kh 4.0
+    n 2.0
+end parameters
+begin molecule types
+    S()
+    E()
+    P()
+    H()
+    Q()
+end molecule types
+begin seed species
+    S() 20
+    E() 4
+    P() 0
+    H() 15
+    Q() 0
+end seed species
+begin observables
+    Molecules Sobs S()
+    Molecules Pobs P()
+    Molecules Hobs H()
+    Molecules Qobs Q()
+end observables
+begin reaction rules
+    S() + E() -> P() + E() MM(kcat, Km)
+    P() -> Q() Sat(kcat, Km)
+    H() -> Q() Hill(Vmax, Kh, n)
+end reaction rules
+end model
+""")
+
+EBNGL_ARRHENIUS_BNGL = textwrap.dedent("""
+begin model
+begin parameters
+    phi 0.5
+    Ea 1.0
+    Gf_p 0.8
+end parameters
+begin molecule types
+    A(x~u~p)
+end molecule types
+begin seed species
+    A(x~u) 40
+    A(x~p) 10
+end seed species
+begin observables
+    Molecules Au A(x~u)
+    Molecules Ap A(x~p)
+end observables
+begin energy patterns
+    A(x~p) Gf_p
+end energy patterns
+begin reaction rules
+    A(x~u) <-> A(x~p) Arrhenius(phi, Ea)
+end reaction rules
+end model
+""")
+
+ABSFLUX_BNGL = textwrap.dedent("""
+setOption("BNG3AbsoluteFluxRules","r_flux")
+begin model
+begin parameters
+    k 1.5
+end parameters
+begin molecule types
+    X()
+    Y()
+end molecule types
+begin seed species
+    X() 10
+    Y() 0
+end seed species
+begin observables
+    Molecules Xobs X()
+    Molecules Yobs Y()
+end observables
+begin functions
+    flux_rate() = k * Xobs / (2.0 + Xobs)
+end functions
+begin reaction rules
+    r_flux: X() -> Y() flux_rate() TotalRate
+end reaction rules
+end model
+""")
+
+EVENT_DERIVED_PARAM_BNGL = textwrap.dedent("""
+begin model
+begin parameters
+    k 0.2
+    k2 2*k
+    k3 k2 + 0.1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 100
+    B() 0
+end seed species
+begin observables
+    Molecules Aobs A()
+    Molecules Bobs B()
+end observables
+begin reaction rules
+    A() -> B() k3
+end reaction rules
+begin bng3_events version 1
+    event "step_k"
+    trigger: time >= 1.0
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: k = 0.8
+    end event
+end bng3_events
+end model
+""")
+
+EVENT_TFUN_BNGL = textwrap.dedent("""
+begin model
+begin parameters
+    k 0.2
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules Aobs A()
+end observables
+begin functions
+    dose_table() = TFUN([0, 1, 2], [0, 15, 30], time)
+end functions
+begin reaction rules
+    A() -> 0 k
+end reaction rules
+begin bng3_events version 1
+    event "tfun_dose"
+    trigger: time >= 1.0
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: Aobs = Aobs + dose_table()
+    end event
+end bng3_events
 end model
 """)
 
@@ -461,8 +620,13 @@ def test_model_check_bngsim_lowering_method(tmp_path):
         ("decay.bngl", DECAY_BNGL),
         ("event.bngl", EVENT_BNGL),
         ("event_param.bngl", EVENT_PARAM_BNGL),
+        ("event_derived.bngl", EVENT_DERIVED_PARAM_BNGL),
+        ("event_tfun.bngl", EVENT_TFUN_BNGL),
         ("comp_ok.bngl", COMPARTMENT_PARAM_BNGL),
         ("totalrate.bngl", TOTALRATE_BNGL),
+        ("sat_mm_hill.bngl", SAT_MM_HILL_BNGL),
+        ("ebngl.bngl", EBNGL_ARRHENIUS_BNGL),
+        ("absflux.bngl", ABSFLUX_BNGL),
     ):
         model = bionetgen.load(_write(tmp_path, name, src))
         chk_ok = model.check_bngsim_lowering()
@@ -769,6 +933,12 @@ def test_python_bngsim_bridge_end_to_end_and_fail_closed(tmp_path, monkeypatch):
             bad_model.simulate(method="ode", t_end=1.0, n_steps=2, backend="bngsim")
     assert calls == [], "Unsupported models must fail closed before invoking bngsim"
 
+    # BNG3AbsoluteFluxRules requires C++ BNGsim adapter (Python .net bridge fails closed)
+    absflux_model = bionetgen.load(_write(tmp_path, "af_py.bngl", ABSFLUX_BNGL))
+    with pytest.raises(RuntimeError, match="BNG3AbsoluteFluxRules"):
+        absflux_model.simulate(method="ode", t_end=1.0, n_steps=2, backend="bngsim")
+    assert calls == []
+
     # Unsupported runtime options fail closed identically to C++ BngsimBackend
     with pytest.raises(RuntimeError, match="stop_if"):
         model.simulate(
@@ -936,4 +1106,69 @@ def test_cpp_bngsim_differential_parity_suite(tmp_path):
     )
     assert math.isclose(
         float(r_psa1.observables["Aobs"][-1]), 10000.0 * math.exp(-0.5), rel_tol=0.08
+    )
+
+    # 5. Sat / MM / Hill ODE parity
+    smh_model = bionetgen.load(_write(tmp_path, "smh.bngl", SAT_MM_HILL_BNGL))
+    smh_native = smh_model.simulate(method="ode", t_end=5.0, n_steps=20)
+    smh_bngsim = smh_model.simulate(
+        method="ode", t_end=5.0, n_steps=20, backend="bngsim"
+    )
+    assert smh_bngsim.backend == "bngsim"
+    for obs_name in ("Sobs", "Pobs", "Hobs", "Qobs"):
+        np.testing.assert_allclose(
+            smh_bngsim.observables[obs_name],
+            smh_native.observables[obs_name],
+            atol=1e-4,
+        )
+
+    # 6. eBNGL energy patterns + Arrhenius ODE parity
+    eb_model = bionetgen.load(_write(tmp_path, "eb.bngl", EBNGL_ARRHENIUS_BNGL))
+    eb_native = eb_model.simulate(method="ode", t_end=10.0, n_steps=20)
+    eb_bngsim = eb_model.simulate(
+        method="ode", t_end=10.0, n_steps=20, backend="bngsim"
+    )
+    assert eb_bngsim.backend == "bngsim"
+    np.testing.assert_allclose(
+        eb_bngsim.observables["Au"], eb_native.observables["Au"], atol=1e-4
+    )
+    np.testing.assert_allclose(
+        eb_bngsim.observables["Ap"], eb_native.observables["Ap"], atol=1e-4
+    )
+
+    # 7. Atomizer absolute-flux ODE parity and PSA fail-closed
+    af_model = bionetgen.load(_write(tmp_path, "af.bngl", ABSFLUX_BNGL))
+    af_native = af_model.simulate(method="ode", t_end=4.0, n_steps=16)
+    af_bngsim = af_model.simulate(method="ode", t_end=4.0, n_steps=16, backend="bngsim")
+    assert af_bngsim.backend == "bngsim"
+    np.testing.assert_allclose(
+        af_bngsim.observables["Xobs"], af_native.observables["Xobs"], atol=1e-4
+    )
+    np.testing.assert_allclose(
+        af_bngsim.observables["Yobs"], af_native.observables["Yobs"], atol=1e-4
+    )
+    with pytest.raises(RuntimeError, match="absolute-flux"):
+        af_model.simulate(
+            method="psa", t_end=1.0, n_steps=2, psa_poplevel=10.0, backend="bngsim"
+        )
+
+    # 8. Derived event-dependent parameter chain ODE parity
+    ed_model = bionetgen.load(_write(tmp_path, "ed.bngl", EVENT_DERIVED_PARAM_BNGL))
+    ed_native = ed_model.simulate(method="ode", t_end=3.0, n_steps=15)
+    ed_bngsim = ed_model.simulate(method="ode", t_end=3.0, n_steps=15, backend="bngsim")
+    assert ed_bngsim.backend == "bngsim"
+    np.testing.assert_allclose(
+        ed_bngsim.observables["Aobs"], ed_native.observables["Aobs"], atol=1e-4
+    )
+    np.testing.assert_allclose(
+        ed_bngsim.observables["Bobs"], ed_native.observables["Bobs"], atol=1e-4
+    )
+
+    # 9. Inline TFUN inside bng3_events ODE parity
+    et_model = bionetgen.load(_write(tmp_path, "et.bngl", EVENT_TFUN_BNGL))
+    et_native = et_model.simulate(method="ode", t_end=3.0, n_steps=15)
+    et_bngsim = et_model.simulate(method="ode", t_end=3.0, n_steps=15, backend="bngsim")
+    assert et_bngsim.backend == "bngsim"
+    np.testing.assert_allclose(
+        et_bngsim.observables["Aobs"], et_native.observables["Aobs"], atol=1e-4
     )

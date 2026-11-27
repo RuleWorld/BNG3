@@ -337,6 +337,13 @@ def simulate_via_python_bngsim(
         psa_poplevel=psa_poplevel,
     )
 
+    model_options = getattr(cpp_model, "options", {}) or {}
+    if model_options.get("BNG3AbsoluteFluxRules"):
+        raise RuntimeError(
+            "BNGsim Python bridge rejected absolute-flux reactions: "
+            "BNG3AbsoluteFluxRules require the compiled C++ BNGsim adapter"
+        )
+
     with TemporaryDirectory(prefix="bng3-bngsim-py-") as tmpdir:
         net_path = str(Path(tmpdir) / "network.net")
         cpp.io.write_net(cpp_model, cpp_network, net_path)

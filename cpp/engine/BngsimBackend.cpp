@@ -152,7 +152,9 @@ OdeResult simulateOdeViaBngsim(
     }
 
     // Fail closed before solver construction — same boundary as buildBngsimNetwork.
-    auto bngsimModel = buildBngsimNetwork(model, network);
+    BngsimLoweringOptions loweringOpts;
+    loweringOpts.executionMode = BngsimExecutionMode::Ode;
+    auto bngsimModel = buildBngsimNetwork(model, network, loweringOpts);
     if (!bngsimModel) {
         throw std::runtime_error("BNGsim backend failed to lower network: null model");
     }
@@ -220,7 +222,9 @@ OdeResult simulateSsaViaBngsim(
             "BNGsim adapter rejected output_step_interval: event-indexed output is not represented by TimeSpec");
     }
 
-    auto bngsimModel = buildBngsimNetwork(model, network);
+    BngsimLoweringOptions loweringOpts;
+    loweringOpts.executionMode = BngsimExecutionMode::Ssa;
+    auto bngsimModel = buildBngsimNetwork(model, network, loweringOpts);
     if (!bngsimModel) {
         throw std::runtime_error("BNGsim backend failed to lower network: null model");
     }
@@ -272,7 +276,9 @@ OdeResult simulatePsaViaBngsim(
             "BNGsim backend does not support batch_size; use backend='native' or 'auto'");
     }
 
-    auto bngsimModel = buildBngsimNetwork(model, network);
+    BngsimLoweringOptions loweringOpts;
+    loweringOpts.executionMode = BngsimExecutionMode::Psa;
+    auto bngsimModel = buildBngsimNetwork(model, network, loweringOpts);
     if (!bngsimModel) {
         throw std::runtime_error("BNGsim backend failed to lower network: null model");
     }

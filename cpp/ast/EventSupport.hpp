@@ -220,6 +220,12 @@ inline void validateNativeEventSubset(const Model& model) {
             continuous(expression.args().front());
             return;
         }
+        if (allowDistributionAssignment &&
+            expression.kind() == ExpressionKind::TableFunction &&
+            expression.args().size() == 1) {
+            continuous(expression.args().front());
+            return;
+        }
         fail("only continuous arithmetic event expressions are supported");
     };
     if (event.priority) {

@@ -90,18 +90,20 @@ ENERGY_BNGL = textwrap.dedent("""
 begin model
 begin parameters
     RT 0.6
+    phi 0.5
+    Ea 1.0
 end parameters
 begin molecule types
-    A(x)
+    A(x~u~p)
 end molecule types
 begin seed species
     A(x~u) 10
 end seed species
 begin energy patterns
-    A(x~p) 1.0
+    A(x~p) 1.0+time
 end energy patterns
 begin reaction rules
-    A(x~u) -> A(x~p) 1.0
+    A(x~u) -> A(x~p) Arrhenius(phi,Ea)
 end reaction rules
 end model
 """)
