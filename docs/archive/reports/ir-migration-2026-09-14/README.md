@@ -12,7 +12,7 @@ Use the live documents for current work:
   next actions.
 - [`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](../../../BNG3_CONVERGENCE_DONE_CHECKLIST.md)
   — authoritative completion criteria.
-- [`BNG3_INTEGRATION_PLAN.md`](../../../BNG3_INTEGRATION_PLAN.md) — architecture
+- [`BNG3_INTEGRATION_PLAN.md`](../../plans/BNG3_INTEGRATION_PLAN.md) — architecture
   and phased work plan.
 - [`validation/README.md`](../../../../tests/validation/README.md) — validation commands
   and oracle boundaries.

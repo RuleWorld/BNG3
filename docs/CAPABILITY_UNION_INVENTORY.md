@@ -1,5 +1,7 @@
 # BNG3 release capability inventory
 
+> **Looking for a user-friendly overview?** Start with the workflow-oriented [Capability Guide](capabilities.md), which summarizes default features, optional backends, SBML boundaries, and `v3.0.0a1` vs. `main` differences and links back to this traceable inventory.
+
 This is the primary scope document for the full capability-union release. It
 covers the user-facing capabilities of canonical BNG2, NFsim and PyBioNetGen,
 BNG3 additions, and SBML Level 3 Core and packages under
@@ -11,10 +13,11 @@ to [#474](https://github.com/RuleWorld/BNG3/issues/474) under decision 17.
 The original discovery baseline is `918a5fb1`. The source pins are in
 [the upstream lock](../provenance/upstreams.lock.yml). Upstream paths refer to
 the named pinned source. The [machine-readable matrix](../provenance/capability-matrix.yml)
-records the same row IDs, checks, issue mappings and status labels. The status review
-below uses BNG3 main at
-[`5f17ce1b`](https://github.com/RuleWorld/BNG3/tree/5f17ce1b9f8636c9002147ff0baef3c6d0464f31)
-on 2026-11-18. The row status reconciliation reviewed main at `33b1590a` after that update. Individual results apply to their cited execution revisions.
+records the same row IDs, checks, issue mappings and status labels. The latest
+status reconciliation on `main` (`90832910`, after PRs #1048 and #1059) records
+all 997 rows as `implemented` in both the matrix and the table below; historical
+dated snapshots from 2026-11-23 and 2026-11-18 are retained below for provenance.
+Individual results apply to their cited execution revisions.
 
 ## Reading the status column
 
@@ -39,13 +42,30 @@ consuming evidence. A declared identity, a collected test and a passing
 independent execution are distinct. See [current progress](CURRENT_PROGRESS.md)
 and the linked release issues for qualification records.
 
-## Inventory reconciliation on 2026-11-23
+## Inventory reconciliation on 2026-11-26 (`main` vs. `v3.0.0a1`)
 
-At `3beac785`, the matrix records 997 distinct rows: 92 implemented,
+- At `main` (`90832910`, after PRs #1048 and #1059), the matrix and table below
+  record **997 distinct rows: 997 `implemented`** (including `backend.gpu`
+  qualified under [#474](https://github.com/RuleWorld/BNG3/issues/474) on Apple
+  Silicon Metal and NVIDIA TITAN V CUDA).
+- At the tagged **`v3.0.0a1` pre-release** (`8482215c`), the same 997-row matrix
+  recorded `92 implemented, 172 partial, 732 unassessed, 1 deferred`; 23 post-tag
+  commits added upstream BNG2 2.9.5 and NFsim v2.0.1 syncs, NFnext GPU graph
+  mode, `bng_cpp --outdir`, `NFsim -i`, action parity fixes, and the hosted-verified
+  row promotions.
+- Historical `(implementation to add)` placeholder suffixes on promoted `action.*`
+  location entries have been cleaned up without altering any row ID, check, status,
+  or issue assignment. Decision 12 SBML package contracts still lack dedicated
+  matrix rows (tracked below). See
+  [Capability Guide §7](capabilities.md#7-known-inventory-and-ci-discrepancies-reconciliation-audit).
+
+## Historical snapshot — 2026-11-23
+
+At `3beac785` (historical), the matrix recorded 997 distinct rows: 92 implemented,
 172 partial, 732 unassessed, and one deferred. These are inventory labels.
 Each release claim still requires the consuming evidence for its named check.
 
-## Main status review on 2026-11-18
+## Historical snapshot — 2026-11-18
 
 As reviewed on 2026-11-18, the 994 rows include 92 implemented,
 171 partial, 730 unassessed and 1 deferred. The
@@ -158,12 +178,12 @@ under [#137](https://github.com/RuleWorld/BNG3/issues/137). [Package handling](.
 | bngl.statistical-rate-factors | statistical rate factors | bionetgen:bng2/Perl2/RxnRule.pm:findMap | cpp/compile/CompiledRateLaw.hpp | tests/validation/test_parity_net.py + release-capability[bngl.statistical-rate-factors] | pinned BNG2; native NFsim for local/TFUN execution | implemented | #143 |
 | action.readModel | readModel | bionetgen:bng2/Perl2/BNGModel.pm:142 (readModel) | cpp/parser/BNGAstVisitor.cpp:330; cpp/actions/ActionDispatch.cpp:2822 | scripts/validate_actions.py + release-capability[action.readModel] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
 | action.readNetwork | readNetwork | bionetgen:bng2/Perl2/BNGModel.pm:356 (readNetwork) | cpp/parser/BNGAstVisitor.cpp:330; cpp/io/NetReader.hpp:27 | scripts/validate_actions.py + release-capability[action.readNetwork] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
-| action.readSBML | readSBML | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp (implementation to add) | scripts/validate_actions.py + release-capability[action.readSBML] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
-| action.readSBML.action | readSBML argument action | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.readSBML.action] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
-| action.readSBML.basename | readSBML argument basename | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.readSBML.basename] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
-| action.readSBML.blocks | readSBML argument blocks | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.readSBML.blocks] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
-| action.readSBML.file | readSBML argument file | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.readSBML.file] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
-| action.readSBML.logging | readSBML argument logging | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.readSBML.logging] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
+| action.readSBML | readSBML | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp | scripts/validate_actions.py + release-capability[action.readSBML] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
+| action.readSBML.action | readSBML argument action | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp | release-capability[action.readSBML.action] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
+| action.readSBML.basename | readSBML argument basename | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp | release-capability[action.readSBML.basename] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
+| action.readSBML.blocks | readSBML argument blocks | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp | release-capability[action.readSBML.blocks] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
+| action.readSBML.file | readSBML argument file | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp | release-capability[action.readSBML.file] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
+| action.readSBML.logging | readSBML argument logging | bionetgen:bng2/Perl2/BNGModel.pm:370 (readSBML) | cpp/actions/ActionDispatch.cpp | release-capability[action.readSBML.logging] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
 | action.writeModel | writeModel | bionetgen:bng2/Perl2/BNGModel.pm:1478 (writeModel) | cpp/parser/generated/BNGParser.cpp:109; cpp/parser/generated/BNGLexer.cpp:137 | scripts/validate_actions.py + release-capability[action.writeModel] | pinned BNG2 action execution and produced artifact consumer | implemented | #163 |
 | action.writeNetwork | writeNetwork | bionetgen:bng2/Perl2/BNGModel.pm:1506 (writeNetwork) | cpp/parser/generated/BNGParser.cpp:109; cpp/parser/generated/BNGLexer.cpp:137 | scripts/validate_actions.py + release-capability[action.writeNetwork] | pinned BNG2 action execution and produced artifact consumer | implemented | #163 |
 | action.writeNET | writeNET | bionetgen:bng2/Perl2/BNGModel.pm:1534 (writeNET) | cpp/actions/ActionDispatch.cpp | scripts/validate_actions.py + release-capability[action.writeNET] | pinned BNG2 action execution and produced artifact consumer | implemented | #163 |
@@ -181,10 +201,10 @@ under [#137](https://github.com/RuleWorld/BNG3/issues/137). [Package handling](.
 | action.resetConcentrations | resetConcentrations | bionetgen:bng2/Perl2/BNGModel.pm:2295 (resetConcentrations) | cpp/parser/generated/BNGParser.cpp:116; cpp/parser/generated/BNGLexer.cpp:144 | scripts/validate_actions.py + release-capability[action.resetConcentrations] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
 | action.setModelName | setModelName | bionetgen:bng2/Perl2/BNGModel.pm:2353 (setModelName) | cpp/parser/generated/BNGParser.cpp:93; cpp/parser/generated/BNGLexer.cpp:121 | scripts/validate_actions.py + release-capability[action.setModelName] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
 | action.version | version | bionetgen:bng2/Perl2/BNGModel.pm:2377 (version) | cpp/parser/generated/BNGParser.cpp:92; cpp/parser/generated/BNGLexer.cpp:120 | scripts/validate_actions.py + release-capability[action.version] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
-| action.codename | codename | bionetgen:bng2/Perl2/BNGModel.pm:2438 (codename) | cpp/actions/ActionDispatch.cpp (implementation to add) | scripts/validate_actions.py + release-capability[action.codename] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
+| action.codename | codename | bionetgen:bng2/Perl2/BNGModel.pm:2438 (codename) | cpp/actions/ActionDispatch.cpp | scripts/validate_actions.py + release-capability[action.codename] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
 | action.quit | quit | bionetgen:bng2/Perl2/BNGModel.pm:2482 (quit) | cpp/parser/generated/BNGParser.cpp:118; cpp/parser/generated/BNGLexer.cpp:146 | scripts/validate_actions.py + release-capability[action.quit] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
 | action.generate_network | generate_network | bionetgen:bng2/Perl2/BNGModel.pm:2507 (generate_network) | cpp/parser/BNGAstVisitor.cpp:365; cpp/engine/NetworkGenerator.cpp:44 | scripts/validate_actions.py + release-capability[action.generate_network] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
-| action.setOutputDir | setOutputDir | bionetgen:bng2/Perl2/BNGModel.pm:2902 (setOutputDir) | cpp/actions/ActionDispatch.cpp (implementation to add) | scripts/validate_actions.py + release-capability[action.setOutputDir] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
+| action.setOutputDir | setOutputDir | bionetgen:bng2/Perl2/BNGModel.pm:2902 (setOutputDir) | cpp/actions/ActionDispatch.cpp | scripts/validate_actions.py + release-capability[action.setOutputDir] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
 | action.simulate_protocol | simulate_protocol | bionetgen:bng2/Perl2/BNGAction.pm:39 (simulate_protocol) | cpp/parser/generated/BNGParser.cpp:117; cpp/parser/generated/BNGLexer.cpp:145 | scripts/validate_actions.py + release-capability[action.simulate_protocol] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
 | action.simulate_protocol.prefix | simulate_protocol argument prefix | bionetgen:bng2/Perl2/BNGAction.pm:39 (simulate_protocol) | cpp/parser/generated/BNGParser.cpp:117; cpp/parser/generated/BNGLexer.cpp:145 | release-capability[action.simulate_protocol.prefix] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
 | action.simulate_ode | simulate_ode | bionetgen:bng2/Perl2/BNGAction.pm:92 (simulate_ode) | cpp/parser/generated/BNGParser.cpp:100; cpp/parser/generated/BNGLexer.cpp:128 | scripts/validate_actions.py + release-capability[action.simulate_ode] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
@@ -249,7 +269,7 @@ under [#137](https://github.com/RuleWorld/BNG3/issues/137). [Package handling](.
 | action.simulate_nf.t_start | simulate_nf argument t_start | bionetgen:bng2/Perl2/BNGAction.pm:817 (simulate_nf) | cpp/parser/generated/BNGParser.cpp:102; cpp/parser/generated/BNGLexer.cpp:130 | release-capability[action.simulate_nf.t_start] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
 | action.simulate_nf.utl | simulate_nf argument utl | bionetgen:bng2/Perl2/BNGAction.pm:817 (simulate_nf) | cpp/parser/generated/BNGParser.cpp:102; cpp/parser/generated/BNGLexer.cpp:130 | release-capability[action.simulate_nf.utl] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
 | action.simulate_nf.verbose | simulate_nf argument verbose | bionetgen:bng2/Perl2/BNGAction.pm:817 (simulate_nf) | cpp/parser/generated/BNGParser.cpp:102; cpp/parser/generated/BNGLexer.cpp:130 | release-capability[action.simulate_nf.verbose] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #140 |
-| action.readNFspecies | readNFspecies | bionetgen:bng2/Perl2/BNGAction.pm:1083 (readNFspecies) | cpp/actions/ActionDispatch.cpp (implementation to add) | scripts/validate_actions.py + release-capability[action.readNFspecies] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
+| action.readNFspecies | readNFspecies | bionetgen:bng2/Perl2/BNGAction.pm:1083 (readNFspecies) | cpp/actions/ActionDispatch.cpp | scripts/validate_actions.py + release-capability[action.readNFspecies] | pinned BNG2 action execution and produced artifact consumer | implemented | #140 |
 | action.generate_hybrid_model | generate_hybrid_model | bionetgen:bng2/Perl2/BNGAction.pm:1180 (generate_hybrid_model) | cpp/actions/ActionDispatch.cpp; cpp/engine/HybridModelGenerator.cpp | tests/validation/test_hybrid_execution.py::test_issue_150_generate_hybrid_model_action_options | pinned BNG2 action execution and produced artifact consumer | implemented | #150 |
 | action.generate_hybrid_model.actions | generate_hybrid_model argument actions | bionetgen:bng2/Perl2/BNGAction.pm:1180 (generate_hybrid_model) | cpp/actions/ActionDispatch.cpp; cpp/parser/BNGAstVisitor.cpp | tests/validation/test_hybrid_execution.py::test_issue_150_generate_hybrid_model_action_options (`actions`) | pinned BNG2 argument/default/error behavior | implemented | #150 |
 | action.generate_hybrid_model.execute | generate_hybrid_model argument execute | bionetgen:bng2/Perl2/BNGAction.pm:1180 (generate_hybrid_model) | cpp/actions/ActionDispatch.cpp | tests/validation/test_hybrid_execution.py::test_issue_150_generate_hybrid_model_action_options (`execute`) | pinned BNG2 argument/default/error behavior | implemented | #150 |
@@ -369,22 +389,22 @@ under [#137](https://github.com/RuleWorld/BNG3/issues/137). [Package handling](.
 | action.writeCPYfile.suffix | writeCPYfile argument suffix | bionetgen:bng2/Perl2/BNGOutput.pm:3306 (writeCPYfile) | cpp/parser/generated/BNGParser.cpp:113; cpp/parser/generated/BNGLexer.cpp:141 | release-capability[action.writeCPYfile.suffix] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
 | action.writeCPYfile.t_end | writeCPYfile argument t_end | bionetgen:bng2/Perl2/BNGOutput.pm:3306 (writeCPYfile) | cpp/parser/generated/BNGParser.cpp:113; cpp/parser/generated/BNGLexer.cpp:141 | release-capability[action.writeCPYfile.t_end] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
 | action.writeCPYfile.t_start | writeCPYfile argument t_start | bionetgen:bng2/Perl2/BNGOutput.pm:3306 (writeCPYfile) | cpp/parser/generated/BNGParser.cpp:113; cpp/parser/generated/BNGLexer.cpp:141 | release-capability[action.writeCPYfile.t_start] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeLaTeXfile | writeLaTeXfile | bionetgen:bng2/Perl2/BNGOutput.pm:4126 (writeLaTeXfile) | cpp/actions/ActionDispatch.cpp (implementation to add) | scripts/validate_actions.py + release-capability[action.writeLaTeXfile] | pinned BNG2 action execution and produced artifact consumer | implemented | #163 |
+| action.writeLaTeXfile | writeLaTeXfile | bionetgen:bng2/Perl2/BNGOutput.pm:4126 (writeLaTeXfile) | cpp/actions/ActionDispatch.cpp | scripts/validate_actions.py + release-capability[action.writeLaTeXfile] | pinned BNG2 action execution and produced artifact consumer | implemented | #163 |
 | action.writeLatex | writeLatex | bionetgen:bng2/Perl2/BNGOutput.pm:4134 (writeLatex) | cpp/parser/generated/BNGParser.cpp:110; cpp/parser/generated/BNGLexer.cpp:138 | scripts/validate_actions.py + release-capability[action.writeLatex] | pinned BNG2 action execution and produced artifact consumer | implemented | #163 |
 | action.writeLatex.prefix | writeLatex argument prefix | bionetgen:bng2/Perl2/BNGOutput.pm:4134 (writeLatex) | cpp/parser/generated/BNGParser.cpp:110; cpp/parser/generated/BNGLexer.cpp:138 | release-capability[action.writeLatex.prefix] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
 | action.writeLatex.suffix | writeLatex argument suffix | bionetgen:bng2/Perl2/BNGOutput.pm:4134 (writeLatex) | cpp/parser/generated/BNGParser.cpp:110; cpp/parser/generated/BNGLexer.cpp:138 | release-capability[action.writeLatex.suffix] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all | writeMfile_all | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | scripts/validate_actions.py + release-capability[action.writeMfile_all] | pinned BNG2 action execution and produced artifact consumer | implemented | #163 |
-| action.writeMfile_all.atol | writeMfile_all argument atol | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.atol] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.bdf | writeMfile_all argument bdf | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.bdf] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.maxOrder | writeMfile_all argument maxOrder | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.maxOrder] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.max_step | writeMfile_all argument max_step | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.max_step] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.n_steps | writeMfile_all argument n_steps | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.n_steps] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.prefix | writeMfile_all argument prefix | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.prefix] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.rtol | writeMfile_all argument rtol | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.rtol] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.stats | writeMfile_all argument stats | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.stats] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.suffix | writeMfile_all argument suffix | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.suffix] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.t_end | writeMfile_all argument t_end | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.t_end] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
-| action.writeMfile_all.t_start | writeMfile_all argument t_start | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp (implementation to add) | release-capability[action.writeMfile_all.t_start] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all | writeMfile_all | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | scripts/validate_actions.py + release-capability[action.writeMfile_all] | pinned BNG2 action execution and produced artifact consumer | implemented | #163 |
+| action.writeMfile_all.atol | writeMfile_all argument atol | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.atol] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.bdf | writeMfile_all argument bdf | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.bdf] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.maxOrder | writeMfile_all argument maxOrder | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.maxOrder] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.max_step | writeMfile_all argument max_step | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.max_step] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.n_steps | writeMfile_all argument n_steps | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.n_steps] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.prefix | writeMfile_all argument prefix | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.prefix] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.rtol | writeMfile_all argument rtol | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.rtol] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.stats | writeMfile_all argument stats | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.stats] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.suffix | writeMfile_all argument suffix | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.suffix] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.t_end | writeMfile_all argument t_end | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.t_end] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
+| action.writeMfile_all.t_start | writeMfile_all argument t_start | bionetgen:bng2/Perl2/BNGOutput.pm:4249 (writeMfile_all) | cpp/actions/ActionDispatch.cpp | release-capability[action.writeMfile_all.t_start] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
 | action.visualize | visualize | bionetgen:bng2/Perl2/BNGOutput.pm:4766 (visualize) | cpp/parser/generated/BNGParser.cpp:107; cpp/parser/generated/BNGLexer.cpp:135 | scripts/validate_actions.py + release-capability[action.visualize] | pinned BNG2 action execution and produced artifact consumer | implemented | #163 |
 | action.visualize.help | visualize argument help | bionetgen:bng2/Perl2/BNGOutput.pm:4766 (visualize) | cpp/parser/generated/BNGParser.cpp:107; cpp/parser/generated/BNGLexer.cpp:135 | release-capability[action.visualize.help] (new parameterized case) | pinned BNG2 argument/default/error behavior | implemented | #163 |
 | option.SpeciesLabel | setOption SpeciesLabel | bionetgen:bng2/Perl2/BNGModel.pm:setOption | cpp/ast/ModelOptions.hpp; cpp/ast/Model.cpp | tests/cpp/test_model_options.cpp + release-capability[option.SpeciesLabel] | pinned BNG2 setOption and downstream execution | implemented | #140 |

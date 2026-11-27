@@ -1472,6 +1472,56 @@ end model
         assert result.time[-1] == pytest.approx(1.0)
         assert result.observables["A_total"][0] == pytest.approx(1.0)
 
+    def test_nf_time_indexed_tfun_breakpoints_match_xml_direct_and_composite(
+        self, tmp_path, monkeypatch
+    ):
+        # Rate is 0 at t=0 and steps up at t=1.0 via a time-indexed TFUN read
+        # both directly and through a composite wrapper. Without addTimeTable /
+        # addFunctionReference / useTimeTablesReadBy on the direct NFsim path,
+        # the simulator sees a_tot=0 at t=0 and skips past the t=1.0 breakpoint.
+        bngl = tmp_path / "time_tfun_breakpoint.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    scale 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 0
+    B() 0
+end seed species
+begin observables
+    Molecules A_total A()
+    Molecules B_total B()
+end observables
+begin functions
+    pulse() = TFUN([0, 1, 2], [0, 50, 50], time, method=>"step")
+    scaled_pulse() = scale * pulse()
+end functions
+begin reaction rules
+    0 -> A() pulse()
+    0 -> B() scaled_pulse()
+end reaction rules
+end model
+""")
+        monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
+        monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
+        model_direct = bionetgen.load(str(bngl))
+        direct = model_direct.simulate(method="nfcore", t_end=2.0, n_steps=4, seed=17)
+
+        monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+        monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
+        model_xml = bionetgen.load(str(bngl))
+        xml = model_xml.simulate(method="nfcore", t_end=2.0, n_steps=4, seed=17)
+
+        assert direct.observables["A_total"][-1] > 0
+        assert direct.observables["B_total"][-1] > 0
+        assert list(direct.observables["A_total"]) == list(xml.observables["A_total"])
+        assert list(direct.observables["B_total"]) == list(xml.observables["B_total"])
+
     @pytest.mark.parametrize("force_xml", [False, True])
     def test_nf_local_rate_refreshes_after_global_observable_changes(
         self, tmp_path, monkeypatch, force_xml

@@ -180,7 +180,7 @@ jobs:
           mkdir -p dist/${{ matrix.artifact_name }}
           cp build/cpp/bng_cpp${{ matrix.binary_ext }} dist/${{ matrix.artifact_name }}/
           cp build/cpp/NFsim${{ matrix.binary_ext }} dist/${{ matrix.artifact_name }}/
-          cp README.md dist/${{ matrix.artifact_name }}/
+          cp README.md LICENSE THIRD_PARTY_NOTICES.md dist/${{ matrix.artifact_name }}/
           cd dist && tar czf ${{ matrix.artifact_name }}.tar.gz ${{ matrix.artifact_name }}/
 
       - name: Upload binary artifact

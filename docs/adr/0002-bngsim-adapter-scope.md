@@ -62,5 +62,5 @@ BNGsim, NFsim, or BNG2 parity.
   visible as open gates rather than being approximated.
 
 See [architecture.md](../architecture.md),
-[BNG3_HANDOFF_PORT_STATUS.md](../BNG3_HANDOFF_PORT_STATUS.md), and the
+[BNG3_HANDOFF_PORT_STATUS.md](../archive/plans/BNG3_HANDOFF_PORT_STATUS.md), and the
 convergence checklist for the live evidence and remaining gates.

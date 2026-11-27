@@ -295,7 +295,6 @@ set(NFSIM_LIB_SOURCES
     ${NFSIM_SCHED_SRC}
     ${NFSIM_UTIL_SRC}
     ${NFSIM_UTIL_MTRAND}
-    ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFcore2/nfsim_pattern_lowering.cpp
 )
 
 # Remove NFsim.cpp (contains main())
@@ -352,29 +351,33 @@ endif()
 # =============================================================================
 # bionetgen_core — combined static library for all C++ components
 # =============================================================================
-# Direct ports of the supplied experimental compiler/runtime implementations.
-add_library(bng_nfcore2 STATIC
-    nfsim/NFcore2/compiled_model.cpp
-    nfsim/NFcore2/engine.cpp
-    nfsim/NFcore2/executable_model.cpp
-    nfsim/NFcore2/legacy_bridge.cpp
-    nfsim/NFcore2/driver.cpp
-    nfsim/NFcore2/matcher.cpp
-    nfsim/NFcore2/model_image.cpp
-    nfsim/NFcore2/nfsim_adapter_contract.cpp
-    nfsim/NFcore2/nfsim_system_reader.cpp
-    nfsim/NFcore2/nfsim_native_reader.cpp
-    nfsim/NFcore2/seed.cpp
-    nfsim/NFcore2/nfsim_transform_decoder.cpp
-    nfsim/NFcore2/rule_compiler.cpp
-    nfsim/NFcore2/scaffold.cpp
-    nfsim/NFcore2/scheduler.cpp
-    nfsim/NFcore2/shadow.cpp
-    nfsim/NFcore2/simulation_state.cpp
-    nfsim/NFcore2/transform.cpp
-)
-target_include_directories(bng_nfcore2 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nfsim/NFcore2)
-target_link_libraries(bng_nfcore2 PUBLIC nfsim_core)
+# Archived NFcore2 prototype engine (legacy/nfcore2). Not linked into
+# bionetgen_core or released artifacts; built only when BUILD_TESTS=ON to
+# preserve historical parity and architecture-contract fixtures (#149).
+if(BUILD_TESTS)
+    add_library(bng_nfcore2 STATIC
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/compiled_model.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/engine.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/executable_model.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/legacy_bridge.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/driver.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/matcher.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/model_image.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/nfsim_adapter_contract.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/nfsim_system_reader.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/nfsim_native_reader.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/seed.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/nfsim_transform_decoder.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/rule_compiler.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/scaffold.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/scheduler.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/shadow.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/simulation_state.cpp
+        ${CMAKE_SOURCE_DIR}/legacy/nfcore2/transform.cpp
+    )
+    target_include_directories(bng_nfcore2 PUBLIC ${CMAKE_SOURCE_DIR}/legacy/nfcore2)
+    target_link_libraries(bng_nfcore2 PUBLIC nfsim_core)
+endif()
 find_package(Threads REQUIRED)
 add_library(bng_nfnext STATIC
     nfnext/src/cache.cpp
@@ -415,7 +418,10 @@ target_link_libraries(bionetgen_core INTERFACE
 if(BUILD_CLI)
     add_executable(bng_cpp main.cpp)
     target_link_libraries(bng_cpp PRIVATE bionetgen_core)
-    target_compile_definitions(bng_cpp PRIVATE BNG_CPP_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    target_compile_definitions(bng_cpp PRIVATE
+        BNG_CPP_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+        BNG3_VERSION_STRING="${BNG3_VERSION_STRING}"
+    )
     if(NFSIM_IPO_SUPPORTED)
         set_property(TARGET bng_cpp
             PROPERTY INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)

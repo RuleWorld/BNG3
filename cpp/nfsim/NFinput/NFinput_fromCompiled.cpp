@@ -6,7 +6,7 @@
 #include "NFcore/NFcore.hh"
 #include "NFcore/compartment.hh"
 #include "NFcore/energyPattern.hh"
-#include "NFcore2/nfsim_pattern_lowering.hh"
+#include "nfsim_pattern_lowering.hh"
 #include "NFfunction/NFfunction.hh"
 
 #include <algorithm>

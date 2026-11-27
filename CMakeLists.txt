@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
-project(BioNetGen LANGUAGES C CXX)
+project(BioNetGen VERSION 3.0.0 LANGUAGES C CXX)
+set(BNG3_VERSION_STRING "3.0.0a1")
 
 find_package(Threads REQUIRED)
 
@@ -191,10 +192,12 @@ _bng3_record_ipo(nfsim_core BNG3_NFSIM_CORE_IPO)
 _bng3_record_ipo(bng_cpp BNG3_BNG_CPP_IPO)
 _bng3_record_ipo(_bionetgen_cpp BNG3_PYTHON_IPO)
 _bng3_record_ipo(NFsim BNG3_NFSIM_CLI_IPO)
-configure_file(
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/lto_contract.in
-    ${CMAKE_BINARY_DIR}/bng3_lto_contract.txt
-    @ONLY)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/lto_contract.in")
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/lto_contract.in
+        ${CMAKE_BINARY_DIR}/bng3_lto_contract.txt
+        @ONLY)
+endif()
 
 # Tests
 if(BUILD_TESTS AND EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/cpp/CMakeLists.txt)

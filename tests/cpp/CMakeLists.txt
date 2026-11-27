@@ -442,7 +442,7 @@ target_include_directories(test_nfcore2_parity PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp/nfsim
     ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFcore
     ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFinput
-    ${CMAKE_SOURCE_DIR}/cpp/nfsim/NFcore2
+    ${CMAKE_SOURCE_DIR}/legacy/nfcore2
 )
 target_compile_definitions(test_nfcore2_parity PRIVATE BNG_NFCORE2_PROTOTYPE)
 target_link_libraries(test_nfcore2_parity PRIVATE

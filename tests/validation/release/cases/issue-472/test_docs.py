@@ -157,8 +157,8 @@ def test_release_docs_decisions_rejects_unlabeled_archive(tmp_path: Path):
     "statement",
     [
         "BNGsim is the default backend.",
-        "NFnext is the production default.",
-        "NFcore is not the production default.",
+        "NFnext is not the production default.",
+        "NFcore is the production default.",
         "Release scope remains pending.",
         "BNGIR v0.1 is the public default.",
     ],

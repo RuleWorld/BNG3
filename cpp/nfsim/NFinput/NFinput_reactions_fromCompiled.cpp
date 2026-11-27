@@ -5,7 +5,7 @@
 #include "compile/energy/DrivenEnergy.hpp"
 #include "NFcore/NFcore.hh"
 #include "NFcore/compartment.hh"
-#include "NFcore2/nfsim_pattern_lowering.hh"
+#include "nfsim_pattern_lowering.hh"
 #include "NFinput_energy.hh"
 #include "NFfunction/NFfunction.hh"
 #include "NFreactions/reactions/reaction.hh"

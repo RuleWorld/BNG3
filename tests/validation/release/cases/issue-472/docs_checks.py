@@ -302,8 +302,8 @@ def _decision_acceptance_errors(root: Path) -> list[str]:
         r"release scope (?:is|remains) (?:pending|proposed for approval)",
         r"BNGsim(?: backend)? (?:is|becomes) (?:the )?(?:default|primary)",
         r"(?:default|primary) (?:is|becomes) BNGsim(?: backend)?",
-        r"NFcore is not (?:the )?(?:production )?default",
-        r"NFnext (?:is|becomes) (?:the )?(?:production )?default",
+        r"NFnext is not (?:the )?(?:production )?default",
+        r"NFcore (?:is|remains) (?:the )?(?:production )?default",
         r"(?:approval|approval receipt) is required to (?:finalize|close) (?:a )?decision",
     )
     for path in _markdown_files(root):

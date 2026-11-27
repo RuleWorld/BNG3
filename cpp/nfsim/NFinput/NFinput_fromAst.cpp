@@ -61,7 +61,7 @@
 #include "../NFfunction/NFfunction.hh"
 #include "../NFutil/NFutil.hh"
 #include "NFinput_energy.hh"
-#include "NFcore2/nfsim_pattern_lowering.hh"
+#include "nfsim_pattern_lowering.hh"
 #include "compile/Pattern.hpp"
 #include "compile/CompiledRateLaw.hpp"
 #include "compile/Capabilities.hpp"
