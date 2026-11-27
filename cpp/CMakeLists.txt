@@ -501,6 +501,13 @@ if(BUILD_PYTHON_BINDINGS)
         ${sundials_BINARY_DIR}/include
     )
     target_compile_definitions(_bionetgen_cpp PRIVATE TIXML_USE_STL)
+    if(UNIX AND NOT APPLE)
+        # Hide symbols from statically linked archives (including bundled
+        # SUNDIALS v7.6.0) so Linux ELF's flat symbol namespace cannot interpose
+        # them onto dynamically loaded libraries such as libbngsim (which links
+        # its own SUNDIALS v7.2.1) or libRoadRunner.
+        target_link_options(_bionetgen_cpp PRIVATE -Wl,--exclude-libs,ALL)
+    endif()
 
     if(NFSIM_IPO_SUPPORTED)
         set_property(TARGET _bionetgen_cpp

@@ -1942,6 +1942,7 @@ jobs:
             -B "$RUNNER_TEMP/oracle-bngsim/build" \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-Bsymbolic -Wl,--exclude-libs,ALL" \
             -DBNGSIM_BUILD_PYTHON=OFF \
             -DBNGSIM_BUILD_NFSIM=OFF \
             -DBNGSIM_BUILD_RULEMONKEY=OFF \
