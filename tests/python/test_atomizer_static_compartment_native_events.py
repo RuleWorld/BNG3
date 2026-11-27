@@ -120,10 +120,14 @@ def test_dynamic_compartment_is_never_frozen_to_a_literal():
     assignments = [
         line.strip() for line in result.bngl.splitlines() if "assignment:" in line
     ]
-    # A size governed by a rate rule is dynamic: it must not be replaced by a
-    # static literal.  The native event lowering declines in that case.
-    assert not assignments
-    assert "begin bng3_events" not in result.bngl
+    # A size governed by a rate rule is dynamic: it must never be replaced by a
+    # static literal (2 or 2.0); native event lowering tracks the live
+    # compartment state observable ``cell_amt``.
+    assert assignments
+    assert all("cell_amt" in line for line in assignments), assignments
+    assert all(
+        "/ 2" not in line and "* 2" not in line for line in assignments
+    ), assignments
 
 
 @pytest.mark.parametrize("piecewise", [False, True], ids=["arithmetic", "piecewise"])

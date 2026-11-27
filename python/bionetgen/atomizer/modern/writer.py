@@ -8572,12 +8572,21 @@ def generate_bngl(
             structure.add_compartment(state_compartment)
         structure.renumber_bonds()
         parameter = model.parameters.get(variable) or model.parameters.get(target)
+        compartment_obj = model.compartments.get(variable) or model.compartments.get(
+            target
+        )
         initial_value = seed_symbol_values.get(variable)
         if initial_value is None:
             initial_value = seed_symbol_values.get(target)
+        if initial_value is None and compartment_obj is not None:
+            initial_value = seed_symbol_values.get(f"__compartment_{target}__")
         resolved = initial_value is not None
         if initial_value is None:
-            initial_value = getattr(parameter, "value", 0) if parameter else 0
+            if compartment_obj is not None:
+                initial_value = compartment_obj.size
+                resolved = initial_value is not None
+            else:
+                initial_value = getattr(parameter, "value", 0) if parameter else 0
         if not resolved and variable in stoichiometry_symbol_ids:
             # SBML Level 3 Version 2 Core Sec. 4.11.3: the time-zero value of
             # a species-reference stoichiometry symbol comes from the
@@ -8996,30 +9005,50 @@ def generate_bngl(
             an SBML value has to be converted into that amount before the
             trigger or the assignment can be expressed in BNGL.  A species
             that reports concentrations contributes its compartment size as
-            the conversion factor; a rate-rule parameter keeps its own
-            value.
+            the conversion factor (or dynamic compartment observable when the
+            compartment is tracked as a state species); a rate-rule parameter
+            or compartment keeps its own value.
             """
             species = model.species.get(identifier)
             if species is not None:
-                if species.constant or species.boundary_condition:
+                if species.constant:
                     return None
+                if species.boundary_condition:
+                    is_rate_ruled_species = any(
+                        rule.type == "rate"
+                        and rule.variable
+                        and standardize_name(str(rule.variable))
+                        == standardize_name(identifier)
+                        for rule in model.rules
+                    )
+                    if not is_rate_ruled_species:
+                        return None
                 base = observable_map.get(identifier)
                 if base is None:
                     return None
                 compartment_id = str(species.compartment or "")
                 factor = 1.0
+                volume_observable: Optional[str] = None
                 if not species.has_only_substance_units:
                     compartment = model.compartments.get(compartment_id)
-                    if compartment is None or not compartment.constant:
+                    if compartment is None:
                         return None
-                    size = _numeric_value(compartment.size)
-                    if size is None or not math.isfinite(size) or size <= 0:
+                    if compartment.spatial_dimensions == 0:
+                        factor = 1.0
+                    elif compartment_id in rate_ruled_compartment_ids:
+                        volume_observable = f"{standardize_name(compartment_id)}_amt"
+                    elif compartment.constant:
+                        size = _numeric_value(compartment.size)
+                        if size is None or not math.isfinite(size) or size <= 0:
+                            return None
+                        factor = float(size)
+                    else:
                         return None
-                    factor = float(size)
                 return NativeStateTarget(
                     observable=f"{base}_amt",
                     amount_factor=factor,
                     compartment=compartment_id,
+                    volume_observable=volume_observable,
                 )
             if identifier not in synthetic_state_variables:
                 synthetic_aliases = [
@@ -9030,21 +9059,19 @@ def generate_bngl(
                 if len(synthetic_aliases) == 1:
                     return resolve_native_state(synthetic_aliases[0])
             if identifier in synthetic_state_variables:
-                # A rate-rule parameter becomes a state species whose seed is
-                # its SBML value; a compartment would rescale that seed, so
-                # only a unit-sized default compartment preserves the value.
-                # A rate-rule parameter is not a compartment: its seed and its
-                # amount observable are already in SBML parameter units, so
-                # the default compartment's size does not rescale it.
+                # A rate-rule parameter or compartment becomes a state species
+                # whose seed is its SBML value.
                 parameter_state = (
                     identifier in synthetic_rate_rule_variables
                     and identifier not in rate_ruled_compartment_ids
                     and identifier in model.parameters
                 )
+                compartment_state = identifier in rate_ruled_compartment_ids
                 if (
                     default_compartment
                     and identifier not in promoted_event_parameters
                     and not parameter_state
+                    and not compartment_state
                 ):
                     compartment = model.compartments.get(default_compartment)
                     if compartment is None or not compartment.constant:
@@ -13094,7 +13121,7 @@ def generate_bngl(
                     )
             if not native_event_block and _allow_event_parameter_promotion:
 
-                def is_promotable_parameter(identifier: str) -> bool:
+                def is_promotable_symbol(identifier: str) -> bool:
                     standardized = standardize_name(identifier)
                     parameter = next(
                         (
@@ -13104,21 +13131,69 @@ def generate_bngl(
                         ),
                         None,
                     )
-                    if parameter is None or getattr(parameter, "constant", True):
-                        return False
-                    return not any(
-                        rule.variable
-                        and standardize_name(str(rule.variable)) == standardized
-                        and rule.type in {"assignment", "rate"}
-                        for rule in model.rules
+                    if parameter is not None:
+                        if getattr(parameter, "constant", True):
+                            return False
+                        return not any(
+                            rule.variable
+                            and standardize_name(str(rule.variable)) == standardized
+                            and rule.type in {"assignment", "rate"}
+                            for rule in model.rules
+                        )
+                    compartment = next(
+                        (
+                            value
+                            for comp_id, value in model.compartments.items()
+                            if standardize_name(str(comp_id)) == standardized
+                        ),
+                        None,
                     )
+                    if compartment is not None:
+                        if (
+                            getattr(compartment, "constant", True)
+                            or getattr(compartment, "spatial_dimensions", 3) == 0
+                        ):
+                            return False
+                        return not any(
+                            rule.variable
+                            and standardize_name(str(rule.variable)) == standardized
+                            and rule.type in {"assignment", "rate"}
+                            for rule in model.rules
+                        )
+                    species = next(
+                        (
+                            value
+                            for sp_id, value in model.species.items()
+                            if standardize_name(str(sp_id)) == standardized
+                        ),
+                        None,
+                    )
+                    if (
+                        species is not None
+                        and species.boundary_condition
+                        and not species.constant
+                    ):
+                        in_reaction = any(
+                            standardize_name(str(reference.species)) == standardized
+                            for reaction in model.reactions.values()
+                            for reference in [*reaction.reactants, *reaction.products]
+                        )
+                        if in_reaction:
+                            return False
+                        return not any(
+                            rule.variable
+                            and standardize_name(str(rule.variable)) == standardized
+                            and rule.type in {"assignment", "rate"}
+                            for rule in model.rules
+                        )
+                    return False
 
                 assigned_parameters = {
                     str(assignment.variable)
                     for event in native_events
                     for assignment in event.assignments
                     if getattr(assignment, "variable", None)
-                    and is_promotable_parameter(str(assignment.variable))
+                    and is_promotable_symbol(str(assignment.variable))
                 }
                 already_promoted = {
                     standardize_name(variable) for variable in promoted_event_parameters

@@ -100,7 +100,25 @@ def lower_fast_reactions(model: SBMLModel) -> Dict[str, FastReactionOutcome]:
     outcomes: Dict[str, FastReactionOutcome] = {}
     reduced: List[str] = []
     shared = _shared_fast_species(fast)
+
+    # First attempt coupled reversible linear fast subsystems (connected
+    # components of >= 2 fast reactions sharing species).
+    handled_coupled: set[str] = set()
+    if shared:
+        for component in _fast_reaction_components(fast):
+            if len(component) < 2:
+                continue
+            coupled_outcomes = _reduce_coupled_linear_fast_component(model, component)
+            if coupled_outcomes is not None:
+                for rxn_id, outcome in coupled_outcomes.items():
+                    outcomes[rxn_id] = outcome
+                    if outcome.reduced:
+                        reduced.append(rxn_id)
+                        handled_coupled.add(rxn_id)
+
     for reaction in fast:
+        if reaction.id in handled_coupled:
+            continue
         outcome = _reduce_fast_reaction(model, reaction, shared)
         outcomes[reaction.id] = outcome
         if outcome.reduced:
@@ -110,6 +128,36 @@ def lower_fast_reactions(model: SBMLModel) -> Dict[str, FastReactionOutcome]:
             (key, value) for key, value in model.reactions.items() if key not in reduced
         )
     return outcomes
+
+
+def _fast_reaction_components(
+    fast: Sequence[SBMLReaction],
+) -> List[List[SBMLReaction]]:
+    """Partition fast reactions into connected components by shared species."""
+
+    by_id = {reaction.id: reaction for reaction in fast}
+    species_to_rxns: Dict[str, List[str]] = {}
+    for reaction in fast:
+        for sid in _reaction_species_ids(reaction):
+            species_to_rxns.setdefault(sid, []).append(reaction.id)
+    visited: set[str] = set()
+    components: List[List[SBMLReaction]] = []
+    for reaction in fast:
+        if reaction.id in visited:
+            continue
+        queue = [reaction.id]
+        visited.add(reaction.id)
+        comp_ids: List[str] = []
+        while queue:
+            current = queue.pop(0)
+            comp_ids.append(current)
+            for sid in _reaction_species_ids(by_id[current]):
+                for neighbor in species_to_rxns.get(sid, ()):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        queue.append(neighbor)
+        components.append([by_id[rid] for rid in comp_ids])
+    return components
 
 
 def _shared_fast_species(fast: Sequence[SBMLReaction]) -> Dict[str, List[str]]:
@@ -161,7 +209,9 @@ def _reduce_fast_reaction(
         for reference in reaction.products
         if reference.species and reference.species != "EmptySet"
     ]
-    if len(reactants) == 2 and len(products) == 1:
+    if (len(reactants) == 2 and len(products) == 1) or (
+        len(reactants) == 1 and len(products) == 2
+    ):
         for identifier in _reaction_species_ids(reaction):
             owners = shared.get(identifier)
             if owners:
@@ -170,7 +220,25 @@ def _reduce_fast_reaction(
                     f'species "{identifier}" also takes part in the fast reaction '
                     f"{others}, so the fast subsystem is not an isolated equilibrium"
                 )
-        return _reduce_bimolecular_equilibrium(model, reaction, reactants, products[0])
+        if len(reactants) == 2:
+            return _reduce_bimolecular_equilibrium(
+                model, reaction, reactants, products[0], dissociation=False
+            )
+        return _reduce_bimolecular_equilibrium(
+            model, reaction, products, reactants[0], dissociation=True
+        )
+    if len(reactants) == 2 and len(products) == 2:
+        for identifier in _reaction_species_ids(reaction):
+            owners = shared.get(identifier)
+            if owners:
+                others = ", ".join(f'"{owner}"' for owner in owners)
+                return refuse(
+                    f'species "{identifier}" also takes part in the fast reaction '
+                    f"{others}, so the fast subsystem is not an isolated equilibrium"
+                )
+        return _reduce_bimolecular_exchange_equilibrium(
+            model, reaction, reactants, products
+        )
     if len(reactants) != 1 or len(products) != 1:
         return refuse(
             "the fast reaction does not convert exactly one species into "
@@ -277,10 +345,12 @@ def _reduce_fast_reaction(
 def _reduce_bimolecular_equilibrium(
     model: SBMLModel,
     reaction: SBMLReaction,
-    reactants: Sequence[Any],
-    product: Any,
+    pair: Sequence[Any],
+    complex_ref: Any,
+    *,
+    dissociation: bool = False,
 ) -> FastReactionOutcome:
-    """Lower A+B<->C to its exact equilibrium on its two evolving pools.
+    """Lower A+B<->C (or C<->A+B) to its exact equilibrium on its two evolving pools.
 
     This bounded form requires unit stoichiometry and constant positive forward
     and reverse coefficients.  The coordinates P=A+C and Q=B+C are the two
@@ -291,8 +361,8 @@ def _reduce_bimolecular_equilibrium(
     def refuse(reason: str) -> FastReactionOutcome:
         return FastReactionOutcome(reaction.id, False, reason=reason)
 
-    a_ref, b_ref = reactants
-    identifiers = (a_ref.species, b_ref.species, product.species)
+    a_ref, b_ref = pair
+    identifiers = (a_ref.species, b_ref.species, complex_ref.species)
     if len(set(identifiers)) != 3:
         return refuse("the fast reaction does not convert three distinct species")
     if any(
@@ -304,7 +374,7 @@ def _reduce_bimolecular_equilibrium(
         )
     if any(
         reference.variable_stoichiometry or float(reference.stoichiometry) != 1
-        for reference in (*reactants, product)
+        for reference in (*pair, complex_ref)
     ):
         return refuse("the bimolecular fast reaction requires unit stoichiometry")
     species = [model.species.get(identifier) for identifier in identifiers]
@@ -351,7 +421,7 @@ def _reduce_bimolecular_equilibrium(
             "the fast rate must be a two-term constant-coefficient mass action law"
         )
     terms = [term for term in terms if term.coefficient]
-    reactant_term = next(
+    pair_term = next(
         (
             term
             for term in terms
@@ -359,20 +429,31 @@ def _reduce_bimolecular_equilibrium(
         ),
         None,
     )
-    product_term = next(
-        (term for term in terms if term.species == ((product.species, 1),)), None
+    complex_term = next(
+        (term for term in terms if term.species == ((complex_ref.species, 1),)), None
     )
-    if (
-        len(terms) != 2
-        or reactant_term is None
-        or product_term is None
-        or reactant_term.coefficient <= 0
-        or product_term.coefficient >= 0
-    ):
-        return refuse("the fast rate must be positive kf*A*B minus positive kr*C")
-    forward = reactant_term.coefficient
-    backward = -product_term.coefficient
-    equilibrium_constant = backward / forward
+    if dissociation:
+        # C <-> A + B: forward rate is +kf * C, reverse rate is -kr * A * B.
+        if (
+            len(terms) != 2
+            or complex_term is None
+            or pair_term is None
+            or complex_term.coefficient <= 0
+            or pair_term.coefficient >= 0
+        ):
+            return refuse("the fast rate must be positive kf*C minus positive kr*A*B")
+        equilibrium_constant = complex_term.coefficient / (-pair_term.coefficient)
+    else:
+        # A + B <-> C: forward rate is +kf * A * B, reverse rate is -kr * C.
+        if (
+            len(terms) != 2
+            or pair_term is None
+            or complex_term is None
+            or pair_term.coefficient <= 0
+            or complex_term.coefficient >= 0
+        ):
+            return refuse("the fast rate must be positive kf*A*B minus positive kr*C")
+        equilibrium_constant = (-complex_term.coefficient) / pair_term.coefficient
     if not math.isfinite(equilibrium_constant) or equilibrium_constant <= 0:
         return refuse("the fast rate has no finite positive equilibrium constant")
 
@@ -505,6 +586,660 @@ def _reduce_bimolecular_equilibrium(
             f"{pool_b}={b_species.id}+{c_species.id}"
         ),
     )
+
+
+def _reduce_homodimer_equilibrium(
+    model: SBMLModel,
+    reaction: SBMLReaction,
+    monomer_id: str,
+    dimer_id: str,
+    equilibrium_constant: float,
+) -> FastReactionOutcome:
+    """Lower 2A <-> C (or C <-> 2A) to its exact equilibrium on pool P = A + 2C.
+
+    At equilibrium A^2 = Kd * C with C = (P - A)/2, giving the unique
+    nonnegative root A = (-Kd + sqrt(Kd^2 + 8*Kd*P)) / 4 for all P >= 0.
+    """
+
+    def refuse(reason: str) -> FastReactionOutcome:
+        return FastReactionOutcome(reaction.id, False, reason=reason)
+
+    if any(
+        re.search(r"\bdelay\s*\(", expression, flags=re.IGNORECASE)
+        for expression in _model_expressions(model)
+    ):
+        return refuse(
+            "the homodimer pool projection cannot preserve delayed prehistory"
+        )
+    for expression in _model_expressions(model):
+        names = set(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", expression))
+        if reaction.id in names:
+            return refuse(
+                f'an expression reads the fast reaction "{reaction.id}"\'s rate'
+            )
+        if "rateOf" in names and names & {monomer_id, dimer_id}:
+            return refuse(
+                "an expression reads the rate of change of a fast-equilibrium species"
+            )
+    a_species = model.species.get(monomer_id)
+    c_species = model.species.get(dimer_id)
+    if a_species is None or c_species is None:
+        return refuse("the fast reaction refers to a species the model does not define")
+    if a_species.compartment != c_species.compartment:
+        return refuse("the fast reaction's species must share one compartment")
+    if a_species.has_only_substance_units != c_species.has_only_substance_units:
+        return refuse("the fast reaction's species must use the same quantity kind")
+    for item in (a_species, c_species):
+        if item.constant or item.boundary_condition:
+            return refuse(f'species "{item.id}" must be mutable and non-boundary')
+        if not (item.initial_amount_set or item.initial_concentration_set):
+            return refuse(f'species "{item.id}" has no initial value')
+        if item.conversion_factor or getattr(model, "conversion_factor", None):
+            return refuse(
+                "the homodimer pool lowering does not carry conversion factors"
+            )
+        if standardize_name(item.id) in _controlled_symbols(model):
+            return refuse(f'species "{item.id}" is reassigned by a rule or event')
+        if standardize_name(item.id) in _delayed_species(model):
+            return refuse(f'species "{item.id}" is read by a delay expression')
+    compartment = model.compartments.get(a_species.compartment or "")
+    if compartment is None or not compartment.constant:
+        return refuse("the fast reaction requires a constant shared compartment")
+    if standardize_name(compartment.id) in _controlled_symbols(model):
+        return refuse(
+            f'compartment "{compartment.id}" is reassigned by a rule or event'
+        )
+    volume = _compartment_volume(model, a_species)
+    if not math.isfinite(volume) or volume <= 0:
+        return refuse("the fast reaction's compartment has no usable volume")
+    if not math.isfinite(equilibrium_constant) or equilibrium_constant <= 0:
+        return refuse("the fast rate has no finite positive equilibrium constant")
+
+    amount_a = _species_amount(model, a_species)
+    amount_c = _species_amount(model, c_species)
+    if amount_a is None or amount_c is None or min(amount_a, amount_c) < 0:
+        return refuse("the fast reaction's species have no nonnegative initial amounts")
+    symbol_scale = 1.0 if a_species.has_only_substance_units else 1.0 / volume
+    pool0 = (amount_a + 2.0 * amount_c) * symbol_scale
+    if pool0 < 0 or not math.isfinite(pool0):
+        return refuse("the initial pool has no real nonnegative fast equilibrium")
+
+    kd = equilibrium_constant
+    a0 = (-kd + math.sqrt(kd * kd + 8.0 * kd * pool0)) / 4.0
+    c0 = (pool0 - a0) / 2.0
+    if a0 < -1e-12 or c0 < -1e-12:
+        return refuse("the initial fast equilibrium is outside the nonnegative branch")
+    a0 = max(0.0, a0)
+    c0 = max(0.0, c0)
+
+    from .types import SBMLModifierSpeciesReference, SBMLParameter, SBMLRule
+
+    pool_name = _unique_identifier(
+        model, f"__fast_pool_{standardize_name(reaction.id)}"
+    )
+    pool_rates: List[str] = []
+    participants = {monomer_id, dimer_id}
+    for slow in model.reactions.values():
+        if slow.id == reaction.id:
+            continue
+        if any(
+            reference.species in participants and reference.variable_stoichiometry
+            for reference in [*slow.reactants, *slow.products]
+        ):
+            return refuse(
+                f'reaction "{slow.id}" changes a fast-equilibrium species with '
+                "variable stoichiometry"
+            )
+        sigma_a = _signed_stoichiometry(slow, monomer_id)
+        sigma_c = _signed_stoichiometry(slow, dimer_id)
+        net = sigma_a + 2.0 * sigma_c
+        if net:
+            rate = _global_kinetic_law(slow)
+            if rate is None:
+                return refuse(
+                    f'reaction "{slow.id}" has no usable kinetic law for homodimer pool'
+                )
+            pool_rates.append(f"({format_number(symbol_scale * net)}) * ({rate})")
+
+    kd_text = format_number(kd)
+    a_expr = f"((-({kd_text}) + sqrt(({kd_text})^2 + ({format_number(8.0 * kd)}) * {pool_name})) / 4)"
+    c_expr = f"(({pool_name} - ({a_expr})) / 2)"
+    _set_species_amount(
+        model, a_species, a0 if a_species.has_only_substance_units else a0 * volume
+    )
+    _set_species_amount(
+        model, c_species, c0 if c_species.has_only_substance_units else c0 * volume
+    )
+    model.parameters[pool_name] = SBMLParameter(
+        id=pool_name, name=pool_name, value=pool0, constant=False, value_set=True
+    )
+    model.rules.extend(
+        [
+            SBMLRule(
+                type="rate", variable=pool_name, math=" + ".join(pool_rates) or "0"
+            ),
+            SBMLRule(type="assignment", variable=monomer_id, math=a_expr),
+            SBMLRule(type="assignment", variable=dimer_id, math=c_expr),
+        ]
+    )
+    del model.reactions[reaction.id]
+    for slow in model.reactions.values():
+        moved = [
+            reference
+            for reference in [*slow.reactants, *slow.products]
+            if reference.species in participants
+        ]
+        slow.reactants = [
+            reference
+            for reference in slow.reactants
+            if reference.species not in participants
+        ]
+        slow.products = [
+            reference
+            for reference in slow.products
+            if reference.species not in participants
+        ]
+        present = {_modifier_species(modifier) for modifier in slow.modifiers}
+        for reference in moved:
+            if reference.species not in present:
+                slow.modifiers.append(SBMLModifierSpeciesReference(reference.species))
+                present.add(reference.species)
+    return FastReactionOutcome(
+        reaction.id,
+        True,
+        detail=(
+            f"the fast homodimer equilibrium is reconstructed on the conserved "
+            f"pool {pool_name}={monomer_id}+2*{dimer_id}"
+        ),
+    )
+
+
+def _reduce_bimolecular_exchange_equilibrium(
+    model: SBMLModel,
+    reaction: SBMLReaction,
+    reactants: Sequence[Any],
+    products: Sequence[Any],
+) -> FastReactionOutcome:
+    """Lower A + B <-> C + D to its exact equilibrium on three conserved pools.
+
+    With P = A + C, Q = B + C, R = A + D and equilibrium constant K = kf / kr,
+    A = P - C, B = Q - C, D = R - P + C satisfy K*(P - C)*(Q - C) = C*(R - P + C),
+    which solves cleanly in closed form (linear for K = 1, quadratic for K != 1).
+    """
+
+    def refuse(reason: str) -> FastReactionOutcome:
+        return FastReactionOutcome(reaction.id, False, reason=reason)
+
+    a_ref, b_ref = reactants
+    c_ref, d_ref = products
+    identifiers = (a_ref.species, b_ref.species, c_ref.species, d_ref.species)
+    if len(set(identifiers)) != 4:
+        return refuse(
+            "the fast exchange reaction does not convert four distinct species"
+        )
+    if any(
+        re.search(r"\bdelay\s*\(", expression, flags=re.IGNORECASE)
+        for expression in _model_expressions(model)
+    ):
+        return refuse(
+            "the bimolecular exchange projection cannot preserve delayed prehistory"
+        )
+    for expression in _model_expressions(model):
+        names = set(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", expression))
+        if reaction.id in names:
+            return refuse(
+                f'an expression reads the fast reaction "{reaction.id}"\'s rate'
+            )
+        if "rateOf" in names and names & set(identifiers):
+            return refuse(
+                "an expression reads the rate of change of a fast-equilibrium species"
+            )
+    if any(
+        reference.variable_stoichiometry or float(reference.stoichiometry) != 1
+        for reference in (*reactants, *products)
+    ):
+        return refuse(
+            "the bimolecular exchange fast reaction requires unit stoichiometry"
+        )
+    species = [model.species.get(identifier) for identifier in identifiers]
+    if any(item is None for item in species):
+        return refuse("the fast reaction refers to a species the model does not define")
+    a_sp, b_sp, c_sp, d_sp = species
+    assert (
+        a_sp is not None and b_sp is not None and c_sp is not None and d_sp is not None
+    )
+    if len({item.compartment for item in species}) != 1:
+        return refuse("the fast reaction's species must share one compartment")
+    if len({item.has_only_substance_units for item in species}) != 1:
+        return refuse("the fast reaction's species must use the same quantity kind")
+    for item in species:
+        if item.constant or item.boundary_condition:
+            return refuse(f'species "{item.id}" must be mutable and non-boundary')
+        if not (item.initial_amount_set or item.initial_concentration_set):
+            return refuse(f'species "{item.id}" has no initial value')
+        if item.conversion_factor or getattr(model, "conversion_factor", None):
+            return refuse(
+                "the bimolecular exchange lowering does not carry conversion factors"
+            )
+        if standardize_name(item.id) in _controlled_symbols(model):
+            return refuse(f'species "{item.id}" is reassigned by a rule or event')
+        if standardize_name(item.id) in _delayed_species(model):
+            return refuse(f'species "{item.id}" is read by a delay expression')
+    compartment = model.compartments.get(a_sp.compartment or "")
+    if compartment is None or not compartment.constant:
+        return refuse("the fast reaction requires a constant shared compartment")
+    if standardize_name(compartment.id) in _controlled_symbols(model):
+        return refuse(
+            f'compartment "{compartment.id}" is reassigned by a rule or event'
+        )
+    volume = _compartment_volume(model, a_sp)
+    if not math.isfinite(volume) or volume <= 0:
+        return refuse("the fast reaction's compartment has no usable volume")
+
+    expression = _parse_expression(_kinetic_law_math(reaction))
+    if expression is None:
+        return refuse("the fast reaction's kinetic law is not a supported expression")
+    expression = _inline_function_calls(expression, model.function_definitions)
+    resolver = _ConstantResolver(model, reaction)
+    terms = _rate_terms(expression, model, resolver)
+    if terms is None:
+        return refuse(
+            "the fast rate must be a two-term constant-coefficient mass action law"
+        )
+    terms = [term for term in terms if term.coefficient]
+    reactant_sig = tuple(sorted(((a_ref.species, 1), (b_ref.species, 1))))
+    product_sig = tuple(sorted(((c_ref.species, 1), (d_ref.species, 1))))
+    r_term = next((term for term in terms if term.species == reactant_sig), None)
+    p_term = next((term for term in terms if term.species == product_sig), None)
+    if (
+        len(terms) != 2
+        or r_term is None
+        or p_term is None
+        or r_term.coefficient <= 0
+        or p_term.coefficient >= 0
+    ):
+        return refuse("the fast rate must be positive kf*A*B minus positive kr*C*D")
+    k_eq = r_term.coefficient / (-p_term.coefficient)
+    if not math.isfinite(k_eq) or k_eq <= 0:
+        return refuse("the fast rate has no finite positive equilibrium constant")
+
+    initial = [_species_amount(model, item) for item in species]
+    if any(value is None for value in initial):
+        return refuse("the fast reaction's species have no usable initial amounts")
+    amt_a, amt_b, amt_c, amt_d = (float(value) for value in initial)
+    if min(amt_a, amt_b, amt_c, amt_d) < 0:
+        return refuse("the fast reaction's species have a negative initial amount")
+    symbol_scale = 1.0 if a_sp.has_only_substance_units else 1.0 / volume
+    p0 = (amt_a + amt_c) * symbol_scale
+    q0 = (amt_b + amt_c) * symbol_scale
+    r0 = (amt_a + amt_d) * symbol_scale
+
+    if abs(k_eq - 1.0) <= 1e-12:
+        if q0 + r0 <= 0:
+            return refuse("the initial exchange pools sum to zero at K=1")
+        c0 = (p0 * q0) / (q0 + r0)
+    else:
+        quad_a = k_eq - 1.0
+        quad_b = k_eq * (p0 + q0) + (r0 - p0)
+        disc = quad_b * quad_b - 4.0 * quad_a * k_eq * p0 * q0
+        if disc < -1e-12:
+            return refuse("the initial pools have no real fast exchange equilibrium")
+        c0 = (quad_b - math.sqrt(max(0.0, disc))) / (2.0 * quad_a)
+    a0, b0, d0 = p0 - c0, q0 - c0, r0 - p0 + c0
+    if min(a0, b0, c0, d0) < -1e-10:
+        return refuse(
+            "the initial fast exchange equilibrium is outside the nonnegative branch"
+        )
+    a0, b0, c0, d0 = max(0.0, a0), max(0.0, b0), max(0.0, c0), max(0.0, d0)
+
+    from .types import SBMLModifierSpeciesReference, SBMLParameter, SBMLRule
+
+    std_rxn = standardize_name(reaction.id)
+    pool_p = _unique_identifier(model, f"__fast_pool_p_{std_rxn}")
+    pool_q = _unique_identifier(model, f"__fast_pool_q_{std_rxn}")
+    pool_r = _unique_identifier(model, f"__fast_pool_r_{std_rxn}")
+    rate_p: List[str] = []
+    rate_q: List[str] = []
+    rate_r: List[str] = []
+    participants = set(identifiers)
+    for slow in model.reactions.values():
+        if slow.id == reaction.id:
+            continue
+        if any(
+            reference.species in participants and reference.variable_stoichiometry
+            for reference in [*slow.reactants, *slow.products]
+        ):
+            return refuse(
+                f'reaction "{slow.id}" changes a fast-equilibrium species with '
+                "variable stoichiometry"
+            )
+        sa = _signed_stoichiometry(slow, a_sp.id)
+        sb = _signed_stoichiometry(slow, b_sp.id)
+        sc = _signed_stoichiometry(slow, c_sp.id)
+        sd = _signed_stoichiometry(slow, d_sp.id)
+        if sa + sc or sb + sc or sa + sd:
+            rate = _global_kinetic_law(slow)
+            if rate is None:
+                return refuse(
+                    f'reaction "{slow.id}" has no usable kinetic law for exchange pools'
+                )
+            if sa + sc:
+                rate_p.append(f"({format_number(symbol_scale * (sa + sc))}) * ({rate})")
+            if sb + sc:
+                rate_q.append(f"({format_number(symbol_scale * (sb + sc))}) * ({rate})")
+            if sa + sd:
+                rate_r.append(f"({format_number(symbol_scale * (sa + sd))}) * ({rate})")
+
+    if abs(k_eq - 1.0) <= 1e-12:
+        c_expr = f"(({pool_p} * {pool_q}) / ({pool_q} + {pool_r}))"
+    else:
+        quad_a = k_eq - 1.0
+        k_text = format_number(k_eq)
+        b_expr = f"({k_text} * ({pool_p} + {pool_q}) + ({pool_r} - {pool_p}))"
+        c_expr = (
+            f"(({b_expr} - sqrt(({b_expr})^2 - "
+            f"({format_number(4.0 * quad_a * k_eq)}) * {pool_p} * {pool_q})) "
+            f"/ ({format_number(2.0 * quad_a)}))"
+        )
+    reconstructed = {
+        a_sp.id: f"{pool_p} - {c_expr}",
+        b_sp.id: f"{pool_q} - {c_expr}",
+        c_sp.id: c_expr,
+        d_sp.id: f"{pool_r} - {pool_p} + {c_expr}",
+    }
+    for item, val in zip(species, (a0, b0, c0, d0)):
+        _set_species_amount(
+            model, item, val if item.has_only_substance_units else val * volume
+        )
+    for name, initial_value in ((pool_p, p0), (pool_q, q0), (pool_r, r0)):
+        model.parameters[name] = SBMLParameter(
+            id=name, name=name, value=initial_value, constant=False, value_set=True
+        )
+    model.rules.extend(
+        [
+            SBMLRule(type="rate", variable=pool_p, math=" + ".join(rate_p) or "0"),
+            SBMLRule(type="rate", variable=pool_q, math=" + ".join(rate_q) or "0"),
+            SBMLRule(type="rate", variable=pool_r, math=" + ".join(rate_r) or "0"),
+            *[
+                SBMLRule(
+                    type="assignment", variable=item.id, math=reconstructed[item.id]
+                )
+                for item in species
+            ],
+        ]
+    )
+    del model.reactions[reaction.id]
+    for slow in model.reactions.values():
+        moved = [
+            reference
+            for reference in [*slow.reactants, *slow.products]
+            if reference.species in participants
+        ]
+        slow.reactants = [
+            reference
+            for reference in slow.reactants
+            if reference.species not in participants
+        ]
+        slow.products = [
+            reference
+            for reference in slow.products
+            if reference.species not in participants
+        ]
+        present = {_modifier_species(modifier) for modifier in slow.modifiers}
+        for reference in moved:
+            if reference.species not in present:
+                slow.modifiers.append(SBMLModifierSpeciesReference(reference.species))
+                present.add(reference.species)
+    return FastReactionOutcome(
+        reaction.id,
+        True,
+        detail=(
+            f"the fast bimolecular exchange equilibrium is reconstructed on the "
+            f"conserved pools {pool_p}={a_sp.id}+{c_sp.id}, "
+            f"{pool_q}={b_sp.id}+{c_sp.id}, {pool_r}={a_sp.id}+{d_sp.id}"
+        ),
+    )
+
+
+def _solve_linear_system(
+    matrix: List[List[float]], rhs: List[float]
+) -> Optional[List[float]]:
+    """Solve an n x n linear system with partial pivoting; return None if singular."""
+
+    n = len(rhs)
+    aug = [list(row) + [rhs[i]] for i, row in enumerate(matrix)]
+    for col in range(n):
+        pivot = max(range(col, n), key=lambda r: abs(aug[r][col]))
+        if abs(aug[pivot][col]) <= 1e-14:
+            return None
+        if pivot != col:
+            aug[col], aug[pivot] = aug[pivot], aug[col]
+        diag = aug[col][col]
+        for j in range(col, n + 1):
+            aug[col][j] /= diag
+        for r in range(n):
+            if r == col:
+                continue
+            factor = aug[r][col]
+            if factor == 0.0:
+                continue
+            for j in range(col, n + 1):
+                aug[r][j] -= factor * aug[col][j]
+    solution = [aug[i][n] for i in range(n)]
+    return solution if all(math.isfinite(val) for val in solution) else None
+
+
+def _reduce_coupled_linear_fast_component(
+    model: SBMLModel, component: Sequence[SBMLReaction]
+) -> Optional[Dict[str, FastReactionOutcome]]:
+    """Reduce a connected component of reversible unit-stoichiometry linear fast reactions.
+
+    Each reaction S_i <-> S_j must have mass-action rate kf*S_i - kr*S_j with
+    constant positive kf, kr.  The resulting irreducible Markov generator Q has
+    a unique strictly positive stationary distribution pi (Q*pi = 0, sum(pi) = 1),
+    so the entire fast subsystem reduces to one conserved pool T = sum(S_k) and
+    exact equilibrium assignments S_k = pi_k * T.
+    """
+
+    species_ids: List[str] = []
+    seen_species: set[str] = set()
+    rxn_ids = {rxn.id for rxn in component}
+    for rxn in component:
+        if rxn.multi_intra_species:
+            return None
+        reactants = [
+            ref for ref in rxn.reactants if ref.species and ref.species != "EmptySet"
+        ]
+        products = [
+            ref for ref in rxn.products if ref.species and ref.species != "EmptySet"
+        ]
+        if len(reactants) != 1 or len(products) != 1:
+            return None
+        r_ref, p_ref = reactants[0], products[0]
+        if (
+            r_ref.species == p_ref.species
+            or r_ref.variable_stoichiometry
+            or p_ref.variable_stoichiometry
+            or float(r_ref.stoichiometry) != 1.0
+            or float(p_ref.stoichiometry) != 1.0
+        ):
+            return None
+        for sid in (r_ref.species, p_ref.species):
+            if sid not in seen_species:
+                seen_species.add(sid)
+                species_ids.append(sid)
+    n = len(species_ids)
+    if n < 3:
+        return None
+    if any(
+        re.search(r"\bdelay\s*\(", expression, flags=re.IGNORECASE)
+        for expression in _model_expressions(model)
+    ):
+        return None
+    for expression in _model_expressions(model):
+        names = set(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", expression))
+        if names & rxn_ids:
+            return None
+        if "rateOf" in names and names & seen_species:
+            return None
+
+    species_objs = [model.species.get(sid) for sid in species_ids]
+    if any(item is None for item in species_objs):
+        return None
+    typed_species = [item for item in species_objs if item is not None]
+    if len({item.compartment for item in typed_species}) != 1:
+        return None
+    if len({item.has_only_substance_units for item in typed_species}) != 1:
+        return None
+    controlled = _controlled_symbols(model)
+    delayed = _delayed_species(model)
+    for item in typed_species:
+        if item.constant or item.boundary_condition:
+            return None
+        if not (item.initial_amount_set or item.initial_concentration_set):
+            return None
+        if item.conversion_factor or getattr(model, "conversion_factor", None):
+            return None
+        if (
+            standardize_name(item.id) in controlled
+            or standardize_name(item.id) in delayed
+        ):
+            return None
+    compartment = model.compartments.get(typed_species[0].compartment or "")
+    if compartment is None or not compartment.constant:
+        return None
+    if standardize_name(compartment.id) in controlled:
+        return None
+    volume = _compartment_volume(model, typed_species[0])
+    if not math.isfinite(volume) or volume <= 0:
+        return None
+
+    index_of = {sid: idx for idx, sid in enumerate(species_ids)}
+    generator = [[0.0] * n for _ in range(n)]
+    for rxn in component:
+        r_sid = next(ref.species for ref in rxn.reactants if ref.species != "EmptySet")
+        p_sid = next(ref.species for ref in rxn.products if ref.species != "EmptySet")
+        expr = _parse_expression(_kinetic_law_math(rxn))
+        if expr is None:
+            return None
+        expr = _inline_function_calls(expr, model.function_definitions)
+        resolver = _ConstantResolver(model, rxn)
+        terms = _rate_terms(expr, model, resolver)
+        if terms is None:
+            return None
+        active = [term for term in terms if term.coefficient != 0.0]
+        if len(active) != 2:
+            return None
+        r_term = next((t for t in active if t.species == ((r_sid, 1),)), None)
+        p_term = next((t for t in active if t.species == ((p_sid, 1),)), None)
+        if (
+            r_term is None
+            or p_term is None
+            or r_term.coefficient <= 0.0
+            or p_term.coefficient >= 0.0
+        ):
+            return None
+        kf = float(r_term.coefficient)
+        kr = float(-p_term.coefficient)
+        if not (math.isfinite(kf) and math.isfinite(kr) and kf > 0.0 and kr > 0.0):
+            return None
+        ri, pi_idx = index_of[r_sid], index_of[p_sid]
+        generator[ri][ri] -= kf
+        generator[pi_idx][ri] += kf
+        generator[pi_idx][pi_idx] -= kr
+        generator[ri][pi_idx] += kr
+
+    # Solve Q * pi = 0 with sum(pi) = 1.
+    system = [list(generator[i]) for i in range(n - 1)] + [[1.0] * n]
+    rhs = [0.0] * (n - 1) + [1.0]
+    pi = _solve_linear_system(system, rhs)
+    if pi is None or any(val <= 1e-12 for val in pi):
+        return None
+    # Verify all rows of Q * pi = 0.
+    q_norm = max(1.0, max(abs(x) for row in generator for x in row))
+    for row in generator:
+        residual = sum(row[j] * pi[j] for j in range(n))
+        if abs(residual) > 1e-10 * q_norm:
+            return None
+
+    initial_amounts = [_species_amount(model, item) for item in typed_species]
+    if any(val is None or val < 0 for val in initial_amounts):
+        return None
+    symbol_scale = 1.0 if typed_species[0].has_only_substance_units else 1.0 / volume
+    pool0 = sum(float(val) for val in initial_amounts if val is not None) * symbol_scale
+    if pool0 < 0 or not math.isfinite(pool0):
+        return None
+
+    from .types import SBMLModifierSpeciesReference, SBMLParameter, SBMLRule
+
+    pool_name = _unique_identifier(
+        model, f"__fast_pool_{standardize_name(component[0].id)}"
+    )
+    pool_rates: List[str] = []
+    for slow in model.reactions.values():
+        if slow.id in rxn_ids:
+            continue
+        if any(
+            reference.species in seen_species and reference.variable_stoichiometry
+            for reference in [*slow.reactants, *slow.products]
+        ):
+            return None
+        net = sum(_signed_stoichiometry(slow, sid) for sid in species_ids)
+        if net:
+            rate = _global_kinetic_law(slow)
+            if rate is None:
+                return None
+            pool_rates.append(f"({format_number(symbol_scale * net)}) * ({rate})")
+
+    for item, weight in zip(typed_species, pi):
+        val = weight * pool0
+        _set_species_amount(
+            model, item, val if item.has_only_substance_units else val * volume
+        )
+    model.parameters[pool_name] = SBMLParameter(
+        id=pool_name, name=pool_name, value=pool0, constant=False, value_set=True
+    )
+    model.rules.append(
+        SBMLRule(type="rate", variable=pool_name, math=" + ".join(pool_rates) or "0")
+    )
+    for item, weight in zip(typed_species, pi):
+        model.rules.append(
+            SBMLRule(
+                type="assignment",
+                variable=item.id,
+                math=f"({format_number(weight)}) * {pool_name}",
+            )
+        )
+    for rxn in component:
+        del model.reactions[rxn.id]
+    for slow in model.reactions.values():
+        moved = [
+            reference
+            for reference in [*slow.reactants, *slow.products]
+            if reference.species in seen_species
+        ]
+        slow.reactants = [
+            reference
+            for reference in slow.reactants
+            if reference.species not in seen_species
+        ]
+        slow.products = [
+            reference
+            for reference in slow.products
+            if reference.species not in seen_species
+        ]
+        present = {_modifier_species(modifier) for modifier in slow.modifiers}
+        for reference in moved:
+            if reference.species not in present:
+                slow.modifiers.append(SBMLModifierSpeciesReference(reference.species))
+                present.add(reference.species)
+    detail = (
+        f"the coupled linear fast subsystem is reconstructed on the conserved "
+        f"pool {pool_name}={'+'.join(species_ids)}"
+    )
+    return {
+        rxn.id: FastReactionOutcome(rxn.id, True, detail=detail) for rxn in component
+    }
 
 
 def _zero_switch_coefficient(
@@ -860,6 +1595,37 @@ def _reduce_to_balance(
     if pinned_id == other_id:
         return refuse("the fast reaction's rate balances a species against itself")
     if forward.species[0][1] != 1 or backward.species[0][1] != 1:
+        # Check exact homodimerization 2A <-> C (kf*A^2 - kr*C) or C <-> 2A (kf*C - kr*A^2).
+        if (
+            pinned_id == reactant.species
+            and other_id == product.species
+            and reactant_stoichiometry == 2.0
+            and product_stoichiometry == 1.0
+            and forward.species[0][1] == 2
+            and backward.species[0][1] == 1
+        ):
+            return _reduce_homodimer_equilibrium(
+                model,
+                reaction,
+                monomer_id=reactant.species,
+                dimer_id=product.species,
+                equilibrium_constant=(-backward.coefficient) / forward.coefficient,
+            )
+        if (
+            pinned_id == reactant.species
+            and other_id == product.species
+            and reactant_stoichiometry == 1.0
+            and product_stoichiometry == 2.0
+            and forward.species[0][1] == 1
+            and backward.species[0][1] == 2
+        ):
+            return _reduce_homodimer_equilibrium(
+                model,
+                reaction,
+                monomer_id=product.species,
+                dimer_id=reactant.species,
+                equilibrium_constant=forward.coefficient / (-backward.coefficient),
+            )
         return refuse(
             "the fast reaction's rate is not linear in the species it converts"
         )

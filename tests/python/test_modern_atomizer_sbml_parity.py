@@ -3582,7 +3582,23 @@ def test_reciprocal_species_flux_schedules_volume_event_without_reentry(tmp_path
     longer = Atomizer(quiet_mode=True, t_end=5, n_steps=500).atomize(xml)
     assert longer.success, longer.error
     assert 'setVolume({target=>"C", value=>10})' not in longer.bngl
-    assert "volume change can cause the state trigger to re-enter" in longer.bngl
+    # Beyond the re-entry horizon, static scheduling declines and native event
+    # lowering tracks the compartment size dynamically as C_amt.
+    assert "begin bng3_events version 1" in longer.bngl
+    assert "assignment: C_amt = 10" in longer.bngl
+    longer_path = tmp_path / "reciprocal_volume_event_long.bngl"
+    longer_path.write_text(longer.bngl, encoding="utf-8")
+    long_model = load(longer_path)
+    long_sim = long_model.simulate(method="ode", t_end=5.0, n_steps=50)
+    rr_long = roadrunner.RoadRunner(xml)
+    rr_long.timeCourseSelections = ["time", "S", "C"]
+    rr_long_ref = rr_long.simulate(0, 5.0, 51)
+    assert (
+        float(np.max(np.abs(long_sim.observables["S_amt"] - rr_long_ref[:, 1]))) < 1e-3
+    )
+    assert (
+        float(np.max(np.abs(long_sim.observables["C_amt"] - rr_long_ref[:, 2]))) < 1e-6
+    )
 
 
 def test_event_math_folds_constant_reaction_identifier_rate():
@@ -5370,17 +5386,28 @@ def test_state_triggered_group_with_a_dynamic_priority_executes_in_order(tmp_pat
     np.testing.assert_allclose(native_state[compare], rr_values, rtol=1e-5, atol=5e-10)
 
 
-def test_state_triggered_group_that_assigns_the_trigger_state_stays_unsupported():
-    # The events of the group cross at the same instant only when their
-    # assignments leave the trigger's state alone.  An assignment to the
-    # trigger's own state could make the trigger re-enter, and then the two
-    # crossings would differ, so the group is not one simultaneous execution.
+def test_state_triggered_group_that_assigns_the_trigger_state_lowers_natively(tmp_path):
+    # Static action scheduling cannot assume one simultaneous execution when an
+    # event assigns the trigger's own state; native bng3_events re-tests
+    # triggers and evaluates dynamic priorities at runtime, matching SBML.
+    import numpy as np
     from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
 
-    result = Atomizer(quiet_mode=True).atomize(
-        _state_triggered_priority_pair_model(assignment_target="p1")
-    )
+    xml = _state_triggered_priority_pair_model(assignment_target="p1")
+    result = Atomizer(quiet_mode=True).atomize(xml)
 
     assert result.success, result.error
-    assert "Events NOT simulated" in result.bngl
-    assert "state-dependent or non-constant event(s) remain untranslated" in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+
+    model_path = tmp_path / "state_triggered_priority_p1.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    sim = load(model_path).simulate(method="ode", t_end=6.0, n_steps=60)
+    roadrunner = pytest.importorskip("roadrunner")
+    rr = roadrunner.RoadRunner(xml)
+    rr.timeCourseSelections = ["time", "p1"]
+    ref = rr.simulate(0, 6.0, 61)
+    np.testing.assert_allclose(
+        sim.observables["p1_amt"], ref[:, 1], rtol=1e-5, atol=1e-6
+    )

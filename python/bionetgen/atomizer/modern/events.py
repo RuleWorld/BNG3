@@ -726,13 +726,16 @@ class NativeStateTarget:
 
     ``observable`` is the BNGL observable that carries the state's amount,
     ``amount_factor`` converts an SBML value of that state into the same
-    amount units, and ``compartment`` names the compartment the state lives
-    in so that two states can be compared only when their units agree.
+    amount units, ``compartment`` names the compartment the state lives in,
+    and ``volume_observable`` names the dynamic compartment-size observable
+    (``<C>_amt``) when a concentration-valued species lives in a dynamic
+    compartment whose size is tracked as a state species.
     """
 
     observable: str
     amount_factor: float
     compartment: str
+    volume_observable: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -3068,11 +3071,22 @@ def _native_static_text(
     expanded = context.expand_functions(str(expression or "").strip())
     if not expanded:
         return None
+    replacements: dict[str, str] = {}
     for run in _expression_id_runs(expanded):
         if context.resolve_native_state(run) is not None:
             return None
-        if not context.is_compile_time_constant(run):
-            return None
+        if context.is_compile_time_constant(run):
+            continue
+        constant_value = context.resolve_constant(run)
+        if constant_value is not None and math.isfinite(constant_value):
+            replacements[run] = _format_number(constant_value)
+            continue
+        return None
+    if replacements:
+        for run, literal in sorted(
+            replacements.items(), key=lambda item: -len(item[0])
+        ):
+            expanded = re.sub(rf"\b{re.escape(run)}\b", literal, expanded)
     return expanded
 
 
@@ -3104,7 +3118,9 @@ def _native_continuous_expression(
             if target is not None:
                 has_state = True
                 rendered = target.observable
-                if target.amount_factor != 1.0:
+                if target.volume_observable:
+                    rendered = f"({rendered} / {target.volume_observable})"
+                elif target.amount_factor != 1.0:
                     rendered = f"({rendered} / {_format_number(target.amount_factor)})"
                 return ast.copy_location(ast.parse(rendered, mode="eval").body, node)
             volume = context.resolve_static_compartment_volume(node.id)
@@ -3114,6 +3130,9 @@ def _native_continuous_expression(
                 return ast.copy_location(
                     ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
                 )
+            constant_value = context.resolve_constant(node.id)
+            if constant_value is not None and math.isfinite(constant_value):
+                return ast.copy_location(ast.Constant(value=constant_value), node)
             assignment_fn = context.resolve_native_assignment_function(node.id)
             if assignment_fn is not None:
                 has_state = True
@@ -3154,6 +3173,9 @@ _NATIVE_VALUE_KEYWORD_CALLS = {
 _NATIVE_VALUE_CALLS = {
     "abs",
     "floor",
+    "sqrt",
+    "ln",
+    "root",
     "gt",
     "lt",
     "geq",
@@ -3167,7 +3189,7 @@ _NATIVE_VALUE_CALLS = {
 def _native_piecewise_value_expression(
     expression: str, context: EventTranslationContext
 ) -> Optional[Tuple[str, bool, bool]]:
-    """Render an assignment value that holds an SBML piecewise.
+    """Render an assignment value that holds an SBML piecewise or sqrt/ln.
 
     The value is written over native state and constants as in
     ``_native_continuous_expression``, then the SBML comparison and logic
@@ -3199,7 +3221,9 @@ def _native_piecewise_value_expression(
             if target is not None:
                 has_state = True
                 rendered = target.observable
-                if target.amount_factor != 1.0:
+                if target.volume_observable:
+                    rendered = f"({rendered} / {target.volume_observable})"
+                elif target.amount_factor != 1.0:
                     rendered = f"({rendered} / {_format_number(target.amount_factor)})"
                 return ast.copy_location(ast.parse(rendered, mode="eval").body, node)
             volume = context.resolve_static_compartment_volume(node.id)
@@ -3209,6 +3233,9 @@ def _native_piecewise_value_expression(
                 return ast.copy_location(
                     ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
                 )
+            constant_value = context.resolve_constant(node.id)
+            if constant_value is not None and math.isfinite(constant_value):
+                return ast.copy_location(ast.Constant(value=constant_value), node)
             assignment_fn = context.resolve_native_assignment_function(node.id)
             if assignment_fn is not None:
                 has_state = True
@@ -3225,6 +3252,22 @@ def _native_piecewise_value_expression(
             ):
                 raise ValueError("unsupported native assignment function")
             node.args = [self.visit(argument) for argument in node.args]
+            if (
+                node.func.id == "root"
+                and len(node.args) == 2
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value == 2
+            ):
+                return ast.copy_location(
+                    ast.Call(
+                        func=ast.Name(id="sqrt", ctx=ast.Load()),
+                        args=[node.args[1]],
+                        keywords=[],
+                    ),
+                    node,
+                )
+            if node.func.id == "root":
+                raise ValueError("unsupported native assignment function")
             return node
 
     try:
@@ -3456,6 +3499,105 @@ def _native_state_is_monotone(
     return False
 
 
+def _normalize_native_trigger_boolean(
+    trigger: str, context: EventTranslationContext
+) -> str:
+    """Normalize exact Boolean identities on an SBML trigger expression.
+
+    Rewrites ``not(not(x)) -> x``, ``not(cmp(a, b)) -> complement(a, b)``,
+    De Morgan ``not(or(a, b, ...)) -> and(not(a), not(b), ...)``, nested
+    ``and(and(a, b), c) -> and(a, b, c)``, and ``or(false_const, x) -> x``.
+    """
+
+    text = _strip_outer_parens(str(trigger or "").strip())
+    if not text:
+        return text
+    not_match = re.fullmatch(r"not\s*\((.*)\)", text, re.S)
+    if not_match is not None:
+        inner = not_match.group(1).strip()
+        # Verify the outer parentheses belong to this single ``not(...)`` call.
+        depth = 0
+        balanced = True
+        for character in inner:
+            depth += {"(": 1, ")": -1}.get(character, 0)
+            if depth < 0:
+                balanced = False
+                break
+        if balanced and depth == 0:
+            inner_not = re.fullmatch(r"not\s*\((.*)\)", inner, re.S)
+            if inner_not is not None:
+                return _normalize_native_trigger_boolean(inner_not.group(1), context)
+            or_match = re.fullmatch(r"or\s*\((.*)\)", inner, re.S)
+            if or_match is not None:
+                or_terms = _split_arguments(or_match.group(1))
+                if or_terms and len(or_terms) >= 2:
+                    negated = [
+                        _normalize_native_trigger_boolean(f"not({term})", context)
+                        for term in or_terms
+                    ]
+                    return _normalize_native_trigger_boolean(
+                        f"and({', '.join(negated)})", context
+                    )
+            complemented = complement_negated_comparison(text)
+            if complemented != text:
+                return complemented
+    or_match = re.fullmatch(r"or\s*\((.*)\)", text, re.S)
+    if or_match is not None:
+        or_terms = _split_arguments(or_match.group(1))
+        if or_terms and len(or_terms) >= 2:
+            remaining: List[str] = []
+            for term in or_terms:
+                normalized_term = _normalize_native_trigger_boolean(term, context)
+                folded = _native_fold_term_text(normalized_term, context)
+                if folded is not None and math.isfinite(folded):
+                    if folded == 0.0:
+                        continue
+                    # Provably true disjunct collapses the whole trigger to true.
+                    return text
+                cmp_match = _match_comparison_call(
+                    normalized_term
+                ) or _match_equality_call(normalized_term)
+                if cmp_match is not None:
+                    op, arg_text = cmp_match
+                    args = _split_arguments(arg_text)
+                    if args and len(args) == 2:
+                        lv = _native_fold_term_text(args[0], context)
+                        rv = _native_fold_term_text(args[1], context)
+                        if (
+                            lv is not None
+                            and rv is not None
+                            and math.isfinite(lv)
+                            and math.isfinite(rv)
+                        ):
+                            holds = {
+                                "gt": lv > rv,
+                                "geq": lv >= rv,
+                                "lt": lv < rv,
+                                "leq": lv <= rv,
+                                "eq": lv == rv,
+                                "neq": lv != rv,
+                            }.get(op)
+                            if holds is False:
+                                continue
+                            if holds is True:
+                                return text
+                remaining.append(normalized_term)
+            if len(remaining) == 1:
+                return remaining[0]
+    and_terms = _split_call_arguments(text)
+    if and_terms is not None and len(and_terms) >= 2:
+        flattened: List[str] = []
+        for term in and_terms:
+            normalized_term = _normalize_native_trigger_boolean(term, context)
+            sub_terms = _split_call_arguments(normalized_term)
+            if sub_terms is not None and len(sub_terms) >= 2:
+                flattened.extend(sub_terms)
+            else:
+                flattened.append(normalized_term)
+        return f"and({', '.join(flattened)})"
+    return text
+
+
 def _native_comparison_expression(
     left_text: str,
     right_text: str,
@@ -3468,20 +3610,56 @@ def _native_comparison_expression(
     left_state = _native_state_target(left_text, context)
     right_state = _native_state_target(right_text, context)
     if left_state is not None and right_state is not None:
-        # Two states compare directly only when they share their units; a
-        # difference of two species in different compartments would need a
-        # ratio that the native trigger grammar cannot express.
-        if left_state.amount_factor != right_state.amount_factor:
-            return None
-        return f"{left_state.observable} {symbol} {right_state.observable}"
+        if (
+            left_state.volume_observable == right_state.volume_observable
+            and left_state.amount_factor == right_state.amount_factor
+        ):
+            return f"{left_state.observable} {symbol} {right_state.observable}"
+        if (
+            not left_state.volume_observable
+            and not right_state.volume_observable
+            and left_state.amount_factor > 0
+            and right_state.amount_factor > 0
+        ):
+            # Two concentration species in different constant compartments:
+            # S1_amt / V1 OP S2_amt / V2 is affine in (S1_amt, S2_amt) after
+            # clearing the positive constant volumes V1, V2.
+            return (
+                f"({_format_number(right_state.amount_factor)} * {left_state.observable})"
+                f" {symbol} "
+                f"({_format_number(left_state.amount_factor)} * {right_state.observable})"
+            )
+        return None
     if left_state is not None:
-        scaled = _native_scaled_static(right_text, left_state.amount_factor, context)
-        if scaled is not None:
-            return f"{left_state.observable} {symbol} {scaled}"
+        if left_state.volume_observable:
+            static = _native_static_text(right_text, context)
+            if static is not None:
+                # Positive compartment volume V > 0: S_amt / V OP c iff S_amt OP c * V,
+                # which is affine in (S_amt, V) for CVODE root finding.
+                return (
+                    f"{left_state.observable} {symbol} "
+                    f"(({static}) * {left_state.volume_observable})"
+                )
+        else:
+            scaled = _native_scaled_static(
+                right_text, left_state.amount_factor, context
+            )
+            if scaled is not None:
+                return f"{left_state.observable} {symbol} {scaled}"
     elif right_state is not None:
-        scaled = _native_scaled_static(left_text, right_state.amount_factor, context)
-        if scaled is not None:
-            return f"{scaled} {symbol} {right_state.observable}"
+        if right_state.volume_observable:
+            static = _native_static_text(left_text, context)
+            if static is not None:
+                return (
+                    f"(({static}) * {right_state.volume_observable}) "
+                    f"{symbol} {right_state.observable}"
+                )
+        else:
+            scaled = _native_scaled_static(
+                left_text, right_state.amount_factor, context
+            )
+            if scaled is not None:
+                return f"{scaled} {symbol} {right_state.observable}"
     # Otherwise the other side moves (it reads time or another state), and
     # both sides are rendered in their SBML units below.
     time_rewrite = _native_time_minus_state_comparison(
@@ -3610,11 +3788,12 @@ def _native_trigger_expression(
     event: SBMLEvent, context: EventTranslationContext, *, instantaneous: bool
 ) -> Optional[str]:
     """Lower a state-dependent SBML trigger to a native BNGL inequality."""
-    conjunction = _native_conjunction_expression(event.trigger, event, context)
+    normalized_trigger = _normalize_native_trigger_boolean(event.trigger, context)
+    conjunction = _native_conjunction_expression(normalized_trigger, event, context)
     if conjunction is not None:
         return conjunction
-    comparison = _match_comparison_call(event.trigger) or _match_equality_call(
-        event.trigger
+    comparison = _match_comparison_call(normalized_trigger) or _match_equality_call(
+        normalized_trigger
     )
     if comparison is None:
         return None
@@ -3969,9 +4148,19 @@ def _native_value_expression(
         continuous = _native_piecewise_value_expression(text, context)
     if continuous is not None:
         rendered, _, _ = continuous
+        if target.volume_observable:
+            return f"({rendered}) * {target.volume_observable}"
         if target.amount_factor != 1.0:
             return f"({rendered}) * {_format_number(target.amount_factor)}"
         return rendered
+    if target.volume_observable:
+        folded = _native_fold_term_text(text, context)
+        if folded is not None and math.isfinite(folded):
+            return f"({_format_number(folded)}) * {target.volume_observable}"
+        static = _native_static_text(text, context)
+        if static is not None:
+            return f"({static}) * {target.volume_observable}"
+        return None
     try:
         tree = ast.parse(context.expand_functions(text), mode="eval")
     except (TypeError, ValueError, SyntaxError):
@@ -4131,13 +4320,14 @@ def _lower_native_event(
 
     priority: Optional[str] = None
     if event.priority:
-        # The priority orders the assignments of the events that are executed
-        # simultaneously.  It has to be a static value, because the order of
-        # two simultaneous events is decided before either of them runs.
         static_priority = _native_fold_term_text(event.priority, context)
-        if static_priority is None or not math.isfinite(static_priority):
-            return None
-        priority = _format_number(static_priority)
+        if static_priority is not None and math.isfinite(static_priority):
+            priority = _format_number(static_priority)
+        else:
+            dynamic_priority = _native_continuous_expression(event.priority, context)
+            if dynamic_priority is None:
+                return None
+            priority = dynamic_priority[0]
     delay: Optional[str] = None
     delay_seconds = 0.0
     if event.delay:

@@ -1342,10 +1342,72 @@ def _evaluate_math_builtin_call(
     result that is not a finite number all leave the expression unfolded.
     """
 
+    lowered = name.lower()
+    if lowered == "if" and len(arguments) == 3:
+        condition = _evaluate_static_arithmetic(
+            arguments[0], symbols, functions, function_stack
+        )
+        if condition is None:
+            return None
+        branch = arguments[1] if condition != 0.0 else arguments[2]
+        return _evaluate_static_arithmetic(branch, symbols, functions, function_stack)
+    if lowered in {
+        "gt",
+        "lt",
+        "geq",
+        "leq",
+        "eq",
+        "neq",
+        "and",
+        "or",
+        "xor",
+        "not",
+        "min",
+        "max",
+    }:
+        values: List[float] = []
+        for argument in arguments:
+            value = _evaluate_static_arithmetic(
+                argument,
+                symbols,
+                functions,
+                function_stack,
+            )
+            if value is None:
+                return None
+            values.append(value)
+        if lowered == "not":
+            return (1.0 if values[0] == 0.0 else 0.0) if len(values) == 1 else None
+        if lowered == "and":
+            return 1.0 if all(v != 0.0 for v in values) else 0.0
+        if lowered == "or":
+            return 1.0 if any(v != 0.0 for v in values) else 0.0
+        if lowered == "xor":
+            return 1.0 if sum(1 for v in values if v != 0.0) % 2 == 1 else 0.0
+        if lowered == "min":
+            return float(min(values)) if values else None
+        if lowered == "max":
+            return float(max(values)) if values else None
+        if len(values) < 2:
+            return None
+        pairs = list(zip(values, values[1:]))
+        if lowered == "gt":
+            return 1.0 if all(a > b for a, b in pairs) else 0.0
+        if lowered == "lt":
+            return 1.0 if all(a < b for a, b in pairs) else 0.0
+        if lowered == "geq":
+            return 1.0 if all(a >= b for a, b in pairs) else 0.0
+        if lowered == "leq":
+            return 1.0 if all(a <= b for a, b in pairs) else 0.0
+        if lowered == "eq":
+            return 1.0 if all(a == b for a, b in pairs) else 0.0
+        if lowered == "neq":
+            return 1.0 if len(values) == 2 and values[0] != values[1] else None
+
     builtin = MATH_BUILTIN_BY_NAME.get(name)
     if builtin is None or builtin.evaluate is None:
         return None
-    values: List[float] = []
+    values = []
     for argument in arguments:
         value = _evaluate_static_arithmetic(
             argument,
@@ -1702,7 +1764,7 @@ def _fast_reaction_rule(level: Optional[int], version: Optional[int]) -> str:
     return "SBML asks for a pseudo steady-state approximation of such a reaction"
 
 
-def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
+def _expand_rate_of_from_rate_rules(model: SBMLModel) -> bool:
     """Inline ``rateOf`` calls whose targets have explicit SBML rate rules.
 
     A rate rule directly defines the time derivative of its target, so this
@@ -1726,20 +1788,31 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
     for key in ambiguous:
         rate_rules.pop(key, None)
     if not rate_rules:
-        return
+        return False
 
-    def expand(expression: str, stack: tuple[str, ...] = ()) -> str:
+    changed = False
+
+    def expand(
+        expression: str,
+        stack: tuple[str, ...] = (),
+        excluded: frozenset[str] = frozenset(),
+    ) -> str:
+        nonlocal changed
         source = str(expression or "")
 
         def replace(match: re.Match[str]) -> str:
+            nonlocal changed
             identifier = match.group(1)
+            if identifier in excluded:
+                return match.group(0)
             key = (
                 identifier if identifier in rate_rules else standardize_name(identifier)
             )
             replacement = rate_rules.get(key)
             if replacement is None or key in stack:
                 return match.group(0)
-            return _mark_rate_of(f"({expand(replacement, (*stack, key))})")
+            changed = True
+            return _mark_rate_of(f"({expand(replacement, (*stack, key), excluded)})")
 
         return _RATE_OF_CALL.sub(replace, source)
 
@@ -1753,6 +1826,8 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
             else getattr(kinetic_law, "math", "")
         )
         new_math = _mask_reaction_local_rate_of(old_math, kinetic_law)
+        if new_math != str(old_math or ""):
+            changed = True
         new_math = expand(new_math)
         if isinstance(kinetic_law, Mapping):
             kinetic_law["math"] = new_math
@@ -1762,7 +1837,10 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
     for rule in model.rules:
         rule.math = expand(rule.math)
     for function in model.function_definitions.values():
-        function.math = expand(function.math)
+        excluded_args = frozenset(
+            str(arg) for arg in (getattr(function, "arguments", ()) or ()) if arg
+        )
+        function.math = expand(function.math, excluded=excluded_args)
     for event in model.events:
         event.trigger = expand(event.trigger)
         event.delay = expand(event.delay) if event.delay else event.delay
@@ -1774,18 +1852,22 @@ def _expand_rate_of_from_rate_rules(model: SBMLModel) -> None:
                 assignment["math"] = expand(assignment.get("math", ""))
     for assignment in model.initial_assignments:
         assignment.math = expand(assignment.math)
+    return changed
 
 
-def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
-    """Inline reaction-derived ``rateOf`` for a conservative ODE subset.
+def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> bool:
+    """Inline reaction-derived ``rateOf`` for non-cyclic ODE targets.
 
-    For non-event species, SBML's amount derivative is the sum of reaction
-    stoichiometry times reaction extent rates. Concentration derivatives also
-    include dilution from a rate-ruled compartment volume. This lowering stays
-    limited to ordinary reactions with finite fixed or explicitly defined
-    dynamic stoichiometry, static conversion factors, and explicitly defined
-    volume derivatives. Any target touched by an unsafe reaction is left
-    unresolved for the writer to report.
+    Per SBML Level 3 Version 2 Core Sec. 3.4.6, a symbol's ``rateOf`` is its
+    continuous time derivative: the sum of reaction stoichiometry times
+    reaction extent rates (plus compartment volume dilution for concentration
+    species), or zero when no rule or reaction drives it.  Events produce
+    instantaneous discontinuities rather than continuous derivatives, so
+    event-assigned parameters/compartments without rules have ``rateOf = 0``
+    and event-assigned species keep their continuous reaction derivative.
+    Any target involved in a fast reaction, an algebraic rule, an assignment
+    rule, or a cyclic/unresolved ``rateOf`` dependency stays unresolved for
+    the writer's fail-closed guard.
     """
 
     explicit_rate_targets = {
@@ -1804,6 +1886,20 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
     assignment_targets.update(
         standardize_name(variable) for variable in tuple(assignment_targets)
     )
+    algebraic_symbols = {
+        token
+        for rule in model.rules
+        if rule.type == "algebraic" and rule.math
+        for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", str(rule.math))
+    }
+    algebraic_symbols.update(
+        standardize_name(token) for token in tuple(algebraic_symbols)
+    )
+    initial_assignment_targets = {
+        standardize_name(str(item.symbol))
+        for item in model.initial_assignments
+        if item.symbol
+    }
     event_targets = {
         str(assignment.variable)
         for event in model.events
@@ -1838,15 +1934,14 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             for rule in model.rules
             if rule.type in {"assignment", "rate"} and rule.variable
         }
+        controlled_references.update(initial_assignment_targets)
         controlled_references.update(
-            standardize_name(str(item.symbol))
-            for item in model.initial_assignments
-            if item.symbol
+            standardize_name(target) for target in event_targets
         )
         if (
             reference_id
             and standardize_name(reference_id) in controlled_references
-            and standardize_name(reference_id) not in event_targets
+            and standardize_name(reference_id) not in algebraic_symbols
         ):
             return reference_id
         return None
@@ -1865,7 +1960,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             if isinstance(law, Mapping)
             else getattr(law, "local_parameters", [])
         )
-        expression = str(expression or "")
+        expression = str(expression or "").replace(_RATE_OF_MARKER, "")
         for parameter in local_parameters or []:
             parameter_id = (
                 parameter.get("id")
@@ -1916,15 +2011,20 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
         if factor_id is None:
             return True, ""
         parameter = model.parameters.get(factor_id)
-        if parameter is None or not getattr(parameter, "constant", True):
+        if parameter is None:
             return False, ""
-        try:
-            value = float(parameter.value)
-        except (TypeError, ValueError):
-            return False, ""
-        if not math.isfinite(value):
-            return False, ""
-        return True, format(value, ".15g")
+        if (
+            getattr(parameter, "constant", True)
+            and standardize_name(str(factor_id)) not in initial_assignment_targets
+        ):
+            try:
+                value = float(parameter.value)
+            except (TypeError, ValueError):
+                return False, ""
+            if not math.isfinite(value):
+                return False, ""
+            return True, format(value, ".15g")
+        return True, str(factor_id)
 
     terms: Dict[str, List[str]] = {}
     unsafe: set[str] = set()
@@ -1935,40 +2035,48 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
         rate_of_expressions[identifier] = "0"
         rate_of_expressions[standardize_name(identifier)] = "0"
 
-    # Mutable SBML parameters and compartments without a rule or event
-    # assignment are constant during simulation, even though their `constant`
-    # attribute is false (that flag permits rules/events to modify them).
+    # Parameters, compartments, and species references without a rate rule,
+    # assignment rule, or algebraic rule have zero continuous derivative
+    # (including when modified only by discrete events; SBML L3V2 Core §3.4.6).
     for parameter_id, parameter in model.parameters.items():
         key = standardize_name(str(parameter_id))
-        if (
-            not getattr(parameter, "constant", True)
-            and key not in explicit_rate_targets
+        if getattr(parameter, "constant", True):
+            add_rate_of_zero(str(parameter_id))
+        elif (
+            key not in explicit_rate_targets
             and key not in assignment_targets
-            and key not in event_targets
+            and key not in algebraic_symbols
         ):
             add_rate_of_zero(str(parameter_id))
     for compartment_id, compartment in model.compartments.items():
         key = standardize_name(str(compartment_id))
-        if (
-            not getattr(compartment, "constant", True)
-            and key not in explicit_rate_targets
+        if getattr(compartment, "constant", True):
+            add_rate_of_zero(str(compartment_id))
+        elif (
+            key not in explicit_rate_targets
             and key not in assignment_targets
-            and key not in event_targets
+            and key not in algebraic_symbols
         ):
             add_rate_of_zero(str(compartment_id))
+    for reaction in model.reactions.values():
+        for reference in [*reaction.reactants, *reaction.products]:
+            ref_id = str(getattr(reference, "id", "") or "")
+            if not ref_id:
+                continue
+            ref_key = standardize_name(ref_id)
+            if (
+                ref_key not in explicit_rate_targets
+                and ref_key not in assignment_targets
+                and ref_key not in algebraic_symbols
+                and not getattr(reference, "stoichiometry_math", "")
+            ):
+                add_rate_of_zero(ref_id)
 
     rate_rule_math = {
         standardize_name(str(rule.variable)): str(rule.math or "")
         for rule in model.rules
         if rule.type == "rate" and rule.variable and str(rule.math or "").strip()
     }
-
-    for parameter_id, parameter in model.parameters.items():
-        if getattr(parameter, "constant", True):
-            add_rate_of_zero(str(parameter_id))
-    for compartment_id, compartment in model.compartments.items():
-        if getattr(compartment, "constant", True):
-            add_rate_of_zero(str(compartment_id))
 
     for reaction in model.reactions.values():
         net_terms: Dict[str, List[tuple[int, str, Optional[float]]]] = {}
@@ -2031,7 +2139,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             target_key = key_for(species_id)
             if target_key in explicit_rate_targets or target_key in assignment_targets:
                 continue
-            if target_key in event_targets:
+            if target_key in algebraic_symbols:
                 unsafe.add(target_key)
                 continue
             factor_is_safe, factor = conversion_factor_expression(species_id)
@@ -2039,15 +2147,6 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
                 unsafe.add(target_key)
                 continue
             if target.constant or target.boundary_condition:
-                if target.has_only_substance_units:
-                    add_rate_of_zero(str(species_id))
-                    continue
-                compartment_id = str(target.compartment or "")
-                compartment = model.compartments.get(compartment_id)
-                if compartment is not None and compartment.constant:
-                    add_rate_of_zero(str(species_id))
-                    continue
-                unsafe.add(target_key)
                 continue
             if not target.has_only_substance_units:
                 compartment_id = str(target.compartment or "")
@@ -2055,6 +2154,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
                 if not compartment_id or compartment is None:
                     unsafe.add(target_key)
                     continue
+                comp_key = standardize_name(compartment_id)
                 if compartment.constant:
                     try:
                         size = float(compartment.size)
@@ -2064,8 +2164,8 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
                     if not math.isfinite(size) or size == 0:
                         unsafe.add(target_key)
                         continue
-                elif not rate_rule_math.get(standardize_name(compartment_id)):
-                    # Assignment-rule or event-driven volume derivatives need
+                elif comp_key in assignment_targets or comp_key in algebraic_symbols:
+                    # Assignment-rule or algebraic-rule volume derivatives need
                     # a separate symbolic derivative and stay fail-closed.
                     unsafe.add(target_key)
                     continue
@@ -2083,9 +2183,38 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             target_key in explicit_rate_targets
             or target_key in assignment_targets
             or target_key in unsafe
-            or target_key not in touched
-            or target_key not in terms
         ):
+            continue
+        if target.constant:
+            add_rate_of_zero(str(species_id))
+            continue
+        if target_key in algebraic_symbols:
+            continue
+        if target.boundary_condition or target_key not in touched:
+            if target.has_only_substance_units:
+                add_rate_of_zero(str(species_id))
+                continue
+            compartment_id = str(target.compartment or "")
+            compartment = model.compartments.get(compartment_id)
+            if (
+                not compartment_id
+                or compartment is None
+                or compartment.spatial_dimensions == 0
+            ):
+                add_rate_of_zero(str(species_id))
+                continue
+            comp_key = standardize_name(compartment_id)
+            if comp_key in assignment_targets or comp_key in algebraic_symbols:
+                continue
+            volume_rate = rate_rule_math.get(comp_key)
+            if volume_rate:
+                expr = f"(-({species_id}) * ({volume_rate}) / ({compartment_id}))"
+                rate_of_expressions[target_key] = expr
+                rate_of_expressions[str(species_id)] = expr
+            else:
+                add_rate_of_zero(str(species_id))
+            continue
+        if target_key not in terms:
             continue
         expression_terms = list(terms[target_key])
         if not target.has_only_substance_units:
@@ -2098,16 +2227,24 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
         rate_of_expressions[target_key] = " + ".join(expression_terms)
         rate_of_expressions[str(species_id)] = rate_of_expressions[target_key]
     if not rate_of_expressions:
-        return
+        return False
 
-    def replace(expression: str) -> str:
+    changed = False
+
+    def replace(expression: str, excluded: frozenset[str] = frozenset()) -> str:
+        nonlocal changed
+
         def substitute(match: re.Match[str]) -> str:
+            nonlocal changed
             identifier = match.group(1)
+            if identifier in excluded:
+                return match.group(0)
             replacement = rate_of_expressions.get(
                 identifier, rate_of_expressions.get(standardize_name(identifier))
             )
             if replacement is None:
                 return match.group(0)
+            changed = True
             return _mark_rate_of(f"({replacement})")
 
         return _RATE_OF_CALL.sub(substitute, str(expression or ""))
@@ -2135,7 +2272,7 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
             )
             if not parameter_id:
                 continue
-            new_math = _RATE_OF_CALL.sub(
+            masked = _RATE_OF_CALL.sub(
                 lambda match: (
                     "0"
                     if match.group(1) == str(parameter_id)
@@ -2145,6 +2282,9 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
                 ),
                 new_math,
             )
+            if masked != new_math:
+                changed = True
+                new_math = masked
         new_math = replace(new_math)
         if isinstance(law, Mapping):
             law["math"] = new_math
@@ -2153,7 +2293,10 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
     for rule in model.rules:
         rule.math = replace(rule.math)
     for function in model.function_definitions.values():
-        function.math = replace(function.math)
+        excluded_args = frozenset(
+            str(arg) for arg in (getattr(function, "arguments", ()) or ()) if arg
+        )
+        function.math = replace(function.math, excluded=excluded_args)
     for event in model.events:
         event.trigger = replace(event.trigger)
         event.delay = replace(event.delay) if event.delay else event.delay
@@ -2161,8 +2304,22 @@ def _expand_rate_of_from_simple_reactions(model: SBMLModel) -> None:
         for assignment in event.assignments:
             if hasattr(assignment, "math"):
                 assignment.math = replace(assignment.math)
+            elif isinstance(assignment, Mapping):
+                assignment["math"] = replace(assignment.get("math", ""))
     for assignment in model.initial_assignments:
         assignment.math = replace(assignment.math)
+    return changed
+
+
+def _expand_rate_of(model: SBMLModel) -> None:
+    """Iteratively inline acyclic ``rateOf`` calls across rules and reactions."""
+
+    max_passes = max(2, len(model.reactions) + len(model.rules) + 2)
+    for _ in range(max_passes):
+        changed_rules = _expand_rate_of_from_rate_rules(model)
+        changed_reactions = _expand_rate_of_from_simple_reactions(model)
+        if not (changed_rules or changed_reactions):
+            break
 
 
 def _delayed_read_symbols(model: SBMLModel) -> Set[str]:
@@ -4188,8 +4345,7 @@ class SBMLParser:
         result.import_warnings.extend(parameter_warnings)
         result.import_warnings.extend(math_warnings)
         SBMLParser._fold_static_stoichiometry(result)
-        _expand_rate_of_from_rate_rules(result)
-        _expand_rate_of_from_simple_reactions(result)
+        _expand_rate_of(result)
         fast_reactions = lower_fast_reactions(result)
         _lower_delays_of_static_expressions(result)
         SBMLParser._fold_static_species_assignments(result)
@@ -4734,36 +4890,157 @@ class SBMLParser:
             if not changed:
                 break
 
-        # Event-controlled species references still need their SBML initial
-        # assignment as the parameter's value at time zero. Keep the reference
-        # dynamic, but carry that resolved value for BNGL parameter emission.
+        # Event-controlled parameters and species references still need their
+        # SBML initial assignment evaluated at t = 0 (SBML Level 3 Version 2
+        # Core Sec. 4.8).  Build the complete t = 0 symbol table including
+        # species, non-constant parameters/compartments, assignment rules, and
+        # chained initial assignments while keeping ``static_symbols`` strictly
+        # compile-time constant for stoichiometry folding below.
         event_target_initial_values: Dict[str, float] = {}
-        event_initial_symbols = dict(static_symbols)
+        event_initial_symbols: Dict[str, float] = dict(static_symbols)
+        event_initial_symbols.setdefault("time", 0.0)
+        event_initial_symbols.setdefault("pi", math.pi)
+        event_initial_symbols.setdefault("exponentiale", math.e)
+        event_initial_symbols.setdefault("avogadro", 6.02214179e23)
+        event_initial_symbols.setdefault("__Avogadro__", 6.02214179e23)
+        event_initial_symbols.setdefault("true", 1.0)
+        event_initial_symbols.setdefault("false", 0.0)
+        ia_target_keys = {
+            standardize_name(str(assignment.symbol))
+            for assignment in model.initial_assignments
+            if assignment.symbol
+        }
+        ar_target_keys = {
+            standardize_name(str(rule.variable))
+            for rule in model.rules
+            if rule.type == "assignment" and rule.variable
+        }
+        alg_symbol_keys = {
+            standardize_name(token)
+            for rule in model.rules
+            if rule.type == "algebraic" and rule.math
+            for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", str(rule.math))
+        }
+        overridden_t0 = ia_target_keys | ar_target_keys
+        for compartment_id, compartment in model.compartments.items():
+            norm = standardize_name(str(compartment_id))
+            if norm in overridden_t0 or norm in alg_symbol_keys:
+                continue
+            if math.isfinite(compartment.size):
+                for name in (str(compartment_id), norm):
+                    event_initial_symbols.setdefault(name, float(compartment.size))
+        for parameter_id, parameter in model.parameters.items():
+            norm = standardize_name(str(parameter_id))
+            if norm in overridden_t0 or norm in alg_symbol_keys:
+                continue
+            if getattr(parameter, "value_set", True) and math.isfinite(parameter.value):
+                for name in (str(parameter_id), norm):
+                    event_initial_symbols.setdefault(name, float(parameter.value))
+        for reaction in model.reactions.values():
+            for reference in [*reaction.reactants, *reaction.products]:
+                ref_id = str(reference.id or "")
+                if not ref_id or reference.stoichiometry_math:
+                    continue
+                norm = standardize_name(ref_id)
+                if norm in overridden_t0 or norm in alg_symbol_keys:
+                    continue
+                if math.isfinite(reference.stoichiometry):
+                    for name in (ref_id, norm):
+                        event_initial_symbols.setdefault(
+                            name, float(reference.stoichiometry)
+                        )
         normalized_event_targets = {
             standardize_name(target) for target in event_targets
         }
-        for _ in range(len(model.initial_assignments) + 1):
+        max_t0_passes = (
+            len(model.initial_assignments) + len(model.rules) + len(model.species) + 2
+        )
+        for _ in range(max_t0_passes):
             changed = False
+            for species_id, species in model.species.items():
+                norm = standardize_name(str(species_id))
+                if (
+                    norm in overridden_t0
+                    or norm in alg_symbol_keys
+                    or str(species_id) in event_initial_symbols
+                ):
+                    continue
+                sp_val: Optional[float] = None
+                comp_id = str(species.compartment or "")
+                comp_obj = model.compartments.get(comp_id) if comp_id else None
+                comp_size = (
+                    1.0
+                    if (
+                        not comp_id
+                        or (comp_obj is not None and comp_obj.spatial_dimensions == 0)
+                    )
+                    else event_initial_symbols.get(
+                        comp_id, event_initial_symbols.get(standardize_name(comp_id))
+                    )
+                )
+                if species.has_only_substance_units:
+                    if species.initial_amount_set and math.isfinite(
+                        species.initial_amount
+                    ):
+                        sp_val = float(species.initial_amount)
+                    elif (
+                        species.initial_concentration_set
+                        and math.isfinite(species.initial_concentration)
+                        and comp_size is not None
+                    ):
+                        sp_val = float(species.initial_concentration) * float(comp_size)
+                else:
+                    if species.initial_concentration_set and math.isfinite(
+                        species.initial_concentration
+                    ):
+                        sp_val = float(species.initial_concentration)
+                    elif (
+                        species.initial_amount_set
+                        and math.isfinite(species.initial_amount)
+                        and comp_size is not None
+                        and comp_size != 0.0
+                    ):
+                        sp_val = float(species.initial_amount) / float(comp_size)
+                if sp_val is not None and math.isfinite(sp_val):
+                    for name in (str(species_id), norm):
+                        if event_initial_symbols.get(name) != sp_val:
+                            event_initial_symbols[name] = sp_val
+                            changed = True
+            for rule in model.rules:
+                if rule.type != "assignment" or not rule.variable:
+                    continue
+                variable = str(rule.variable)
+                normalized = standardize_name(variable)
+                value = _evaluate_static_arithmetic(
+                    rule.math, event_initial_symbols, model.function_definitions
+                )
+                if value is None:
+                    continue
+                for name in (variable, normalized):
+                    if event_initial_symbols.get(name) != value:
+                        event_initial_symbols[name] = value
+                        changed = True
             for assignment in model.initial_assignments:
                 symbol = str(assignment.symbol or "")
                 normalized = standardize_name(symbol)
-                if not symbol or normalized not in normalized_event_targets:
-                    continue
-                if any(
-                    rule.variable and standardize_name(str(rule.variable)) == normalized
-                    for rule in model.rules
-                ):
+                if not symbol or normalized in ar_target_keys:
                     continue
                 value = _evaluate_static_arithmetic(
                     assignment.math, event_initial_symbols, model.function_definitions
                 )
                 if value is None:
                     continue
-                for name in (symbol, standardize_name(symbol)):
+                for name in (symbol, normalized):
                     if event_initial_symbols.get(name) != value:
                         event_initial_symbols[name] = value
                         changed = True
-                event_target_initial_values[normalized] = value
+                if normalized in normalized_event_targets and not any(
+                    rule.variable
+                    and standardize_name(str(rule.variable)) == normalized
+                    and rule.type == "assignment"
+                    for rule in model.rules
+                ):
+                    event_target_initial_values[normalized] = value
             if not changed:
                 break
 
