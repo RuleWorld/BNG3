@@ -206,6 +206,10 @@ jobs:
             compiler: clang-15
             cc: clang-15
             cxx: clang++-15
+          - os: ubuntu-24.04-arm
+            compiler: gcc-aarch64
+            cc: gcc
+            cxx: g++
           - os: macos-15
             compiler: clang-arm64
             cc: clang
@@ -1197,6 +1201,9 @@ jobs:
           - os: ubuntu-22.04
             macos_arch: x86_64
             macos_deployment_target: "11.0"
+          - os: ubuntu-24.04-arm
+            macos_arch: arm64
+            macos_deployment_target: "11.0"
           # macos-13 is retired; macos-15-intel is the supported x86_64 label
           # for public GitHub-hosted runners. Its deployment target is 11.0,
           # not 10.13: libc++ annotates all of <filesystem> with
@@ -1233,6 +1240,9 @@ jobs:
         env:
           BNG3_PYTHON_TEST_MODE: installed
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
+          # musllinux is skipped because python-libsbml>=5.21.2 (required by
+          # CIBW_TEST_REQUIRES and the [full] extra) and libroadrunner publish
+          # no musllinux wheels on PyPI.
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686 *-win32"
           CIBW_BUILD_VERBOSITY: 1
           CIBW_TEST_REQUIRES: pytest numpy click pandas python-libsbml xmltodict
@@ -1255,6 +1265,7 @@ jobs:
           # NumPy 2.5+ wheels require a newer compiler/glibc baseline than
           # manylinux2014; manylinux_2_28 provides a binary wheel target.
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+          CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28
 
       - name: Record wheel install receipt
         if: success()
