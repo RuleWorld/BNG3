@@ -1,6 +1,8 @@
+#include <filesystem>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include "actions/ActionDispatch.hpp"
 #include "ast/Observable.hpp"
 #include "engine/FiniteBackend.hpp"
 #include "engine/NetworkGenerator.hpp"
@@ -214,4 +216,118 @@ end reaction rules
         engine::simulateFiniteOde(*model, net, opts, engine::FiniteBackend::Bngsim),
         Catch::Matchers::ContainsSubstring("unavailable"));
 #endif
+}
+
+TEST_CASE("ActionDispatch honors native default and fails closed on explicit bngsim", "[finite_backend]") {
+    const auto tmpDir = std::filesystem::temp_directory_path() / "bng3_action_backend_test";
+    std::filesystem::create_directories(tmpDir);
+    const auto sourcePath = tmpDir / "decay.bngl";
+
+    SECTION("native and auto succeed") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+ k 0.1
+end parameters
+begin molecule types
+ X()
+end molecule types
+begin seed species
+ X() 100
+end seed species
+begin observables
+ Molecules Xtot X()
+end observables
+begin reaction rules
+ X() -> 0 k
+end reaction rules
+end model
+generate_network({overwrite=>1})
+simulate({method=>"ode",backend=>"native",t_end=>1,n_steps=>2})
+)");
+        REQUIRE(model != nullptr);
+        REQUIRE_NOTHROW(actions::ActionDispatch::execute(*model, sourcePath, false));
+    }
+
+    SECTION("unknown backend fails closed") {
+        auto model = parser::parseModel(R"(
+begin model
+begin parameters
+ k 0.1
+end parameters
+begin molecule types
+ X()
+end molecule types
+begin seed species
+ X() 100
+end seed species
+begin reaction rules
+ X() -> 0 k
+end reaction rules
+end model
+generate_network({overwrite=>1})
+simulate({method=>"ode",backend=>"bogus",t_end=>1,n_steps=>2})
+)");
+        REQUIRE(model != nullptr);
+        REQUIRE_THROWS_WITH(
+            actions::ActionDispatch::execute(*model, sourcePath, false),
+            Catch::Matchers::ContainsSubstring("Unknown finite backend"));
+    }
+
+    SECTION("explicit bngsim fails closed on unsupported method or unavailable build") {
+        auto plaModel = parser::parseModel(R"(
+begin model
+begin parameters
+ k 0.1
+end parameters
+begin molecule types
+ X()
+end molecule types
+begin seed species
+ X() 100
+end seed species
+begin reaction rules
+ X() -> 0 k
+end reaction rules
+end model
+generate_network({overwrite=>1})
+simulate({method=>"pla",backend=>"bngsim",t_end=>1,n_steps=>2})
+)");
+        REQUIRE(plaModel != nullptr);
+        REQUIRE_THROWS_WITH(
+            actions::ActionDispatch::execute(*plaModel, sourcePath, false),
+            Catch::Matchers::ContainsSubstring("does not support method='pla'"));
+
+        auto odeModel = parser::parseModel(R"(
+begin model
+begin parameters
+ k 0.1
+end parameters
+begin molecule types
+ X()
+end molecule types
+begin seed species
+ X() 100
+end seed species
+begin reaction rules
+ X() -> 0 k
+end reaction rules
+end model
+generate_network({overwrite=>1})
+simulate({method=>"ode",backend=>"bngsim",t_end=>1,n_steps=>2})
+)");
+        REQUIRE(odeModel != nullptr);
+#ifndef BNG3_HAS_BNGSIM_ADAPTER
+        REQUIRE_THROWS_WITH(
+            actions::ActionDispatch::execute(*odeModel, sourcePath, false),
+            Catch::Matchers::ContainsSubstring("unavailable"));
+#else
+        REQUIRE_THROWS_WITH(
+            actions::ActionDispatch::execute(*odeModel, sourcePath, false),
+            Catch::Matchers::ContainsSubstring("BNGsim adapter rejected"));
+#endif
+    }
+
+    std::error_code ec;
+    std::filesystem::remove_all(tmpDir, ec);
 }

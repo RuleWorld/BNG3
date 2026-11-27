@@ -54,6 +54,12 @@ else:
             )
         return _native_cpp.default_gpu_backend()
 
+    from bionetgen.bngsim_backend import (
+        bngsim_available,
+        bngsim_capabilities,
+        bngsim_version,
+    )
+
     _RUN_OUT_MISSING = object()
     _LEGACY_RUN_POSITIONALS = (
         "suppress",
@@ -327,6 +333,9 @@ if not _USE_LEGACY:
             "CRNRateLaw",
             "CRNReaction",
             "GpuBatchSimResult",
+            "bngsim_available",
+            "bngsim_capabilities",
+            "bngsim_version",
             "default_gpu_backend",
             "gpu_backend_capabilities",
             "gpu_backends",

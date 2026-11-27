@@ -537,7 +537,7 @@ target_include_directories(test_finite_backend PRIVATE
     ${sundials_BINARY_DIR}/include
 )
 target_link_libraries(test_finite_backend PRIVATE
-    Catch2::Catch2WithMain Catch2::Catch2 bng_finite_backend bng_engine bng_ast)
+    Catch2::Catch2WithMain Catch2::Catch2 bng_finite_backend bng_engine bng_ast nfsim_core)
 catch_discover_tests(test_finite_backend)
 
 if(BUILD_BNGSIM_ADAPTER)

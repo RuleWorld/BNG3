@@ -295,6 +295,7 @@ def run(
     seed=None,
     pla_config=None,
     psa_poplevel=None,
+    backend=None,
     log_file=None,
     **kwargs,
 ):
@@ -339,6 +340,7 @@ def run(
                 seed=seed,
                 pla_config=pla_config,
                 psa_poplevel=psa_poplevel,
+                backend=backend,
                 log_file=log_file,
             )
     inp_path = Path(inp).expanduser().resolve()
@@ -363,6 +365,11 @@ def run(
         raise ValueError(
             f"unsupported method {method!r}; use ode, ssa, nf, pla, or psa"
         )
+    normalized_backend = None
+    if backend is not None:
+        from bionetgen.bngsim_backend import normalize_finite_backend
+
+        normalized_backend = normalize_finite_backend(backend)
     solver_options = {
         key: value
         for key, value in {
@@ -371,16 +378,23 @@ def run(
             "seed": seed,
             "pla_config": pla_config,
             "psa_poplevel": psa_poplevel,
+            "backend": normalized_backend,
         }.items()
         if value is not None
     }
     has_time_override = any(value is not None for value in (start, end, steps))
     if selected_method is None and solver_options:
-        names = ", ".join(sorted(solver_options))
-        raise NotImplementedError(
-            "solver options require an explicit method override; action-preserving "
-            f"time-grid runs do not apply: {names}"
-        )
+        if list(solver_options.keys()) == ["backend"] and normalized_backend in {
+            "auto",
+            "native",
+        }:
+            solver_options.pop("backend")
+        else:
+            names = ", ".join(sorted(solver_options))
+            raise NotImplementedError(
+                "solver options require an explicit method override; action-preserving "
+                f"time-grid runs do not apply: {names}"
+            )
 
     def execute(output: Path) -> BNGResult:
         if log_file is not None or timeout is not None or simulator == "subprocess":

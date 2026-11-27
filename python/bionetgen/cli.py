@@ -133,6 +133,12 @@ def main(require):
     help="Input format (bngl).",
 )
 @click.option(
+    "--backend",
+    default=None,
+    type=click.Choice(["auto", "native", "bngsim"], case_sensitive=False),
+    help="Finite-network simulation backend (default: native via auto; bngsim is opt-in).",
+)
+@click.option(
     "--no-bngsim",
     is_flag=True,
     default=False,
@@ -158,11 +164,15 @@ def run(
     log_file,
     traceback_depth,
     format_hint,
+    backend,
     no_bngsim,
     timeout,
 ):
     """Run a BNGL model simulation."""
     sys.tracebacklimit = traceback_depth
+    selected_backend = backend.lower() if backend is not None else None
+    if no_bngsim and selected_backend == "bngsim":
+        raise click.UsageError("--no-bngsim cannot be combined with --backend bngsim")
     if format_hint is not None:
         if format_hint.lower() != "bngl":
             raise click.UsageError(
@@ -191,6 +201,7 @@ def run(
                 seed=seed,
                 pla_config=pla_config,
                 psa_poplevel=psa_poplevel,
+                backend="native" if no_bngsim else selected_backend,
                 timeout=timeout,
                 format=format_hint,
                 log_file=log_file,
@@ -222,6 +233,8 @@ def run(
         }
         if no_bngsim:
             options["backend"] = "native"
+        elif selected_backend is not None:
+            options["backend"] = selected_backend
         if log_file is not None or timeout is not None or no_bngsim:
             from tempfile import TemporaryDirectory
 
@@ -342,6 +355,19 @@ def info(detail):
     click.echo(f"Python package: {Path(bionetgen.__file__).resolve().parent}")
     click.echo(f"Python: {sys.executable}")
     if detail:
+        click.echo("Default finite backend: native")
+        if hasattr(bionetgen, "bngsim_capabilities"):
+            try:
+                caps = bionetgen.bngsim_capabilities()
+                if caps.get("available"):
+                    click.echo(
+                        f"Optional BNGsim backend: available "
+                        f"(provider={caps.get('provider')}, version={caps.get('version')})"
+                    )
+                else:
+                    click.echo("Optional BNGsim backend: unavailable")
+            except Exception:
+                pass
         try:
             from bionetgen.core.tools.info import BNGInfo
 
@@ -682,6 +708,12 @@ def atomize(
 @click.option("--pla-config", default="", show_default=False)
 @click.option("--psa-poplevel", default=100.0, type=float, show_default=True)
 @click.option(
+    "--backend",
+    default=None,
+    type=click.Choice(["auto", "native", "bngsim"], case_sensitive=False),
+    help="Finite-network simulation backend (default: native via auto; bngsim is opt-in).",
+)
+@click.option(
     "--parallel", default=0, type=int, show_default=True, help="Worker process count."
 )
 @click.option(
@@ -704,6 +736,7 @@ def scan(
     seed,
     pla_config,
     psa_poplevel,
+    backend,
     parallel,
     output,
     verbose,
@@ -713,24 +746,28 @@ def scan(
     from bionetgen import load
 
     bng_model = load(model)
-    scan_result = bng_model.parameter_scan(
-        parameter=parameter_name,
-        min=min_value,
-        max=max_value,
-        n_points=n_points,
-        log_scale=log_scale,
-        method=method,
-        t_start=t_start,
-        t_end=t_end,
-        n_steps=n_steps,
-        rtol=rtol,
-        atol=atol,
-        seed=seed,
-        pla_config=pla_config,
-        psa_poplevel=psa_poplevel,
-        verbose=verbose,
-        parallel=parallel,
-    )
+    try:
+        scan_result = bng_model.parameter_scan(
+            parameter=parameter_name,
+            min=min_value,
+            max=max_value,
+            n_points=n_points,
+            log_scale=log_scale,
+            method=method,
+            t_start=t_start,
+            t_end=t_end,
+            n_steps=n_steps,
+            rtol=rtol,
+            atol=atol,
+            seed=seed,
+            pla_config=pla_config,
+            psa_poplevel=psa_poplevel,
+            backend=backend.lower() if backend is not None else None,
+            verbose=verbose,
+            parallel=parallel,
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
 
     if not scan_result.results:
         headers = [scan_result.parameter_name, "time"]
@@ -784,6 +821,12 @@ def scan(
 @click.option("--pla-config", default="", show_default=False)
 @click.option("--psa-poplevel", default=100.0, type=float, show_default=True)
 @click.option(
+    "--backend",
+    default=None,
+    type=click.Choice(["auto", "native", "bngsim"], case_sensitive=False),
+    help="Finite-network simulation backend (default: native via auto; bngsim is opt-in).",
+)
+@click.option(
     "--delta",
     default=0.01,
     type=float,
@@ -810,6 +853,7 @@ def sensitivity(
     seed,
     pla_config,
     psa_poplevel,
+    backend,
     delta,
     parallel,
     output,
@@ -820,22 +864,26 @@ def sensitivity(
     from bionetgen import load
 
     bng_model = load(model)
-    result = bng_model.sensitivity_analysis(
-        parameters=list(parameter_names) or None,
-        observables=list(observable_names) or None,
-        method=method,
-        t_start=t_start,
-        t_end=t_end,
-        n_steps=n_steps,
-        rtol=rtol,
-        atol=atol,
-        seed=seed,
-        pla_config=pla_config,
-        psa_poplevel=psa_poplevel,
-        verbose=verbose,
-        delta=delta,
-        parallel=parallel,
-    )
+    try:
+        result = bng_model.sensitivity_analysis(
+            parameters=list(parameter_names) or None,
+            observables=list(observable_names) or None,
+            method=method,
+            t_start=t_start,
+            t_end=t_end,
+            n_steps=n_steps,
+            rtol=rtol,
+            atol=atol,
+            seed=seed,
+            pla_config=pla_config,
+            psa_poplevel=psa_poplevel,
+            backend=backend.lower() if backend is not None else None,
+            verbose=verbose,
+            delta=delta,
+            parallel=parallel,
+        )
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
 
     headers = ["parameter", *result.observable_names]
     rows = [

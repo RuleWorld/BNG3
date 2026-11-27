@@ -24,6 +24,7 @@
 #include "ast/Parameter.hpp"
 #include "compile/Capabilities.hpp"
 #include "compile/Document.hpp"
+#include "engine/FiniteBackend.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
 #include "engine/PlaSimulator.hpp"
@@ -2285,9 +2286,48 @@ void runSimulation(
         }
     }
 
+    // Parse optional finite-network backend selector (ADR 0003).
+    // Native BNG3 solvers are always the default; BNGsim is strictly opt-in
+    // via backend=>"bngsim" or BIONETGEN_FINITE_BACKEND=bngsim and fails
+    // closed when unavailable or unsupported.
+    std::string backendArg = stripQuotes(readArgument(action, "backend", ""));
+    if (backendArg.empty()) {
+        if (const char* envBackend = std::getenv("BIONETGEN_FINITE_BACKEND")) {
+            backendArg = envBackend;
+        }
+    }
+    const engine::FiniteBackend requestedBackend =
+        engine::finiteBackendFromString(backendArg);
+
     // Run simulation
     engine::OdeResult result;
-    if (opts.method == "pla") {
+    if (requestedBackend == engine::FiniteBackend::Bngsim) {
+        if (opts.method == "pla" || opts.method == "psa" ||
+            opts.method == "euler" || opts.method == "rk4") {
+            throw std::runtime_error(
+                "BNGsim backend does not support method='" + opts.method +
+                "'; use backend='native' or 'auto'");
+        }
+        if (opts.continueSimulation) {
+            throw std::runtime_error(
+                "BNGsim backend does not support continue=>1; use backend='native' or 'auto'");
+        }
+        if (opts.method == "ssa" && opts.batchSize > 0) {
+            throw std::runtime_error(
+                "BNGsim backend does not support batch_size; use backend='native' or 'auto'");
+        }
+        if (!engine::isBngsimAvailable()) {
+            throw std::runtime_error(
+                "BNGsim backend unavailable: build without BUILD_BNGSIM_ADAPTER");
+        }
+        if (opts.method == "ssa") {
+            result = engine::simulateFiniteSsa(
+                model, network, opts, engine::FiniteBackend::Bngsim);
+        } else {
+            result = engine::simulateFiniteOde(
+                model, network, opts, engine::FiniteBackend::Bngsim);
+        }
+    } else if (opts.method == "pla") {
         // PLA simulation
         std::string defaultPlaConfig = "fEuler|pre-neg:sb|eps=0.03";
         if (compiledOptions != nullptr && compiledOptions->plaConfig.has_value()) {

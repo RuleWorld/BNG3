@@ -105,6 +105,7 @@ def sensitivity_analysis(
     output_step_interval: int = 0,
     sparse: bool = False,
     check_product_scale: float = 0.0,
+    backend: Optional[str] = None,
     delta: float = 0.01,
     parallel: int = 0,
 ) -> SensitivityResult:
@@ -139,6 +140,7 @@ def sensitivity_analysis(
         output_step_interval=output_step_interval,
         sparse=sparse,
         check_product_scale=check_product_scale,
+        backend=backend,
     )
 
     if parallel and parallel > 1:

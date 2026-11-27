@@ -88,8 +88,9 @@ def _simulation_kwargs(
     output_step_interval: int,
     sparse: bool,
     check_product_scale: float,
+    backend: Optional[str] = None,
 ) -> dict[str, Any]:
-    return {
+    kwargs: dict[str, Any] = {
         "method": method,
         "t_end": t_end,
         "n_steps": n_steps,
@@ -110,6 +111,9 @@ def _simulation_kwargs(
         "sparse": sparse,
         "check_product_scale": check_product_scale,
     }
+    if backend is not None:
+        kwargs["backend"] = backend
+    return kwargs
 
 
 def _worker_scan_single(payload):
@@ -447,6 +451,7 @@ def parameter_scan(
     output_step_interval: int = 0,
     sparse: bool = False,
     check_product_scale: float = 0.0,
+    backend: Optional[str] = None,
     parallel: int = 0,
 ) -> ScanResult:
     model = _coerce_model(model_or_path)
@@ -474,6 +479,7 @@ def parameter_scan(
         output_step_interval=output_step_interval,
         sparse=sparse,
         check_product_scale=check_product_scale,
+        backend=backend,
     )
 
     if parallel and parallel > 1:
@@ -531,6 +537,7 @@ def parameter_scan_2d(
     output_step_interval: int = 0,
     sparse: bool = False,
     check_product_scale: float = 0.0,
+    backend: Optional[str] = None,
     parallel: int = 0,
 ) -> ScanResult2D:
     model = _coerce_model(model_or_path)
@@ -567,6 +574,7 @@ def parameter_scan_2d(
         output_step_interval=output_step_interval,
         sparse=sparse,
         check_product_scale=check_product_scale,
+        backend=backend,
     )
 
     if parallel and parallel > 1:

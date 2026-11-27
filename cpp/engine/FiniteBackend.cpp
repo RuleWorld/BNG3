@@ -83,13 +83,9 @@ FiniteBackend resolveFiniteBackend(
         // blocker; we return Native so callers that want fail-closed can throw.
         return FiniteBackend::Native;
     }
-    // Native or auto: prefer bngsim when trivially lowerable, otherwise native.
-    // Auto semantics are intentionally conservative during migration.
-    auto check = checkBngsimLowering(model, network);
-    if (outCheck) *outCheck = check;
-    // For now "auto" == native to preserve default stability. Phase D will
-    // flip auto to prefer bngsim when supported.
-    (void)check;
+    // Native or auto: native BNG3 solvers are the permanent default (ADR 0003).
+    // BNGsim is strictly opt-in via explicit backend="bngsim".
+    if (outCheck) *outCheck = checkBngsimLowering(model, network);
     return FiniteBackend::Native;
 }
 
