@@ -1966,6 +1966,11 @@ def _contains_static_zero_divisor(expression: str) -> bool:
     return False
 
 
+_MASS_ACTION_CONC_RE = re.compile(r"_c_([A-Za-z0-9_]+)\s*\(\s*\)", re.IGNORECASE)
+_MASS_ACTION_AMT_RE = re.compile(r"\b([A-Za-z0-9_]+)_amt\b", re.IGNORECASE)
+_MASS_ACTION_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(\s*\)")
+
+
 def _rewrite_mass_action_symbols(
     expression: str,
     species_to_compartment: Mapping[str, str],
@@ -1973,29 +1978,46 @@ def _rewrite_mass_action_symbols(
     assignment_rule_variables: Iterable[str] = (),
 ) -> str:
     result = str(expression or "")
-    species_names = {
-        standardize_name(str(species_id)): str(compartment_id or "")
-        for species_id, compartment_id in species_to_compartment.items()
-    }
-    for name, compartment_id in sorted(
-        species_names.items(), key=lambda item: (-len(item[0]), item[0])
-    ):
-        escaped = re.escape(name)
-        if compartment_id:
-            concentration = (
-                f"({name} / __compartment_{standardize_name(compartment_id)}__)"
+    if not result:
+        return result
+    if species_to_compartment:
+        lower_result = result.lower()
+        has_conc = "_c_" in lower_result
+        has_amt = "_amt" in lower_result
+        if has_conc or has_amt:
+            species_names = {
+                standardize_name(str(species_id)): str(compartment_id or "")
+                for species_id, compartment_id in species_to_compartment.items()
+            }
+            ordered = sorted(
+                species_names.items(), key=lambda item: (-len(item[0]), item[0])
             )
-        else:
-            concentration = name
-        result = re.sub(
-            rf"_c_{escaped}\s*\(\s*\)", concentration, result, flags=re.IGNORECASE
-        )
-        result = re.sub(rf"\b{escaped}_amt\b", name, result, flags=re.IGNORECASE)
-    for variable in sorted(
-        {standardize_name(str(value)) for value in assignment_rule_variables},
-        key=lambda name: (-len(name), name),
-    ):
-        result = re.sub(rf"\b{re.escape(variable)}\s*\(\s*\)", variable, result)
+            if has_conc:
+                conc_map: Dict[str, str] = {}
+                for name, compartment_id in ordered:
+                    key = name.lower()
+                    if key not in conc_map:
+                        conc_map[key] = (
+                            f"({name} / __compartment_{standardize_name(compartment_id)}__)"
+                            if compartment_id
+                            else name
+                        )
+                result = _MASS_ACTION_CONC_RE.sub(
+                    lambda m: conc_map.get(m.group(1).lower(), m.group(0)), result
+                )
+            if has_amt:
+                amt_map: Dict[str, str] = {}
+                for name, _ in ordered:
+                    amt_map.setdefault(name.lower(), name)
+                result = _MASS_ACTION_AMT_RE.sub(
+                    lambda m: amt_map.get(m.group(1).lower(), m.group(0)), result
+                )
+    if "(" in result and assignment_rule_variables:
+        var_set = {standardize_name(str(value)) for value in assignment_rule_variables}
+        if var_set:
+            result = _MASS_ACTION_CALL_RE.sub(
+                lambda m: m.group(1) if m.group(1) in var_set else m.group(0), result
+            )
     return result
 
 
@@ -6243,33 +6265,33 @@ def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
         for rule in model.rules
         if getattr(rule, "type", "") == "assignment" and getattr(rule, "variable", None)
     ]
+    initial_assignments = getattr(model, "initial_assignments", None) or []
+    if not initial_assignments:
+        return rules
     existing = {standardize_name(str(rule.variable)) for rule in rules}
     species_names = {standardize_name(str(species_id)) for species_id in model.species}
-    event_parameter_targets = {
-        standardize_name(str(assignment.variable))
-        for event in model.events
-        for assignment in event.assignments
-        if getattr(assignment, "variable", None)
-        and any(
-            standardize_name(str(parameter_id))
-            == standardize_name(str(assignment.variable))
-            for parameter_id in model.parameters
-        )
+    param_names = {
+        standardize_name(str(parameter_id)) for parameter_id in model.parameters
     }
-    event_species_reference_targets = {
-        standardize_name(str(assignment.variable))
-        for event in model.events
-        for assignment in event.assignments
-        if getattr(assignment, "variable", None)
-        and any(
-            reference.id
-            and standardize_name(str(reference.id))
-            == standardize_name(str(assignment.variable))
-            for reaction in model.reactions.values()
-            for reference in [*reaction.reactants, *reaction.products]
-        )
+    species_ref_names = {
+        standardize_name(str(reference.id))
+        for reaction in model.reactions.values()
+        for reference in [*reaction.reactants, *reaction.products]
+        if reference.id
     }
-    for initial_assignment in getattr(model, "initial_assignments", []) or []:
+    event_parameter_targets: Set[str] = set()
+    event_species_reference_targets: Set[str] = set()
+    for event in model.events:
+        for assignment in event.assignments:
+            variable = getattr(assignment, "variable", None)
+            if not variable:
+                continue
+            std_var = standardize_name(str(variable))
+            if std_var in param_names:
+                event_parameter_targets.add(std_var)
+            if std_var in species_ref_names:
+                event_species_reference_targets.add(std_var)
+    for initial_assignment in initial_assignments:
         symbol = str(getattr(initial_assignment, "symbol", "") or "")
         if not symbol:
             continue

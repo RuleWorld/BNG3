@@ -4031,6 +4031,17 @@ def _lower_native_event(
 ) -> Optional[NativeEventEntry]:
     """Lower one SBML event to the native event runtime, or return ``None``."""
 
+    if str(context.method or "ode").lower() in {"ssa", "stochastic"}:
+        # Discrete Gillespie SSA cannot integrate continuous SBML rateRule ODEs
+        # (lowering dx/dt = f to a synthetic TotalRate reaction turns
+        # deterministic continuous drift into a Poisson jump process). Refuse
+        # native SSA event lowering when the trigger depends on a nonzero
+        # rateRule variable instead of approximating its semantics.
+        for ident in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", str(event.trigger or "")):
+            rate = context.resolve_rate_rule_expression_for_event(ident, event)
+            if rate is not None and _native_fold_term_text(rate, context) != 0.0:
+                return None
+
     priority: Optional[str] = None
     if event.priority:
         # The priority orders the assignments of the events that are executed

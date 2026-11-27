@@ -269,9 +269,23 @@ def test_periodic_rate_rule_clock_with_truncated_distrib_draws(tmp_path):
     </listOfEvents>
   </model>
 </sbml>"""
-    result = _atomize(
+    # Continuous rateRule clock (dt/dt = 1) with truncated distrib draws lowers
+    # and executes faithfully under ODE (CVODE integrates dt/dt = 1 exactly),
+    # while SSA must fail closed rather than approximating dt/dt = 1 as a
+    # discrete Poisson jump process.
+    ssa_result = _atomize(
         xml,
         actions='simulate({method=>"ssa", t_end=>30, n_steps=>30})',
+        t_end=30,
+        n_steps=30,
+    )
+    assert ssa_result.success, ssa_result.error
+    assert "begin bng3_events version 1" not in ssa_result.bngl
+    assert any(w.get("severity") == "dropped" for w in ssa_result.import_warnings)
+
+    result = _atomize(
+        xml,
+        actions='simulate({method=>"ode", t_end=>30, n_steps=>30})',
         t_end=30,
         n_steps=30,
     )
@@ -280,8 +294,8 @@ def test_periodic_rate_rule_clock_with_truncated_distrib_draws(tmp_path):
     assert not any(w.get("severity") == "dropped" for w in result.import_warnings)
 
     model = _load_bngl(tmp_path, "periodic_distrib.bngl", result.bngl)
-    sim1 = model.simulate(method="ssa", t_end=30, n_steps=30, seed=42)
-    sim2 = model.simulate(method="ssa", t_end=30, n_steps=30, seed=42)
+    sim1 = model.simulate(method="ode", t_end=30, n_steps=30, seed=42)
+    sim2 = model.simulate(method="ode", t_end=30, n_steps=30, seed=42)
     samples = np.asarray(sim1.observables["X_amt"][1:], dtype=float)
     np.testing.assert_array_equal(sim1.observables["X_amt"], sim2.observables["X_amt"])
     assert np.all(samples < 0.5)
@@ -598,3 +612,23 @@ def test_nested_function_inlining_matches_independent_roadrunner(tmp_path):
         np.testing.assert_allclose(
             sim.observables[f"S_{i}_amt"], expected[:, i + 1], rtol=1e-6, atol=1e-8
         )
+
+
+def test_rewrite_mass_action_symbols_preserves_semantics_and_scales_linearly():
+    from bionetgen.atomizer.modern.writer import _rewrite_mass_action_symbols
+
+    species_map = {f"S{i}": "C" if i % 2 == 0 else "" for i in range(250)}
+    assign_vars = [f"A{i}" for i in range(250)]
+    expr = "k * _c_S0() + S1_amt * _c_s2() + A10() + unknown_amt + other()"
+    rewritten = _rewrite_mass_action_symbols(expr, species_map, None, assign_vars)
+    assert (
+        rewritten == "k * (S0 / __compartment_C__) + S1 * (S2 / __compartment_C__) "
+        "+ A10 + unknown_amt + other()"
+    )
+    t0 = time.perf_counter()
+    for _ in range(250):
+        _rewrite_mass_action_symbols(
+            "k * S100_amt + A50()", species_map, None, assign_vars
+        )
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 2.0, f"_rewrite_mass_action_symbols regressed: {elapsed:.2f}s"
