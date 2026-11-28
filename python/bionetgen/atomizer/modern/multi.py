@@ -1282,7 +1282,10 @@ def _attach_species_type_bonds(
                 )
             )
             continue
-        if endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id:
+        if (
+            endpoint1[0] is endpoint2[0]
+            and endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id
+        ):
             warnings.append(
                 _warning(
                     f'Multi bond in speciesType "{type_id}" uses endpoints '

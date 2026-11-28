@@ -195,8 +195,10 @@ def simulate(
                 j_initial_species,
                 jnp.uint32(0),
                 jnp.broadcast_to(init_obs, (n_steps + 1, G)),
+                jnp.bool_(False),
             )
         obs_history = jnp.zeros((n_steps + 1, G), dtype=float_dtype).at[0].set(init_obs)
+        rxn_indices = jnp.arange(R, dtype=jnp.int32)
 
         init_val = (
             jnp.asarray(0.0, dtype=float_dtype),
@@ -205,19 +207,22 @@ def simulate(
             jnp.uint32(0),
             obs_history,
             jnp.int32(1),
+            jnp.bool_(False),
         )
 
         def cond_fun(val):
-            t, y, key, events, obs, next_idx = val
-            not_done = (t < final_time) & (next_idx <= n_steps)
+            t, y, key, events, obs, next_idx, overflowed = val
+            not_done = (t < final_time) & (next_idx <= n_steps) & (~overflowed)
             if max_steps > 0:
                 not_done = not_done & (events < max_steps)
             return not_done
 
         def body_fun(val):
-            t, y, key, events, obs, next_idx = val
+            t, y, key, events, obs, next_idx, overflowed = val
             props = compute_propensities(y)
-            a0 = jnp.sum(props)
+            cum = jnp.cumsum(props)
+            a0 = cum[-1]
+            is_overflow = (~jnp.isfinite(a0)) | (~jnp.all(jnp.isfinite(props)))
 
             key, k1, k2 = jax.random.split(key, 3)
             u1 = jax.random.uniform(
@@ -236,9 +241,11 @@ def simulate(
             )
 
             # An absorbing state has no next reaction at any finite time.
+            valid_a0 = (a0 > 0.0) & (~is_overflow)
+            safe_a0 = jnp.where(valid_a0, a0, jnp.asarray(1.0, dtype=float_dtype))
             tau = jnp.where(
-                a0 > 0.0,
-                -jnp.log(u1) / a0,
+                valid_a0,
+                -jnp.log(u1) / safe_a0,
                 jnp.asarray(math.inf, dtype=float_dtype),
             )
             t_event = t + tau
@@ -246,23 +253,46 @@ def simulate(
             grid_t = j_time_grid[jnp.minimum(next_idx, n_steps)]
             reach_grid = (grid_t <= t_event) & (grid_t <= final_time)
 
+            def step_overflow():
+                return (t, y, key, events, obs, next_idx, jnp.bool_(True))
+
             def step_grid():
                 curr_obs = y.astype(float_dtype) @ j_obs_W
                 new_obs = obs.at[next_idx].set(curr_obs)
-                return (grid_t, y, key, events, new_obs, next_idx + 1)
+                return (grid_t, y, key, events, new_obs, next_idx + 1, overflowed)
 
             def step_event():
-                cum = jnp.cumsum(props)
                 target = u2 * a0
-                r_idx = jnp.argmax(cum > target)
-                new_y = y + j_delta_V[r_idx]
-                return (t_event, new_y, key, events + 1, obs, next_idx)
+                gt_mask = cum > target
+                any_gt = jnp.any(gt_mask)
+                pos_mask = props > 0.0
+                last_pos = jnp.max(jnp.where(pos_mask, rxn_indices, jnp.int32(-1)))
+                r_idx = jnp.where(
+                    any_gt,
+                    jnp.argmax(gt_mask).astype(jnp.int32),
+                    last_pos,
+                )
+                can_fire = (last_pos >= 0) & (~is_overflow)
+                safe_idx = jnp.maximum(r_idx, jnp.int32(0))
+                new_y = jnp.where(can_fire, y + j_delta_V[safe_idx], y)
+                new_events = jnp.where(can_fire, events + 1, events)
+                return (t_event, new_y, key, new_events, obs, next_idx, overflowed)
 
-            return lax.cond(reach_grid, step_grid, step_event)
+            return lax.cond(
+                is_overflow,
+                step_overflow,
+                lambda: lax.cond(reach_grid, step_grid, step_event),
+            )
 
-        final_t, final_y, final_key, final_events, final_obs, final_idx = (
-            lax.while_loop(cond_fun, body_fun, init_val)
-        )
+        (
+            final_t,
+            final_y,
+            final_key,
+            final_events,
+            final_obs,
+            final_idx,
+            final_overflow,
+        ) = lax.while_loop(cond_fun, body_fun, init_val)
 
         def fill_remaining(val):
             idx, obs = val
@@ -277,16 +307,22 @@ def simulate(
             fill_cond, fill_remaining, (final_idx, final_obs)
         )
 
-        return final_y, final_events, completed_obs
+        return final_y, final_events, completed_obs, final_overflow
 
     master_key = jax.random.PRNGKey(base_seed)
     keys = jax.random.split(master_key, batch_size)
 
     t_sim_start = _time.perf_counter()
     vmapped_sim = jax.jit(jax.vmap(simulate_one))
-    final_y_batch, events_batch, obs_batch = vmapped_sim(keys)
+    final_y_batch, events_batch, obs_batch, overflow_batch = vmapped_sim(keys)
     final_y_batch.block_until_ready()
     t_sim_end = _time.perf_counter()
+
+    if bool(jnp.any(overflow_batch)):
+        raise ValueError(
+            "JAX SSA propensity overflowed floating-point precision; "
+            "reduce rate scale or enable jax_enable_x64"
+        )
 
     sim_time_sec = max(1e-6, t_sim_end - t_sim_start)
     wall_time_sec = max(1e-6, _time.perf_counter() - t_wall_start)

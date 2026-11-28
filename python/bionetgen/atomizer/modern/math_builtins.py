@@ -52,10 +52,10 @@ def format_number(value: object) -> str:
 
 
 # The writer lowers ``exp`` onto a power of a truncated constant, and
-# ``log10`` onto a quotient by a truncated ``ln(10)``.  The evaluator has to
-# use the same constants or a folded value disagrees with the emitted model.
+# ``log10`` onto a quotient by ``ln(10)``.  The evaluator has to use the same
+# constants or a folded value disagrees with the emitted model.
 TRUNCATED_E = 2.71828182845905
-TRUNCATED_LN10 = 2.302585093
+TRUNCATED_LN10 = 2.302585092994046
 
 
 @dataclass(frozen=True)
@@ -194,14 +194,27 @@ def _inverse_reciprocal(
     return evaluate
 
 
+def _lower_abs(arguments: Sequence[str]) -> str:
+    """Lower ``abs(x)``, avoiding argument duplication for stochastic draws."""
+
+    if len(arguments) != 1:
+        return f"abs({', '.join(arguments)})"
+    arg = arguments[0]
+    if "distrib_" in arg:
+        return f"abs({arg})"
+    return f"if({arg}>=0,{arg},-({arg}))"
+
+
 def _quotient(values: Sequence[float]) -> float:
-    return float(math.floor(values[0] / values[1]))
+    # SBML Level 3 Version 2 Core Sec. 3.4.1 defines quotient as integer
+    # division truncating toward zero (MathML / OpenMath integer1#quotient).
+    return float(math.trunc(values[0] / values[1]))
 
 
 def _remainder(values: Sequence[float]) -> float:
-    # SBML defines ``rem`` as ``a - b*floor(a/b)``, which differs from a
-    # truncating remainder for a negative dividend.
-    return values[0] - values[1] * math.floor(values[0] / values[1])
+    # SBML Level 3 Version 2 Core Sec. 3.4.1 defines rem as the truncating
+    # remainder ``a - b * trunc(a / b)`` (same sign as dividend ``a``).
+    return values[0] - values[1] * math.trunc(values[0] / values[1])
 
 
 def _native(name: str, function: Callable[[float], float], *mathml: str) -> MathBuiltin:
@@ -259,7 +272,7 @@ MATH_BUILTINS: "Tuple[MathBuiltin, ...]" = (
         "abs",
         ("abs",),
         _call("abs"),
-        _lower_unary("abs", "if({0}>=0,{0},-({0}))"),
+        _lower_abs,
         _abs,
     ),
     MathBuiltin(
@@ -409,19 +422,25 @@ MATH_BUILTINS: "Tuple[MathBuiltin, ...]" = (
         "quotient",
         ("quotient",),
         lambda arguments: (
-            f"floor(({arguments[0]}) / ({arguments[1]}))" if len(arguments) >= 2 else ""
+            f"if((({arguments[0]}) / ({arguments[1]})) >= 0, "
+            f"floor(({arguments[0]}) / ({arguments[1]})), "
+            f"ceil(({arguments[0]}) / ({arguments[1]})))"
+            if len(arguments) >= 2
+            else ""
         ),
         None,
         _quotient,
     ),
     MathBuiltin(
-        # SBML defines ``rem`` as ``a - b*floor(a/b)``, which differs from a
-        # truncating remainder for a negative dividend.
+        # SBML Level 3 Version 2 Core defines ``rem`` as truncating remainder
+        # ``a - b * trunc(a / b)`` (same sign as dividend ``a``).
         "rem",
         ("rem",),
         lambda arguments: (
             f"(({arguments[0]}) - ({arguments[1]}) * "
-            f"floor(({arguments[0]}) / ({arguments[1]})))"
+            f"if((({arguments[0]}) / ({arguments[1]})) >= 0, "
+            f"floor(({arguments[0]}) / ({arguments[1]})), "
+            f"ceil(({arguments[0]}) / ({arguments[1]}))))"
             if len(arguments) >= 2
             else ""
         ),

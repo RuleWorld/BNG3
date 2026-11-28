@@ -53,8 +53,18 @@ def _extract_ode_data(model: Any) -> Dict[str, Any]:
     if not isinstance(native_model, cpp.Model):
         raise TypeError("model must be a BNG3 Model or BioNetGenModel")
 
+    algebraic_rules = list(getattr(model, "_algebraic_rules", None) or [])
+    if algebraic_rules:
+        raise NotImplementedError("JAX ODE does not support SBML algebraic rules")
+    for rule in getattr(native_model, "reaction_rules", []):
+        if getattr(rule, "has_delay", False):
+            raise NotImplementedError("JAX ODE does not support delayed reactions")
+
     network = cpp.generate_network(native_model)
-    data = cpp.jax_ode_flatten(native_model, network)
+    try:
+        data = cpp.jax_ode_flatten(native_model, network, algebraic_rules)
+    except TypeError:
+        data = cpp.jax_ode_flatten(native_model, network)
     snapshot = cpp._compiled_snapshot(native_model)
     data["snapshot"] = snapshot
     data["reaction_rules"] = list(network.reaction_rules)
@@ -97,6 +107,40 @@ def _expr_contains_observable(node: Any, functions: Dict[int, Any]) -> bool:
     return False
 
 
+def _expr_param_deps(node: Any, functions: Dict[int, Any]) -> set[int]:
+    """Return parameter IDs referenced directly or via model functions."""
+    deps: set[int] = set()
+    if not isinstance(node, dict):
+        return deps
+    kind = node.get("kind")
+    if kind == "parameter_ref":
+        sym = node.get("symbol", {})
+        if isinstance(sym, dict) and "index" in sym:
+            deps.add(int(sym["index"]))
+    elif kind == "function_ref":
+        sym = node.get("symbol", {})
+        if isinstance(sym, dict) and "index" in sym:
+            fn_idx = sym["index"]
+            if fn_idx in functions:
+                deps |= _expr_param_deps(functions[fn_idx].get("expression", {}), functions)
+    for arg in node.get("arguments", []):
+        deps |= _expr_param_deps(arg, functions)
+    return deps
+
+
+def _is_special_rate_law_expr(node: Any) -> bool:
+    if not isinstance(node, dict) or node.get("kind") != "builtin_call":
+        return False
+    return node.get("builtin") in (
+        "michaelis_menten",
+        "mm",
+        "hill",
+        "Hill",
+        "sat",
+        "saturation",
+    )
+
+
 def _eval_expr(
     node: Dict[str, Any],
     time: Any,
@@ -107,6 +151,7 @@ def _eval_expr(
     obs_name_to_idx: Dict[str, int],
     dtype: Any,
     locals_dict: Optional[Dict[str, Any]] = None,
+    rxn_reactant_vals: Optional[list[Any]] = None,
 ) -> Any:
     """Recursively evaluate a resolved expression using JAX primitives."""
     if not isinstance(node, dict):
@@ -195,25 +240,81 @@ def _eval_expr(
                 q = jnp.sqrt(b * b + 4.0 * St * Km)
                 S = jnp.where(b >= 0.0, 0.5 * (b + q), 2.0 * St * Km / (q - b))
                 return jnp.where(Km + S != 0.0, (kcat * Et * S) / (Km + S), 0.0)
-            elif len(args) >= 3:
+            elif len(args) == 3:
                 Vmax, Km, S = args[0], args[1], args[2]
-                return jnp.where(Km + S != 0.0, (Vmax * S) / (Km + S), 0.0)
+                val = jnp.where(Km + S != 0.0, (Vmax * S) / (Km + S), 0.0)
+                if rxn_reactant_vals is not None and len(rxn_reactant_vals) > 1:
+                    for extra_r in rxn_reactant_vals[1:]:
+                        val = val * extra_r
+                return val
+            elif len(args) == 2 and rxn_reactant_vals:
+                kcat, Km = args[0], args[1]
+                if len(rxn_reactant_vals) >= 2:
+                    St, Et = rxn_reactant_vals[0], rxn_reactant_vals[1]
+                    b = St - Km - Et
+                    q = jnp.sqrt(b * b + 4.0 * St * Km)
+                    S = jnp.where(b >= 0.0, 0.5 * (b + q), 2.0 * St * Km / (q - b))
+                    return jnp.where(Km + S != 0.0, (kcat * Et * S) / (Km + S), 0.0)
+                S = rxn_reactant_vals[0]
+                return jnp.where(Km + S != 0.0, (kcat * S) / (Km + S), 0.0)
             else:
-                raise ValueError("michaelis_menten requires at least 3 arguments")
+                raise ValueError("michaelis_menten requires at least 2 arguments with substrate")
         elif builtin in ("hill", "Hill"):
             if len(args) >= 4:
                 Vmax, Kh, n, S = args[0], args[1], args[2], args[3]
-                Sn = S**n
+                safe_S = jnp.where(S > 0.0, S, jnp.ones_like(S))
+                Sn = safe_S**n
                 Khn = Kh**n
-                return jnp.where(Khn + Sn != 0.0, (Vmax * Sn) / (Khn + Sn), 0.0)
+                raw = jnp.where(Khn + Sn != 0.0, (Vmax * Sn) / (Khn + Sn), 0.0)
+                return jnp.where(S > 0.0, raw, 0.0)
+            elif len(args) in (2, 3) and rxn_reactant_vals:
+                Vmax = args[0]
+                Kh = args[1]
+                n = args[2] if len(args) >= 3 else jnp.asarray(1.0, dtype=dtype)
+                S = rxn_reactant_vals[0]
+                safe_S = jnp.where(S > 0.0, S, jnp.ones_like(S))
+                Sn = safe_S**n
+                Khn = Kh**n
+                raw = jnp.where(Khn + Sn != 0.0, (Vmax * Sn) / (Khn + Sn), 0.0)
+                smooth = jnp.where(n <= 0.0, S / (S + 1e-9), 1.0)
+                val = jnp.where(S > 0.0, smooth * raw, 0.0)
+                for extra_r in rxn_reactant_vals[1:]:
+                    val = val * extra_r
+                return val
             else:
-                raise ValueError("Hill function requires at least 4 arguments")
+                raise ValueError("Hill function requires 3 arguments (with reactant) or 4 arguments")
         elif builtin in ("sat", "saturation"):
-            if len(args) >= 3:
+            if len(args) == 1:
+                return args[0]
+            elif len(args) == 2 and rxn_reactant_vals:
+                k_val, Km = args[0], args[1]
+                S = rxn_reactant_vals[0]
+                val = jnp.where(Km + S != 0.0, (k_val * S) / (Km + S), 0.0)
+                for extra_r in rxn_reactant_vals[1:]:
+                    val = val * extra_r
+                return val
+            elif len(args) >= 3:
+                if (
+                    rxn_reactant_vals is not None
+                    and len(rxn_reactant_vals) >= 2
+                    and (len(args) - 1) <= len(rxn_reactant_vals)
+                ):
+                    n_denom = min(len(args) - 1, len(rxn_reactant_vals))
+                    S0 = rxn_reactant_vals[0]
+                    val = jnp.where(
+                        args[1] + S0 != 0.0, (args[0] * S0) / (args[1] + S0), 0.0
+                    )
+                    for ri in range(1, n_denom):
+                        Si = rxn_reactant_vals[ri]
+                        denom = args[ri + 1] + Si
+                        val = val * jnp.where(denom != 0.0, Si / denom, 0.0)
+                    for ri in range(n_denom, len(rxn_reactant_vals)):
+                        val = val * rxn_reactant_vals[ri]
+                    return val
                 Vmax, Km, S = args[0], args[1], args[2]
                 return jnp.where(Km + S != 0.0, (Vmax * S) / (Km + S), 0.0)
             else:
-                raise ValueError("saturation requires at least 3 arguments")
+                raise ValueError("saturation requires at least 2 arguments (with reactant) or 3 arguments")
         else:
             raise NotImplementedError(
                 f"JAX ODE does not support builtin function '{builtin}'"
@@ -517,28 +618,7 @@ def _compile_dynamic_rhs(
     snapshot = data.get("snapshot", {})
     param_defs = snapshot.get("parameters", [])
     param_name_to_idx = {p["name"]: p.get("id", i) for i, p in enumerate(param_defs)}
-
-    if custom_parameters is not None:
-        if isinstance(custom_parameters, dict):
-            param_list = [p.get("constant_value", 0.0) for p in param_defs]
-            for k, v in custom_parameters.items():
-                if isinstance(k, int):
-                    param_list[k] = v
-                elif k in param_name_to_idx:
-                    param_list[param_name_to_idx[k]] = v
-            params_jax = jnp.asarray(param_list)
-        else:
-            params_jax = jnp.asarray(custom_parameters)
-    else:
-        param_list = [p.get("constant_value", 0.0) for p in param_defs]
-        params_jax = _as_jax_float(param_list, "parameters", initial_state.dtype)
-
     functions_by_id = {f["id"]: f for f in snapshot.get("functions", []) if "id" in f}
-    rules_by_name = {r["name"]: r for r in snapshot.get("rules", []) if "name" in r}
-    for r in snapshot.get("rules", []):
-        lbl = r.get("label", "")
-        if lbl:
-            rules_by_name[lbl.rstrip(":")] = r
 
     group_names = list(data.get("group_names", []))
     group_offsets = np.asarray(data.get("group_offsets", [0]), dtype=np.int64)
@@ -564,8 +644,105 @@ def _compile_dynamic_rhs(
         if "id" in obs and "name" in obs and obs["name"] in obs_name_to_idx:
             obs_id_to_idx[obs["id"]] = obs_name_to_idx[obs["name"]]
 
+    if custom_parameters is not None:
+        if isinstance(custom_parameters, dict):
+            overridden_ids: Dict[int, Any] = {}
+            for k, v in custom_parameters.items():
+                if isinstance(k, int):
+                    overridden_ids[k] = v
+                elif k in param_name_to_idx:
+                    overridden_ids[param_name_to_idx[k]] = v
+            n_params = (
+                max((int(p.get("id", i)) for i, p in enumerate(param_defs)), default=-1)
+                + 1
+            )
+            param_by_id = {int(p.get("id", i)): p for i, p in enumerate(param_defs)}
+            direct_deps: Dict[int, set[int]] = {}
+            for pid, pdef in param_by_id.items():
+                if pid in overridden_ids:
+                    direct_deps[pid] = set()
+                else:
+                    direct_deps[pid] = _expr_param_deps(
+                        pdef.get("expression"), functions_by_id
+                    )
+
+            # Determine which non-overridden parameters transitively depend on
+            # an overridden parameter, and evaluate them in topological order so
+            # jax.grad propagates through dependent parameter expressions (k2 = 2*k1).
+            topo_order: list[int] = []
+            visit_state: Dict[int, int] = {}
+
+            def _dfs_param(pid: int) -> None:
+                st = visit_state.get(pid, 0)
+                if st != 0:
+                    return
+                visit_state[pid] = 1
+                for dep in direct_deps.get(pid, ()):
+                    if dep in param_by_id:
+                        _dfs_param(dep)
+                visit_state[pid] = 2
+                topo_order.append(pid)
+
+            for pid in sorted(param_by_id):
+                _dfs_param(pid)
+
+            depends_on_override: set[int] = set(overridden_ids)
+            for pid in topo_order:
+                if pid in overridden_ids:
+                    continue
+                if any(dep in depends_on_override for dep in direct_deps.get(pid, ())):
+                    depends_on_override.add(pid)
+
+            evaluated_params: list[Any] = [
+                jnp.asarray(0.0, dtype=initial_state.dtype) for _ in range(n_params)
+            ]
+            zero_time = jnp.asarray(0.0, dtype=initial_state.dtype)
+            empty_obs = jnp.zeros((n_groups,), dtype=initial_state.dtype)
+            for pid in topo_order:
+                if pid in overridden_ids:
+                    evaluated_params[pid] = jnp.asarray(
+                        overridden_ids[pid], dtype=initial_state.dtype
+                    )
+                elif pid in depends_on_override and param_by_id[pid].get("expression"):
+                    evaluated_params[pid] = jnp.asarray(
+                        _eval_expr(
+                            param_by_id[pid]["expression"],
+                            zero_time,
+                            evaluated_params,
+                            empty_obs,
+                            functions_by_id,
+                            obs_id_to_idx,
+                            obs_name_to_idx,
+                            initial_state.dtype,
+                        ),
+                        dtype=initial_state.dtype,
+                    )
+                else:
+                    evaluated_params[pid] = jnp.asarray(
+                        param_by_id[pid].get("constant_value", 0.0),
+                        dtype=initial_state.dtype,
+                    )
+            params_jax = (
+                jnp.stack(evaluated_params)
+                if evaluated_params
+                else jnp.zeros((0,), dtype=initial_state.dtype)
+            )
+        else:
+            params_jax = jnp.asarray(custom_parameters)
+    else:
+        param_list = [p.get("constant_value", 0.0) for p in param_defs]
+        params_jax = _as_jax_float(param_list, "parameters", initial_state.dtype)
+
+    rules_by_name = {r["name"]: r for r in snapshot.get("rules", []) if "name" in r}
+    for r in snapshot.get("rules", []):
+        lbl = r.get("label", "")
+        if lbl:
+            rules_by_name[lbl.rstrip(":")] = r
+
     reaction_rules = data.get("reaction_rules", [])
     reaction_factors = data.get("reaction_factors", [1.0] * n_reactions)
+    effective_stat_factors = data.get("effective_stat_factors")
+    volume_scales = data.get("volume_scales")
     functional = np.asarray(data.get("functional_rates", [0] * n_reactions), dtype=bool)
     time_dependent = np.asarray(
         data.get("time_dependent_rates", [0] * n_reactions), dtype=bool
@@ -582,17 +759,14 @@ def _compile_dynamic_rhs(
         change_stoichiometry, dtype=initial_state.dtype
     )
 
-    # Pre-extract expressions and stat factors for each reaction
+    # Pre-extract expressions, reactant index lists, and effective stat*volume factors
     rxn_exprs = []
     rxn_stat_factors = []
+    rxn_reactant_indices: list[list[int]] = []
     for rxn_idx in range(n_reactions):
-        r_factor = (
-            float(reaction_factors[rxn_idx]) if rxn_idx < len(reaction_factors) else 1.0
-        )
-        is_abs = bool(absolute_flux[rxn_idx])
-        is_tot = bool(total_rate[rxn_idx])
-        stat_f = 1.0 if (is_abs or is_tot) else r_factor
-        rxn_stat_factors.append(stat_f)
+        start = int(reactant_offsets[rxn_idx])
+        end = int(reactant_offsets[rxn_idx + 1])
+        rxn_reactant_indices.append([int(x) for x in reactant_species[start:end]])
 
         r_name = reaction_rules[rxn_idx] if rxn_idx < len(reaction_rules) else ""
         if r_name.startswith("_reverse__"):
@@ -603,6 +777,35 @@ def _compile_dynamic_rhs(
             rule = rules_by_name.get(r_name, {})
             expr = rule.get("forward", {}).get("rate", {}).get("expression")
         rxn_exprs.append(expr)
+
+        r_factor = (
+            float(reaction_factors[rxn_idx]) if rxn_idx < len(reaction_factors) else 1.0
+        )
+        authored_total_rate = any(
+            isinstance(m, dict) and m.get("kind") == "total_rate"
+            for m in rule.get("modifiers", [])
+        )
+        if _is_special_rate_law_expr(expr):
+            v_scale = (
+                float(volume_scales[rxn_idx])
+                if volume_scales is not None and rxn_idx < len(volume_scales)
+                else 1.0
+            )
+            stat_f = 1.0 if authored_total_rate else (r_factor * v_scale)
+        elif effective_stat_factors is not None and rxn_idx < len(
+            effective_stat_factors
+        ):
+            stat_f = float(effective_stat_factors[rxn_idx])
+        else:
+            is_abs = bool(absolute_flux[rxn_idx])
+            is_tot = bool(total_rate[rxn_idx])
+            v_scale = (
+                float(volume_scales[rxn_idx])
+                if volume_scales is not None and rxn_idx < len(volume_scales)
+                else 1.0
+            )
+            stat_f = 1.0 if (is_abs or is_tot) else (r_factor * v_scale)
+        rxn_stat_factors.append(stat_f)
 
     stat_factors_jax = jnp.asarray(rxn_stat_factors, dtype=initial_state.dtype)
 
@@ -628,6 +831,11 @@ def _compile_dynamic_rhs(
             if (is_dynamic[i] or custom_parameters is not None) and rxn_exprs[
                 i
             ] is not None:
+                r_vals = (
+                    [state[sp_i] for sp_i in rxn_reactant_indices[i]]
+                    if _is_special_rate_law_expr(rxn_exprs[i])
+                    else None
+                )
                 rate_val = stat_factors_jax[i] * _eval_expr(
                     rxn_exprs[i],
                     time,
@@ -637,6 +845,7 @@ def _compile_dynamic_rhs(
                     obs_id_to_idx,
                     obs_name_to_idx,
                     state.dtype,
+                    rxn_reactant_vals=r_vals,
                 )
             else:
                 rate_val = rate_constants_jax[i]

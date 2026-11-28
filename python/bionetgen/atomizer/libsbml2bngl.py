@@ -42,6 +42,7 @@ import bionetgen.atomizer.utils.structures as structures
 from bionetgen.atomizer.utils.util import (
     logMess,
     TranslationException,
+    safe_sympify,
 )
 from bionetgen.atomizer.utils import consoleCommands
 from bionetgen.atomizer.sbml2bngl import SBML2BNGL
@@ -228,7 +229,7 @@ def readFromString(
     )
 
     bioGrid = False
-    pathwaycommons = True
+    pathwaycommons = False
     if bioGrid:
         loadBioGrid()
 
@@ -240,7 +241,7 @@ def readFromString(
     database.useID = useID
     database.atomize = atomize
     database.speciesEquivalence = speciesEquivalence
-    database.pathwaycommons = True
+    database.pathwaycommons = pathwaycommons
     database.isConversion = True
     # if pathwaycommons:
     #    database.pathwaycommons = True
@@ -336,7 +337,7 @@ def processFunctions(functions, sbmlfunctions, artificialObservables, tfunc):
             oldfunc = functions[idx]
             key = element.split(" = ")[0].split("(")[0]
             if (
-                re.search("(\W|^){0}(\W|$)".format(key), functions[idx].split(" = ")[1])
+                re.search(r"(\W|^){0}(\W|$)".format(re.escape(key)), functions[idx].split(" = ")[1])
                 != None
             ):
                 dependencies2[functions[idx].split(" = ")[0].split("(")[0]].append(key)
@@ -521,7 +522,7 @@ def reorder_and_replace_arules(functions, parser):
         f = "=".join(splt[1:])
         fname = n.rstrip().replace("()", "")
         try:
-            fs = sympy.sympify(f, locals=parser.all_syms)
+            fs = safe_sympify(f, locals=parser.all_syms)
         except:
             # Can't parse this func
             if fname.startswith("fRate"):
@@ -1137,7 +1138,7 @@ def analyzeHelper(
     tmpParams = []
     for idx, parameter in enumerate(param):
         for key in artificialObservables:
-            if re.search("^{0}\s".format(key), parameter) != None:
+            if re.search(r"^{0}\s".format(re.escape(key)), parameter) != None:
                 assignmentRuleDefinedParameters.append(idx)
     tmpParams.extend(artificialObservables)
     tmpParams.extend(removeParams)
@@ -1273,7 +1274,7 @@ def analyzeHelper(
             f = "=".join(splt[1:])
             n, f = splt
             try:
-                fs = sympy.sympify(f, locals=parser.all_syms)
+                fs = safe_sympify(f, locals=parser.all_syms)
             except SympifyError:
                 logMess(
                     "ERROR:SYMP002",

@@ -112,7 +112,7 @@ def test_v02_expression_and_pattern_render_without_source_text():
             }
         ],
     }
-    assert bngir._pattern_v02(pattern) == "A(x~p.)"
+    assert bngir._pattern_v02(pattern) == "A(x~p)"
 
 
 def test_v02_minimal_document_matches_schema():

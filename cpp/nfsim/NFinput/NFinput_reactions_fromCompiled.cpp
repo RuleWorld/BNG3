@@ -1463,6 +1463,140 @@ bool rejectIncompatibleTotalRate(const CompiledRule& rule,
     return true;
 }
 
+bool resolveReactantVolumeCompartments(
+    const CompiledModel& model,
+    const CompiledRuleDirection& direction,
+    NFcore::System& system,
+    std::vector<NFcore::Compartment*>& converted,
+    std::string& diagnostic) {
+    converted.clear();
+    if (direction.reactantPatterns.size() <= 1 || model.compartments().empty()) {
+        return true;
+    }
+    std::vector<NFcore::Compartment*> runtimeCompartments;
+    bool hasWildcardCompartment = false;
+    for (const auto& pattern : direction.reactantPatterns) {
+        const auto* declaration = reactantCompartmentDeclaration(model, pattern);
+        if (declaration == nullptr) {
+            hasWildcardCompartment = true;
+            continue;
+        }
+        auto* runtimeCompartment = system.getCompartment(declaration->name);
+        if (runtimeCompartment == nullptr) {
+            diagnostic = "reactant compartment '" + declaration->name + "' is unavailable in NFsim";
+            return false;
+        }
+        runtimeCompartments.push_back(runtimeCompartment);
+    }
+    if (hasWildcardCompartment) {
+        double uniformSize = 0.0;
+        int uniformDimension = 0;
+        if (!system.hasPlacementIndependentCompartmentSizes(uniformSize, uniformDimension)) {
+            diagnostic = "bare multi-reactant rule has a wildcard reactant compartment; "
+                         "NFsim requires a single compartment or one shared static size to "
+                         "preserve its rate conversion";
+            return false;
+        }
+        NFcore::Compartment* representative = system.getCompartments().begin()->second;
+        converted.assign(direction.reactantPatterns.size() - 1, representative);
+    } else if (!runtimeCompartments.empty()) {
+        std::vector<NFcore::Compartment*> surfaces, volumes, others;
+        for (auto* compartment : runtimeCompartments) {
+            if (compartment->getSpatialDimensions() == 2) surfaces.push_back(compartment);
+            else if (compartment->getSpatialDimensions() == 3) volumes.push_back(compartment);
+            else others.push_back(compartment);
+        }
+        if (!surfaces.empty()) {
+            converted.insert(converted.end(), surfaces.begin() + 1, surfaces.end());
+            converted.insert(converted.end(), volumes.begin(), volumes.end());
+            converted.insert(converted.end(), others.begin(), others.end());
+        } else if (!volumes.empty()) {
+            converted.insert(converted.end(), volumes.begin() + 1, volumes.end());
+            converted.insert(converted.end(), others.begin(), others.end());
+        } else {
+            converted.insert(converted.end(), others.begin() + 1, others.end());
+        }
+    }
+    for (auto* compartment : converted) {
+        double size = compartment->getSize();
+        if (system.getNumberPerQuantityUnit() > 0.0)
+            size *= system.getNumberPerQuantityUnit();
+        if (!std::isfinite(size) || size <= 0.0) {
+            diagnostic = "reactant compartment '" + compartment->getId() +
+                         "' has a non-positive or non-finite volume";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool collectArrheniusMoleculeContext(
+    const CompiledModel& model,
+    const Pattern& pattern,
+    const bng::compile::PatternMoleculeDescriptor& molecule,
+    std::size_t centerSiteIndex,
+    int reactantIdx,
+    NFcore::System& system,
+    ArrheniusRuleContext& ruleContext,
+    std::string& diagnostic) {
+    const auto compNameStr = compartmentName(model, pattern, molecule);
+    if (!compNameStr.empty()) {
+        auto* comp = system.getCompartment(compNameStr);
+        if (comp == nullptr) {
+            diagnostic = "Arrhenius rule compartment '" + compNameStr + "' is unavailable in NFsim";
+            return false;
+        }
+        ruleContext.reactantCompartments[reactantIdx] = comp;
+    }
+    for (std::size_t siteIdx = 0; siteIdx < molecule.sites.size(); ++siteIdx) {
+        if (siteIdx == centerSiteIndex) continue;
+        const auto& site = molecule.sites[siteIdx];
+        if (!site.componentType.has_value()) {
+            diagnostic = "Arrhenius rule context site is unresolved";
+            return false;
+        }
+        if (isSymmetricComponent(model, *site.componentType)) {
+            diagnostic = "Arrhenius rule context on symmetric component is unsupported";
+            return false;
+        }
+        ArrheniusRuleSiteConstraint sc;
+        sc.reactantIdx = reactantIdx;
+        sc.compName = runtimeComponentName(model, *site.componentType);
+        if (site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact) {
+            if (!site.stateConstraintResolved.exact.has_value()) return false;
+            const auto* stName = model.stateName(*site.stateConstraintResolved.exact);
+            if (stName == nullptr) return false;
+            sc.stateName = *stName;
+        } else if (site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Set) {
+            diagnostic = "Arrhenius rule state-set context is unsupported";
+            return false;
+        }
+
+        const auto handleBond = [&](const bng::compile::PatternBondDescriptor& bond) -> bool {
+            if (bond.kind == BondConstraintKind::Unbound) {
+                sc.requireEmpty = true;
+            } else if (bond.kind == BondConstraintKind::Bound) {
+                sc.requireBound = true;
+            } else if (bond.kind == BondConstraintKind::Exact && bond.group.value != 0) {
+                diagnostic = "Arrhenius rule explicit non-center bond context is unsupported";
+                return false;
+            }
+            return true;
+        };
+        if (site.bondConstraints.empty()) {
+            if (!handleBond({site.bondConstraint, site.bondKind, site.bondGroup})) return false;
+        } else {
+            for (const auto& bond : site.bondConstraints) {
+                if (!handleBond(bond)) return false;
+            }
+        }
+        if (!sc.stateName.empty() || sc.requireEmpty || sc.requireBound) {
+            ruleContext.siteConstraints.push_back(std::move(sc));
+        }
+    }
+    return true;
+}
+
 bool addCompiledArrheniusDirection(const CompiledModel& model,
                                    const CompiledRule& rule,
                                    const CompiledRuleDirection& direction,
@@ -1562,6 +1696,17 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
     const std::size_t firstReaction = system.getAllReactions().size();
     int reactionCount = 0;
     bool ok = false;
+    ArrheniusRuleContext ruleContext;
+    ruleContext.phiExpr = makeLiveCompiledSystemEvaluator(model, expression.arguments[0], &system);
+    ruleContext.ea0Expr = makeLiveCompiledSystemEvaluator(model, expression.arguments[1], &system);
+    if (rule.hasDrivingWork() && !rule.drivingWorkExpression().empty()) {
+        const std::string workExprStr = rule.drivingWorkExpression();
+        ruleContext.drivingWorkExpr = [&system, workExprStr]() -> double {
+            std::map<std::string, double> params = system.getParameterMap();
+            return NFinput::evaluateEnergyExpression(workExprStr, params);
+        };
+    }
+
     const auto& mutation = direction.mutations.front();
     if (mutation.kind == MutationKind::AddBond) {
         if (direction.reactantPatterns.size() != 2 ||
@@ -1600,6 +1745,18 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
             diagnostic = error.what();
             return false;
         }
+        if (!collectArrheniusMoleculeContext(
+                model, direction.reactantPatterns[mutation.source.patternIndex],
+                *lhsMol, mutation.source.siteIndex, 0, system, ruleContext, diagnostic) ||
+            !collectArrheniusMoleculeContext(
+                model, direction.reactantPatterns[mutation.partner.patternIndex],
+                *rhsMol, mutation.partner.siteIndex, 1, system, ruleContext, diagnostic)) {
+            return false;
+        }
+        if (!resolveReactantVolumeCompartments(
+                model, direction, system, ruleContext.volumeCompartments, diagnostic)) {
+            return false;
+        }
         std::map<std::string, double> parameters;
         std::map<std::string, int> states;
         const auto lhsSiteName = runtimeComponentName(model, *lhsSite->componentType);
@@ -1619,7 +1776,87 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
                     rule.name(), *phi, *activationEnergy, lhsType, lhsName,
                     rhsType, rhsName, &system, parameters, states,
                     blockSameComplexBinding, verbose, reactionCount,
-                    rule.isBidirectional(), lhsSiteName, rhsSiteName, drivingWork);
+                    rule.isBidirectional(), lhsSiteName, rhsSiteName, drivingWork,
+                    true, ruleContext);
+                if (!ok) return false;
+            }
+        }
+        suggestedTraversalLimit = std::max(suggestedTraversalLimit, 2);
+    } else if (mutation.kind == MutationKind::DeleteBond && !rule.isBidirectional()) {
+        if (direction.reactantPatterns.size() != 1 ||
+            direction.reactantPatterns[0].molecules().size() != 2 ||
+            mutation.source.side != PatternSide::Reactant ||
+            mutation.partner.side != PatternSide::Reactant) {
+            diagnostic = "one-way Arrhenius unbinding requires one two-molecule reactant";
+            return false;
+        }
+        const auto* lhsMol = referencedMolecule(
+            direction, PatternMoleculeRef{PatternSide::Reactant,
+                                          mutation.source.patternIndex,
+                                          mutation.source.moleculeIndex});
+        const auto* rhsMol = referencedMolecule(
+            direction, PatternMoleculeRef{PatternSide::Reactant,
+                                          mutation.partner.patternIndex,
+                                          mutation.partner.moleculeIndex});
+        const auto* lhsSite = referencedSite(direction, mutation.source);
+        const auto* rhsSite = referencedSite(direction, mutation.partner);
+        if (lhsMol == nullptr || rhsMol == nullptr || lhsSite == nullptr || rhsSite == nullptr ||
+            !lhsMol->moleculeTypeId.has_value() || !rhsMol->moleculeTypeId.has_value() ||
+            !lhsSite->componentType.has_value() || !rhsSite->componentType.has_value()) {
+            diagnostic = "Arrhenius unbinding has unresolved typed reaction-center references";
+            return false;
+        }
+        const auto* lhsDecl = model.moleculeType(*lhsMol->moleculeTypeId);
+        const auto* rhsDecl = model.moleculeType(*rhsMol->moleculeTypeId);
+        if (lhsDecl == nullptr || rhsDecl == nullptr) return false;
+        NFcore::MoleculeType* lhsType = nullptr;
+        NFcore::MoleculeType* rhsType = nullptr;
+        try {
+            lhsType = system.getMoleculeTypeByName(lhsDecl->name);
+            rhsType = system.getMoleculeTypeByName(rhsDecl->name);
+        } catch (const std::exception& error) {
+            diagnostic = error.what();
+            return false;
+        }
+        if (!collectArrheniusMoleculeContext(
+                model, direction.reactantPatterns[0], *lhsMol,
+                mutation.source.siteIndex, 0, system, ruleContext, diagnostic) ||
+            !collectArrheniusMoleculeContext(
+                model, direction.reactantPatterns[0], *rhsMol,
+                mutation.partner.siteIndex, 1, system, ruleContext, diagnostic)) {
+            return false;
+        }
+        const double unbindPhi = 1.0 - *phi;
+        if (ruleContext.phiExpr) {
+            auto origPhi = ruleContext.phiExpr;
+            ruleContext.phiExpr = [origPhi]() -> double { return 1.0 - origPhi(); };
+        }
+        const double unbindWork = -drivingWork;
+        if (ruleContext.drivingWorkExpr) {
+            auto origWork = ruleContext.drivingWorkExpr;
+            ruleContext.drivingWorkExpr = [origWork]() -> double { return -origWork(); };
+        }
+        std::map<std::string, double> parameters;
+        std::map<std::string, int> states;
+        const auto lhsSiteName = runtimeComponentName(model, *lhsSite->componentType);
+        const auto rhsSiteName = runtimeComponentName(model, *rhsSite->componentType);
+        const auto lhsEquivalentNames = equivalentRuntimeNames(
+            model, *lhsSite->componentType);
+        const auto rhsEquivalentNames = equivalentRuntimeNames(
+            model, *rhsSite->componentType);
+        if (lhsSiteName.empty() || rhsSiteName.empty() ||
+            lhsEquivalentNames.empty() || rhsEquivalentNames.empty()) {
+            diagnostic = "Arrhenius unbinding has invalid reaction-center component names";
+            return false;
+        }
+        for (const auto& lhsName : lhsEquivalentNames) {
+            for (const auto& rhsName : rhsEquivalentNames) {
+                ok = NFinput::createExpandedBindingReactions(
+                    rule.name(), unbindPhi, *activationEnergy, lhsType, lhsName,
+                    rhsType, rhsName, &system, parameters, states,
+                    blockSameComplexBinding, verbose, reactionCount,
+                    true, lhsSiteName, rhsSiteName, unbindWork,
+                    false, ruleContext);
                 if (!ok) return false;
             }
         }
@@ -1654,6 +1891,11 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
             diagnostic = error.what();
             return false;
         }
+        if (!collectArrheniusMoleculeContext(
+                model, direction.reactantPatterns.front(), *molecule,
+                mutation.source.siteIndex, 0, system, ruleContext, diagnostic)) {
+            return false;
+        }
         const auto componentName = runtimeComponentName(model, *site->componentType);
         const auto equivalentNames = equivalentRuntimeNames(
             model, *site->componentType);
@@ -1666,10 +1908,10 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
                 rule.name(), *phi, *activationEnergy, moleculeType,
                 concreteName, *sourceState, mutation.newState, &system,
                 blockSameComplexBinding, verbose, reactionCount,
-                rule.isBidirectional(), componentName, drivingWork);
+                rule.isBidirectional(), componentName, drivingWork, ruleContext);
             if (!ok) return false;
         }
-        suggestedTraversalLimit = std::max(suggestedTraversalLimit, 1);
+        suggestedTraversalLimit = std::max(suggestedTraversalLimit, 2);
     } else {
         diagnostic = "Arrhenius structural lowering supports binding or state-change centers";
         return false;
@@ -1736,16 +1978,21 @@ NFcore::ReactionClass* makeReactionForRate(
         mmReaction->setRateParameterNames(
             compiledParameterName(model, expression.arguments[0]),
             compiledParameterName(model, expression.arguments[1]));
+        mmReaction->setRateExpressions(
+            makeLiveCompiledSystemEvaluator(model, expression.arguments[0], &system),
+            makeLiveCompiledSystemEvaluator(model, expression.arguments[1], &system));
         return mmReaction;
     }
     if (rate.kind == RateKind::Saturation || rate.kind == RateKind::Hill) {
         std::vector<double> constants;
         std::vector<std::string> constantParameterNames;
+        std::vector<std::function<double()>> constantExpressions;
         for (const auto& argument : expression.arguments) {
             const auto value = evaluateStatic(model, argument, diagnostic);
             if (!value.has_value()) return nullptr;
             constants.push_back(*value);
             constantParameterNames.push_back(compiledParameterName(model, argument));
+            constantExpressions.push_back(makeLiveCompiledSystemEvaluator(model, argument, &system));
         }
         if (rate.kind == RateKind::Saturation) {
             if (constants.size() < 2 || constants.size() > direction.reactantPatterns.size() + 1) {
@@ -1754,12 +2001,14 @@ NFcore::ReactionClass* makeReactionForRate(
             transformations->finalize();
             auto* satReaction = new NFcore::SatRxnClass(reactionName, std::move(constants), transformations, &system);
             satReaction->setConstantParameterNames(constantParameterNames);
+            satReaction->setConstantExpressions(std::move(constantExpressions));
             return satReaction;
         }
         if (constants.size() != 3) { diagnostic = "Hill requires three constants"; return nullptr; }
         transformations->finalize();
         auto* hillReaction = new NFcore::HillRxnClass(reactionName, constants[0], constants[1], constants[2], transformations, &system);
         hillReaction->setConstantParameterNames(constantParameterNames);
+        hillReaction->setConstantExpressions(std::move(constantExpressions));
         return hillReaction;
     }
     if (rate.kind == RateKind::ArrheniusEnergy || rate.kind == RateKind::Hybrid) {
@@ -1898,6 +2147,11 @@ NFcore::ReactionClass* makeReactionForRate(
                 parameterName = parameter->name;
         }
         reaction->setBaseRate(*value, parameterName);
+        if (parameterName.empty()) {
+            if (auto liveExpr = makeLiveCompiledSystemEvaluator(model, expression, &system)) {
+                reaction->setBaseRateExpression(std::move(liveExpr));
+            }
+        }
         return reaction;
     }
 
@@ -2235,9 +2489,22 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
                 reaction->setMatchOnce(static_cast<unsigned int>(index), true);
             }
         }
+        if (!roots.empty() && direction.rateLaw.has_value() &&
+            !direction.rateLaw->unit.has_value() &&
+            !hasModifier(rule, ModifierKind::TotalRate) &&
+            direction.reactantPatterns.size() > 1 &&
+            !model.compartments().empty()) {
+            std::vector<NFcore::Compartment*> converted;
+            if (!resolveReactantVolumeCompartments(model, direction, system, converted, diagnostic)) {
+                delete reaction;
+                return false;
+            }
+            reaction->setReactantVolumeCompartments(converted);
+        }
         ++reactionOrdinal;
         if (reaction->getRxnType() == NFcore::ReactionClass::BASIC_RXN &&
-            reaction->getBaseRate() <= 0.0) {
+            reaction->getBaseRate() <= 0.0 &&
+            !reaction->hasLiveBaseRate()) {
             delete reaction;
             return true;
         }
@@ -2687,93 +2954,21 @@ bool lowerDirection(const CompiledModel& model,
                 molecularity - 1, compartment);
             reaction->setReactantVolumeCompartments(volumeCompartments);
         }
-    } else if (!compiledRate.unit.has_value()) {
-        // Reactant-bearing bare rate. NFsim's default propensity is the
-        // mass-action count law, which already carries BNG2's identical-reactant
-        // permutation factor but does not divide by compartment volume. Apply
-        // the Perl-faithful Rxn.pm conversion so the count hazard matches the
-        // source law and the deterministic path (NetWriter::unitConversionFactor
-        // writes the same 1/product(sizes) factor as unit_conversion in .net).
-        // Physical-unit rates never reach here: nfSimPhysicalUnitBridgeRejection
-        // rejects reactant-bearing typed rates before construction, and the
-        // unit.has_value() guard keeps this a no-op if that ever changes.
-        std::vector<NFcore::Compartment*> runtimeCompartments;
-        bool hasWildcardCompartment = false;
-        if (!model.compartments().empty()) {
-            for (const auto& pattern : direction.reactantPatterns) {
-                if (reactantCompartmentDeclaration(model, pattern) == nullptr)
-                    hasWildcardCompartment = true;
-            }
-        }
-        for (const auto& pattern : direction.reactantPatterns) {
-            const auto* declaration = reactantCompartmentDeclaration(model, pattern);
-            if (declaration == nullptr) continue;
-            auto* runtimeCompartment = system.getCompartment(declaration->name);
-            if (runtimeCompartment == nullptr) {
-                diagnostic = "reactant compartment '" + declaration->name + "' is unavailable in NFsim";
-                delete reaction;
-                return false;
-            }
-            runtimeCompartments.push_back(runtimeCompartment);
-        }
+    } else if (!compiledRate.unit.has_value() &&
+               !hasModifier(rule, ModifierKind::TotalRate) &&
+               direction.reactantPatterns.size() > 1 &&
+               !model.compartments().empty()) {
         std::vector<NFcore::Compartment*> converted;
-        if (hasWildcardCompartment) {
-            // A wildcard reactant may match any compartment, so the factor is
-            // placement-independent only when every compartment shares one
-            // static size (e.g. a single compartment).  Then the factor is
-            // 1/size^(n-1) for every match, reproduced by repeating one
-            // representative compartment.
-            double uniformSize = 0.0;
-            int uniformDimension = 0;
-            if (!system.hasPlacementIndependentCompartmentSizes(uniformSize, uniformDimension)) {
-                diagnostic = "bare multi-reactant rule has a wildcard reactant compartment; "
-                             "NFsim requires a single compartment or one shared static size to "
-                             "preserve its rate conversion";
-                delete reaction;
-                return false;
-            }
-            NFcore::Compartment* representative = system.getCompartments().begin()->second;
-            converted.assign(direction.reactantPatterns.size() - 1, representative);
-        } else if (!runtimeCompartments.empty()) {
-            // Anchor preference (Rxn.pm): first surface, else first volume, else
-            // first reactant of any other dimension.  Remaining reactant
-            // compartments multiply the denominator.
-            std::vector<NFcore::Compartment*> surfaces, volumes, others;
-            for (auto* compartment : runtimeCompartments) {
-                if (compartment->getSpatialDimensions() == 2) surfaces.push_back(compartment);
-                else if (compartment->getSpatialDimensions() == 3) volumes.push_back(compartment);
-                else others.push_back(compartment);
-            }
-            if (!surfaces.empty()) {
-                converted.insert(converted.end(), surfaces.begin() + 1, surfaces.end());
-                converted.insert(converted.end(), volumes.begin(), volumes.end());
-                converted.insert(converted.end(), others.begin(), others.end());
-            } else if (!volumes.empty()) {
-                converted.insert(converted.end(), volumes.begin() + 1, volumes.end());
-                converted.insert(converted.end(), others.begin(), others.end());
-            } else {
-                converted.insert(converted.end(), others.begin() + 1, others.end());
-            }
+        if (!resolveReactantVolumeCompartments(model, direction, system, converted, diagnostic)) {
+            delete reaction;
+            return false;
         }
-        for (auto* compartment : converted) {
-            double size = compartment->getSize();
-            if (system.getNumberPerQuantityUnit() > 0.0)
-                size *= system.getNumberPerQuantityUnit();
-            if (!std::isfinite(size) || size <= 0.0) {
-                diagnostic = "reactant compartment '" + compartment->getId() +
-                             "' has a non-positive or non-finite volume";
-                delete reaction;
-                return false;
-            }
-        }
-        // BNG2 applies the Rxn.pm 1/product(remaining sizes) unit_conversion to
-        // every rate law type (functional/DOR/Sat/Hill/MM included), not just
-        // bare mass-action, so the count hazard matches the source law.
         reaction->setReactantVolumeCompartments(converted);
     }
 
     if (reaction->getRxnType() == NFcore::ReactionClass::BASIC_RXN &&
-        reaction->getBaseRate() <= 0.0) {
+        reaction->getBaseRate() <= 0.0 &&
+        !reaction->hasLiveBaseRate()) {
         delete reaction;
         return true;
     }

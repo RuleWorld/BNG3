@@ -1,5 +1,5 @@
 import re, pyparsing, sympy, json
-from bionetgen.atomizer.utils.util import logMess
+from bionetgen.atomizer.utils.util import logMess, safe_sympify
 from bionetgen.atomizer.writer.bnglWriter import rindex
 from functools import lru_cache
 from sympy.printing.str import StrPrinter
@@ -343,13 +343,13 @@ class Function:
             # if the rule contains any mathematical function we need to reformat
             while any(
                 [
-                    re.search(r"(\W|^)({0})(\W|$)".format(x), rule) != None
+                    re.search(r"(\W|^)({0})(\W|$)".format(re.escape(x)), rule) != None
                     for x in functionList
                 ]
             ) and (oldrule != rule):
                 oldrule = rule
                 for x in functionList:
-                    rule = re.sub("({0})\(([^,]+),([^)]+)\)".format(x), function, rule)
+                    rule = re.sub(r"({0})\(([^,]+),([^)]+)\)".format(re.escape(x)), function, rule)
                 if rule == oldrule:
                     logMess("ERROR:TRS001", "Malformed pow or root function %s" % rule)
             return rule
@@ -578,7 +578,7 @@ class Function:
             if fdef in self._simplify_cache:
                 fdef = self._simplify_cache[fdef]
             else:
-                sdef = sympy.sympify(fdef, locals=self.all_syms)
+                sdef = safe_sympify(fdef, locals=self.all_syms)
                 simplified = prnter.doprint(
                     sdef.nsimplify().evalf().simplify()
                 ).replace("**", "^")
@@ -653,7 +653,7 @@ class Function:
             )
             raise e
         while (
-            re.search(r"(\W|^){0}\([^)]*\)(\W|$)".format(subfunctionName), function)
+            re.search(r"(\W|^){0}\([^)]*\)(\W|$)".format(re.escape(subfunctionName)), function)
             != None
         ):
             contentRule = (
@@ -1723,7 +1723,7 @@ class bngModel:
             f = func.definition
             f = self.remove_sympy_symbols(f)
             try:
-                fs = sympy.sympify(f, locals=self.all_syms)
+                fs = safe_sympify(f, locals=self.all_syms)
                 self.parsed_func[fkey] = fs
             except:
                 # Can't parse this func

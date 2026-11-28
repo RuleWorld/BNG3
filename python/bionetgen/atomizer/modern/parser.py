@@ -4266,6 +4266,18 @@ class SBMLParser:
                 parent = element_parents.get(parent)
             return False
 
+        def _inside_event_assignment(element: Any) -> bool:
+            parent = element_parents.get(element)
+            while parent is not None:
+                parent_tag = str(getattr(parent, "tag", ""))
+                parent_local = (
+                    parent_tag.rsplit("}", 1)[-1] if "}" in parent_tag else parent_tag
+                )
+                if parent_local == "eventAssignment":
+                    return True
+                parent = element_parents.get(parent)
+            return False
+
         package_uri = re.compile(
             r"^https?://www\.sbml\.org/sbml/level3/version\d+/"
             r"([a-z][a-z0-9_]*)/version\d+$",
@@ -4293,8 +4305,10 @@ class SBMLParser:
                 package = match.group(1).lower()
                 if package in package_counts:
                     package_counts[package] += 1
-                    if package == "distrib" and _csymbol_kind(element).startswith(
-                        "distrib_"
+                    if (
+                        package == "distrib"
+                        and _csymbol_kind(element).startswith("distrib_")
+                        and _inside_event_assignment(element)
                     ):
                         supported_distrib_csymbol_count += 1
 
@@ -4563,6 +4577,24 @@ class SBMLParser:
                 continue
             count = package_counts[package]
             if count == 0:
+                if package_required.get(package) and package not in {
+                    "comp",
+                    "arrays",
+                    "distrib",
+                }:
+                    result.import_warnings.append(
+                        {
+                            "category": f"package:{package}",
+                            "message": (
+                                f'SBML "{package}" package is declared with '
+                                f'{package}:required="true" ({description}) and is '
+                                "not supported by the kinetic importer."
+                            ),
+                            "count": 1,
+                            "severity": "dropped",
+                        }
+                    )
+                    continue
                 result.import_warnings.append(
                     {
                         "category": f"package:{package}",
@@ -4618,7 +4650,22 @@ class SBMLParser:
             set(dynamic_packages) | set(benign_packages) | {"core", "multi"}
         )
         for package, count in package_counts.items():
-            if package in described_packages or not count:
+            if package in described_packages:
+                continue
+            if not count:
+                if package_required.get(package):
+                    result.import_warnings.append(
+                        {
+                            "category": f"package:{package}",
+                            "message": (
+                                f'SBML "{package}" package is declared with '
+                                f'{package}:required="true" and is not supported '
+                                "by the kinetic importer."
+                            ),
+                            "count": 1,
+                            "severity": "dropped",
+                        }
+                    )
                 continue
             if not package_structure_counts.get(package):
                 result.import_warnings.append(

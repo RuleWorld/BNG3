@@ -1,9 +1,14 @@
-import urllib.request, urllib.parse, urllib.error
-import urllib.request, urllib.error, urllib.parse
+import os
+import urllib.request
+import urllib.parse
+import urllib.error
 import functools
 import marshal
 from .util import logMess
 import json
+
+_HTTP_TIMEOUT_SECONDS = 30
+_NETWORK_ERRORS = (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError)
 
 
 def memoize(obj):
@@ -41,7 +46,14 @@ def name2uniprot(nameStr):
 
 @memoize
 def queryBioGridByName(name1, name2, organism, truename1, truename2):
-    url = "http://webservice.thebiogrid.org/interactions/?"
+    access_key = os.environ.get("BIOGRID_API_KEY", "").strip()
+    if not access_key:
+        logMess(
+            "WARNING:MSC02",
+            "BioGRID query skipped because BIOGRID_API_KEY environment variable is not set",
+        )
+        return False
+    url = "https://webservice.thebiogrid.org/interactions/?"
     response = None
     if organism:
         organismExtract = list(organism)[0].split("/")[-1]
@@ -49,7 +61,7 @@ def queryBioGridByName(name1, name2, organism, truename1, truename2):
             "geneList": "|".join([name1, name2]),
             "taxId": "|".join(organism),
             "format": "json",
-            "accesskey": "f74b8d6f4c394fcc9d97b11c8c83d7f3",
+            "accesskey": access_key,
             "includeInteractors": "false",
         }
         # FIXME: check if all "organism"s are the wrong thing,
@@ -57,8 +69,9 @@ def queryBioGridByName(name1, name2, organism, truename1, truename2):
         # and not an organism taxonomy identifier
         data = urllib.parse.urlencode(d).encode("utf-8")
         try:
-            response = urllib.request.urlopen(url, data=data).read()
-        except urllib.error.HTTPError:
+            with urllib.request.urlopen(url, data=data, timeout=_HTTP_TIMEOUT_SECONDS) as f:
+                response = f.read()
+        except _NETWORK_ERRORS:
             logMess(
                 "ERROR:MSC02",
                 "A connection could not be established to biogrid while testing with taxon {1} and genes {0}, trying without organism taxonomy limitation".format(
@@ -71,13 +84,14 @@ def queryBioGridByName(name1, name2, organism, truename1, truename2):
         d = {
             "geneList": "|".join([name1, name2]),
             "format": "json",
-            "accesskey": "f74b8d6f4c394fcc9d97b11c8c83d7f3",
+            "accesskey": access_key,
             "includeInteractors": "false",
         }
         data = urllib.parse.urlencode(d).encode("utf-8")
         try:
-            response = urllib.request.urlopen(url, data=data).read()
-        except urllib.error.HTTPError:
+            with urllib.request.urlopen(url, data=data, timeout=_HTTP_TIMEOUT_SECONDS) as f:
+                response = f.read()
+        except _NETWORK_ERRORS:
             logMess("ERROR:MSC02", "A connection could not be established to biogrid")
             return False
     results = json.loads(response)
@@ -149,7 +163,7 @@ def queryBioGridByName(name1, name2, organism, truename1, truename2):
 
 @memoize
 def queryActiveSite(nameStr, organism):
-    url = "http://www.uniprot.org/uniprot/?"
+    url = "https://www.uniprot.org/uniprot/?"
 
     response = None
     retry = 0
@@ -165,19 +179,19 @@ def queryActiveSite(nameStr, organism):
                 "limit": "5",
                 "sort": "score",
             }
-            xparams = urllib.parse.urlencode(xparams).encode("utf-8")
+            encoded_params = urllib.parse.urlencode(xparams).encode("utf-8")
             try:
-                xparams = urllib.parse.urlencode(xparams).encode("utf-8")
                 req = urllib.request.Request(url)
-                with urllib.request.urlopen(req, data=xparams) as f:
+                with urllib.request.urlopen(
+                    req, data=encoded_params, timeout=_HTTP_TIMEOUT_SECONDS
+                ) as f:
                     response = f.read().decode("utf-8")
-            except urllib.error.HTTPError:
+            except _NETWORK_ERRORS:
                 logMess(
                     "ERROR:MSC03", "A connection could not be established to uniprot"
                 )
-        response = str(response)
         if response in ["", None]:
-            url = "http://www.uniprot.org/uniprot/?"
+            url = "https://www.uniprot.org/uniprot/?"
             # ASS - Updating the query to conform with a regular RESTful API request and work in Python3
             xparams = {
                 "query": nameStr,
@@ -186,16 +200,16 @@ def queryActiveSite(nameStr, organism):
                 "limit": "5",
                 "sort": "score",
             }
-            xparams = urllib.parse.urlencode(xparams).encode("utf-8")
+            encoded_params = urllib.parse.urlencode(xparams).encode("utf-8")
             try:
-                req = urllib.request.Request(url, data=xparams)
-                with urllib.request.urlopen(req) as f:
+                req = urllib.request.Request(url, data=encoded_params)
+                with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_SECONDS) as f:
                     response = f.read().decode("utf-8")
-            except urllib.error.HTTPError:
+            except _NETWORK_ERRORS:
                 logMess(
                     "ERROR:MSC03", "A connection could not be established to uniprot"
                 )
-    response = str(response)
+    response = str(response or "")
     if not response:
         return response
     parsedData = [x.split("\t") for x in response.split("\n")][1:]
@@ -211,7 +225,7 @@ def queryActiveSite(nameStr, organism):
 
 @memoize
 def name2uniprot(nameStr, organism):
-    url = "http://www.uniprot.org/uniprot/?"
+    url = "https://www.uniprot.org/uniprot/?"
 
     response = None
     if organism:
@@ -224,13 +238,14 @@ def name2uniprot(nameStr, organism):
         }
         data = urllib.parse.urlencode(d).encode("utf-8")
         try:
-            response = urllib.request.urlopen(url, data=data).read()
-        except urllib.error.HTTPError:
+            with urllib.request.urlopen(url, data=data, timeout=_HTTP_TIMEOUT_SECONDS) as f:
+                response = f.read()
+        except _NETWORK_ERRORS:
             logMess("ERROR:MSC03", "A connection could not be established to uniprot")
             return None
 
     if response in ["", None]:
-        url = "http://www.uniprot.org/uniprot/?"
+        url = "https://www.uniprot.org/uniprot/?"
         d = {
             "query": f"{nameStr}",
             "format": "tab&limit=5",
@@ -239,8 +254,9 @@ def name2uniprot(nameStr, organism):
         }
         data = urllib.parse.urlencode(d).encode("utf-8")
         try:
-            response = urllib.request.urlopen(url, data=data).read()
-        except urllib.error.HTTPError:
+            with urllib.request.urlopen(url, data=data, timeout=_HTTP_TIMEOUT_SECONDS) as f:
+                response = f.read()
+        except _NETWORK_ERRORS:
             return None
     parsedData = [x.split("\t") for x in str(response).split("\n")][1:]
     return [
@@ -257,7 +273,7 @@ def getReactomeBondByUniprot(uniprot1, uniprot2):
     Queries reactome to see if two proteins references by their uniprot id
     are bound in the same complex
     """
-    url = "http://www.pathwaycommons.org/pc2/graph"
+    url = "https://www.pathwaycommons.org/pc2/graph"
     d = {
         "kind": "PATHSFROMTO",
         "format": "EXTENDED_BINARY_SIF",
@@ -267,8 +283,9 @@ def getReactomeBondByUniprot(uniprot1, uniprot2):
     data = urllib.parse.urlencode(d).encode("utf-8")
     # query reactome
     try:
-        response = urllib.request.urlopen(url, data=data).read()
-    except urllib.error.HTTPError:
+        with urllib.request.urlopen(url, data=data, timeout=_HTTP_TIMEOUT_SECONDS) as f:
+            response = f.read()
+    except _NETWORK_ERRORS:
         # logMess('ERROR:pathwaycommons','A connection could not be established to pathwaycommons')
         return None
     # divide by line

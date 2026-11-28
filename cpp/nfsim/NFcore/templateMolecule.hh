@@ -135,6 +135,9 @@ namespace NFcore
 		void addComponentConstraint(string cName, int stateValue);
 		void addComponentExclusion(string cName, string stateName);
 		void addComponentExclusion(string cName, int stateValue);
+		void addBondExclusion(const string &cName, MoleculeType *partnerType,
+				const string &partnerCompName,
+				const vector<pair<string, string>> &partnerStates);
 		void addBond(const string& thisBsiteName,TemplateMolecule *t2, const string& bSiteName2);
 
 		/* Methods for adding a disjoint component to a template pattern
@@ -323,6 +326,16 @@ namespace NFcore
 		int n_compStateExclusion;
 		int *compStateExclusion_Comp;
 		int *compStateExclusion_Exclusion;
+
+		// Bond-partner exclusions (site must NOT be bound to matching partner/site/states)
+		struct BondExclusion {
+			int compIndex;
+			MoleculeType *partnerType;
+			int partnerCompIndex;
+			vector<pair<int, int>> partnerStates;
+		};
+		vector<BondExclusion> bondExclusions;
+		bool matchesBondExclusions(Molecule *m) const;
 
 		// The set of connections that a particular site is connected to
 		int n_bonds;

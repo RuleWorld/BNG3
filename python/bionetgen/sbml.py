@@ -51,6 +51,17 @@ def _require_libsbml() -> None:
         ) from exc
 
 
+def _lossy_import_warnings(parsed_model: object) -> list[dict]:
+    """Return import warnings indicating dropped or approximated SBML semantics."""
+
+    warnings = getattr(parsed_model, "import_warnings", None) or ()
+    return [
+        w
+        for w in warnings
+        if str(w.get("severity", "")).lower() in {"dropped", "approximated"}
+    ]
+
+
 def _translate_modern_with_model(
     sbml_path: str, atomize: bool, options: dict
 ) -> tuple[str, object]:
@@ -73,13 +84,28 @@ def _translate_modern_with_model(
             native_dae_runtime=options.get("native_dae_runtime", False),
         )
         result = atomizer.atomize(sbml_text, source_path=Path(sbml_path))
+    except BioNetGenError:
+        raise
     except Exception as exc:  # pragma: no cover - depends on optional deps
         raise BioNetGenError(f"Modern SBML atomizer is unavailable: {exc}") from exc
     if not result.success or not result.bngl:
         raise BioNetGenError(
             f"Modern SBML atomization failed for {sbml_path}: {result.error or 'no BNGL output'}"
         )
-    return result.bngl, atomizer.get_model()
+    parsed_model = atomizer.get_model()
+    if not options.get("allow_lossy", False) and not options.get(
+        "_defer_lossy_check", False
+    ):
+        lossy = _lossy_import_warnings(parsed_model)
+        if lossy:
+            summary = "; ".join(
+                f"[{w.get('severity')}] {w.get('category', 'sbml')}: {w.get('message', '')}"
+                for w in lossy[:5]
+            )
+            raise BioNetGenError(
+                f"Unsupported or lossy SBML construct(s) in {sbml_path}: {summary}"
+            )
+    return result.bngl, parsed_model
 
 
 def atomize_sbml_with_sct(
@@ -199,7 +225,9 @@ def from_sbml(sbml_path: str, atomize: bool = False, **options) -> BioNetGenMode
         from bionetgen.atomizer.modern import source_metadata_payload
 
         bngl_text, parsed_model = _translate_modern_with_model(
-            sbml_path, atomize, {**options, "native_dae_runtime": True}
+            sbml_path,
+            atomize,
+            {**options, "native_dae_runtime": True, "_defer_lossy_check": True},
         )
         algebraic_rules = _native_algebraic_rules(parsed_model)
         algebraic_rules.extend(
@@ -208,14 +236,30 @@ def from_sbml(sbml_path: str, atomize: bool = False, **options) -> BioNetGenMode
                 parsed_model, "fast_equilibrium_rules", ()
             )
         )
+        if not options.get("allow_lossy", False):
+            lossy = _lossy_import_warnings(parsed_model)
+            if lossy:
+                summary = "; ".join(
+                    f"[{w.get('severity')}] {w.get('category', 'sbml')}: {w.get('message', '')}"
+                    for w in lossy[:5]
+                )
+                raise BioNetGenError(
+                    f"Unsupported or lossy SBML construct(s) in {sbml_path}: {summary}"
+                )
         if (
-            algebraic_rules
-            and parsed_model.events
+            parsed_model.events
             and "begin bng3_events version 1" not in bngl_text
+            and not options.get("allow_lossy", False)
+            and (
+                algebraic_rules
+                or "setParameter(" in bngl_text
+                or "setVolume(" in bngl_text
+                or "setConcentration(" in bngl_text
+            )
         ):
             raise BioNetGenError(
-                "SBML algebraic-rule models with events require the native DAE "
-                "event runtime; one or more events could not be represented"
+                "SBML events could not be lowered to the native BNG3 event "
+                "runtime required by BioNetGenModel.simulate()"
             )
         return BioNetGenModel(
             _cpp.parse_string(bngl_text),

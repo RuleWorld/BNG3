@@ -1434,7 +1434,7 @@ def test_playground_math_rewrites_match_writer_contract():
     assert convert_math_expression("sqrt(x)") == "((x)^(1/2))"
     assert convert_math_expression("exp(x)") == "(2.71828182845905^(x))"
     assert convert_math_expression("log(x)") == "ln(x)"
-    assert convert_math_expression("log10(x)") == "(ln(x)/2.302585093)"
+    assert convert_math_expression("log10(x)") == "(ln(x)/2.302585092994046)"
     assert convert_math_expression("abs(x)") == "if(x>=0,x,-(x))"
     assert (
         convert_math_expression("piecewise(v1, c1, v2, c2)")

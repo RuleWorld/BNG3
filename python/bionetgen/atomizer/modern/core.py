@@ -346,9 +346,11 @@ def analyze_naming_conventions(
     pairs, differences = distance_result
     pair_classification: Dict[str, List[Tuple[str, str]]] = OrderedDict()
     keys: List[str] = []
+    seen_keys: Set[str] = set()
     for pair, difference in zip(pairs, differences):
         key = json.dumps(difference, ensure_ascii=False, separators=(",", ":"))
-        if key not in keys:
+        if key not in seen_keys:
+            seen_keys.add(key)
             keys.append(key)
         modification = conventions.get(tuple(difference))
         if modification:
@@ -2132,6 +2134,51 @@ def build_species_composition_table(
         )
         if inference is not None:
             inferences[species_id] = inference
+
+    # For multi-molecule complexes located on a 2D surface compartment whose
+    # Core SBML species names omitted per-molecule compartment suffixes, infer
+    # adjacent 3D molecule compartments from unique monomer locations so BNGL
+    # network generation does not split seed species from rule products.
+    surface_compartments = {
+        comp_id: comp
+        for comp_id, comp in model.compartments.items()
+        if getattr(comp, "spatial_dimensions", 3) == 2
+    }
+    if surface_compartments:
+        monomer_compartments: Dict[str, Set[str]] = {}
+        for sp_id, entry in entries.items():
+            if len(entry.structure.molecules) == 1:
+                sp_comp = model.species[sp_id].compartment
+                if sp_comp:
+                    monomer_compartments.setdefault(
+                        entry.structure.molecules[0].name, set()
+                    ).add(sp_comp)
+        for sp_id, entry in entries.items():
+            if len(entry.structure.molecules) <= 1:
+                continue
+            sp_comp = model.species[sp_id].compartment
+            surface = surface_compartments.get(sp_comp)
+            if surface is None:
+                continue
+            std_surface = standardize_name(sp_comp)
+            for molecule in entry.structure.molecules:
+                if molecule.compartment and standardize_name(molecule.compartment) != std_surface:
+                    continue
+                candidate_comps = monomer_compartments.get(molecule.name)
+                if not candidate_comps or len(candidate_comps) != 1:
+                    continue
+                monomer_comp_id = next(iter(candidate_comps))
+                if monomer_comp_id == sp_comp:
+                    continue
+                monomer_comp = model.compartments.get(monomer_comp_id)
+                if monomer_comp is None or getattr(monomer_comp, "spatial_dimensions", 3) != 3:
+                    continue
+                adjacent = (
+                    getattr(surface, "outside", None) == monomer_comp_id
+                    or getattr(monomer_comp, "outside", None) == sp_comp
+                )
+                if adjacent:
+                    molecule.compartment = monomer_comp_id
 
     elemental_count = sum(entry.is_elemental for entry in entries.values())
     from .helpers import logger

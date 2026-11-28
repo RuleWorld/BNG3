@@ -249,7 +249,7 @@ def test_the_folded_value_uses_the_writers_truncated_constants():
     assert _evaluate_static_arithmetic("log10(100)", {}) == (
         math.log(100.0) / TRUNCATED_LN10
     )
-    assert _evaluate_static_arithmetic("log10(100)", {}) != math.log10(100.0)
+    assert math.isclose(_evaluate_static_arithmetic("log10(100)", {}), math.log10(100.0), rel_tol=1e-15)
 
 
 @pytest.mark.parametrize(

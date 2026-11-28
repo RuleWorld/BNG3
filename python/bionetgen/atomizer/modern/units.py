@@ -558,38 +558,6 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
     for assignment in model.initial_assignments:
         symbol = str(assignment.symbol)
         result_factor = coordinate_factors.get(symbol, 1.0)
-        # The writer turns a species initial assignment into a seed amount by
-        # multiplying the resolved expression by the compartment size.  For a
-        # unit-scaled model the rewrite already resolves species operands into
-        # normalized amounts, so divide the result factor by the compartment's
-        # unit factor to avoid applying that conversion twice.  An unscaled
-        # model has factor one and keeps the historical expression unchanged.
-        species = model.species.get(symbol)
-        if species is not None:
-            compartment = model.compartments.get(str(species.compartment or ""))
-            # The extra division is only needed when the assignment reads a
-            # species: those operands are already rewritten in normalized
-            # amount coordinates, and the writer multiplies the whole seed
-            # expression by the compartment size. A parameter/constant-only
-            # right-hand side is a concentration in the target's coordinate;
-            # dividing it by the compartment factor would multiply the seed
-            # amount by 1/volume twice (e.g. a 1 L compartment declared with
-            # litre units becomes 0.001 m^3, producing a 1000x seed error).
-            expression = str(getattr(assignment, "math", "") or "")
-            species_ids = {str(identifier) for identifier in model.species}
-            standardized_ids = {
-                standardize_name(identifier) for identifier in species_ids
-            }
-            reads_species = any(
-                identifier in species_ids or identifier in standardized_ids
-                for identifier in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)
-            )
-            if compartment is not None and reads_species:
-                volume_factor = compartment_factors.get(
-                    str(species.compartment or ""), 1.0
-                )
-                if math.isfinite(volume_factor) and volume_factor != 0:
-                    result_factor /= volume_factor
         rewrite_owner(assignment, "math", result_factor)
     for event in model.events:
         rewrite_owner(event, "trigger", 1.0)

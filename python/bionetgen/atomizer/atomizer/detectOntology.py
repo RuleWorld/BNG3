@@ -330,10 +330,18 @@ def databaseAnalysis(directory, outputFile):
         fileCounter = Counter()
         for element in fileDict:
             fileCounter[element] = len(fileDict[element])
-        with open(outputFile, "wb") as f:
-            pickle.dump(differenceCounter, f)
-            # pickle.dump(differenceDict,f)
-            pickle.dump(fileCounter, f)
+        with open(outputFile, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "differenceCounter": {
+                        json.dumps(list(k)): v for k, v in differenceCounter.items()
+                    },
+                    "fileCounter": {
+                        json.dumps(list(k)): v for k, v in fileCounter.items()
+                    },
+                },
+                f,
+            )
 
 
 """        

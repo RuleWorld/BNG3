@@ -113,6 +113,8 @@ class ModelBlock:
                 if changed:
                     self._changes[name] = new_value
                     self.__dict__[name] = new_value
+            else:
+                self.__dict__[name] = value
         else:
             self.__dict__[name] = value
 
@@ -244,6 +246,39 @@ class ParameterBlock(ModelBlock):
                 self.__dict__[name] = value
         else:
             self.__dict__[name] = value
+
+    def __setitem__(self, key, value) -> None:
+        if isinstance(value, Parameter):
+            self.items[key] = value
+            if (
+                isinstance(key, str)
+                and key.isidentifier()
+                and not keyword.iskeyword(key)
+            ):
+                self.__dict__[key] = value
+        elif key in self.items and isinstance(self.items[key], Parameter):
+            if isinstance(value, str):
+                if self.items[key]["value"] != value:
+                    self.items[key]["value"] = value
+                    self.items[key].write_expr = True
+                    self._changes[key] = value
+                    self._recompile = True
+            else:
+                num_value = float(value)
+                if self.items[key]["value"] != num_value:
+                    self.items[key]["value"] = num_value
+                    self.items[key].write_expr = False
+                    self._changes[key] = num_value
+                    self._recompile = True
+            if (
+                isinstance(key, str)
+                and key.isidentifier()
+                and not keyword.iskeyword(key)
+            ):
+                self.__dict__[key] = self.items[key]
+        else:
+            p = Parameter(key, value)
+            self.add_item((p.name, p))
 
     def add_parameter(self, *args, **kwargs) -> None:
         p = Parameter(*args, **kwargs)
@@ -536,6 +571,26 @@ class RuleBlock(ModelBlock):
     def add_rule(self, *args, **kwargs) -> None:
         r = Rule(*args, **kwargs)
         self.add_item((r.name, r))
+
+    def gen_string(self) -> str:
+        if self.comment[0] is not None:
+            block_lines = ["\nbegin {} #{}".format(self.name, self.comment[0])]
+        else:
+            block_lines = ["\nbegin {}".format(self.name)]
+        for item in self.items.keys():
+            rule_obj = self.items[item]
+            line = rule_obj.print_line()
+            delay_expr = getattr(rule_obj, "_delay_expression", None)
+            if delay_expr and "delay=" not in line:
+                line = f"{line.rstrip()} delay={delay_expr}"
+            if getattr(rule_obj, "_is_non_consuming", False) and "NonConsuming" not in line:
+                line = f"{line.rstrip()} NonConsuming"
+            block_lines.append(line)
+        if self.comment[1] is not None:
+            block_lines.append("end {} #{}\n".format(self.name, self.comment[1]))
+        else:
+            block_lines.append("end {}\n".format(self.name))
+        return "\n".join(block_lines)
 
     def consolidate_rules(self) -> None:
         """

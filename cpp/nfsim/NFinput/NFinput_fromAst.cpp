@@ -130,6 +130,9 @@ bool addParametersFromAst(const bng::ast::Model& model, System* s,
         double value = plist.evaluate(name, 0.0);  // resolves inter-parameter refs
         parameters[name] = value;
         s->addParameter(name, value);
+        if (p.getExpression().kind() != bng::ast::ExpressionKind::Number) {
+            s->addDerivedParameter(name, makeCompartmentSizeExpression(p.getExpression()));
+        }
         if (verbose) {
             std::cerr << "[nfsim/ast] parameter " << name << " = " << value << "\n";
         }
@@ -3887,6 +3890,7 @@ bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
                 EpMolecule::CompInfo energyComponent;
                 energyComponent.name = component.name;
                 energyComponent.isBound = false;
+                energyComponent.isUnbound = component.bonds.empty();
                 energyComponent.stateConstraint = graphStateToken(*component.node);
                 if (energyComponent.stateConstraint == "?" ||
                     energyComponent.stateConstraint == "*") {
@@ -3922,6 +3926,13 @@ bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
                             }
                         }
                     }
+                    if (endpoints.size() == 1) {
+                        auto& compInfo = info.molecules[endpoints[0].first].components[endpoints[0].second];
+                        compInfo.isBound = true;
+                        compInfo.isWildcardBound = true;
+                        compInfo.isUnbound = false;
+                        continue;
+                    }
                     if (endpoints.size() != 2) {
                         std::cerr << "[nfsim/ast] energy pattern '" << info.id
                                   << "' has a bound bond without exactly two endpoints\n";
@@ -3939,11 +3950,16 @@ bool addEnergyPatternsFromAst(const bng::ast::Model& model, System* system,
                     auto& second = info.molecules[energyBond.mol2].components[energyBond.comp2];
                     first.isBound = true;
                     second.isBound = true;
+                    first.isWildcardBound = false;
+                    second.isWildcardBound = false;
+                    first.isUnbound = false;
+                    second.isUnbound = false;
                     first.bondPartnerId = info.molecules[energyBond.mol2].xmlId;
                     second.bondPartnerId = info.molecules[energyBond.mol1].xmlId;
                 }
             }
         }
+        info.energyEvaluator = makeCompartmentSizeExpression(pattern.getExpression());
 
         energyFunction->addEnergyPattern(info);
         if (verbose) {
@@ -4798,7 +4814,25 @@ bool addSpeciesFromAstWithOverrides(
                 return false;
             }
             auto* moleculeType = s->getMoleculeTypeByName(molecules.front().name);
-            moleculeType->setFixed(true, count, compartments.front());
+            std::vector<int> fixedStates(static_cast<std::size_t>(moleculeType->getNumOfComponents()));
+            for (int c = 0; c < moleculeType->getNumOfComponents(); ++c) {
+                fixedStates[static_cast<std::size_t>(c)] = moleculeType->getDefaultComponentState(c);
+            }
+            if (!generated[0].empty()) {
+                for (int c = 0; c < moleculeType->getNumOfComponents(); ++c) {
+                    fixedStates[static_cast<std::size_t>(c)] = generated[0].front()->getComponentState(c);
+                }
+            } else {
+                for (std::size_t ci = 0; ci < molecules.front().components.size(); ++ci) {
+                    const std::string st = graphStateToken(*molecules.front().components[ci].node);
+                    if (!st.empty() && st != "?" && st != "*") {
+                        const int compIdx = moleculeType->getCompIndexFromName(runtimeNames[0][ci]);
+                        fixedStates[static_cast<std::size_t>(compIdx)] =
+                            moleculeType->getStateValueFromName(compIdx, st);
+                    }
+                }
+            }
+            moleculeType->addFixedSpec(count, compartments.front(), fixedStates);
         }
         if (verbose) {
             std::cerr << "[nfsim/ast] seed " << seed.getPattern()
@@ -5977,8 +6011,10 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 // untouched so later updates still refresh it.
                 reaction->volumeConversionFactor = 1.0;
             }
-        } else if (!typedRate.unit.has_value() &&
-                   !model.getCompartments().empty()) {
+        } else if (reactantRoots.size() > 1 &&
+                   !typedRate.unit.has_value() &&
+                   !model.getCompartments().empty() &&
+                   !hasReactionModifier(rule, "totalrate")) {
             // BNG2 applies the Rxn.pm 1/product(remaining sizes) unit_conversion
             // to every rate law type, so functional/DOR/Sat/Hill/MM reactions
             // need it as well as elementary ones.
@@ -6062,10 +6098,11 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             reaction->setReactantVolumeCompartments(converted);
         }
 
-        // Keep zero-rate elementary rules out of the live reaction list, as the
-        // XML loader does. Functional reactions retain their dynamic function.
+        // Keep parameter/expression-backed zero-rate rules so RNF set/update
+        // or continuation can activate them later (Hlavacek #137).
         if (reaction->getRxnType() == ReactionClass::BASIC_RXN &&
-            reaction->getBaseRate() <= 0.0) {
+            reaction->getBaseRate() <= 0.0 &&
+            !reaction->hasLiveBaseRate()) {
             delete reaction;
             continue;
         }

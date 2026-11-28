@@ -6263,7 +6263,7 @@ begin seed species
     B(a) 1
 end seed species
 begin energy patterns
-    A(b!1,b).B(a!1) Gbind
+    A(b!1).B(a!1) Gbind
 end energy patterns
 begin reaction rules
     A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,Ea)
@@ -6416,14 +6416,14 @@ end parameters
 begin molecule types
     A(b,c)
     B(a)
-    C(x)
+    C(x,s~0~1)
 end molecule types
 begin seed species
-    A(b,c!1).C(x!1) 1
+    A(b,c!1).C(x!1,s~1) 1
     B(a) 1
 end seed species
 begin energy patterns
-    A(b!1).A(c!2).B(a!1).C(x!2) Gcontext
+    A(b!1,c!2).B(a!1).C(x!2,s~1) Gcontext
 end energy patterns
 begin reaction rules
     A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi,0)

@@ -341,13 +341,13 @@ def bnglFunction(
         # if the rule contains any mathematical function we need to reformat
         while any(
             [
-                re.search(r"(\W|^)({0})(\W|$)".format(x), rule) != None
+                re.search(r"(\W|^)({0})(\W|$)".format(re.escape(x)), rule) != None
                 for x in functionList
             ]
         ) and (oldrule != rule):
             oldrule = rule
             for x in functionList:
-                rule = re.sub("({0})\(([^,]+),([^)]+)\)".format(x), function, rule)
+                rule = re.sub(r"({0})\(([^,]+),([^)]+)\)".format(re.escape(x)), function, rule)
             if rule == oldrule:
                 logMess("ERROR:TRS001", "Malformed pow or root function %s" % rule)
                 print("meep")
@@ -603,7 +603,7 @@ def extendFunction(function, subfunctionName, subfunction):
             f"ERROR:TRS002: This function doesn't have a definition, note that atomizer doesn't allow for function linking: {subfunction}"
         )
     while (
-        re.search(r"(\W|^){0}\([^)]*\)(\W|$)".format(subfunctionName), function) != None
+        re.search(r"(\W|^){0}\([^)]*\)(\W|$)".format(re.escape(subfunctionName)), function) != None
     ):
         contentRule = (
             pyparsing.Word(pyparsing.alphanums + "_.")

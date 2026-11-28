@@ -1248,9 +1248,9 @@ double System::getNextRxn()
 	clock_t profileStart = 0;
 	if (isProfilingEnabled()) profileStart = clock();
 	double x = selector->getNextReactionClass(nextReaction);
-	if((int)x==-1) {
+	if (!std::isfinite(x) || x < 0.0) {
 		this->printAllReactions();
-		exit(1);
+		throw std::runtime_error("NFsim failed to select next reaction (invalid propensity residual)");
 	}
 	// The selector may have summed its total afresh while picking.
 	a_tot = selector->getAtot();
@@ -1295,6 +1295,12 @@ double System::sim(double duration, long int sampleTimes)
 /* main simulation loop */
 double System::sim(double duration, long int sampleTimes, bool verbose)
 {
+	if (sampleTimes < 0) {
+		throw std::invalid_argument("NFsim sampleTimes (n_steps) must be non-negative");
+	}
+	if (!std::isfinite(duration) || duration < 0.0) {
+		throw std::invalid_argument("NFsim simulation duration must be finite and non-negative");
+	}
 	if (isProfilingEnabled()) resetProfiling();
 	System::NULL_EVENT_COUNTER=0;
 	cout.setf(ios::scientific);
@@ -1996,46 +2002,57 @@ void System::replenishFixedSpecies() {
 		MoleculeType *mt = allMoleculeTypes[i];
 		if (!mt->isFixed()) continue;
 
-		int current = 0;
-		// Count only free molecules in the assigned compartment
-		for (int j = 0; j < mt->getMoleculeCount(); j++) {
-			Molecule *m = mt->getMolecule(j);
-			if (m->isAlive() && m->getDegree() == 0 &&
-				(mt->getFixedCompartment() == nullptr || m->getCompartment() == mt->getFixedCompartment())) {
-				current++;
-			}
-		}
+		const auto &specs = mt->getFixedSpecs();
+		const int nComps = mt->getNumOfComponents();
+		for (const auto &spec : specs) {
+			auto matchesSpec = [&](Molecule *m) -> bool {
+				if (!m->isAlive() || m->getDegree() != 0) return false;
+				if (spec.compartment != nullptr && m->getCompartment() != spec.compartment) return false;
+				for (int c = 0; c < nComps && c < static_cast<int>(spec.componentStates.size()); ++c) {
+					if (m->getComponentState(c) != spec.componentStates[static_cast<size_t>(c)]) {
+						return false;
+					}
+				}
+				return true;
+			};
 
-		int target = mt->getFixedCount();
-
-		// Replenish: create new default-state molecules
-		while (current < target) {
-			Molecule *fresh = (mt->getFixedCompartment() != nullptr)
-				? mt->genDefaultMolecule(mt->getFixedCompartment())
-				: mt->genDefaultMolecule();
-
-			mt->addMoleculeToRunningSystem(fresh);
-			updated = true;
-			current++;
-		}
-
-		// Suppress: remove excess molecules if a reaction created more
-		while (current > target) {
-			bool removed = false;
-			// Find a free molecule to remove
-			for (int j = mt->getMoleculeCount() - 1; j >= 0; j--) {
-				Molecule *excess = mt->getMolecule(j);
-				if (excess->isAlive() && excess->getDegree() == 0 &&
-					(mt->getFixedCompartment() == nullptr || excess->getCompartment() == mt->getFixedCompartment())) {
-					mt->removeMoleculeFromRunningSystem(excess);
-					removed = true;
-					updated = true;
-					current--;
-					break;
+			int current = 0;
+			for (int j = 0; j < mt->getMoleculeCount(); j++) {
+				if (matchesSpec(mt->getMolecule(j))) {
+					current++;
 				}
 			}
-			// If we couldn't find a free one to remove, break the loop
-			if (!removed) break;
+
+			const int target = spec.targetCount;
+
+			// Replenish: create new molecules with exact fixed component states & compartment
+			while (current < target) {
+				Molecule *fresh = (spec.compartment != nullptr)
+					? mt->genDefaultMolecule(spec.compartment)
+					: mt->genDefaultMolecule();
+				for (int c = 0; c < nComps && c < static_cast<int>(spec.componentStates.size()); ++c) {
+					fresh->setComponentState(c, spec.componentStates[static_cast<size_t>(c)]);
+				}
+				mt->addMoleculeToRunningSystem(fresh);
+				updated = true;
+				current++;
+			}
+
+			// Suppress: remove only excess free molecules matching this exact fixed spec
+			while (current > target) {
+				bool removed = false;
+				for (int j = mt->getMoleculeCount() - 1; j >= 0; j--) {
+					Molecule *excess = mt->getMolecule(j);
+					if (matchesSpec(excess)) {
+						mt->removeMoleculeFromRunningSystem(excess);
+						removed = true;
+						updated = true;
+						current--;
+						break;
+					}
+				}
+				if (!removed) break;
+			}
 		}
 	}
 
@@ -2842,6 +2859,16 @@ Observable * System::getObservableByName(const string& obsName)
 void System::addParameter(const string& name,double value) {
 	this->paramMap[name]=value;
 }
+void System::addDerivedParameter(const string& name, ParameterExpression expr) {
+	if (!expr) return;
+	for (auto &entry : derivedParameters) {
+		if (entry.first == name) {
+			entry.second = std::move(expr);
+			return;
+		}
+	}
+	derivedParameters.emplace_back(name, std::move(expr));
+}
 double System::getParameter(const string& name) {
 	return this->paramMap.find(name)->second;
 }
@@ -2859,6 +2886,7 @@ void System::setParameter(const string& name, double value) {
 		return;
 	}
 	this->paramMap[name]=value;
+	this->explicitlySetParameters.insert(name);
 }
 bool System::setCompartmentSizeParameter(const string& compartmentId, const string& parameterName) {
 	Compartment *comp = getCompartment(compartmentId);
@@ -2966,6 +2994,30 @@ void System::updateCompartmentSizesFromParameters() {
 
 void System::updateSystemWithNewParameters() {
 	invalidatePendingEvent();
+
+	// Recompute derived parameters (e.g. k = 2*p1) that were not explicitly
+	// overridden via setParameter(), iterating until fixed point so declaration
+	// order does not matter.
+	for (size_t pass = 0; pass < derivedParameters.size(); ++pass) {
+		bool changed = false;
+		for (const auto &entry : derivedParameters) {
+			if (explicitlySetParameters.count(entry.first) != 0) continue;
+			const double updatedValue = entry.second(paramMap);
+			if (std::isfinite(updatedValue)) {
+				auto it = paramMap.find(entry.first);
+				if (it == paramMap.end() || it->second != updatedValue) {
+					paramMap[entry.first] = updatedValue;
+					changed = true;
+				}
+			}
+		}
+		if (!changed) break;
+	}
+
+	// Refresh energy-pattern values from updated parameters before reactions rebuild rates.
+	if (energyFunction != nullptr) {
+		energyFunction->updateEnergiesFromSystem(this);
+	}
 
 	//Update all global functions
 	for(unsigned int i=0; i<this->globalFunctions.size(); i++) {

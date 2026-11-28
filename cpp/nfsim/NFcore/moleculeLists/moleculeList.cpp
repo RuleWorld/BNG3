@@ -164,6 +164,13 @@ void MoleculeList::removeLast()
 	n_molecules--;
 }
 
+void MoleculeList::resetAllComplexIDs()
+{
+	for(int i=0; i<capacity; i++) {
+		mArray[i]->setComplexID(-1);
+	}
+}
+
 
 
 void MoleculeList::printDetails()

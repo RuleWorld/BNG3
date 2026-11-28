@@ -91,6 +91,75 @@ void NFcore::collectReactantRepresentatives(ReactantList *rl, bool perComplex,
 	}
 }
 
+void NFcore::collectReactantRepresentatives(ReactantTree *tree, bool perComplex,
+		vector<MappingSet*> &out, vector<int> *flatIndices)
+{
+	out.clear();
+	if (flatIndices) flatIndices->clear();
+	if (!perComplex || !tree->mayShareComplexes()) {
+		for (int i = 0; i < tree->size(); ++i) {
+			MappingSet *ms = tree->getMappingSetByIndex(i);
+			if (ms) {
+				out.push_back(ms);
+				if (flatIndices) flatIndices->push_back(i);
+			}
+		}
+		return;
+	}
+
+	set<int> seen;
+	for (int i = 0; i < tree->size(); ++i) {
+		MappingSet *ms = tree->getMappingSetByIndex(i);
+		if (!ms || ms->getNumOfMappings() == 0) continue;
+		Mapping *mapping = ms->get(0);
+		if (!mapping || !mapping->getMolecule()) continue;
+		if (seen.insert(mapping->getMolecule()->getComplexID()).second) {
+			out.push_back(ms);
+			if (flatIndices) flatIndices->push_back(i);
+		}
+	}
+}
+
+void NFcore::pickPerComplexFromTree(ReactantTree *tree, MappingSet *&ms, double targetValue)
+{
+	set<int> seen;
+	double cumulative = 0.0;
+	MappingSet *lastRep = 0;
+	for (int i = 0; i < tree->size(); ++i) {
+		MappingSet *candidate = tree->getMappingSetByIndex(i);
+		if (!candidate || candidate->getNumOfMappings() == 0) continue;
+		Mapping *mapping = candidate->get(0);
+		if (!mapping || !mapping->getMolecule()) continue;
+		if (!seen.insert(mapping->getMolecule()->getComplexID()).second) continue;
+		lastRep = candidate;
+		cumulative += tree->getRateFactor(i);
+		if (targetValue <= cumulative) {
+			ms = candidate;
+			return;
+		}
+	}
+	if (lastRep != 0) {
+		ms = lastRep;
+	}
+}
+
+void NFcore::pickRandomPerComplex(ReactantList *rl, MappingSet *&ms, NfsimRNG &rng)
+{
+	if (!rl->mayShareComplexes()) {
+		rl->pickRandom(ms, rng);
+		return;
+	}
+	static thread_local vector<MappingSet*> reps;
+	collectReactantRepresentatives(rl, true, reps);
+	if (reps.empty()) {
+		rl->pickRandom(ms, rng);
+		return;
+	}
+	unsigned int idx = rng.random_int(0, static_cast<unsigned int>(reps.size()));
+	if (idx >= reps.size()) idx = static_cast<unsigned int>(reps.size()) - 1;
+	ms = reps[idx];
+}
+
 
 
 
@@ -165,15 +234,13 @@ double FunctionalRxnClass::update_a() {
 		exit(1);
 	}
 
-	a *= this->volumeConversionFactor;
-
 	// FunctionalRxnClass is constructed with baseRate=1, so the constructor's
 	// symmetry correction is otherwise lost for ordinary functional rates.
-	// TotalRate already states the complete propensity and must not receive that
-	// reaction-center correction.  This placement matches NFsim commit 1b19611:
-	// the loader sets totalRateFlag after construction and setBaseRate().
+	// TotalRate already states the complete macroscopic propensity and must not
+	// receive either reaction-center symmetry or compartment volume scaling.
 	if (!this->totalRateFlag)
 	{
+		a *= this->volumeConversionFactor;
 		a *= this->baseRate;
 	}
 
@@ -296,12 +363,22 @@ void MMRxnClass::setRateParameterNames(const string& kcatName, const string& kmN
 	this->kmParameterName = kmName;
 }
 
+void MMRxnClass::setRateExpressions(std::function<double()> kcatExpr, std::function<double()> kmExpr) {
+	this->kcatExpression = std::move(kcatExpr);
+	this->kmExpression = std::move(kmExpr);
+}
+
 void MMRxnClass::resetBaseRateFromSystemParamter() {
-	// Refresh parameter-backed kcat/Km so setParameter()+update() rescales
-	// the propensity instead of leaving load-time constants frozen
-	// (ruleworld/nfsim#105).  Literal constants (empty names) stay as-is.
+	// Refresh parameter-backed or expression-backed kcat/Km so setParameter()+update()
+	// rescales the propensity instead of leaving load-time constants frozen.
 	bool refreshed = false;
-	if (!kcatParameterName.empty()) {
+	if (kcatExpression) {
+		const double val = kcatExpression();
+		if (std::isfinite(val) && val >= 0.0) {
+			kcat = val;
+			refreshed = true;
+		}
+	} else if (!kcatParameterName.empty()) {
 		double *value = system->getParameterPtr(kcatParameterName);
 		if (value == 0) {
 			cerr << "Warning! MM reaction '" << name << "': kcat parameter '" << kcatParameterName << "' does not exist; keeping value " << kcat << "." << endl;
@@ -310,7 +387,13 @@ void MMRxnClass::resetBaseRateFromSystemParamter() {
 			refreshed = true;
 		}
 	}
-	if (!kmParameterName.empty()) {
+	if (kmExpression) {
+		const double val = kmExpression();
+		if (std::isfinite(val) && val >= 0.0) {
+			Km = val;
+			refreshed = true;
+		}
+	} else if (!kmParameterName.empty()) {
 		double *value = system->getParameterPtr(kmParameterName);
 		if (value == 0) {
 			cerr << "Warning! MM reaction '" << name << "': Km parameter '" << kmParameterName << "' does not exist; keeping value " << Km << "." << endl;
@@ -415,18 +498,30 @@ void SatRxnClass::setConstantParameterNames(const vector<string>& names) {
 	constantParameterNames = names;
 }
 
+void SatRxnClass::setConstantExpressions(std::vector<std::function<double()>> exprs) {
+	constantExpressions = std::move(exprs);
+}
+
 void SatRxnClass::resetBaseRateFromSystemParamter() {
-	if (constantParameterNames.size() != saturationConstants.size()) return;
 	bool refreshed = false;
 	for (size_t i = 0; i < saturationConstants.size(); ++i) {
-		if (constantParameterNames[i].empty()) continue;
-		double *value = system->getParameterPtr(constantParameterNames[i]);
-		if (value == 0) {
-			cerr << "Warning! Sat reaction '" << name << "': parameter '" << constantParameterNames[i] << "' does not exist; keeping value " << saturationConstants[i] << "." << endl;
+		if (i < constantExpressions.size() && constantExpressions[i]) {
+			const double val = constantExpressions[i]();
+			if (std::isfinite(val) && val >= 0.0) {
+				saturationConstants[i] = val;
+				refreshed = true;
+			}
 			continue;
 		}
-		saturationConstants[i] = *value;
-		refreshed = true;
+		if (i < constantParameterNames.size() && !constantParameterNames[i].empty()) {
+			double *value = system->getParameterPtr(constantParameterNames[i]);
+			if (value == 0) {
+				cerr << "Warning! Sat reaction '" << name << "': parameter '" << constantParameterNames[i] << "' does not exist; keeping value " << saturationConstants[i] << "." << endl;
+				continue;
+			}
+			saturationConstants[i] = *value;
+			refreshed = true;
+		}
 	}
 	if (refreshed) update_a();
 }
@@ -500,24 +595,34 @@ void HillRxnClass::setConstantParameterNames(const vector<string>& names) {
 	constantParameterNames = names;
 }
 
+void HillRxnClass::setConstantExpressions(std::vector<std::function<double()>> exprs) {
+	constantExpressions = std::move(exprs);
+}
+
 void HillRxnClass::resetBaseRateFromSystemParamter() {
-	if (constantParameterNames.size() != 3) return;
 	bool refreshed = false;
-	double *vmaxValue = constantParameterNames[0].empty() ? 0 : system->getParameterPtr(constantParameterNames[0]);
-	double *khValue = constantParameterNames[1].empty() ? 0 : system->getParameterPtr(constantParameterNames[1]);
-	double *exponentValue = constantParameterNames[2].empty() ? 0 : system->getParameterPtr(constantParameterNames[2]);
-	if (!constantParameterNames[0].empty()) {
-		if (vmaxValue == 0) cerr << "Warning! Hill reaction '" << name << "': parameter '" << constantParameterNames[0] << "' does not exist; keeping value " << vmax << "." << endl;
-		else { vmax = *vmaxValue; refreshed = true; }
-	}
-	if (!constantParameterNames[1].empty()) {
-		if (khValue == 0) cerr << "Warning! Hill reaction '" << name << "': parameter '" << constantParameterNames[1] << "' does not exist; keeping value " << kh << "." << endl;
-		else { kh = *khValue; refreshed = true; }
-	}
-	if (!constantParameterNames[2].empty()) {
-		if (exponentValue == 0) cerr << "Warning! Hill reaction '" << name << "': parameter '" << constantParameterNames[2] << "' does not exist; keeping value " << exponent << "." << endl;
-		else { exponent = *exponentValue; refreshed = true; }
-	}
+	auto refreshSlot = [&](size_t idx, double &target) {
+		if (idx < constantExpressions.size() && constantExpressions[idx]) {
+			const double val = constantExpressions[idx]();
+			if (std::isfinite(val) && val >= 0.0) {
+				target = val;
+				refreshed = true;
+			}
+			return;
+		}
+		if (idx < constantParameterNames.size() && !constantParameterNames[idx].empty()) {
+			double *valPtr = system->getParameterPtr(constantParameterNames[idx]);
+			if (valPtr == 0) {
+				cerr << "Warning! Hill reaction '" << name << "': parameter '" << constantParameterNames[idx] << "' does not exist; keeping value " << target << "." << endl;
+			} else {
+				target = *valPtr;
+				refreshed = true;
+			}
+		}
+	};
+	refreshSlot(0, vmax);
+	refreshSlot(1, kh);
+	refreshSlot(2, exponent);
 	if (refreshed) update_a();
 }
 

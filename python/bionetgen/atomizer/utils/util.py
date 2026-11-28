@@ -348,6 +348,270 @@ def testBNGFailure(fileName):
     return result
 
 
+_SAFE_SYMPY_BINOPS = None
+_SAFE_SYMPY_FUNCS = frozenset(
+    {
+        "abs",
+        "Abs",
+        "sin",
+        "cos",
+        "tan",
+        "sec",
+        "csc",
+        "cot",
+        "asin",
+        "acos",
+        "atan",
+        "atan2",
+        "asec",
+        "acsc",
+        "acot",
+        "arcsin",
+        "arccos",
+        "arctan",
+        "arcsec",
+        "arccsc",
+        "arccot",
+        "sinh",
+        "cosh",
+        "tanh",
+        "sech",
+        "csch",
+        "coth",
+        "asinh",
+        "acosh",
+        "atanh",
+        "asech",
+        "acsch",
+        "acoth",
+        "arcsinh",
+        "arccosh",
+        "arctanh",
+        "arcsech",
+        "arccsch",
+        "arccoth",
+        "exp",
+        "log",
+        "ln",
+        "log10",
+        "log2",
+        "sqrt",
+        "cbrt",
+        "root",
+        "pow",
+        "power",
+        "floor",
+        "ceiling",
+        "ceil",
+        "factorial",
+        "gamma",
+        "erf",
+        "erfc",
+        "min",
+        "max",
+        "Min",
+        "Max",
+        "sign",
+        "Piecewise",
+        "piecewise",
+        "And",
+        "Or",
+        "Not",
+        "Xor",
+        "Eq",
+        "Ne",
+        "Lt",
+        "Le",
+        "Gt",
+        "Ge",
+        "Integer",
+        "Float",
+        "Rational",
+        "gt",
+        "lt",
+        "geq",
+        "leq",
+        "eq",
+        "neq",
+        "xor",
+        "sat",
+        "Sat",
+        "MM",
+        "Hill",
+        "mratio",
+        "rint",
+        "sum",
+        "avg",
+        "delay",
+        "rateOf",
+        "Heaviside",
+        "DiracDelta",
+        "Mod",
+    }
+)
+_FORBIDDEN_SYMPY_NAMES = frozenset(
+    {
+        "__import__",
+        "__builtins__",
+        "__loader__",
+        "__spec__",
+        "__subclasses__",
+        "__globals__",
+        "__code__",
+        "__class__",
+        "__bases__",
+        "__mro__",
+        "__dict__",
+        "__init__",
+        "__new__",
+        "__reduce__",
+        "__reduce_ex__",
+        "__getattribute__",
+        "eval",
+        "exec",
+        "compile",
+        "open",
+        "getattr",
+        "setattr",
+        "delattr",
+        "globals",
+        "locals",
+        "vars",
+        "dir",
+        "type",
+        "breakpoint",
+        "input",
+        "exit",
+        "quit",
+        "help",
+        "memoryview",
+        "object",
+        "super",
+        "classmethod",
+        "staticmethod",
+        "property",
+    }
+)
+
+
+def safe_sympify(expr, locals=None):
+    """Safely convert a mathematical expression string to a SymPy expression.
+
+    Validates the parsed Python AST against a strict whitelist of mathematical
+    operations and function calls before invoking ``sympy.sympify``, blocking
+    arbitrary code execution (attribute access, imports, subscripts, lambdas,
+    comprehensions, string literals, and non-math call targets).
+    """
+    import ast
+    import sympy
+    from sympy.core.sympify import SympifyError
+
+    if isinstance(expr, (sympy.Basic, int, float, complex)):
+        return sympy.sympify(expr, locals=locals)
+    if not isinstance(expr, str):
+        raise SympifyError(f"Unsupported expression type for safe_sympify: {type(expr).__name__}")
+    text = expr.strip()
+    if not text:
+        raise SympifyError("Empty mathematical expression")
+    if len(text) > 100_000:
+        raise SympifyError("Mathematical expression exceeds maximum allowed length")
+
+    try:
+        tree = ast.parse(text, mode="eval")
+    except SyntaxError as exc:
+        raise SympifyError(f"Invalid mathematical expression syntax: {exc}") from exc
+
+    allowed_local_funcs = set()
+    if locals:
+        for key, value in locals.items():
+            if (
+                isinstance(key, str)
+                and key not in _FORBIDDEN_SYMPY_NAMES
+                and (
+                    isinstance(value, (sympy.Basic, sympy.FunctionClass))
+                    or (isinstance(value, type) and issubclass(value, sympy.Function))
+                )
+            ):
+                allowed_local_funcs.add(key)
+
+    allowed_binops = (
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.FloorDiv,
+        ast.Mod,
+        ast.Pow,
+        ast.BitXor,
+    )
+    allowed_unaryops = (ast.UAdd, ast.USub, ast.Not)
+    allowed_boolops = (ast.And, ast.Or)
+    allowed_cmpops = (ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+
+    node_count = 0
+    for node in ast.walk(tree):
+        node_count += 1
+        if node_count > 20_000:
+            raise SympifyError("Mathematical expression exceeds maximum AST complexity")
+        if isinstance(node, (ast.Expression, ast.Load, ast.Tuple)):
+            continue
+        if isinstance(node, ast.BinOp):
+            if not isinstance(node.op, allowed_binops):
+                raise SympifyError(f"Disallowed binary operator: {type(node.op).__name__}")
+            continue
+        if isinstance(node, ast.UnaryOp):
+            if not isinstance(node.op, allowed_unaryops):
+                raise SympifyError(f"Disallowed unary operator: {type(node.op).__name__}")
+            continue
+        if isinstance(node, ast.BoolOp):
+            if not isinstance(node.op, allowed_boolops):
+                raise SympifyError(f"Disallowed boolean operator: {type(node.op).__name__}")
+            continue
+        if isinstance(node, ast.Compare):
+            if not all(isinstance(op, allowed_cmpops) for op in node.ops):
+                raise SympifyError("Disallowed comparison operator")
+            continue
+        if isinstance(node, ast.IfExp):
+            continue
+        if isinstance(node, ast.Constant):
+            if not isinstance(node.value, (int, float, complex, bool)):
+                raise SympifyError(
+                    f"Disallowed literal type in mathematical expression: {type(node.value).__name__}"
+                )
+            continue
+        if isinstance(node, ast.Name):
+            if node.id in _FORBIDDEN_SYMPY_NAMES or (
+                node.id.startswith("__")
+                and node.id.endswith("__")
+                and (not locals or node.id not in locals)
+                and node.id not in {"__e__", "__Avogadro__"}
+            ):
+                raise SympifyError(f"Disallowed identifier in mathematical expression: {node.id}")
+            continue
+        if isinstance(node, ast.Call):
+            if node.keywords:
+                raise SympifyError("Keyword arguments are not allowed in mathematical expressions")
+            if not isinstance(node.func, ast.Name):
+                raise SympifyError("Dynamic or attribute call targets are not allowed")
+            func_name = node.func.id
+            if (
+                func_name in _FORBIDDEN_SYMPY_NAMES
+                or (
+                    func_name not in _SAFE_SYMPY_FUNCS
+                    and func_name not in allowed_local_funcs
+                )
+            ):
+                raise SympifyError(f"Disallowed function call in mathematical expression: {func_name}")
+            continue
+        if isinstance(node, (allowed_binops, allowed_unaryops, allowed_boolops, allowed_cmpops)):
+            continue
+        raise SympifyError(
+            f"Disallowed syntax construct in mathematical expression: {type(node).__name__}"
+        )
+
+    return sympy.sympify(text, locals=locals)
+
+
 '''
 def getValidFiles(directory, extension):
     """

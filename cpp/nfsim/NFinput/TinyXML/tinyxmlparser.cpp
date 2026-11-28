@@ -186,11 +186,14 @@ class TiXmlParsingData
 		tabsize = _tabsize;
 		cursor.row = row;
 		cursor.col = col;
+		depth = 0;
 	}
 
 	TiXmlCursor		cursor;
 	const char*		stamp;
 	int				tabsize;
+	int				depth;
+	friend class TiXmlElement;
 };
 
 
@@ -1064,8 +1067,23 @@ void TiXmlElement::StreamIn (std::istream * in, TIXML_STRING * tag)
 
 const char* TiXmlElement::Parse( const char* p, TiXmlParsingData* data, TiXmlEncoding encoding )
 {
+	static const int kMaxXmlDepth = 512;
+	static thread_local int fallbackDepth = 0;
+	int& activeDepth = data ? data->depth : fallbackDepth;
+	struct DepthGuard {
+		int& d;
+		explicit DepthGuard( int& ref ) : d( ref ) { ++d; }
+		~DepthGuard() { --d; }
+	} depthGuard( activeDepth );
+
 	p = SkipWhiteSpace( p, encoding );
 	TiXmlDocument* document = GetDocument();
+
+	if ( activeDepth > kMaxXmlDepth )
+	{
+		if ( document ) document->SetError( TIXML_ERROR_PARSING_ELEMENT, p, data, encoding );
+		return 0;
+	}
 
 	if ( !p || !*p )
 	{

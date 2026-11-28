@@ -14,9 +14,12 @@
 #include <cctype>
 #include <cmath>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <set>
+#include <sstream>
 #include <unordered_map>
 #include <stdexcept>
 #include <unordered_set>
@@ -266,10 +269,13 @@ std::string expressionText(const bng::compile::CompiledModel& model,
         return result;
     };
     switch (expression.kind) {
-    case Kind::Number:
+    case Kind::Number: {
         if (!std::isfinite(expression.numberValue)) { ok = false; return {}; }
         if (expression.operation == "_Na") return "_Na";
-        return std::to_string(expression.numberValue);
+        std::ostringstream oss;
+        oss << std::setprecision(17) << expression.numberValue;
+        return oss.str();
+    }
     case Kind::ParameterRef: {
         if (!expression.symbol.has_value()) { ok = false; return {}; }
         const auto* p = model.parameter(bng::compile::ParameterId::fromDenseIndex(
@@ -297,12 +303,19 @@ std::string expressionText(const bng::compile::CompiledModel& model,
         return "reactant_" + std::to_string(expression.reactantIndex + 1);
     case Kind::TimeRef:
         return "time";
-    case Kind::Unary:
+    case Kind::Unary: {
         if (!expression.unaryOp.has_value() || expression.arguments.size() != 1) {
             ok = false; return {};
         }
-        return std::string(unaryText(*expression.unaryOp)) +
-               expressionText(model, expression.arguments.front(), ok);
+        const std::string inner = expressionText(model, expression.arguments.front(), ok);
+        if (*expression.unaryOp == bng::compile::UnaryOp::LogicalNot) {
+            return "((" + inner + ") == 0)";
+        }
+        if (*expression.unaryOp == bng::compile::UnaryOp::Plus) {
+            return "(" + inner + ")";
+        }
+        return "(" + std::string(unaryText(*expression.unaryOp)) + "(" + inner + "))";
+    }
     case Kind::Binary:
         if (!expression.binaryOp.has_value() || expression.arguments.size() != 2) {
             ok = false; return {};
@@ -543,7 +556,202 @@ bool configureTableFunction(
     return false;
 }
 
+struct LiveCompiledExprNode {
+    bng::compile::ResolvedExpressionKind kind = bng::compile::ResolvedExpressionKind::Unresolved;
+    double numberValue = 0.0;
+    std::string paramName;
+    bng::compile::UnaryOp unaryOp = bng::compile::UnaryOp::Unknown;
+    bng::compile::BinaryOp binaryOp = bng::compile::BinaryOp::Unknown;
+    bng::compile::BuiltinFunction builtin = bng::compile::BuiltinFunction::Unknown;
+    std::vector<std::shared_ptr<LiveCompiledExprNode>> children;
+
+    double eval(const std::map<std::string, double>& params) const {
+        using Kind = bng::compile::ResolvedExpressionKind;
+        using UOp = bng::compile::UnaryOp;
+        using BOp = bng::compile::BinaryOp;
+        using Fn = bng::compile::BuiltinFunction;
+        switch (kind) {
+        case Kind::Number:
+            return numberValue;
+        case Kind::ParameterRef: {
+            const auto it = params.find(paramName);
+            return it == params.end() ? std::numeric_limits<double>::quiet_NaN() : it->second;
+        }
+        case Kind::Unary: {
+            if (children.size() != 1) return std::numeric_limits<double>::quiet_NaN();
+            const double v = children[0]->eval(params);
+            switch (unaryOp) {
+            case UOp::Plus: return v;
+            case UOp::Negate: return -v;
+            case UOp::LogicalNot: return (v == 0.0) ? 1.0 : 0.0;
+            default: return std::numeric_limits<double>::quiet_NaN();
+            }
+        }
+        case Kind::Binary: {
+            if (children.size() != 2) return std::numeric_limits<double>::quiet_NaN();
+            const double a = children[0]->eval(params);
+            const double b = children[1]->eval(params);
+            switch (binaryOp) {
+            case BOp::Add: return a + b;
+            case BOp::Subtract: return a - b;
+            case BOp::Multiply: return a * b;
+            case BOp::Divide: return a / b;
+            case BOp::Power: return std::pow(a, b);
+            case BOp::Less: return a < b ? 1.0 : 0.0;
+            case BOp::LessEqual: return a <= b ? 1.0 : 0.0;
+            case BOp::Greater: return a > b ? 1.0 : 0.0;
+            case BOp::GreaterEqual: return a >= b ? 1.0 : 0.0;
+            case BOp::Equal: return a == b ? 1.0 : 0.0;
+            case BOp::NotEqual: return a != b ? 1.0 : 0.0;
+            case BOp::LogicalAnd: return (a != 0.0 && b != 0.0) ? 1.0 : 0.0;
+            case BOp::LogicalOr: return (a != 0.0 || b != 0.0) ? 1.0 : 0.0;
+            default: return std::numeric_limits<double>::quiet_NaN();
+            }
+        }
+        case Kind::BuiltinCall: {
+            std::vector<double> args;
+            args.reserve(children.size());
+            for (const auto& c : children) args.push_back(c->eval(params));
+            switch (builtin) {
+            case Fn::Abs: return args.size() == 1 ? std::fabs(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Acos: return args.size() == 1 ? std::acos(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Acosh: return args.size() == 1 ? std::acosh(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Asin: return args.size() == 1 ? std::asin(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Asinh: return args.size() == 1 ? std::asinh(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Atan: return args.size() == 1 ? std::atan(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Atanh: return args.size() == 1 ? std::atanh(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Ceil: return args.size() == 1 ? std::ceil(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Cos: return args.size() == 1 ? std::cos(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Cosh: return args.size() == 1 ? std::cosh(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Exp: return args.size() == 1 ? std::exp(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Floor: return args.size() == 1 ? std::floor(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Ln: return args.size() == 1 ? std::log(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Log10: return args.size() == 1 ? std::log10(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Log2: return args.size() == 1 ? std::log2(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Rint: return args.size() == 1 ? std::rint(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Sin: return args.size() == 1 ? std::sin(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Sinh: return args.size() == 1 ? std::sinh(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Sqrt: return args.size() == 1 ? std::sqrt(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Tan: return args.size() == 1 ? std::tan(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Tanh: return args.size() == 1 ? std::tanh(args[0]) : std::numeric_limits<double>::quiet_NaN();
+            case Fn::Min: return args.empty() ? std::numeric_limits<double>::quiet_NaN()
+                                              : *std::min_element(args.begin(), args.end());
+            case Fn::Max: return args.empty() ? std::numeric_limits<double>::quiet_NaN()
+                                              : *std::max_element(args.begin(), args.end());
+            case Fn::Sum: {
+                double s = 0.0;
+                for (double v : args) s += v;
+                return s;
+            }
+            case Fn::Avg: {
+                if (args.empty()) return std::numeric_limits<double>::quiet_NaN();
+                double s = 0.0;
+                for (double v : args) s += v;
+                return s / static_cast<double>(args.size());
+            }
+            case Fn::If:
+                return args.size() == 3 ? (args[0] != 0.0 ? args[1] : args[2])
+                                        : std::numeric_limits<double>::quiet_NaN();
+            case Fn::E: return 2.71828182845904523536;
+            case Fn::Pi: return 3.14159265358979323846;
+            default: return std::numeric_limits<double>::quiet_NaN();
+            }
+        }
+        default:
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+    }
+};
+
+std::shared_ptr<LiveCompiledExprNode> buildLiveCompiledNode(
+    const bng::compile::CompiledModel& model,
+    const bng::compile::ResolvedExpression& expr,
+    std::unordered_set<std::size_t>& activeFunctions,
+    bool& hasParamRef) {
+    using Kind = bng::compile::ResolvedExpressionKind;
+    auto node = std::make_shared<LiveCompiledExprNode>();
+    node->kind = expr.kind;
+    switch (expr.kind) {
+    case Kind::Number:
+        if (!std::isfinite(expr.numberValue)) return nullptr;
+        node->numberValue = expr.numberValue;
+        return node;
+    case Kind::ParameterRef: {
+        if (!expr.symbol.has_value()) return nullptr;
+        const auto* p = model.parameter(
+            bng::compile::ParameterId::fromDenseIndex(expr.symbol->index));
+        if (p == nullptr) return nullptr;
+        node->paramName = p->name;
+        hasParamRef = true;
+        return node;
+    }
+    case Kind::FunctionRef: {
+        if (!expr.symbol.has_value() || !expr.arguments.empty()) return nullptr;
+        const auto* f = model.function(
+            bng::compile::FunctionId::fromDenseIndex(expr.symbol->index));
+        if (f == nullptr || !activeFunctions.insert(expr.symbol->index).second) return nullptr;
+        auto inner = buildLiveCompiledNode(model, f->expression, activeFunctions, hasParamRef);
+        activeFunctions.erase(expr.symbol->index);
+        return inner;
+    }
+    case Kind::Unary:
+        if (!expr.unaryOp.has_value() || expr.arguments.size() != 1) return nullptr;
+        node->unaryOp = *expr.unaryOp;
+        if (auto c = buildLiveCompiledNode(model, expr.arguments[0], activeFunctions, hasParamRef)) {
+            node->children.push_back(std::move(c));
+            return node;
+        }
+        return nullptr;
+    case Kind::Binary:
+        if (!expr.binaryOp.has_value() || expr.arguments.size() != 2) return nullptr;
+        node->binaryOp = *expr.binaryOp;
+        for (const auto& arg : expr.arguments) {
+            auto c = buildLiveCompiledNode(model, arg, activeFunctions, hasParamRef);
+            if (!c) return nullptr;
+            node->children.push_back(std::move(c));
+        }
+        return node;
+    case Kind::BuiltinCall:
+        if (!expr.builtin.has_value()) return nullptr;
+        node->builtin = *expr.builtin;
+        for (const auto& arg : expr.arguments) {
+            auto c = buildLiveCompiledNode(model, arg, activeFunctions, hasParamRef);
+            if (!c) return nullptr;
+            node->children.push_back(std::move(c));
+        }
+        return node;
+    default:
+        return nullptr;
+    }
+}
+
 } // namespace
+
+std::function<double(const std::map<std::string, double>&)>
+makeLiveCompiledParamEvaluator(
+    const bng::compile::CompiledModel& model,
+    const bng::compile::ResolvedExpression& expression) {
+    std::unordered_set<std::size_t> activeFunctions;
+    bool hasParamRef = false;
+    auto root = buildLiveCompiledNode(model, expression, activeFunctions, hasParamRef);
+    if (!root || !hasParamRef) return {};
+    return [root](const std::map<std::string, double>& params) -> double {
+        return root->eval(params);
+    };
+}
+
+std::function<double()>
+makeLiveCompiledSystemEvaluator(
+    const bng::compile::CompiledModel& model,
+    const bng::compile::ResolvedExpression& expression,
+    NFcore::System* system) {
+    if (system == nullptr) return {};
+    auto paramEval = makeLiveCompiledParamEvaluator(model, expression);
+    if (!paramEval) return {};
+    return [system, paramEval = std::move(paramEval)]() -> double {
+        return paramEval(system->getParameterMap());
+    };
+}
 
 bool configureTableFunctionFromCompiled(
     const bng::compile::CompiledModel& model,
@@ -590,6 +798,9 @@ bool addParametersFromCompiled(const bng::compile::CompiledModel& model,
         }
         parameters[parameter.name] = *parameter.constantValue;
         system->addParameter(parameter.name, *parameter.constantValue);
+        if (auto derivedEval = makeLiveCompiledParamEvaluator(model, parameter.expression)) {
+            system->addDerivedParameter(parameter.name, std::move(derivedEval));
+        }
         if (verbose) std::cerr << "[nfsim/compiled] parameter " << parameter.name
                                << " = " << *parameter.constantValue << "\n";
     }
@@ -1074,7 +1285,30 @@ bool addSpeciesFromCompiledWithOverrides(
         if (population && !generated.front().front()->setPopulation(count)) return false;
         if (seed.constant) {
             if (molecules.size() != 1 || population) return false;
-            types.front()->setFixed(true, count, compartments.front());
+            NFcore::MoleculeType* fixedType = types.front();
+            std::vector<int> fixedStates(static_cast<std::size_t>(fixedType->getNumOfComponents()));
+            for (int c = 0; c < fixedType->getNumOfComponents(); ++c) {
+                fixedStates[static_cast<std::size_t>(c)] = fixedType->getDefaultComponentState(c);
+            }
+            if (!generated.front().empty()) {
+                for (int c = 0; c < fixedType->getNumOfComponents(); ++c) {
+                    fixedStates[static_cast<std::size_t>(c)] =
+                        generated.front().front()->getComponentState(c);
+                }
+            } else {
+                for (const auto& site : molecules.front().sites) {
+                    if (!site.componentType.has_value()) continue;
+                    if (site.stateConstraintResolved.kind != bng::compile::StateConstraintKind::Exact ||
+                        !site.stateConstraintResolved.exact.has_value()) continue;
+                    const auto* stateName = model.stateName(*site.stateConstraintResolved.exact);
+                    if (stateName == nullptr) return false;
+                    const auto runtimeName = runtimeComponentName(model, *site.componentType);
+                    const int compIdx = fixedType->getCompIndexFromName(runtimeName);
+                    fixedStates[static_cast<std::size_t>(compIdx)] =
+                        fixedType->getStateValueFromName(compIdx, *stateName);
+                }
+            }
+            fixedType->addFixedSpec(count, compartments.front(), fixedStates);
         }
         if (verbose)
             std::cerr << "[nfsim/compiled] seed " << seed.sourcePattern
@@ -1136,6 +1370,7 @@ bool addEnergyPatternsFromCompiled(const bng::compile::CompiledModel& model,
             return false;
         }
         info.energyValue = *factor.evaluatedValue;
+        info.energyEvaluator = makeLiveCompiledParamEvaluator(model, factor.expression);
         if (!factor.pattern.isResolved() || factor.pattern.molecules().empty()) {
             delete energyFunction;
             return false;
@@ -1181,12 +1416,18 @@ bool addEnergyPatternsFromCompiled(const bng::compile::CompiledModel& model,
                     return false;
                 }
                 epMolecule.components.push_back(std::move(component));
+                auto& storedComponent = epMolecule.components.back();
 
                 const auto collect = [&](const bng::compile::PatternBondDescriptor& bond) {
                     if (bond.kind == bng::compile::BondConstraintKind::Exact &&
                         bond.group.value != 0) {
                         bondEndpoints[bond.group.value].push_back(
                             {static_cast<int>(moleculeIndex), static_cast<int>(siteIndex)});
+                    } else if (bond.kind == bng::compile::BondConstraintKind::Bound) {
+                        storedComponent.isBound = true;
+                        storedComponent.isWildcardBound = true;
+                    } else if (bond.kind == bng::compile::BondConstraintKind::Unbound) {
+                        storedComponent.isUnbound = true;
                     }
                 };
                 if (site.bondConstraints.empty())
@@ -1210,6 +1451,10 @@ bool addEnergyPatternsFromCompiled(const bng::compile::CompiledModel& model,
             auto& second = info.molecules[bond.mol2].components[bond.comp2];
             first.isBound = true;
             second.isBound = true;
+            first.isWildcardBound = false;
+            second.isWildcardBound = false;
+            first.isUnbound = false;
+            second.isUnbound = false;
             first.bondPartnerId = info.molecules[bond.mol2].xmlId;
             second.bondPartnerId = info.molecules[bond.mol1].xmlId;
         }
@@ -1539,6 +1784,5 @@ bool addFunctionsFromCompiled(const bng::compile::CompiledModel& model,
     system->finalizeCompositeFunctions();
     return true;
 }
-
 
 } // namespace NFinput

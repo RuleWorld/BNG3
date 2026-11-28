@@ -116,6 +116,7 @@ class bngmodel:
             suppress=suppress,
         )
         self.bngparser.parse_model(self)
+        self._sync_native_rule_metadata()
         for block in self._block_order:
             if block not in self.active_blocks:
                 self.add_empty_block(block)
@@ -131,6 +132,54 @@ class bngmodel:
                 "No active blocks. Please ensure model is in proper BNGL or BNG-XML format",
                 loc=f"{__file__} : bngmodel.__init__()",
             )
+
+    def _sync_native_rule_metadata(self):
+        """Preserve rule-level delay / NonConsuming metadata dropped by legacy XML parsing."""
+        if not hasattr(self, "rules") or not self.rules.items:
+            return
+        model_path = self.model_path
+        if not model_path or not isinstance(model_path, (str, os.PathLike)):
+            return
+        path_str = os.fspath(model_path)
+        if not os.path.isfile(path_str) or path_str.lower().endswith(".xml"):
+            return
+        try:
+            from bionetgen.model import _cpp
+
+            if _cpp is None:
+                return
+            cpp_model = _cpp.parse_file(path_str)
+        except Exception:
+            return
+        cpp_rules = list(getattr(cpp_model, "reaction_rules", []))
+        if not any(
+            getattr(r, "has_delay", False) or getattr(r, "is_non_consuming", False)
+            for r in cpp_rules
+        ):
+            return
+        by_label = {}
+        for idx, cpp_rule in enumerate(cpp_rules, start=1):
+            label = str(getattr(cpp_rule, "label", "")).rstrip(":")
+            if label:
+                by_label[label] = cpp_rule
+            rname = str(getattr(cpp_rule, "rule_name", ""))
+            if rname:
+                by_label.setdefault(rname, cpp_rule)
+            by_label.setdefault(f"Rule{idx}", cpp_rule)
+            by_label.setdefault(f"R{idx}", cpp_rule)
+        rule_items = list(self.rules.items.items())
+        for idx, (key, rule_obj) in enumerate(rule_items):
+            cpp_rule = by_label.get(str(key)) or (
+                cpp_rules[idx] if idx < len(cpp_rules) else None
+            )
+            if cpp_rule is None:
+                continue
+            if getattr(cpp_rule, "has_delay", False):
+                delay_expr = getattr(cpp_rule, "delay_expression", None)
+                if delay_expr:
+                    rule_obj._delay_expression = str(delay_expr)
+            if getattr(cpp_rule, "is_non_consuming", False):
+                rule_obj._is_non_consuming = True
 
     @property
     def recompile(self):

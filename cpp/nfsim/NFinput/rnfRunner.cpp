@@ -201,9 +201,21 @@ void print(const string& com,System *s)
 
 void simulate(const string& command,System *s, bool verbose)
 {
-	int id1=command.find("sim");
+	const string::size_type id1 = command.find("sim");
+	if (id1 == string::npos || id1 + 3 >= command.size()) {
+		cout<<"\nError in RNF execution command. \n";
+		cout<<"   >> "+command+"\n";
+		cout<<"   Missing simulation time argument.\n"<<endl;
+		return;
+	}
 	string times = command.substr(id1+3);
 	NFutil::trim(times);
+	if (times.empty()) {
+		cout<<"\nError in RNF execution command. \n";
+		cout<<"   >> "+command+"\n";
+		cout<<"   Missing simulation time argument.\n"<<endl;
+		return;
+	}
 
 	string::size_type firstWhiteSpace = times.find_first_of(" \t");
 
@@ -236,9 +248,21 @@ void simulate(const string& command,System *s, bool verbose)
 
 void equilibrate(const string& command,System *s)
 {
-	int id1=command.find("eq");
-	string times = command.substr(id1+3);
+	const string::size_type id1 = command.find("eq");
+	if (id1 == string::npos || id1 + 2 >= command.size()) {
+		cout<<"\nError in RNF execution command. \n";
+		cout<<"   >> "+command+"\n";
+		cout<<"   Missing equilibration time argument.\n"<<endl;
+		return;
+	}
+	string times = command.substr(id1+2);
 	NFutil::trim(times);
+	if (times.empty()) {
+		cout<<"\nError in RNF execution command. \n";
+		cout<<"   >> "+command+"\n";
+		cout<<"   Missing equilibration time argument.\n"<<endl;
+		return;
+	}
 
 	string::size_type firstWhiteSpace = times.find_first_of(" \t");
 

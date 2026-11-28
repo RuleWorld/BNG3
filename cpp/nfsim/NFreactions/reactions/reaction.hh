@@ -16,6 +16,10 @@ namespace NFcore
 	double perComplexRateFactorSum(ReactantTree *tree);
 	void collectReactantRepresentatives(ReactantList *rl, bool perComplex,
 			std::vector<MappingSet*> &out, std::vector<int> *flatIndices = 0);
+	void collectReactantRepresentatives(ReactantTree *tree, bool perComplex,
+			std::vector<MappingSet*> &out, std::vector<int> *flatIndices = 0);
+	void pickPerComplexFromTree(ReactantTree *tree, MappingSet *&ms, double targetValue);
+	void pickRandomPerComplex(ReactantList *rl, MappingSet *&ms, NfsimRNG &rng);
 
 	class BasicRxnClass : public ReactionClass {
 		public:
@@ -104,6 +108,7 @@ namespace NFcore
 			virtual ~MMRxnClass();
 
 			void setRateParameterNames(const std::string& kcatName, const std::string& kmName);
+			void setRateExpressions(std::function<double()> kcatExpr, std::function<double()> kmExpr);
 			virtual void resetBaseRateFromSystemParamter();
 
 			virtual double update_a();
@@ -125,6 +130,8 @@ namespace NFcore
 			double sFree;
 			std::string kcatParameterName;
 			std::string kmParameterName;
+			std::function<double()> kcatExpression;
+			std::function<double()> kmExpression;
 		};
 
 	class SatRxnClass : public BasicRxnClass {
@@ -134,6 +141,7 @@ namespace NFcore
 			virtual ~SatRxnClass();
 
 			void setConstantParameterNames(const std::vector<std::string>& names);
+			void setConstantExpressions(std::vector<std::function<double()>> exprs);
 			virtual void resetBaseRateFromSystemParamter();
 
 			virtual double update_a();
@@ -146,6 +154,7 @@ namespace NFcore
 		protected:
 			vector<double> saturationConstants;
 			std::vector<std::string> constantParameterNames;
+			std::vector<std::function<double()>> constantExpressions;
 	};
 
 	class HillRxnClass : public BasicRxnClass {
@@ -155,6 +164,7 @@ namespace NFcore
 			virtual ~HillRxnClass();
 
 			void setConstantParameterNames(const std::vector<std::string>& names);
+			void setConstantExpressions(std::vector<std::function<double()>> exprs);
 			virtual void resetBaseRateFromSystemParamter();
 
 			virtual double update_a();
@@ -169,6 +179,7 @@ namespace NFcore
 			double kh;
 			double exponent;
 			std::vector<std::string> constantParameterNames;
+			std::vector<std::function<double()>> constantExpressions;
 	};
 
 
@@ -360,6 +371,11 @@ namespace NFcore
 					Molecule *m, int reactantIndex, int rxnListIndex);
 			virtual int getReactantCount(unsigned int reactantIndex) const;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
+			void setLiveEnergyExpressions(
+					std::function<double()> phiExprFn,
+					std::function<double()> ea0ExprFn,
+					double barrierVal);
+			virtual void resetBaseRateFromSystemParamter();
 
 		protected:
 			virtual void pickMappingSets(double randNumber) const;
@@ -371,7 +387,11 @@ namespace NFcore
 
 		private:
 			vector<EnergyPatternTerm> conditionalTerms;
+			vector<int> basePatternIndices;
 			vector<int> conditionComponentIndices;
+			vector<MoleculeType *> conditionPartnerTypes;
+			vector<int> conditionPartnerCompIndices;
+			bool requiresPartnerCheck;
 			vector<std::uint64_t> conditionalComponentMasks;
 			bool componentMaskFastPath;
 			bool simpleMembership;
@@ -389,6 +409,9 @@ namespace NFcore
 			double phi;
 			double RT;
 			bool isForward;
+			std::function<double()> phiExpression;
+			std::function<double()> ea0Expression;
+			double barrierEnergy;
 			std::uint64_t weightedDependencyMask;
 			bool dependencyMaskValid;
 			bool singleConditionalTermFastPath;
@@ -398,6 +421,8 @@ namespace NFcore
 			vector<double> conditionalRateFactors;
 			unsigned int minimumConditionalBits;
 
+			void rebuildFactorCache();
+			bool conditionMatchesMolecule(Molecule *weightedMolecule, unsigned int ci) const;
 			void refreshCompactRateFactor();
 
 			bool dependsOnEndpoint(
