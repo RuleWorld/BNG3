@@ -1031,8 +1031,8 @@ def _flatten_comp_package(
     return flattened, None
 
 
-# ``log`` with a base of ten is already lowered to ``log10``.  Any other base
-# becomes a ``log(base, x)`` call, which the engine does not define.
+# ``log`` with a base of ten is lowered to ``log10``.  Any other base becomes
+# ``log(base, x)``, which ``math_builtins`` lowers to ``(ln(x)/ln(base))``.
 _DECIMAL_LOG_BASES = frozenset({"10", "10.0", "1e1", "10.00"})
 
 
@@ -1317,8 +1317,8 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
             if logbase is not None:
                 base = _mathml_to_formula(logbase, True)
                 # A base of ten is the default MathML base, and BNGL spells it
-                # ``log10``.  Every other base would need a call BNGL does not
-                # define, which the MathML diagnostics report.
+                # ``log10``.  Every other base lowers to ``log(base, x)``,
+                # which ``math_builtins`` rewrites to ``(ln(x)/ln(base))``.
                 if base in _DECIMAL_LOG_BASES:
                     return f"log10({args[0] if args else ''})"
                 return f"log({base}, {args[0] if args else ''})"
@@ -3505,9 +3505,10 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
                 if expanded_first is not None and re.search(
                     r"\btime\b", expanded_first, re.IGNORECASE
                 ):
+                    clamped_time = f"if(time < ({second}), 0, time - ({second}))"
                     shifted = re.sub(
                         r"\btime\b",
-                        f"(time - ({second}))",
+                        lambda _match, replacement=clamped_time: replacement,
                         expanded_first,
                         flags=re.IGNORECASE,
                     )
@@ -3999,12 +4000,6 @@ class SBMLParser:
                             f"<apply> uses the undefined operator '{name}'; the "
                             "model names no such function, so the rate expression "
                             "cannot be represented."
-                        )
-                elif tag == "logbase":
-                    if _mathml_to_formula(element).strip() not in _DECIMAL_LOG_BASES:
-                        add(
-                            "<log> with a non-decimal <logbase> in math; it is "
-                            "emitted as log(base, x), a call BNGL does not define."
                         )
                 elif tag in {"gcd", "lcm"}:
                     add(
@@ -5267,6 +5262,214 @@ class SBMLParser:
             ]
 
     @staticmethod
+    def _resolve_t0_initial_symbols(
+        model: SBMLModel, *, include_species: bool = True
+    ) -> Dict[str, float]:
+        """Resolve all deterministic SBML symbol values at t = 0 in dependency order.
+
+        Follows SBML Level 3 Version 2 Core Sec. 3.4.8 / 4.8.5 / 4.9.3:
+        declared attribute values seed only entities not overridden by an
+        ``initialAssignment`` or ``assignmentRule``; rate-ruled and
+        event-targeted entities still contribute their declared t = 0 values;
+        assignment rules and initial assignments then converge in one unified
+        fixed-point pass across parameters, compartments, species, and
+        species references.
+        """
+
+        ia_counts: Dict[str, int] = {}
+        for assignment in model.initial_assignments:
+            symbol = str(getattr(assignment, "symbol", "") or "")
+            if symbol:
+                norm = standardize_name(symbol)
+                ia_counts[norm] = ia_counts.get(norm, 0) + 1
+        ar_counts: Dict[str, int] = {}
+        for rule in model.rules:
+            if getattr(rule, "type", "") == "assignment" and rule.variable:
+                norm = standardize_name(str(rule.variable))
+                ar_counts[norm] = ar_counts.get(norm, 0) + 1
+
+        overridden_keys = set(ia_counts) | set(ar_counts)
+        alg_symbol_keys = {
+            standardize_name(token)
+            for rule in model.rules
+            if getattr(rule, "type", "") == "algebraic" and rule.math
+            for token in _IDENTIFIER_PATTERN.findall(str(rule.math))
+        }
+        standardized_species_ids = {
+            standardize_name(str(species_id)) for species_id in model.species
+        }
+
+        base_symbols: Dict[str, float] = {"time": 0.0}
+        for parameter_id, parameter in model.parameters.items():
+            pid = str(parameter_id)
+            norm = standardize_name(pid)
+            if norm in overridden_keys:
+                continue
+            if not parameter.constant and norm in alg_symbol_keys:
+                continue
+            if not (getattr(parameter, "value_set", True) or parameter.constant):
+                continue
+            if math.isfinite(parameter.value):
+                base_symbols[pid] = float(parameter.value)
+                base_symbols[norm] = float(parameter.value)
+
+        for compartment_id, compartment in model.compartments.items():
+            cid = str(compartment_id)
+            norm = standardize_name(cid)
+            if norm in overridden_keys:
+                continue
+            if not compartment.constant and norm in alg_symbol_keys:
+                continue
+            if math.isfinite(compartment.size):
+                base_symbols[cid] = float(compartment.size)
+                base_symbols[norm] = float(compartment.size)
+
+        for reaction in model.reactions.values():
+            for reference in [*reaction.reactants, *reaction.products]:
+                ref_id = str(getattr(reference, "id", "") or "")
+                if not ref_id or getattr(reference, "stoichiometry_math", ""):
+                    continue
+                norm = standardize_name(ref_id)
+                if norm in overridden_keys or norm in alg_symbol_keys:
+                    continue
+                if ref_id in base_symbols or norm in base_symbols:
+                    continue
+                try:
+                    stoich = float(reference.stoichiometry)
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(stoich):
+                    base_symbols[ref_id] = stoich
+                    base_symbols[norm] = stoich
+
+        species_values: Dict[str, float] = {}
+        rule_values: Dict[str, float] = {}
+        ia_values: Dict[str, float] = {}
+
+        def merged() -> Dict[str, float]:
+            view = dict(base_symbols)
+            view.update(species_values)
+            view.update(rule_values)
+            view.update(ia_values)
+            return view
+
+        max_passes = (
+            len(model.initial_assignments)
+            + len(model.rules)
+            + len(model.species)
+            + 2
+        )
+        for _ in range(max_passes):
+            progressed = False
+            if include_species:
+                view = merged()
+                for species_id, species in model.species.items():
+                    sid = str(species_id)
+                    norm = standardize_name(sid)
+                    if (
+                        norm in overridden_keys
+                        or (not species.constant and norm in alg_symbol_keys)
+                        or sid in species_values
+                    ):
+                        continue
+                    comp_id = str(getattr(species, "compartment", "") or "")
+                    comp_obj = model.compartments.get(comp_id) if comp_id else None
+                    comp_dims = (
+                        3.0
+                        if (
+                            comp_obj is None
+                            or getattr(comp_obj, "spatial_dimensions", None) is None
+                        )
+                        else float(comp_obj.spatial_dimensions)
+                    )
+                    comp_size = (
+                        1.0
+                        if (not comp_id or comp_dims == 0.0)
+                        else view.get(comp_id, view.get(standardize_name(comp_id)))
+                    )
+                    sp_val: Optional[float] = None
+                    if bool(getattr(species, "has_only_substance_units", False)):
+                        if bool(getattr(species, "initial_amount_set", False)) and math.isfinite(
+                            float(species.initial_amount)
+                        ):
+                            sp_val = float(species.initial_amount)
+                        elif (
+                            bool(getattr(species, "initial_concentration_set", False))
+                            and math.isfinite(float(species.initial_concentration))
+                            and comp_size is not None
+                        ):
+                            sp_val = float(species.initial_concentration) * float(
+                                comp_size
+                            )
+                    else:
+                        if bool(
+                            getattr(species, "initial_concentration_set", False)
+                        ) and math.isfinite(float(species.initial_concentration)):
+                            sp_val = float(species.initial_concentration)
+                        elif (
+                            bool(getattr(species, "initial_amount_set", False))
+                            and math.isfinite(float(species.initial_amount))
+                            and comp_size is not None
+                            and comp_size != 0.0
+                        ):
+                            sp_val = float(species.initial_amount) / float(comp_size)
+                    if sp_val is not None and math.isfinite(sp_val):
+                        species_values[sid] = sp_val
+                        species_values[norm] = sp_val
+                        progressed = True
+
+            for rule in model.rules:
+                if getattr(rule, "type", "") != "assignment" or not rule.variable:
+                    continue
+                variable = str(rule.variable)
+                norm = standardize_name(variable)
+                if ar_counts.get(norm, 0) != 1:
+                    continue
+                if not include_species and (
+                    variable in model.species or norm in standardized_species_ids
+                ):
+                    continue
+                value = _evaluate_static_arithmetic(
+                    str(getattr(rule, "math", "") or ""),
+                    merged(),
+                    model.function_definitions,
+                )
+                if value is None or not math.isfinite(value):
+                    continue
+                if rule_values.get(variable) != value or rule_values.get(norm) != value:
+                    rule_values[variable] = value
+                    rule_values[norm] = value
+                    progressed = True
+
+            for assignment in model.initial_assignments:
+                symbol = str(getattr(assignment, "symbol", "") or "")
+                if not symbol:
+                    continue
+                norm = standardize_name(symbol)
+                if ia_counts.get(norm, 0) != 1:
+                    continue
+                if not include_species and (
+                    symbol in model.species or norm in standardized_species_ids
+                ):
+                    continue
+                value = _evaluate_static_arithmetic(
+                    str(getattr(assignment, "math", "") or ""),
+                    merged(),
+                    model.function_definitions,
+                )
+                if value is None or not math.isfinite(value):
+                    continue
+                if ia_values.get(symbol) != value or ia_values.get(norm) != value:
+                    ia_values[symbol] = value
+                    ia_values[norm] = value
+                    progressed = True
+
+            if not progressed:
+                break
+
+        return merged()
+
+    @staticmethod
     def _fold_static_compartment_initial_assignments(model: SBMLModel) -> None:
         """Apply an initial assignment that sets a compartment's size.
 
@@ -5303,6 +5506,12 @@ class SBMLParser:
             for assignment in event.assignments
             if getattr(assignment, "variable", None)
         }
+        ia_counts: Dict[str, int] = {}
+        for assignment in model.initial_assignments:
+            symbol = str(getattr(assignment, "symbol", "") or "")
+            if symbol:
+                norm = standardize_name(symbol)
+                ia_counts[norm] = ia_counts.get(norm, 0) + 1
         pending = []
         for assignment in model.initial_assignments:
             symbol = str(getattr(assignment, "symbol", "") or "")
@@ -5310,67 +5519,23 @@ class SBMLParser:
                 continue
             if symbol in assignment_rule_targets or symbol in event_targets:
                 continue
+            if ia_counts.get(standardize_name(symbol), 0) != 1:
+                continue
             pending.append(assignment)
         if not pending:
             return
 
-        # A compartment that an initial assignment targets takes its size
-        # from that assignment, not from its declared ``size`` attribute, so
-        # it must not contribute its declared size here.  Its folded value
-        # joins the table below instead.
-        initial_assignment_targets = {
-            str(getattr(assignment, "symbol", "") or "")
-            for assignment in model.initial_assignments
-        }
-        symbols: Dict[str, float] = {}
-        for parameter_id, parameter in model.parameters.items():
-            if (
-                not parameter.constant
-                or str(parameter_id) in assignment_rule_targets
-                or str(parameter_id) in initial_assignment_targets
-            ):
+        symbols = SBMLParser._resolve_t0_initial_symbols(model, include_species=True)
+        for assignment in pending:
+            symbol = str(assignment.symbol)
+            expression = str(getattr(assignment, "math", "") or "")
+            if not expression:
                 continue
-            if math.isfinite(parameter.value):
-                symbols[str(parameter_id)] = parameter.value
-                symbols[standardize_name(str(parameter_id))] = parameter.value
-        for compartment_id, compartment in model.compartments.items():
-            if (
-                not compartment.constant
-                or str(compartment_id) in assignment_rule_targets
-                or str(compartment_id) in initial_assignment_targets
-            ):
+            value = symbols.get(symbol)
+            if value is None or not math.isfinite(value):
                 continue
-            if math.isfinite(compartment.size):
-                symbols[str(compartment_id)] = compartment.size
-                symbols[standardize_name(str(compartment_id))] = compartment.size
-        # SBML assumes a zero start time, so the built-in time symbol is 0
-        # while the initial values are established.
-        symbols["time"] = 0.0
-
-        # One initial assignment may use the value another one establishes,
-        # so fold repeatedly until no further compartment resolves.
-        folded: Dict[int, str] = {}
-        for _ in range(len(pending) + 1):
-            progressed = False
-            for assignment in pending:
-                if id(assignment) in folded:
-                    continue
-                expression = str(getattr(assignment, "math", "") or "")
-                if not expression:
-                    continue
-                value = _evaluate_static_arithmetic(
-                    expression, symbols, model.function_definitions
-                )
-                if value is None or not math.isfinite(value):
-                    continue
-                symbol = str(assignment.symbol)
-                model.compartments[symbol].size = value
-                symbols[symbol] = value
-                symbols[standardize_name(symbol)] = value
-                folded[id(assignment)] = symbol
-                progressed = True
-            if not progressed:
-                break
+            model.compartments[symbol].size = value
+            model.compartments[symbol].size_set = True
 
     @staticmethod
     def _fold_static_species_assignments(model: SBMLModel) -> None:
@@ -5535,59 +5700,25 @@ class SBMLParser:
         if not rules:
             return
 
-        symbols: Dict[str, float] = {}
-        for parameter_id, parameter in model.parameters.items():
-            if math.isfinite(parameter.value):
-                symbols[str(parameter_id)] = parameter.value
-                symbols[standardize_name(str(parameter_id))] = parameter.value
-        for compartment_id, compartment in model.compartments.items():
-            if math.isfinite(compartment.size):
-                symbols[str(compartment_id)] = compartment.size
-                symbols[standardize_name(str(compartment_id))] = compartment.size
-        # The rule is evaluated once at t=0, so species carry their declared
-        # initial amount/concentration at that instant.
-        for species_id, species in model.species.items():
-            if bool(getattr(species, "has_only_substance_units", False)):
-                value = float(getattr(species, "initial_amount", 0) or 0)
-                is_set = bool(getattr(species, "initial_amount_set", False))
-            else:
-                value = float(getattr(species, "initial_concentration", 0) or 0)
-                is_set = bool(getattr(species, "initial_concentration_set", False))
-            if is_set and math.isfinite(value):
-                symbols[str(species_id)] = value
-                symbols[standardize_name(str(species_id))] = value
-        symbols["time"] = 0.0
+        symbols = SBMLParser._resolve_t0_initial_symbols(model, include_species=True)
+        ar_counts: Dict[str, int] = {}
+        for rule in model.rules:
+            if getattr(rule, "type", "") == "assignment" and rule.variable:
+                norm = standardize_name(str(rule.variable))
+                ar_counts[norm] = ar_counts.get(norm, 0) + 1
 
-        targets = {str(getattr(rule, "variable", "")) for rule in rules}
         folded: List[object] = []
-        for _ in range(len(rules) + 1):
-            progressed = False
-            for rule in rules:
-                if rule in folded:
-                    continue
-                variable = str(rule.variable)
-                identifiers = set(_IDENTIFIER_PATTERN.findall(str(rule.math or "")))
-                identifiers -= set(symbols) | {
-                    standardize_name(name) for name in symbols
-                }
-                identifiers -= set(model.function_definitions)
-                identifiers -= {"time"}
-                if identifiers & set(model.species) or identifiers & targets:
-                    continue
-                value = _evaluate_static_arithmetic(
-                    str(rule.math or ""), symbols, model.function_definitions
-                )
-                if value is None or not math.isfinite(value):
-                    continue
-                parameter = model.parameters[variable]
-                parameter.value = value
-                parameter.value_set = True
-                symbols[variable] = value
-                symbols[standardize_name(variable)] = value
-                folded.append(rule)
-                progressed = True
-            if not progressed:
-                break
+        for rule in rules:
+            variable = str(rule.variable)
+            if ar_counts.get(standardize_name(variable), 0) != 1:
+                continue
+            value = symbols.get(variable)
+            if value is None or not math.isfinite(value):
+                continue
+            parameter = model.parameters[variable]
+            parameter.value = value
+            parameter.value_set = True
+            folded.append(rule)
         if folded:
             model.rules = [rule for rule in model.rules if rule not in folded]
 
@@ -5601,13 +5732,8 @@ class SBMLParser:
         start time is zero.  An initial assignment whose target is a parameter
         therefore fixes that parameter's value for the whole run.  Emitting it
         as a BNGL function would instead re-evaluate the expression at every
-        time point, so a static initial assignment is folded into the
+        time point, so a resolved t = 0 initial assignment is folded into the
         parameter's declared value here.
-
-        Only expressions that reduce to numbers are folded.  Anything that
-        depends on simulation time, on a species, or on a value that is not
-        known at initialization is left alone so that it keeps its existing
-        (possibly unsupported) treatment.
         """
 
         if not model.initial_assignments:
@@ -5616,112 +5742,18 @@ class SBMLParser:
 
         species_ids = set(model.species)
         rule_targets = {str(rule.variable) for rule in model.rules if rule.variable}
-        # An assignment rule replaces a compartment's declared size at every
-        # time including t=0, but a rate rule only governs the derivative: the
-        # compartment's initial size is still its t=0 value and may be read by
-        # a parameter's initial assignment.
-        assignment_rule_targets = {
-            str(rule.variable)
-            for rule in model.rules
-            if rule.variable and getattr(rule, "type", "") == "assignment"
-        }
         event_targets = {
             str(assignment.variable)
             for event in model.events
             for assignment in event.assignments
             if getattr(assignment, "variable", None)
         }
-
-        symbols: Dict[str, float] = {}
-        # A parameter that is the target of an initial assignment takes its
-        # value from that assignment, not from its declared ``value``
-        # attribute, so it must not contribute its declared value here.
-        initial_assignment_targets = {
-            str(getattr(assignment, "symbol", "") or "")
-            for assignment in model.initial_assignments
-        }
-        for parameter_id, parameter in model.parameters.items():
-            if (
-                not parameter.constant
-                or str(parameter_id) in rule_targets
-                or str(parameter_id) in initial_assignment_targets
-            ):
-                continue
-            if math.isfinite(parameter.value):
-                symbols[str(parameter_id)] = parameter.value
-                symbols[standardize_name(str(parameter_id))] = parameter.value
-        for compartment_id, compartment in model.compartments.items():
-            # A non-constant (rate-ruled or event-targeted) compartment still
-            # has a declared size that is its value at t=0, so initial
-            # assignments may read it.  Only an assignment rule replaces the
-            # declared size at every time including the start.
-            if str(compartment_id) in assignment_rule_targets:
-                continue
-            if math.isfinite(compartment.size):
-                symbols[str(compartment_id)] = compartment.size
-                symbols[standardize_name(str(compartment_id))] = compartment.size
-        # A species' declared initial amount/concentration is a t=0 value and
-        # may be read by a parameter's initial assignment.  Assignment rules
-        # likewise hold at t=0; fold the ones that reduce to numbers so a
-        # constant parameter is not emitted as a live function of a rule.
-        for _ in range(len(model.rules) + 1):
-            progressed = False
-            for rule in model.rules:
-                if getattr(rule, "type", "") != "assignment" or not rule.variable:
-                    continue
-                variable = str(rule.variable)
-                if variable in symbols or standardize_name(variable) in symbols:
-                    continue
-                # A species targeted by an assignment rule carries its
-                # declared t=0 amount/concentration, which is the rule's value
-                # at the start of the simulation.
-                species = model.species.get(variable)
-                if species is not None:
-                    if bool(getattr(species, "has_only_substance_units", False)):
-                        value = float(getattr(species, "initial_amount", 0) or 0)
-                        is_set = bool(getattr(species, "initial_amount_set", False))
-                    else:
-                        value = float(getattr(species, "initial_concentration", 0) or 0)
-                        is_set = bool(
-                            getattr(species, "initial_concentration_set", False)
-                        )
-                    if is_set and math.isfinite(value):
-                        symbols[variable] = value
-                        symbols[standardize_name(variable)] = value
-                        progressed = True
-                        continue
-                value = _evaluate_static_arithmetic(
-                    str(getattr(rule, "math", "") or ""),
-                    symbols,
-                    model.function_definitions,
-                )
-                if value is not None and math.isfinite(value):
-                    symbols[variable] = value
-                    symbols[standardize_name(variable)] = value
-                    progressed = True
-            if not progressed:
-                break
-        # SBML assumes a zero start time, so ``time`` is 0 while the initial
-        # values are established.
-        symbols["time"] = 0.0
-
-        def references_unknown_symbol(
-            expression: str, eval_symbols: Optional[Dict[str, float]] = None
-        ) -> bool:
-            known = eval_symbols if eval_symbols is not None else symbols
-            for identifier in _IDENTIFIER_PATTERN.findall(expression):
-                if identifier.lower() in _INTRINSIC_FUNCTIONS:
-                    continue
-                if identifier in known or standardize_name(identifier) in known:
-                    continue
-                if identifier in species_ids or identifier in rule_targets:
-                    return True
-                if identifier in event_targets:
-                    return True
-                if identifier in model.function_definitions:
-                    continue
-                return True
-            return False
+        ia_counts: Dict[str, int] = {}
+        for assignment in model.initial_assignments:
+            symbol = str(getattr(assignment, "symbol", "") or "")
+            if symbol:
+                norm = standardize_name(symbol)
+                ia_counts[norm] = ia_counts.get(norm, 0) + 1
 
         pending = [
             assignment
@@ -5730,85 +5762,62 @@ class SBMLParser:
             and str(getattr(assignment, "symbol", "") or "") not in species_ids
             and str(getattr(assignment, "symbol", "") or "") not in rule_targets
             and str(getattr(assignment, "symbol", "") or "") not in event_targets
+            and ia_counts.get(
+                standardize_name(str(getattr(assignment, "symbol", "") or "")), 0
+            )
+            == 1
         ]
         if not pending:
             return
 
+        # Identify species that evolve dynamically via reactions, rules, or events.
+        dynamic_species_keys: Set[str] = set()
+        for reaction in model.reactions.values():
+            for reference in [*reaction.reactants, *reaction.products]:
+                if getattr(reference, "species", None):
+                    dynamic_species_keys.add(standardize_name(str(reference.species)))
+        for rule in model.rules:
+            if rule.variable and str(rule.variable) in species_ids:
+                dynamic_species_keys.add(standardize_name(str(rule.variable)))
+        for target in event_targets:
+            if target in species_ids:
+                dynamic_species_keys.add(standardize_name(target))
+
+        base_t0 = SBMLParser._resolve_t0_initial_symbols(model, include_species=False)
+        full_t0 = SBMLParser._resolve_t0_initial_symbols(model, include_species=True)
+
         folded: List[Any] = []
         retained: List[Any] = []
-        for _ in range(len(pending) + 1):
-            progressed = False
-            for assignment in pending:
-                if assignment in folded or assignment in retained:
-                    continue
-                expression = str(getattr(assignment, "math", "") or "")
-                if not expression:
-                    continue
-                symbol = str(assignment.symbol)
-                parameter = model.parameters[symbol]
-                eval_symbols = symbols
-                if parameter.constant:
-                    # A constant parameter keeps its t=0 value for the whole
-                    # run, so species' declared initial values are available
-                    # when establishing it.
-                    eval_symbols = dict(symbols)
-                    for species_id, species in model.species.items():
-                        if bool(getattr(species, "has_only_substance_units", False)):
-                            amount = float(getattr(species, "initial_amount", 0) or 0)
-                            is_set = bool(getattr(species, "initial_amount_set", False))
-                        else:
-                            amount = float(
-                                getattr(species, "initial_concentration", 0) or 0
-                            )
-                            is_set = bool(
-                                getattr(species, "initial_concentration_set", False)
-                            )
-                            if not is_set and bool(
-                                getattr(species, "initial_amount_set", False)
-                            ):
-                                compartment = model.compartments.get(
-                                    str(getattr(species, "compartment", ""))
-                                )
-                                volume = (
-                                    float(compartment.size)
-                                    if compartment is not None
-                                    and math.isfinite(float(compartment.size))
-                                    and float(compartment.size) != 0
-                                    else 1.0
-                                )
-                                amount = float(species.initial_amount) / volume
-                                is_set = True
-                        if is_set and math.isfinite(amount):
-                            eval_symbols[str(species_id)] = amount
-                            eval_symbols[standardize_name(str(species_id))] = amount
-                if references_unknown_symbol(expression, eval_symbols):
-                    continue
-                value = _evaluate_static_arithmetic(
-                    expression, eval_symbols, model.function_definitions
-                )
-                if value is None or not math.isfinite(value):
-                    continue
-                parameter.value = value
-                parameter.value_set = True
-                symbols[symbol] = value
-                symbols[standardize_name(symbol)] = value
-                if (
-                    re.search(r"\btime\b", expression)
-                    and standardize_name(symbol) in delayed_history_symbols
-                ):
-                    # The assignment reads the simulation time and a delayed
-                    # read observes the symbol's pre-simulation history, where
-                    # the assignment is evaluated at the delayed time (SBML
-                    # Level 3 Version 2 Core Sec. 3.4.8, "Initial conditions
-                    # and special considerations").
-                    # The symbol's own value is the one the assignment had at
-                    # t = 0, so the assignment stays in the model.
-                    retained.append(assignment)
-                else:
-                    folded.append(assignment)
-                progressed = True
-            if not progressed:
-                break
+        for assignment in pending:
+            expression = str(getattr(assignment, "math", "") or "")
+            if not expression:
+                continue
+            symbol = str(assignment.symbol)
+            parameter = model.parameters[symbol]
+            eval_symbols = (
+                full_t0
+                if (parameter.constant or bool(dynamic_species_keys))
+                else base_t0
+            )
+            value = eval_symbols.get(symbol)
+            if value is None or not math.isfinite(value):
+                continue
+            parameter.value = value
+            parameter.value_set = True
+            if (
+                re.search(r"\btime\b", expression)
+                and standardize_name(symbol) in delayed_history_symbols
+            ):
+                # The assignment reads the simulation time and a delayed
+                # read observes the symbol's pre-simulation history, where
+                # the assignment is evaluated at the delayed time (SBML
+                # Level 3 Version 2 Core Sec. 3.4.8, "Initial conditions
+                # and special considerations").
+                # The symbol's own value is the one the assignment had at
+                # t = 0, so the assignment stays in the model.
+                retained.append(assignment)
+            else:
+                folded.append(assignment)
 
         if not folded:
             return

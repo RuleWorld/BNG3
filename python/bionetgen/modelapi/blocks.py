@@ -5,7 +5,7 @@ except ImportError:
 from .structs import Parameter, Compartment, Observable
 from .structs import MoleculeType, Species, Function
 from .structs import Rule, Action
-from .structs import EnergyPattern, PopulationMap
+from .structs import EnergyPattern, BarrierPattern, PopulationMap
 from bionetgen.core.utils.utils import ActionList
 import keyword
 
@@ -614,7 +614,9 @@ class RuleBlock(ModelBlock):
                     r1 = self.items[reverse_of].rate_constants[0]
                     r2 = rxn_obj.rate_constants[0]
                     if r1.startswith("Arrhenius"):
-                        self.items[reverse_of].set_rate_constants([r1])
+                        self.items[reverse_of].set_rate_constants(
+                            [r1], bidirectional=True
+                        )
                     else:
                         self.items[reverse_of].set_rate_constants((r1, r2))
                     # mark reverse for deletion
@@ -782,6 +784,20 @@ class EnergyPatternBlock(ModelBlock):
     def add_energy_pattern(self, *args, **kwargs) -> None:
         ep = EnergyPattern(*args, **kwargs)
         self.add_item((ep.name, ep))
+
+
+class BarrierPatternBlock(ModelBlock):
+    """
+    Barrier pattern block object, subclass of ModelBlock.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = "barrier patterns"
+
+    def add_barrier_pattern(self, *args, **kwargs) -> None:
+        bp = BarrierPattern(*args, **kwargs)
+        self.add_item((bp.name, bp))
 
 
 class PopulationMapBlock(ModelBlock):

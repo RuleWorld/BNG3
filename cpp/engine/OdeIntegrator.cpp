@@ -267,6 +267,23 @@ struct RunningMoments {
 
 OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network), functionEvaluator_(model) {
+    for (const auto& rule : model_.getReactionRules()) {
+        if (!rule.hasDrivingWork()) continue;
+        const bool anyArrhenius = std::any_of(
+            rule.getRates().begin(), rule.getRates().end(),
+            [](const ast::Expression& expr) {
+                if (expr.kind() != ast::ExpressionKind::Function) return false;
+                std::string lower = expr.name();
+                std::transform(lower.begin(), lower.end(), lower.begin(),
+                               [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                return lower == "arrhenius";
+            });
+        if (!anyArrhenius) {
+            throw std::runtime_error(
+                "driven_by() on rule '" + rule.getRuleName() +
+                "' is only supported on rules with an Arrhenius rate law");
+        }
+    }
     // Check whether 't' is an explicitly declared user symbol (parameter,
     // observable, or function) so simulation time never shadows user 't'.
     tIsUserSymbol_ = model_.getParameters().contains("t");

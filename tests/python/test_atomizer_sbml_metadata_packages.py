@@ -514,7 +514,7 @@ def test_multi_full_domain_occur_gt_1_wildcard_and_partial_subset_refusal():
 
     full = parse_multi_package(xml)
     assert full.executable is True
-    assert full.species_patterns["Aany"] == "A(s_1,s_2)@cell"
+    assert full.species_patterns["Aany"] == "A(s,s)@cell"
     assert "Aany" in full.abstract_species_ids
 
     # Positive initial pool on an unconstrained wildcard must still fail closed (Multi v1 spec, 3.19)
@@ -530,10 +530,9 @@ def test_multi_full_domain_occur_gt_1_wildcard_and_partial_subset_refusal():
     )
     assert partial.executable is True
     assert partial.species_pattern_variants["Aany"] == [
-        "A(s_1~u,s_2~u)@cell",
-        "A(s_1~u,s_2~p)@cell",
-        "A(s_1~p,s_2~u)@cell",
-        "A(s_1~p,s_2~p)@cell",
+        "A(s~u,s~u)@cell",
+        "A(s~u,s~p)@cell",
+        "A(s~p,s~p)@cell",
     ]
     assert "Aany" in partial.abstract_species_ids
 

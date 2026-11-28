@@ -2128,34 +2128,48 @@ void ReactionRule::initialize() {
     // corresponding wildcard bond on the product side is illegal because the
     // unspecified partner cannot be detached.
     {
-        auto countWildcardBonds = [](const ComponentInfo& comp) -> std::size_t {
-            std::size_t count = 0;
+        auto countBonds = [](const ComponentInfo& comp) -> std::pair<std::size_t, std::size_t> {
+            std::size_t wildcards = 0;
+            std::size_t explicits = 0;
             for (const auto* bn : comp.bondNodes) {
-                if (bn->in_degree() != 1) continue;
                 const std::string st = bn->get_state().get_BNG2_string();
-                if (st == "!+" || st == "!?") ++count;
+                if (bn->in_degree() == 1) {
+                    if (st == "!+" || st == "!?") ++wildcards;
+                } else if (bn->in_degree() >= 2 && st == "!+") {
+                    ++explicits;
+                }
             }
-            return count;
+            return {wildcards, explicits};
+        };
+        struct BondTotals {
+            std::size_t rWild = 0;
+            std::size_t rExplicit = 0;
+            std::size_t pWild = 0;
+            std::size_t pExplicit = 0;
         };
         using MolCompKey = std::tuple<std::size_t, std::size_t, std::size_t, std::size_t, std::string>;
-        std::map<MolCompKey, std::pair<std::size_t, std::size_t>> wildcardCounts;
+        std::map<MolCompKey, BondTotals> wildcardCounts;
         for (const auto& [pRef, rRef] : componentMappings_) {
             const auto& pComp = productInfo[pRef.patternIndex].molecules[pRef.moleculeIndex].components[pRef.componentIndex];
             const auto& rComp = reactantInfo[rRef.patternIndex].molecules[rRef.moleculeIndex].components[rRef.componentIndex];
             auto& entry = wildcardCounts[MolCompKey{
                 rRef.patternIndex, rRef.moleculeIndex,
                 pRef.patternIndex, pRef.moleculeIndex, rComp.name}];
-            entry.first += countWildcardBonds(rComp);
-            entry.second += countWildcardBonds(pComp);
+            const auto [rw, re] = countBonds(rComp);
+            const auto [pw, pe] = countBonds(pComp);
+            entry.rWild += rw;
+            entry.rExplicit += re;
+            entry.pWild += pw;
+            entry.pExplicit += pe;
         }
         for (const auto& [key, counts] : wildcardCounts) {
             (void)key;
-            if (counts.first > counts.second) {
+            if (counts.rWild > counts.pWild && counts.pExplicit <= counts.rExplicit) {
                 throw std::runtime_error(
                     "Found illegal wildcard bond breaking in rule '" + ruleName_ +
                     "': a wildcard bond in reactants does not have a corresponding wildcard bond in products");
             }
-            if (bidirectional_ && counts.second > counts.first) {
+            if (bidirectional_ && counts.pWild > counts.rWild && counts.rExplicit <= counts.pExplicit) {
                 throw std::runtime_error(
                     "Found illegal wildcard bond breaking in reverse of rule '" + ruleName_ +
                     "': a wildcard bond in products does not have a corresponding wildcard bond in reactants");

@@ -3790,6 +3790,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         const auto seedText = stripQuotes(readArgument(action, "seed", ""));
         const auto verboseFlag = lowercase(stripQuotes(readArgument(action, "verbose", "0")));
         const bool nfVerbose = verbose || verboseFlag == "1" || verboseFlag == "true";
+        const bool explicitGetFinalState =
+            action.arguments.find("get_final_state") != action.arguments.end();
         const bool getFinalState = parseBoolean(
             readArgument(action, "get_final_state", "1"), true);
 
@@ -3876,7 +3878,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (!speciesOut) {
                 throw std::runtime_error("Failed to write NFnext species output: " + speciesPath);
             }
-            loadNfFinalSpeciesFromText(speciesText);
+            if (explicitGetFinalState) {
+                loadNfFinalSpeciesFromText(speciesText);
+            } else {
+                nfStateModifiedByConcAction = false;
+            }
         } else {
             nfStateModifiedByConcAction = false;
         }
@@ -3978,6 +3984,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         const auto verboseFlag = lowercase(stripQuotes(readArgument(action, "verbose", "0")));
         const auto complexFlag = lowercase(stripQuotes(readArgument(action, "complex", "1")));
         const auto equilText = stripQuotes(readArgument(action, "equil", ""));
+        const bool explicitGetFinalState =
+            action.arguments.find("get_final_state") != action.arguments.end();
         const bool getFinalState = parseBoolean(
             readArgument(action, "get_final_state", "1"), true);
         const bool nfVerbose = legacyParam.verbose || verboseFlag == "1" || verboseFlag == "true";
@@ -4236,7 +4244,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (speciesIn) {
                 std::ostringstream speciesBuf;
                 speciesBuf << speciesIn.rdbuf();
-                loadNfFinalSpeciesFromText(speciesBuf.str());
+                if (explicitGetFinalState) {
+                    loadNfFinalSpeciesFromText(speciesBuf.str());
+                } else {
+                    nfStateModifiedByConcAction = false;
+                }
             }
         } else {
             nfStateModifiedByConcAction = false;
@@ -4831,6 +4843,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 if (!parseResult.success) {
                     throw std::runtime_error(
                         "Failed to read SBML file: " + parseResult.error);
+                }
+                if (parseResult.hasRateRules) {
+                    throw std::runtime_error(
+                        "SBML rateRule is not supported by native SbmlReader; "
+                        "use bionetgen.from_sbml() for full SBML import");
                 }
                 for (const auto& [name, value] : parseResult.parameters) {
                     replaceParameter(

@@ -9,6 +9,7 @@ from bionetgen.core.utils.logging import BNGLogger
 from .bngparser import BNGParser
 from .blocks import (
     ActionBlock,
+    BarrierPatternBlock,
     CompartmentBlock,
     FunctionBlock,
     MoleculeTypeBlock,
@@ -101,6 +102,7 @@ class bngmodel:
             "observables",
             "functions",
             "energy_patterns",
+            "barrier_patterns",
             "population_maps",
             "rules",
             "protocol",
@@ -458,6 +460,30 @@ class bngmodel:
                 )
         else:
             self.energy_patterns = EnergyPatternBlock()
+
+    def add_barrier_patterns_block(self, block=None):
+        """
+        Adds a barrier patterns block to the model object.
+        """
+        if block is not None:
+            if not isinstance(block, BarrierPatternBlock):
+                self.logger.error(
+                    "The block is not a BarrierPatternBlock.",
+                    loc=f"{__file__} : bngmodel.add_barrier_patterns_block()",
+                )
+                raise BNGModelError(
+                    self, message="The block is not a BarrierPatternBlock."
+                )
+            self.barrier_patterns = block
+            if "barrier_patterns" not in self.active_blocks:
+                self.active_blocks.append("barrier_patterns")
+            else:
+                self.logger.warning(
+                    "Network already has barrier_patterns block, replacing the old one",
+                    loc=f"{__file__} : bngmodel.add_barrier_patterns_block()",
+                )
+        else:
+            self.barrier_patterns = BarrierPatternBlock()
 
     def add_population_maps_block(self, block=None):
         """

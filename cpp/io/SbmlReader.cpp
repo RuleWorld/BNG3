@@ -1439,7 +1439,9 @@ NetReader::ParseResult SbmlReader::parse(
                  anyRule != nullptr;
                  anyRule = anyRule->NextSiblingElement()) {
                 const std::string ruleTag = anyRule->Value();
-                if (ruleTag == "rateRule" || ruleTag == "algebraicRule") {
+                if (ruleTag == "rateRule") {
+                    result.hasRateRules = true;
+                } else if (ruleTag == "algebraicRule") {
                     throw std::runtime_error(
                         "SBML " + ruleTag +
                         " is not supported by native SbmlReader; "

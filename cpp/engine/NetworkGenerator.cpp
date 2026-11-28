@@ -337,20 +337,6 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
             (detail.empty() ? std::string{} : ": " + detail));
     }
 
-    for (const auto& rule : compiled.rules()) {
-        if (!rule.hasDrivingWork()) continue;
-        const bool anyArrhenius = std::any_of(
-            rule.rateLaws().begin(), rule.rateLaws().end(),
-            [](const compile::CompiledRateLaw& rl) {
-                return rl.kind == compile::RateLawKind::ArrheniusEnergy;
-            });
-        if (!anyArrhenius) {
-            throw std::runtime_error(
-                "driven_by() on rule '" + rule.name() +
-                "' is only supported on rules with an Arrhenius rate law");
-        }
-    }
-
     const auto maxStoich = parseMaxStoich(document_.protocol());
     const auto maxAgg = parseMaxAgg(document_.protocol());
     const bool logProgress = parsePrintIter(document_.protocol());

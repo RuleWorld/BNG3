@@ -920,8 +920,9 @@ end model
 """
     with mock.patch.dict(os.environ, {"BNG_NFSIM_GENERAL_ENERGY": "1"}):
         model = _load(bngl, tmp_path, "driven_mass_action")
+        model.generate_network(max_iter=5)
         with pytest.raises(RuntimeError, match="Arrhenius"):
-            model.generate_network(max_iter=5)
+            model.simulate(method="ode", t_end=1.0, n_steps=2)
 
 
 def test_l2_08_10_arrhenius_with_totalrate_rejected(tmp_path: Path):

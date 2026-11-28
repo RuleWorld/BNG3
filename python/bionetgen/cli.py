@@ -304,7 +304,10 @@ def _find_undeclared_molecule_types(source_text: str, cpp_model) -> list[str]:
             line = raw_line.split("#", 1)[0].strip()
             if not line:
                 continue
-            match = re.match(r"(?:\d+\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(", line)
+            match = re.match(
+                r"(?:\d+\s+)?([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(|\s+population\b|\s*$)",
+                line,
+            )
             if match:
                 declared.add(match.group(1))
     for pop_block in re.findall(
@@ -316,7 +319,10 @@ def _find_undeclared_molecule_types(source_text: str, cpp_model) -> list[str]:
             line = raw_line.split("#", 1)[0].strip()
             if not line:
                 continue
-            match = re.match(r"(?:\d+\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(", line)
+            match = re.match(
+                r"(?:\d+\s+)?([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(|\s+population\b|\s*$)",
+                line,
+            )
             if match:
                 declared.add(match.group(1))
     for pm in getattr(cpp_model, "population_maps", []):

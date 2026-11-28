@@ -1293,6 +1293,10 @@ class BioNetGenModel:
         """
         if _cpp is None:
             raise RuntimeError("this installation does not include the C++ engine")
+        if self._algebraic_rules:
+            raise ValueError(
+                "SBML algebraic rules require method='ode' and are not supported by simulate_batch_ssa"
+            )
         if not isinstance(backend, str):
             raise TypeError("backend must be a string")
         for name, value, minimum in (

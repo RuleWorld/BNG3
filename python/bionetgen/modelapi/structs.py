@@ -393,6 +393,7 @@ class Rule(ModelObj):
         rate_constants=(),
         rule_mod=RuleMod(),
         operations=[],
+        bidirectional=None,
     ) -> None:
         super().__init__()
         self.name = name
@@ -403,36 +404,33 @@ class Rule(ModelObj):
         else:
             self.rule_mod = rule_mod
         self.operations = operations
-        self.set_rate_constants(rate_constants)
+        self.set_rate_constants(rate_constants, bidirectional=bidirectional)
 
-    def set_rate_constants(self, rate_cts):
+    def set_rate_constants(self, rate_cts, bidirectional=None):
         if len(rate_cts) == 1:
             self.rate_constants = [rate_cts[0]]
-            self.bidirectional = False
+            self.bidirectional = (
+                bool(bidirectional) if bidirectional is not None else False
+            )
         elif len(rate_cts) == 2:
             self.rate_constants = [rate_cts[0], rate_cts[1]]
-            self.bidirectional = True
+            self.bidirectional = (
+                True if bidirectional is None else bool(bidirectional)
+            )
         else:
             print("1 or 2 rate constants allowed")
 
     def gen_string(self):
-        if self.bidirectional:
-            return "{}: {} <-> {} {},{} {}".format(
-                self.name,
-                self.side_string(self.reactants),
-                self.side_string(self.products),
-                self.rate_constants[0],
-                self.rate_constants[1],
-                str(self.rule_mod),
-            )
-        else:
-            return "{}: {} -> {} {} {}".format(
-                self.name,
-                self.side_string(self.reactants),
-                self.side_string(self.products),
-                self.rate_constants[0],
-                str(self.rule_mod),
-            )
+        arrow = "<->" if self.bidirectional else "->"
+        rates_str = ",".join(str(r) for r in self.rate_constants)
+        return "{}: {} {} {} {} {}".format(
+            self.name,
+            self.side_string(self.reactants),
+            arrow,
+            self.side_string(self.products),
+            rates_str,
+            str(self.rule_mod),
+        )
 
     def side_string(self, patterns):
         return " + ".join(str(pat) for pat in patterns)
@@ -464,6 +462,29 @@ class EnergyPattern(ModelObj):
     def gen_string(self) -> str:
         s = "{} {}".format(self.pattern, self.expression)
         return s
+
+
+class BarrierPattern(ModelObj):
+    """
+    Class for transition-state barrier patterns in the model.
+
+    In BNGL barrier patterns have the form:
+        [name:] reactant_patterns -> product_patterns expression
+    """
+
+    def __init__(self, name, reactants, products, expression):
+        super().__init__()
+        self.name = name
+        self.reactants = reactants
+        self.products = products
+        self.expression = expression
+
+    def gen_string(self) -> str:
+        lhs = " + ".join(str(p) for p in self.reactants) if self.reactants else "0"
+        rhs = " + ".join(str(p) for p in self.products) if self.products else "0"
+        if self.name:
+            return f"{self.name}: {lhs} -> {rhs} {self.expression}"
+        return f"{lhs} -> {rhs} {self.expression}"
 
 
 class PopulationMap(ModelObj):

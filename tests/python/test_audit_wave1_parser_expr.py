@@ -591,8 +591,8 @@ end model
 """
     cm = _cpp.parse_string(context_barrier)
     with mock.patch.dict(os.environ, {"BNG_NFSIM_GENERAL_ENERGY": "1"}):
-        cnet = _cpp.generate_network(cm)
         with pytest.raises(RuntimeError, match="context"):
+            cnet = _cpp.generate_network(cm)
             _cpp.io.write_net(cm, cnet, str(tmp_path / "context_barrier.net"))
 
 

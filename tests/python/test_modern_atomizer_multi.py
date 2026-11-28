@@ -844,8 +844,8 @@ def test_multi_repeated_feature_occurrences_and_numeric_values_are_executable():
     result = parse_multi_package(xml)
 
     assert result.executable is True
-    assert result.type_patterns["AType"] == "A(state_1~U~X,state_2~U~X)"
-    assert result.species_patterns["A0"] == "A(state_1~U,state_2~X)"
+    assert result.type_patterns["AType"] == "A(state~U~X,state~U~X)"
+    assert result.species_patterns["A0"] == "A(state~U,state~X)"
 
 
 def test_multi_unprefixed_attributes_on_package_elements_are_spec_valid():
@@ -1801,7 +1801,7 @@ def test_multi_and_sublist_is_flattened_but_or_sublist_fails_closed():
 
     conjunction = parse_multi_package(make_xml("and"))
     assert conjunction.executable is True
-    assert conjunction.species_patterns["A0"] == "A(a_1~on,a_2,b~on)"
+    assert conjunction.species_patterns["A0"] == "A(a~on,a,b~on)"
 
     invalid_conjunction = parse_multi_package(
         make_xml("and").replace('multi:occur="2"', 'multi:occur="1"')

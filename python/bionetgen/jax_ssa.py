@@ -94,6 +94,9 @@ def simulate(
 
     t_wall_start = _time.perf_counter()
 
+    if getattr(model, "_algebraic_rules", None):
+        raise NotImplementedError("JAX SSA does not support SBML algebraic rules")
+
     native_model = getattr(model, "_model", model)
     if network is None:
         network = cpp.generate_network(native_model)

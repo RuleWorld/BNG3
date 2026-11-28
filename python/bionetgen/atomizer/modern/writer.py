@@ -5864,15 +5864,42 @@ def _seed_symbol_values(
     # BNGL seed amounts instead of invalid runtime expressions.
     _add_seed_symbol(symbols, "time", 0)
 
+    initial_assignment_symbols = {
+        str(getattr(assignment, "symbol", "") or "")
+        for assignment in model.initial_assignments
+        if getattr(assignment, "symbol", None)
+    }
+    assignment_rule_symbols = {
+        str(rule.variable)
+        for rule in model.rules
+        if getattr(rule, "type", "") == "assignment" and getattr(rule, "variable", None)
+    }
+    overridden_t0_keys = {
+        standardize_name(symbol)
+        for symbol in (initial_assignment_symbols | assignment_rule_symbols)
+    }
+    alg_symbol_keys = {
+        standardize_name(token)
+        for rule in model.rules
+        if getattr(rule, "type", "") == "algebraic" and getattr(rule, "math", None)
+        for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", str(rule.math))
+    }
+
     # --- Base: explicit initial values from attributes ---------------------
     # A constant parameter defaults to 0 when SBML omits its ``value``
     # attribute.  A non-constant parameter without a ``value`` attribute has
     # no established value (Sec. 3.4.9), so it is deliberately left out of
     # the table rather than filled in with a 0.
     for parameter_id, parameter in model.parameters.items():
+        norm = standardize_name(str(parameter_id))
+        if norm in overridden_t0_keys:
+            continue
         if parameter.value_set or parameter.constant:
             _add_seed_symbol(symbols, parameter_id, parameter.value)
     for compartment_id, compartment in model.compartments.items():
+        norm = standardize_name(str(compartment_id))
+        if norm in overridden_t0_keys:
+            continue
         size = getattr(compartment, "size", None)
         _add_seed_symbol(symbols, compartment_id, size)
         _add_seed_symbol(
@@ -5888,12 +5915,12 @@ def _seed_symbol_values(
     # which case Sec. 4.11.3 says the attribute is ignored.  Seed the symbol
     # with the attribute value here; the initial-assignment pass below
     # replaces it where the source model assigns one.
-    initial_assignment_symbols = {
-        str(getattr(assignment, "symbol", "") or "")
-        for assignment in model.initial_assignments
-    }
     for reference_id, value in _species_reference_stoichiometry_symbols(model).items():
-        if value is None or reference_id in initial_assignment_symbols:
+        if (
+            value is None
+            or reference_id in initial_assignment_symbols
+            or standardize_name(reference_id) in overridden_t0_keys
+        ):
             continue
         if reference_id in symbols or standardize_name(reference_id) in symbols:
             continue
@@ -6005,8 +6032,6 @@ def _seed_symbol_values(
             variable = getattr(rule, "variable", None)
             if not variable or getattr(rule, "type", "") != "assignment":
                 continue
-            if is_species(variable):
-                continue
             value = _substitute_seed_symbols(
                 str(getattr(rule, "math", "") or ""), resolved_values()
             )
@@ -6033,7 +6058,18 @@ def _seed_symbol_values(
         for seed in seed_species:
             identifier = seed.sbml_id
             values = resolved_values()
-            if identifier in values or standardize_name(identifier) in values:
+            species = model.species.get(identifier)
+            norm_id = standardize_name(identifier)
+            if (
+                identifier in values
+                or norm_id in values
+                or norm_id in overridden_t0_keys
+                or (
+                    species is not None
+                    and not getattr(species, "constant", False)
+                    and norm_id in alg_symbol_keys
+                )
+            ):
                 continue
             species = model.species.get(identifier)
             if species is not None and not _has_known_initial_quantity(species, model):
@@ -6092,7 +6128,10 @@ def _seed_symbol_values(
 
 
 def _freeze_initial_only_parameters(
-    model: SBMLModel, initial_values: Mapping[str, float]
+    model: SBMLModel,
+    initial_values: Mapping[str, float],
+    *,
+    only_symbols: Optional[Set[str]] = None,
 ) -> None:
     """Emit solved time-zero values of parameters with no runtime controller."""
     controlled = {
@@ -6102,18 +6141,31 @@ def _freeze_initial_only_parameters(
         standardize_name(assignment.variable)
         for event in model.events
         for assignment in event.assignments
+        if getattr(assignment, "variable", None)
     )
     retained = []
     for assignment in model.initial_assignments:
         symbol = str(assignment.symbol or "")
         target = standardize_name(symbol)
-        parameter = model.parameters.get(target)
-        value = initial_values.get(symbol)
-        if parameter is None or value is None or target in controlled:
+        if only_symbols is not None and target not in only_symbols:
             retained.append(assignment)
             continue
-        parameter.value = value
-        parameter.value_set = True
+        parameter = model.parameters.get(symbol) or model.parameters.get(target)
+        compartment = model.compartments.get(symbol) or model.compartments.get(target)
+        value = initial_values.get(symbol)
+        if value is None:
+            value = initial_values.get(target)
+        if value is None or not math.isfinite(value) or target in controlled:
+            retained.append(assignment)
+            continue
+        if parameter is not None:
+            parameter.value = value
+            parameter.value_set = True
+        elif compartment is not None:
+            compartment.size = value
+            compartment.size_set = True
+        else:
+            retained.append(assignment)
     model.initial_assignments = retained
 
 
@@ -6744,8 +6796,89 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
     return ordered
 
 
+def _time_varying_symbol_names(model: SBMLModel) -> Set[str]:
+    """Return raw and standardized names of symbols that can vary for t > 0."""
+
+    varying: Set[str] = {"time"}
+    for rule in model.rules:
+        if not rule.variable:
+            continue
+        if getattr(rule, "type", "") == "rate":
+            varying.add(str(rule.variable))
+            varying.add(standardize_name(str(rule.variable)))
+    for rule in model.rules:
+        if getattr(rule, "type", "") != "algebraic" or not rule.math:
+            continue
+        for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", str(rule.math)):
+            norm = standardize_name(token)
+            param = model.parameters.get(token)
+            comp = model.compartments.get(token)
+            sp = model.species.get(token)
+            if (
+                (param is not None and not param.constant)
+                or (comp is not None and not comp.constant)
+                or (sp is not None and not sp.constant)
+            ):
+                varying.add(token)
+                varying.add(norm)
+    for event in model.events:
+        for assignment in event.assignments:
+            variable = getattr(assignment, "variable", None)
+            if variable:
+                varying.add(str(variable))
+                varying.add(standardize_name(str(variable)))
+    for reaction in model.reactions.values():
+        for reference in [*reaction.reactants, *reaction.products]:
+            species_id = getattr(reference, "species", None)
+            if not species_id:
+                continue
+            species = model.species.get(str(species_id))
+            if species is not None and (
+                getattr(species, "constant", False)
+                or getattr(species, "boundary_condition", False)
+            ):
+                continue
+            varying.add(str(species_id))
+            varying.add(standardize_name(str(species_id)))
+
+    # Propagate time dependence transitively through assignment rules.
+    assignment_rules = [
+        rule
+        for rule in model.rules
+        if getattr(rule, "type", "") == "assignment" and getattr(rule, "variable", None)
+    ]
+    for _ in range(len(assignment_rules) + 1):
+        changed = False
+        for rule in assignment_rules:
+            variable = str(rule.variable)
+            norm = standardize_name(variable)
+            if variable in varying and norm in varying:
+                continue
+            if _expression_is_time_varying(str(rule.math or ""), varying):
+                varying.add(variable)
+                varying.add(norm)
+                changed = True
+        if not changed:
+            break
+    return varying
+
+
+def _expression_is_time_varying(expression: str, varying_names: Set[str]) -> bool:
+    """Return whether *expression* references simulation time or a time-varying symbol."""
+
+    text = str(expression or "")
+    if not text:
+        return False
+    if re.search(r"\b(?:time|delay|rateOf)\b", text, re.IGNORECASE):
+        return True
+    for token in _expression_identifiers(text):
+        if token in varying_names or standardize_name(token) in varying_names:
+            return True
+    return False
+
+
 def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
-    """Build source-shaped assignment rules, including non-species initial assignments."""
+    """Build source-shaped assignment rules, including static non-species initial assignments."""
 
     rules = [
         rule
@@ -6756,6 +6889,11 @@ def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
     if not initial_assignments:
         return rules
     existing = {standardize_name(str(rule.variable)) for rule in rules}
+    rate_rule_targets = {
+        standardize_name(str(rule.variable))
+        for rule in model.rules
+        if getattr(rule, "type", "") == "rate" and getattr(rule, "variable", None)
+    }
     species_names = {standardize_name(str(species_id)) for species_id in model.species}
     param_names = {
         standardize_name(str(parameter_id)) for parameter_id in model.parameters
@@ -6778,23 +6916,27 @@ def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
                 event_parameter_targets.add(std_var)
             if std_var in species_ref_names:
                 event_species_reference_targets.add(std_var)
+    varying_names = _time_varying_symbol_names(model)
     for initial_assignment in initial_assignments:
         symbol = str(getattr(initial_assignment, "symbol", "") or "")
         if not symbol:
             continue
         standardized = standardize_name(symbol)
+        math_expr = str(getattr(initial_assignment, "math", "") or "")
         if (
             standardized in species_names
             or standardized in existing
+            or standardized in rate_rule_targets
             or standardized in event_parameter_targets
             or standardized in event_species_reference_targets
+            or _expression_is_time_varying(math_expr, varying_names)
         ):
             continue
         rules.append(
             SBMLRule(
                 type="assignment",
                 variable=symbol,
-                math=str(getattr(initial_assignment, "math", "") or ""),
+                math=math_expr,
             )
         )
         existing.add(standardized)
@@ -9620,22 +9762,90 @@ def generate_bngl(
     augmented_molecule_types = list(molecule_types)
     augmented_seed_species = list(seed_species)
     seed_symbol_values, initial_values = _seed_symbol_values(model, seed_species)
-    # Parameter-only ODE models can read changing state in an initial
-    # assignment. After t=0, a parameter with no controller keeps that value.
-    # Retain initialization history when a delay can observe t < 0.
-    if (
-        initial_values
-        and not model.species
-        and not model.reactions
-        and not any(
-            _delay_arguments(expression)
-            for expression in (
-                *math_sources,
-                *(str(event.delay or "") for event in model.events),
-            )
-        )
+    # Initial assignments are evaluated once at t=0. Freeze resolved values
+    # for parameters/compartments with no runtime controller whenever either
+    # the model is parameter-only (with no active delay) or the initial
+    # assignment reads time-varying state (so it never becomes a live rule).
+    delay_referenced_symbols: Set[str] = set()
+    has_any_delay = False
+    for expression in (
+        *math_sources,
+        *(str(event.delay or "") for event in model.events),
     ):
-        _freeze_initial_only_parameters(model, initial_values)
+        for first_arg, _second_arg in _delay_arguments(expression):
+            has_any_delay = True
+            for token in _expression_identifiers(first_arg):
+                delay_referenced_symbols.add(standardize_name(token))
+    if initial_values:
+        if not model.species and not model.reactions and not has_any_delay:
+            _freeze_initial_only_parameters(model, initial_values)
+        else:
+            varying_names = _time_varying_symbol_names(model)
+            freeze_targets = {
+                standardize_name(str(assignment.symbol))
+                for assignment in model.initial_assignments
+                if getattr(assignment, "symbol", None)
+                and _expression_is_time_varying(
+                    str(getattr(assignment, "math", "") or ""), varying_names
+                )
+                and not (
+                    re.search(
+                        r"\btime\b",
+                        str(getattr(assignment, "math", "") or ""),
+                        re.IGNORECASE,
+                    )
+                    and standardize_name(str(assignment.symbol))
+                    in delay_referenced_symbols
+                )
+            }
+            if freeze_targets:
+                _freeze_initial_only_parameters(
+                    model, initial_values, only_symbols=freeze_targets
+                )
+    # Fail closed if an unfolded non-species initialAssignment depends on a
+    # time-varying symbol and could not be frozen at t=0: converting it into a
+    # live assignmentRule would silently corrupt t > 0 trajectories.
+    if model.initial_assignments:
+        varying_names = _time_varying_symbol_names(model)
+        controlled_targets = {
+            standardize_name(str(rule.variable))
+            for rule in model.rules
+            if getattr(rule, "variable", None)
+        }
+        controlled_targets.update(
+            standardize_name(str(assignment.variable))
+            for event in model.events
+            for assignment in event.assignments
+            if getattr(assignment, "variable", None)
+        )
+        species_norm_names = {
+            standardize_name(str(species_id)) for species_id in model.species
+        }
+        for assignment in model.initial_assignments:
+            symbol = str(getattr(assignment, "symbol", "") or "")
+            if not symbol:
+                continue
+            std_symbol = standardize_name(symbol)
+            math_expr = str(getattr(assignment, "math", "") or "")
+            if (
+                std_symbol in species_norm_names
+                or std_symbol in controlled_targets
+                or not _expression_is_time_varying(math_expr, varying_names)
+            ):
+                continue
+            if (
+                re.search(r"\btime\b", math_expr, re.IGNORECASE)
+                and std_symbol in delay_referenced_symbols
+            ):
+                continue
+            _record_import_warning(
+                model,
+                f'Initial assignment for "{symbol}" depends on time-varying '
+                "state and could not be resolved to a fixed time-zero value; "
+                "it cannot be lowered as a live assignment rule.",
+                category="initialAssignment",
+                severity="dropped",
+            )
     assignment_variables = {
         standardize_name(rule.variable)
         for rule in _assignment_rules_for_writer(model)

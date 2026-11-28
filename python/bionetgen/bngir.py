@@ -242,6 +242,13 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         from .model import _cpp
 
         snapshot_rules = _cpp._compiled_snapshot(native).get("rules", [])
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "bng3_events" in msg or "native event" in msg.lower():
+            raise RuntimeError(
+                f"BNGIR {VERSION} does not preserve native events: {msg}"
+            ) from exc
+        snapshot_rules = []
     except Exception:
         snapshot_rules = []
 
@@ -570,6 +577,10 @@ def to_bngir(
             "native BNGIR v0.2 imports cannot be exported as v0.1 because their "
             "source pattern text is intentionally unavailable"
         )
+    if getattr(model, "_algebraic_rules", None):
+        raise ValueError(
+            f"BNGIR {version} does not preserve SBML algebraic rules"
+        )
     effective_provenance: dict[str, Any] | None = (
         dict(provenance) if provenance is not None else None
     )
@@ -656,6 +667,74 @@ def _quote_action_value(value: Any) -> str:
     return f'"{escaped}"'
 
 
+_UNQUOTED_EXPR_FUNCS = frozenset(
+    {
+        "abs",
+        "acos",
+        "asin",
+        "atan",
+        "ceil",
+        "cos",
+        "exp",
+        "floor",
+        "if",
+        "ln",
+        "log",
+        "log10",
+        "log2",
+        "max",
+        "min",
+        "rint",
+        "sin",
+        "sqrt",
+        "tan",
+    }
+)
+
+
+def _is_unquoted_bngl_expr(raw: str) -> bool:
+    """Return True when raw is a syntactically valid unquoted BNGL arithmetic expression."""
+    if not raw or not any(ch in raw for ch in "+-*/^()"):
+        return False
+    try:
+        tree = ast.parse(raw.replace("^", "**"), mode="eval")
+    except SyntaxError:
+        return False
+    allowed_nodes = (
+        ast.Expression,
+        ast.BinOp,
+        ast.UnaryOp,
+        ast.Constant,
+        ast.Name,
+        ast.Load,
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.Pow,
+        ast.UAdd,
+        ast.USub,
+        ast.Call,
+    )
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed_nodes):
+            return False
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool) or not isinstance(
+                node.value, (int, float)
+            ):
+                return False
+        elif isinstance(node, ast.Call):
+            if (
+                not isinstance(node.func, ast.Name)
+                or node.func.id.lower() not in _UNQUOTED_EXPR_FUNCS
+                or node.keywords
+                or not node.args
+            ):
+                return False
+    return True
+
+
 def _action_value(value: Any) -> str:
     raw = str(value).strip()
     if (
@@ -663,6 +742,7 @@ def _action_value(value: Any) -> str:
         or (len(raw) >= 2 and raw[0] == "{" and raw[-1] == "}")
         or (len(raw) >= 2 and raw[0] == "[" and raw[-1] == "]")
         or re.fullmatch(r"[A-Za-z0-9_+./:-]+", raw)
+        or _is_unquoted_bngl_expr(raw)
     ):
         return raw
     return _quote_action_value(raw)
@@ -1220,25 +1300,38 @@ def _validate_direction_v02(
         raise ValueError(f"BNGIR {where}.local_scopes must be an array")
     local_names: set[str] = set()
     reactants = direction.get("reactants", [])
+    products = direction.get("products", [])
     for i, raw_scope in enumerate(scopes):
         scope = _require_mapping(raw_scope, f"{where}.local_scopes[{i}]")
         name = scope.get("name")
         kind = scope.get("kind")
-        pi = scope.get("reactant_pattern")
+        scope_side = scope.get("side", "reactant")
         if not isinstance(name, str) or not name or name in local_names:
             raise ValueError(f"BNGIR {where} has invalid/duplicate local scope name")
         local_names.add(name)
         if kind not in {"molecule", "species"}:
             raise ValueError(f"BNGIR {where} has invalid local scope kind")
-        if not _is_json_integer(pi) or pi < 0 or pi >= len(reactants):
-            raise ValueError(
-                f"BNGIR {where} local scope reactant pattern is out of range"
-            )
+        if scope_side == "product":
+            target_patterns = products
+            pi = scope.get("pattern_index")
+            if not _is_json_integer(pi) or pi < 0 or pi >= len(target_patterns):
+                raise ValueError(
+                    f"BNGIR {where} local scope product pattern is out of range"
+                )
+            side_label = "products"
+        else:
+            target_patterns = reactants
+            pi = scope.get("reactant_pattern")
+            if not _is_json_integer(pi) or pi < 0 or pi >= len(target_patterns):
+                raise ValueError(
+                    f"BNGIR {where} local scope reactant pattern is out of range"
+                )
+            side_label = "reactants"
         occurrence = scope.get("molecule_occurrence")
         if kind == "molecule":
-            molecules = _require_mapping(reactants[pi], f"{where}.reactants[{pi}]").get(
-                "molecules", []
-            )
+            molecules = _require_mapping(
+                target_patterns[pi], f"{where}.{side_label}[{pi}]"
+            ).get("molecules", [])
             if (
                 not _is_json_integer(occurrence)
                 or occurrence < 0
@@ -3479,12 +3572,27 @@ def _pattern_v02(
         molecules.append(mol)
     body = ".".join(molecules) if molecules else "0"
     if pattern.get("compartment"):
+        comp = str(pattern["compartment"])
+        raw_mols = [m for m in pattern.get("molecules", []) if isinstance(m, Mapping)]
         # Preserve whether the graph-level compartment came from the prefix
-        # form. Molecule-local compartments are serialized on each molecule.
+        # form. Never append a duplicate @comp suffix onto a molecule that
+        # already carries an explicit @compartment.
         if pattern.get("compartment_prefix", True):
-            body = f"@{pattern['compartment']}:{body}"
+            body = f"@{comp}:{body}"
+        elif len(raw_mols) == 1 and raw_mols[0].get("compartment") == comp:
+            pass
+        elif (
+            len(raw_mols) > 1
+            and all(m.get("compartment") for m in raw_mols)
+            and any(m.get("compartment") == comp for m in raw_mols)
+        ):
+            pass
+        elif raw_mols and (
+            raw_mols[-1].get("compartment") or len(raw_mols) > 1
+        ):
+            body = f"@{comp}:{body}"
         else:
-            body = f"{body}@{pattern['compartment']}"
+            body = f"{body}@{comp}"
     if species_scopes:
         for scope in reversed(species_scopes):
             body = f"%{scope}::{body}"
@@ -3508,13 +3616,22 @@ def _direction_pattern_strings_v02(
     direction: Mapping[str, Any], side: str
 ) -> list[str]:
     patterns = direction.get(side, [])
-    if side != "reactants":
-        return [_pattern_v02(pattern) for pattern in patterns]
+    target_side = "reactant" if side == "reactants" else "product"
     molecule_scopes: dict[int, dict[int, list[str]]] = {}
     species_scopes: dict[int, list[str]] = {}
     for raw in direction.get("local_scopes", []):
         scope = _require_mapping(raw, "rule local scope")
-        pi = int(scope["reactant_pattern"])
+        scope_side = scope.get("side", "reactant")
+        if scope_side != target_side:
+            continue
+        raw_pi = (
+            scope.get("reactant_pattern")
+            if target_side == "reactant"
+            else scope.get("pattern_index")
+        )
+        if raw_pi is None:
+            continue
+        pi = int(raw_pi)
         if scope["kind"] == "species":
             species_scopes.setdefault(pi, []).append(str(scope["name"]))
         else:
@@ -4597,7 +4714,9 @@ def _parse_graph_pattern(text: str) -> dict[str, Any] | None:
     if raw.startswith("@") and ":" in raw:
         colon = raw.index(":")
         species_comp = raw[1:colon].strip()
-        raw = raw[colon + 1 :].strip()
+        raw = raw[colon + 1 :].lstrip(":").strip()
+    if raw.startswith("$"):
+        raw = raw[1:].strip()
 
     # Split top-level '.' separating molecules (ignoring '.' inside parentheses).
     mol_tokens: list[str] = []
@@ -5545,8 +5664,9 @@ def _canonical_seed_identity(model: Any, seed: Any) -> str | None:
     if compartments:
         lines.append("begin compartments")
         for compartment in compartments:
+            parent_part = f" {compartment.parent}" if compartment.parent else ""
             lines.append(
-                f"  {compartment.name} {compartment.dimension} {compartment.volume}"
+                f"  {compartment.name} {compartment.dimension} {compartment.volume}{parent_part}"
             )
         lines.append("end compartments")
     lines.append("begin molecule types")
@@ -5566,11 +5686,23 @@ def _canonical_seed_identity(model: Any, seed: Any) -> str | None:
         lines.append(definition)
     lines.append("end molecule types")
 
-    pattern = seed.pattern
-    if seed.compartment and "@" not in pattern:
-        pattern = f"@{seed.compartment}:{pattern}"
+    pattern = seed.pattern.strip()
     if pattern.startswith("$"):
-        pattern = pattern[1:]
+        pattern = pattern[1:].strip()
+    if seed.is_constant:
+        if pattern.startswith("@") and ":" in pattern:
+            colon = pattern.index(":")
+            prefix = pattern[: colon + 1]
+            rest = pattern[colon + 1 :].lstrip()
+            if not rest.startswith("$"):
+                rest = f"${rest}"
+            pattern = f"{prefix}{rest}"
+        elif seed.compartment and "@" not in pattern:
+            pattern = f"@{seed.compartment}:${pattern}"
+        else:
+            pattern = f"${pattern}"
+    elif seed.compartment and "@" not in pattern:
+        pattern = f"@{seed.compartment}:{pattern}"
     lines.append("begin seed species")
     lines.append(f"  {pattern} 1")
     lines.append("end seed species")
@@ -5635,7 +5767,24 @@ def _extract_jump_hazards(
                 pass
             break
     net = model.generate_network(max_iter=equality_max_iter)
-    species_names = list(net.species_names)
+    raw_species_names = list(net.species_names)
+
+    def _strip_fixed_marker(sp_name: str) -> tuple[str, bool]:
+        if sp_name.startswith("$"):
+            return sp_name[1:], True
+        if sp_name.startswith("@") and ":$" in sp_name:
+            return sp_name.replace(":$", ":", 1), True
+        return sp_name, False
+
+    species_names: list[str] = []
+    constant_species: set[str] = set()
+    raw_to_norm: dict[str, str] = {}
+    for raw_sp in raw_species_names:
+        norm_sp, is_const = _strip_fixed_marker(raw_sp)
+        species_names.append(norm_sp)
+        raw_to_norm[raw_sp] = norm_sp
+        if is_const:
+            constant_species.add(norm_sp)
 
     init_counts: dict[str, Fraction] = {sp: Fraction(0) for sp in species_names}
     for seed in model._model.seed_species:
@@ -5643,7 +5792,7 @@ def _extract_jump_hazards(
             seed.amount.to_string(), param_dict, zero_arg_fn_bodies
         )
         identity = _canonical_seed_identity(model, seed)
-        if identity is None or identity not in init_counts:
+        if identity is None or identity not in raw_to_norm:
             raise EqualityUndecided(
                 "A seed species has no canonical identity in the generated network",
                 {
@@ -5652,7 +5801,7 @@ def _extract_jump_hazards(
                     "canonical_identity": identity,
                 },
             )
-        init_counts[identity] += amount_val
+        init_counts[raw_to_norm[identity]] += amount_val
 
     # Map authored rules by rule_name to recover delay, non_consuming,
     # TotalRate, and driving_work metadata per generated reaction.
@@ -5754,8 +5903,28 @@ def _extract_jump_hazards(
                 str(m).strip().lower() == "totalrate" for m in rule_obj.modifiers
             )
 
+        # Constant ($) species keep their population clamped across jumps:
+        # propensities and reaction energies still depend on reactants/products,
+        # while the net state transition leaves constant species unchanged.
+        if constant_species:
+            if delay_spec is not None and any(
+                sp in constant_species for sp in (*reactants, *products)
+            ):
+                raise EqualityUndecided(
+                    "Delayed reactions involving constant species are not certified",
+                    {"reactants": reactants, "products": products},
+                )
+            jump_products = tuple(
+                sorted(
+                    [sp for sp in products if sp not in constant_species]
+                    + [sp for sp in reactants if sp in constant_species]
+                )
+            )
+        else:
+            jump_products = products
+
         # Immediate self-loops leave the molecular state unchanged.
-        if reactants == products and delay_spec is None:
+        if reactants == jump_products and delay_spec is None:
             continue
 
         rate_law_str = rate_laws[idx]
@@ -5855,7 +6024,7 @@ def _extract_jump_hazards(
 
         key = (
             reactants,
-            products,
+            jump_products,
             delay_spec,
             non_consuming,
             work_key,
@@ -6643,6 +6812,20 @@ def exact_process_equal(
     right_model = (
         right if isinstance(right, BioNetGenModel) else from_bngir(right_doc or right)
     )
+    if getattr(left_model, "_algebraic_rules", None) or getattr(
+        right_model, "_algebraic_rules", None
+    ):
+        raise EqualityUndecided(
+            "Models with SBML algebraic rules are not certified for exact equality",
+            {
+                "left_algebraic_rules": len(
+                    getattr(left_model, "_algebraic_rules", None) or []
+                ),
+                "right_algebraic_rules": len(
+                    getattr(right_model, "_algebraic_rules", None) or []
+                ),
+            },
+        )
 
     try:
         left_structural = _parse_document(to_bngir(left_model, version="0.2"))["model"]
