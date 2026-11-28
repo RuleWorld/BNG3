@@ -147,7 +147,7 @@ def _write_json(path, data):
 
 
 def _refusal_fixtures(mode_name):
-    """The full 39 pinned refusal records plus the harness by_cause view."""
+    """The full 40 pinned refusal records plus the harness by_cause view."""
     by_cause = {
         "events": {"count": 31, "ids": sorted(disp.PINNED_REFUSAL_IDS["events"])},
         "fast_reactions": {
@@ -157,7 +157,7 @@ def _refusal_fixtures(mode_name):
             ),
         },
         "other": {
-            "count": 3,
+            "count": 4,
             "ids": sorted(disp.PINNED_REFUSAL_IDS["other"] - {"BIOMD0000000696"}),
         },
         "mathml": {"count": 1, "ids": ["BIOMD0000000696"]},
@@ -435,9 +435,9 @@ def test_refusal_counts_are_pinned_from_the_real_report():
     assert disp.PINNED_REFUSAL_COUNTS == {
         "events": 31,
         "fast_reaction": 4,
-        "other": 4,
+        "other": 5,
     }
-    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 39
+    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 40
 
 
 def test_receipt_refuses_mismatched_counts():
@@ -624,20 +624,20 @@ def test_border_model_1098_accepts_timeout_or_refusal_non_pass(mode_state):
     )
     assert receipt["agreement"]["flat_atomized_match"] is True
     assert receipt["modes"]["flat"]["timeout_ids"] == [disp.BORDER_TIMEOUT_REFUSAL_ID]
-    assert receipt["modes"]["flat"]["refusal_counts"]["other"] == 3
+    assert receipt["modes"]["flat"]["refusal_counts"]["other"] == 4
     if mode_state == "both-timeout":
         assert receipt["modes"]["atomized"]["timeout_ids"] == [
             disp.BORDER_TIMEOUT_REFUSAL_ID
         ]
-        assert receipt["modes"]["atomized"]["refusal_counts"]["other"] == 3
+        assert receipt["modes"]["atomized"]["refusal_counts"]["other"] == 4
     else:
         assert receipt["modes"]["atomized"]["timeout_ids"] == []
-        assert receipt["modes"]["atomized"]["refusal_counts"]["other"] == 4
+        assert receipt["modes"]["atomized"]["refusal_counts"]["other"] == 5
     assert all(r["counts_as_pass"] is False for r in rows)
 
 
 def test_other_pinned_refusal_cannot_escape_as_timeout():
-    """Only BIOMD0000001098 has the timeout/refusal border disposition."""
+    """Only BIOMD0000001096 and BIOMD0000001098 have the timeout/refusal border disposition."""
     flat_943, atomized_943 = _pinned_pair()
     flat_refusals, by_cause = _refusal_fixtures("flat")
     atomized_refusals, atomized_by_cause = _refusal_fixtures("atomized")
