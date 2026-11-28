@@ -2484,25 +2484,20 @@ def test_shared_quadratic_simultaneous_initial_entries_match_libroadrunner(tmp_p
     )
 
     # Both strict triggers are false at t=0 and enter their true regions
-    # immediately after it.  RoadRunner retains the pre-event initial row,
-    # then reports the trigger-time assignment to S2 and the coupled trajectory.
+    # immediately after it, so both engines retain the pre-event initial row at
+    # t=0 and then apply the trigger-time assignments for positive times.
     roadrunner = pytest.importorskip("roadrunner")
     reference_engine = roadrunner.RoadRunner(xml)
     reference_engine.integrator.setValue("relative_tolerance", 1e-10)
     reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
     reference_engine.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
     reference = reference_engine.simulate(times=simulation.time)
-    positive_time = simulation.time > 0
     for index, species in enumerate(("S1", "S2", "S3")):
-        expected = reference[positive_time, reference.colnames.index(f"[{species}]")]
-        np.testing.assert_allclose(
-            native[positive_time, index], expected, rtol=1e-5, atol=5e-10
-        )
+        expected = reference[:, reference.colnames.index(f"[{species}]")]
+        np.testing.assert_allclose(native[:, index], expected, rtol=1e-5, atol=5e-10)
 
-    # Native records the right-limit assignment on its t=0 row; RoadRunner
-    # exposes the pre-event state there, so compare the trajectories only for
-    # positive times.  Event 2 also assigns S1=1, which is already its value.
-    assert native[0, 1] == pytest.approx(1.0, abs=5e-10)
+    assert native[0, 1] == pytest.approx(2.0, abs=5e-10)
+    assert native[1, 1] < 1.0 + 1e-3
 
 
 def test_shared_quadratic_initial_event_pair_applies_both_assignments(tmp_path):
@@ -2545,15 +2540,13 @@ def test_shared_quadratic_initial_event_pair_applies_both_assignments(tmp_path):
     reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
     reference_engine.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
     reference = reference_engine.simulate(times=simulation.time)
-    positive_time = simulation.time > 0
     for index, species in enumerate(("S1", "S2", "S3")):
-        expected = reference[positive_time, reference.colnames.index(f"[{species}]")]
-        np.testing.assert_allclose(
-            native[positive_time, index], expected, rtol=1e-5, atol=5e-10
-        )
+        expected = reference[:, reference.colnames.index(f"[{species}]")]
+        np.testing.assert_allclose(native[:, index], expected, rtol=1e-5, atol=5e-10)
 
-    assert native[0, 1] == pytest.approx(1.0, abs=5e-10)
-    assert native[0, 0] == pytest.approx(0.0, abs=5e-10)
+    assert native[0, 1] == pytest.approx(2.0, abs=5e-10)
+    assert native[0, 0] == pytest.approx(1.0, abs=5e-10)
+    assert native[1, 0] < 1e-3
 
 
 def test_shared_quadratic_trigger_entering_at_initial_time_matches_libroadrunner(

@@ -99,7 +99,7 @@ def _pinned_refusals():
             ),
         },
         "other": {
-            "count": 3,
+            "count": 4,
             "ids": sorted(disp.PINNED_REFUSAL_IDS["other"] - {"BIOMD0000000696"}),
         },
         "mathml": {"count": 1, "ids": ["BIOMD0000000696"]},

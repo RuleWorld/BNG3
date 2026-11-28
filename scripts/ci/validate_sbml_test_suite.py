@@ -1475,6 +1475,7 @@ def _reference_output_target(
     observable_map: dict[str, str],
     standardize_name: Any,
     reaction_rate_functions: dict[str, str] | None = None,
+    bngl: str | None = None,
 ) -> str | None:
     """Map an SBML result id to its exact generated BNGL output symbol."""
 
@@ -1485,10 +1486,19 @@ def _reference_output_target(
         if any(
             rule.type == "rate" and rule.variable == compartment_id
             for rule in parsed.rules
-        ) or any(
-            assignment.variable == compartment_id
-            for event in getattr(parsed, "events", ())
-            for assignment in getattr(event, "assignments", ())
+        ) or (
+            any(
+                assignment.variable == compartment_id
+                for event in getattr(parsed, "events", ())
+                for assignment in getattr(event, "assignments", ())
+            )
+            and (
+                f"{compartment_name}_amt" in observable_map.values()
+                or (
+                    bngl is not None
+                    and f"M___rate_rule_state__{compartment_name}()" in bngl
+                )
+            )
         ):
             return f"{compartment_name}_amt"
         if any(
@@ -1898,6 +1908,7 @@ def _compare_case_to_reference(
             dict(atomized.observable_map),
             standardize_name,
             dict(getattr(atomized, "reaction_rate_functions", {}) or {}),
+            bngl=getattr(atomized, "bngl", None),
         )
         if target is None:
             unresolved.append(variable)
@@ -2937,6 +2948,7 @@ def _compare_stochastic_case_to_reference(
             dict(atomized.observable_map),
             standardize_name,
             dict(getattr(atomized, "reaction_rate_functions", {}) or {}),
+            bngl=getattr(atomized, "bngl", None),
         )
         if target is None:
             unresolved.append(variable)

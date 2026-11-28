@@ -575,17 +575,20 @@ PINNED_REFUSAL_IDS = {
         {
             "BIOMD0000000696",
             "BIOMD0000001075",
+            "BIOMD0000001096",
             "BIOMD0000001098",
             "BIOMD0000001099",
         }
     ),
 }
 PINNED_REFUSAL_COUNTS = {name: len(ids) for name, ids in PINNED_REFUSAL_IDS.items()}
-# BIOMD0000001098 (988 KB, undefined operator 'LOWER_BOUND') sits right at
-# the 180s per-model timeout boundary: faster hosted runners finish it as an
-# 'other' refusal, while busier runners hit the 180s timeout during translation.
-# Accept either of those two exact non-PASS states for BIOMD0000001098 only.
+# BIOMD0000001096 (2.76 MB) and BIOMD0000001098 (988 KB) both use the undefined
+# operator 'LOWER_BOUND' and sit near the 180s per-model timeout boundary:
+# faster hosted runners finish them as 'other' refusals, while busier runners
+# hit the 180s timeout during translation. Accept either exact non-PASS state
+# for these two models only.
 BORDER_TIMEOUT_REFUSAL_ID = "BIOMD0000001098"
+BORDER_TIMEOUT_REFUSAL_IDS = frozenset({"BIOMD0000001096", "BIOMD0000001098"})
 BORDER_TIMEOUT_REFUSAL_CLASS = "other"
 # The harness's own unsupported_summary.by_cause counts at 71888b93.  The
 # fast_reactions cause includes BIOMD0000000137, which also appears under
@@ -757,12 +760,12 @@ def build_disposition_receipt(
         stable_ids = [
             model_id
             for model_id in bucket["refusal_ids"]
-            if model_id != BORDER_TIMEOUT_REFUSAL_ID
+            if model_id not in BORDER_TIMEOUT_REFUSAL_IDS
         ]
         stable_classes = {
             model_id: cause
             for model_id, cause in bucket["refusal_classes"].items()
-            if model_id != BORDER_TIMEOUT_REFUSAL_ID
+            if model_id not in BORDER_TIMEOUT_REFUSAL_IDS
         }
         stable_counts = {
             cause: sum(1 for c in stable_classes.values() if c == cause)
@@ -779,9 +782,10 @@ def build_disposition_receipt(
     ) -> tuple[set[str], dict[str, int]]:
         expected_ids = set().union(*PINNED_REFUSAL_IDS.values())
         expected_counts = dict(PINNED_REFUSAL_COUNTS)
-        if BORDER_TIMEOUT_REFUSAL_ID in bucket["timeout_ids"]:
-            expected_ids.remove(BORDER_TIMEOUT_REFUSAL_ID)
-            expected_counts[BORDER_TIMEOUT_REFUSAL_CLASS] -= 1
+        for border_id in BORDER_TIMEOUT_REFUSAL_IDS:
+            if border_id in bucket["timeout_ids"]:
+                expected_ids.remove(border_id)
+                expected_counts[BORDER_TIMEOUT_REFUSAL_CLASS] -= 1
         return expected_ids, expected_counts
 
     problems: list[str] = []
