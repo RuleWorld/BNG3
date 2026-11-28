@@ -503,8 +503,11 @@ std::unordered_map<BNGcore::Node*, BNGcore::Node*> cloneGraphIntoTarget(
     return clones;
 }
 
-std::vector<SpeciesGraph> splitIntoSpeciesGraphs(const BNGcore::PatternGraph& graph) {
+std::vector<SpeciesGraph> splitIntoSpeciesGraphsWithNodeMap(
+    const BNGcore::PatternGraph& graph,
+    std::unordered_map<BNGcore::Node*, std::size_t>& nodeToComponentIndex) {
     std::vector<SpeciesGraph> products;
+    nodeToComponentIndex.clear();
     std::set<BNGcore::Node*> visited;
 
     for (auto nodeIter = graph.begin(); nodeIter != graph.end(); ++nodeIter) {
@@ -512,6 +515,7 @@ std::vector<SpeciesGraph> splitIntoSpeciesGraphs(const BNGcore::PatternGraph& gr
             continue;
         }
 
+        const std::size_t compIndex = products.size();
         std::vector<BNGcore::Node*> stack {*nodeIter};
         std::vector<BNGcore::Node*> component;
         while (!stack.empty()) {
@@ -521,6 +525,7 @@ std::vector<SpeciesGraph> splitIntoSpeciesGraphs(const BNGcore::PatternGraph& gr
                 continue;
             }
             component.push_back(node);
+            nodeToComponentIndex[node] = compIndex;
             for (auto edge = node->edges_in_begin(); edge != node->edges_in_end(); ++edge) {
                 if (visited.find(*edge) == visited.end()) {
                     stack.push_back(*edge);
@@ -551,6 +556,11 @@ std::vector<SpeciesGraph> splitIntoSpeciesGraphs(const BNGcore::PatternGraph& gr
     }
 
     return products;
+}
+
+std::vector<SpeciesGraph> splitIntoSpeciesGraphs(const BNGcore::PatternGraph& graph) {
+    std::unordered_map<BNGcore::Node*, std::size_t> unusedNodeMap;
+    return splitIntoSpeciesGraphsWithNodeMap(graph, unusedNodeMap);
 }
 
 void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node,
@@ -690,21 +700,22 @@ bool embeddingRespectsNodeStates(const BNGcore::PatternGraph& pattern, const BNG
                  edge != target->edges_out_end(); ++edge) {
                 if (isBondNode(**edge)) targetBonds.push_back(*edge);
             }
-            if (patternBonds.size() == 1) {
-                const auto patternBondState =
-                    patternBonds.front()->get_state().get_BNG2_string();
-                if (patternBondState == "!?" ) {
-                    // Any target bond cardinality is valid.
-                } else if (patternBondState == "!+") {
-                    if (targetBonds.empty()) return false;
-                } else if (targetBonds.size() != patternBonds.size()) {
-                    // Explicit bond IDs and !- both use exact edge counts.
-                    return false;
+            bool hasAnyWildcard = false;
+            bool hasBoundWildcard = false;
+            for (const auto* pb : patternBonds) {
+                const auto pbState = pb->get_state().get_BNG2_string();
+                if (pbState == "!?") {
+                    hasAnyWildcard = true;
+                } else if (pbState == "!+" && pb->in_degree() == 1) {
+                    hasBoundWildcard = true;
                 }
-            } else if (patternBonds.size() != targetBonds.size()) {
-                // The parser normally materializes one marker per specified
-                // component.  Keep the general exact-count rule for any
-                // multi-edge pattern as well.
+            }
+            if (hasAnyWildcard) {
+                // Any target bond cardinality >= matched non-wildcard bonds is valid.
+            } else if (hasBoundWildcard) {
+                if (targetBonds.size() < patternBonds.size()) return false;
+            } else if (targetBonds.size() != patternBonds.size()) {
+                // Explicit bond IDs (in_degree >= 2) and !- both use exact edge counts.
                 return false;
             }
         }
@@ -833,36 +844,639 @@ std::string reactionCenterSignature(
     const BNGcore::Map& map,
     const BNGcore::PatternGraph& /*targetGraph*/) {
     // Perl BNG2 convention (filter_identical_by_rxn_center) compares the
-    // concrete target nodes reached by the match. We mirror that here by using
-    // the mapped target node identity, not a structural hash.
-    //
-    // Sort the parts so automorphic embeddings (swapping equivalent target
-    // molecules/components in the same reaction-center positions) collapse to
-    // the same signature.
-    std::vector<std::string> parts;
-    for (const auto& ref : reactionCenter) {
-        std::ostringstream out;
-        if (ref.isComponent) {
-            BNGcore::Node* sourceNode =
-                infos.at(ref.patternIndex).molecules.at(ref.moleculeIndex).components.at(ref.componentIndex).node;
-            auto* target = map.mapf(sourceNode);
-            if (target == nullptr) continue;
-            out << reinterpret_cast<std::uintptr_t>(target);
-        } else {
-            BNGcore::Node* sourceNode =
-                infos.at(ref.patternIndex).molecules.at(ref.moleculeIndex).node;
-            auto* target = map.mapf(sourceNode);
-            if (target == nullptr) continue;
-            out << reinterpret_cast<std::uintptr_t>(target);
-        }
-        parts.push_back(out.str());
-    }
-    std::sort(parts.begin(), parts.end());
+    // ordered image of each reaction-center node in the target graph: two
+    // embeddings are identical up to the reaction center iff every source
+    // reaction-center node maps to the exact same concrete target node.
     std::ostringstream joined;
-    for (const auto& part : parts) {
-        joined << part << ";";
+    for (const auto& ref : reactionCenter) {
+        BNGcore::Node* sourceNode = ref.isComponent
+            ? infos.at(ref.patternIndex).molecules.at(ref.moleculeIndex).components.at(ref.componentIndex).node
+            : infos.at(ref.patternIndex).molecules.at(ref.moleculeIndex).node;
+        auto* target = map.mapf(sourceNode);
+        if (target == nullptr) continue;
+        joined << ref.moleculeIndex << '.'
+               << (ref.isComponent ? 1 : 0) << '.'
+               << ref.componentIndex << '='
+               << reinterpret_cast<std::uintptr_t>(target) << ';';
     }
     return joined.str();
+}
+
+struct ExactCompSig {
+    std::string name;
+    std::string exactState;
+    std::size_t explicitBonds = 0;
+    std::size_t wildcardBound = 0;
+    std::size_t wildcardAny = 0;
+    std::size_t unbound = 0;
+
+    bool operator==(const ExactCompSig& other) const {
+        return std::tie(name, exactState, explicitBonds, wildcardBound, wildcardAny, unbound) ==
+               std::tie(other.name, other.exactState, other.explicitBonds,
+                        other.wildcardBound, other.wildcardAny, other.unbound);
+    }
+};
+
+struct ExactMolSig {
+    std::string name;
+    std::string compartment;
+    std::size_t numComponents = 0;
+
+    bool operator==(const ExactMolSig& other) const {
+        return std::tie(name, compartment, numComponents) ==
+               std::tie(other.name, other.compartment, other.numComponents);
+    }
+};
+
+ExactCompSig makeExactCompSig(const ComponentInfo& comp) {
+    ExactCompSig sig;
+    sig.name = comp.name;
+    sig.exactState = comp.node->get_state().get_BNG2_string();
+    for (const auto* bn : comp.bondNodes) {
+        const std::string bs = bn->get_state().get_BNG2_string();
+        if (bs == "!?") {
+            ++sig.wildcardAny;
+        } else if (bs == "!-") {
+            ++sig.unbound;
+        } else if (bs == "!+" && bn->in_degree() == 1) {
+            ++sig.wildcardBound;
+        } else if (bs == "!+") {
+            ++sig.explicitBonds;
+        }
+    }
+    return sig;
+}
+
+ExactMolSig makeExactMolSig(const MoleculeInfo& mol) {
+    return ExactMolSig{mol.name, mol.node->get_compartment(), mol.components.size()};
+}
+
+std::size_t countComponentBondsBetween(
+    const PatternInfo& info,
+    std::size_t m1, std::size_t c1,
+    std::size_t m2, std::size_t c2) {
+    std::size_t count = 0;
+    for (const auto& partner : info.molecules[m1].components[c1].partners) {
+        if (partner.moleculeIndex == m2 && partner.componentIndex == c2) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+std::size_t countMoleculeBondsBetween(
+    const PatternInfo& info,
+    std::size_t m1, std::size_t m2) {
+    std::size_t count = 0;
+    for (const auto& comp : info.molecules[m1].components) {
+        for (const auto& partner : comp.partners) {
+            if (partner.moleculeIndex == m2) {
+                ++count;
+            }
+        }
+    }
+    return count;
+}
+
+struct PatternIsoMap {
+    std::vector<std::size_t> molMap;
+    std::vector<std::vector<std::size_t>> compMap;
+};
+
+std::vector<PatternIsoMap> enumerateExactPatternIsos(
+    const SpeciesGraph& sgA, const PatternInfo& infoA,
+    const std::vector<std::vector<bool>>& untouchedA,
+    const SpeciesGraph& sgB, const PatternInfo& infoB,
+    const std::vector<std::vector<bool>>& untouchedB) {
+    std::vector<PatternIsoMap> results;
+    if (sgA.getCompartment() != sgB.getCompartment() ||
+        sgA.isCompartmentPrefix() != sgB.isCompartmentPrefix() ||
+        infoA.molecules.size() != infoB.molecules.size()) {
+        return results;
+    }
+
+    const std::size_t numMols = infoA.molecules.size();
+    std::size_t totalComps = 0;
+    for (std::size_t m = 0; m < numMols; ++m) {
+        totalComps += infoA.molecules[m].components.size();
+    }
+    // Guard against stack overflow / combinatorial blowup on huge synthetic patterns
+    // (e.g., thousands of molecules or hundreds of components in stress/overflow tests).
+    constexpr std::size_t kMaxExactIsoMols = 64;
+    constexpr std::size_t kMaxExactIsoComps = 256;
+    constexpr std::size_t kMaxExactIsoResults = 4096;
+    if (numMols > kMaxExactIsoMols || totalComps > kMaxExactIsoComps) {
+        if (&sgA == &sgB) {
+            PatternIsoMap identity;
+            identity.molMap.resize(numMols);
+            identity.compMap.resize(numMols);
+            for (std::size_t m = 0; m < numMols; ++m) {
+                identity.molMap[m] = m;
+                const std::size_t nc = infoA.molecules[m].components.size();
+                identity.compMap[m].resize(nc);
+                for (std::size_t c = 0; c < nc; ++c) identity.compMap[m][c] = c;
+            }
+            results.push_back(std::move(identity));
+        }
+        return results;
+    }
+
+    std::vector<ExactMolSig> molSigsA(numMols), molSigsB(numMols);
+    std::vector<std::vector<ExactCompSig>> compSigsA(numMols), compSigsB(numMols);
+    for (std::size_t m = 0; m < numMols; ++m) {
+        molSigsA[m] = makeExactMolSig(infoA.molecules[m]);
+        molSigsB[m] = makeExactMolSig(infoB.molecules[m]);
+        compSigsA[m].reserve(infoA.molecules[m].components.size());
+        for (const auto& c : infoA.molecules[m].components) {
+            compSigsA[m].push_back(makeExactCompSig(c));
+        }
+        compSigsB[m].reserve(infoB.molecules[m].components.size());
+        for (const auto& c : infoB.molecules[m].components) {
+            compSigsB[m].push_back(makeExactCompSig(c));
+        }
+    }
+
+    // Flatten (molIdx, compIdx) pairs for component-level backtracking.
+    std::vector<std::pair<std::size_t, std::size_t>> compOrder;
+    for (std::size_t m = 0; m < numMols; ++m) {
+        for (std::size_t c = 0; c < infoA.molecules[m].components.size(); ++c) {
+            compOrder.emplace_back(m, c);
+        }
+    }
+
+    std::vector<std::size_t> molMap(numMols, 0);
+    std::vector<bool> molUsedB(numMols, false);
+    std::vector<std::vector<std::size_t>> compMap(numMols);
+    std::vector<std::vector<bool>> compUsedB(numMols);
+    for (std::size_t m = 0; m < numMols; ++m) {
+        compMap[m].assign(infoA.molecules[m].components.size(), 0);
+        compUsedB[m].assign(infoB.molecules[m].components.size(), false);
+    }
+
+    std::function<void(std::size_t)> assignComponents = [&](std::size_t flatIdx) {
+        if (results.size() >= kMaxExactIsoResults) return;
+        if (flatIdx == compOrder.size()) {
+            results.push_back(PatternIsoMap{molMap, compMap});
+            return;
+        }
+        const auto [ma, ca] = compOrder[flatIdx];
+        const std::size_t mb = molMap[ma];
+        const std::size_t numCompsB = infoB.molecules[mb].components.size();
+        for (std::size_t cb = 0; cb < numCompsB; ++cb) {
+            if (compUsedB[mb][cb]) continue;
+            if (!(compSigsA[ma][ca] == compSigsB[mb][cb])) continue;
+
+            // Canonical coset representative for identical untouched context
+            // components on the same molecule: preserves |RuleGroup|/|StabRxnCntr|
+            // exactly while preventing k! blowup on multi-site context patterns.
+            if (untouchedA[ma][ca] && untouchedB[mb][cb]) {
+                bool outOfOrder = false;
+                for (std::size_t caPrev = 0; caPrev < ca; ++caPrev) {
+                    if (untouchedA[ma][caPrev] &&
+                        compSigsA[ma][caPrev] == compSigsA[ma][ca] &&
+                        untouchedB[mb][compMap[ma][caPrev]] &&
+                        cb < compMap[ma][caPrev]) {
+                        outOfOrder = true;
+                        break;
+                    }
+                }
+                if (outOfOrder) continue;
+            }
+
+            // Check self-bonds and bonds to all previously assigned components.
+            if (countComponentBondsBetween(infoA, ma, ca, ma, ca) !=
+                countComponentBondsBetween(infoB, mb, cb, mb, cb)) {
+                continue;
+            }
+            bool bondsOk = true;
+            for (std::size_t prev = 0; prev < flatIdx; ++prev) {
+                const auto [ma2, ca2] = compOrder[prev];
+                const std::size_t mb2 = molMap[ma2];
+                const std::size_t cb2 = compMap[ma2][ca2];
+                if (countComponentBondsBetween(infoA, ma, ca, ma2, ca2) !=
+                    countComponentBondsBetween(infoB, mb, cb, mb2, cb2)) {
+                    bondsOk = false;
+                    break;
+                }
+            }
+            if (!bondsOk) continue;
+
+            compUsedB[mb][cb] = true;
+            compMap[ma][ca] = cb;
+            assignComponents(flatIdx + 1);
+            compUsedB[mb][cb] = false;
+        }
+    };
+
+    std::function<void(std::size_t)> assignMolecules = [&](std::size_t ma) {
+        if (results.size() >= kMaxExactIsoResults) return;
+        if (ma == numMols) {
+            assignComponents(0);
+            return;
+        }
+        for (std::size_t mb = 0; mb < numMols; ++mb) {
+            if (molUsedB[mb]) continue;
+            if (!(molSigsA[ma] == molSigsB[mb])) continue;
+            if (countMoleculeBondsBetween(infoA, ma, ma) !=
+                countMoleculeBondsBetween(infoB, mb, mb)) {
+                continue;
+            }
+            bool molBondsOk = true;
+            for (std::size_t ma2 = 0; ma2 < ma; ++ma2) {
+                if (countMoleculeBondsBetween(infoA, ma, ma2) !=
+                    countMoleculeBondsBetween(infoB, mb, molMap[ma2])) {
+                    molBondsOk = false;
+                    break;
+                }
+            }
+            if (!molBondsOk) continue;
+
+            molUsedB[mb] = true;
+            molMap[ma] = mb;
+            assignMolecules(ma + 1);
+            molUsedB[mb] = false;
+        }
+    };
+
+    assignMolecules(0);
+    return results;
+}
+
+double computeRuleSymmetryFactor(
+    const std::vector<SpeciesGraph>& reactantPatterns,
+    const std::vector<SpeciesGraph>& productPatterns,
+    const std::vector<PatternInfo>& reactantInfo,
+    const std::vector<PatternInfo>& productInfo,
+    const std::vector<std::pair<ReactionRule::ComponentRef, ReactionRule::ComponentRef>>& moleculeMappings,
+    const std::map<ReactionRule::ComponentRef, ReactionRule::ComponentRef>& componentMappings,
+    const std::vector<std::vector<ReactionRule::ReactionCenterRef>>& reactionCenter,
+    const std::vector<std::optional<std::size_t>>& speciesTransportTarget,
+    const std::vector<bool>& wholeSpeciesDeleted,
+    bool matchOnce) {
+    const std::size_t nR = reactantPatterns.size();
+    const std::size_t nP = productPatterns.size();
+    if (nR == 0) return 1.0;
+
+    // Determine which reactant components are untouched pure-context sites.
+    std::vector<std::vector<std::vector<bool>>> untouched(nR);
+    for (std::size_t pi = 0; pi < nR; ++pi) {
+        const std::size_t nMols = reactantInfo[pi].molecules.size();
+        untouched[pi].resize(nMols);
+        std::set<std::size_t> rxnCenterMols;
+        std::set<std::pair<std::size_t, std::size_t>> rxnCenterComps;
+        if (pi < reactionCenter.size()) {
+            for (const auto& ref : reactionCenter[pi]) {
+                if (ref.isComponent) {
+                    rxnCenterComps.insert({ref.moleculeIndex, ref.componentIndex});
+                } else {
+                    rxnCenterMols.insert(ref.moleculeIndex);
+                }
+            }
+        }
+        for (std::size_t mi = 0; mi < nMols; ++mi) {
+            const auto& mol = reactantInfo[pi].molecules[mi];
+            untouched[pi][mi].assign(mol.components.size(), false);
+            if (rxnCenterMols.count(mi) != 0) continue;
+            for (std::size_t ci = 0; ci < mol.components.size(); ++ci) {
+                if (mol.components[ci].partners.empty() &&
+                    rxnCenterComps.count({mi, ci}) == 0) {
+                    untouched[pi][mi][ci] = true;
+                }
+            }
+        }
+    }
+
+    // Compute exact pattern-to-pattern isomorphisms among reactant patterns.
+    std::vector<std::vector<std::vector<PatternIsoMap>>> isoMaps(
+        nR, std::vector<std::vector<PatternIsoMap>>(nR));
+    for (std::size_t i = 0; i < nR; ++i) {
+        for (std::size_t j = 0; j < nR; ++j) {
+            isoMaps[i][j] = enumerateExactPatternIsos(
+                reactantPatterns[i], reactantInfo[i], untouched[i],
+                reactantPatterns[j], reactantInfo[j], untouched[j]);
+        }
+    }
+
+    const auto factorial = [](std::size_t n) -> std::size_t {
+        std::size_t f = 1;
+        for (std::size_t k = 2; k <= n; ++k) f *= k;
+        return f;
+    };
+
+    // Pure degradation (R1 + R2 + ... -> 0): partition reactant patterns into
+    // exact-isomorphism classes (respecting compartments) and divide by prod(c!).
+    if (nP == 0) {
+        std::vector<bool> visited(nR, false);
+        std::size_t divisor = 1;
+        for (std::size_t i = 0; i < nR; ++i) {
+            if (visited[i]) continue;
+            std::size_t groupSize = 1;
+            visited[i] = true;
+            for (std::size_t j = i + 1; j < nR; ++j) {
+                if (!visited[j] && !isoMaps[i][j].empty()) {
+                    visited[j] = true;
+                    ++groupSize;
+                }
+            }
+            divisor *= factorial(groupSize);
+        }
+        return 1.0 / static_cast<double>(divisor);
+    }
+
+    // Build reactant <-> product molecule and component maps.
+    using MolKey = std::pair<std::size_t, std::size_t>;
+    std::map<MolKey, MolKey> prodMolToReact;
+    std::map<MolKey, MolKey> reactMolToProd;
+    for (const auto& [pRef, rRef] : moleculeMappings) {
+        const MolKey pKey{pRef.patternIndex, pRef.moleculeIndex};
+        const MolKey rKey{rRef.patternIndex, rRef.moleculeIndex};
+        prodMolToReact[pKey] = rKey;
+        reactMolToProd[rKey] = pKey;
+    }
+
+    std::map<ReactionRule::ComponentRef, ReactionRule::ComponentRef> reactCompToProd;
+    for (const auto& [pRef, rRef] : componentMappings) {
+        reactCompToProd[rRef] = pRef;
+    }
+
+    // Precompute product signatures and product explicit bond multiset.
+    std::vector<std::vector<ExactMolSig>> prodMolSigs(nP);
+    std::vector<std::vector<std::vector<ExactCompSig>>> prodCompSigs(nP);
+    for (std::size_t pi = 0; pi < nP; ++pi) {
+        const std::size_t nM = productInfo[pi].molecules.size();
+        prodMolSigs[pi].reserve(nM);
+        prodCompSigs[pi].resize(nM);
+        for (std::size_t mi = 0; mi < nM; ++mi) {
+            const auto& mol = productInfo[pi].molecules[mi];
+            prodMolSigs[pi].push_back(makeExactMolSig(mol));
+            prodCompSigs[pi][mi].reserve(mol.components.size());
+            for (const auto& comp : mol.components) {
+                prodCompSigs[pi][mi].push_back(makeExactCompSig(comp));
+            }
+        }
+    }
+
+    std::map<BondPair, std::size_t> productBondCounts;
+    for (std::size_t pi = 0; pi < nP; ++pi) {
+        for (std::size_t mi = 0; mi < productInfo[pi].molecules.size(); ++mi) {
+            const auto& mol = productInfo[pi].molecules[mi];
+            for (std::size_t ci = 0; ci < mol.components.size(); ++ci) {
+                const ReactionRule::ComponentRef src{pi, mi, ci};
+                for (const auto& partner : mol.components[ci].partners) {
+                    if (src < partner || src == partner) {
+                        ++productBondCounts[canonicalBondPair(src, partner)];
+                    }
+                }
+            }
+        }
+    }
+
+    std::size_t ruleGroupSize = 0;
+    std::size_t stabRxnCntrSize = 0;
+    std::set<std::vector<std::size_t>> ruleGroupPatternPerms;
+
+    std::vector<std::size_t> perm(nR, 0);
+    std::vector<bool> permUsed(nR, false);
+    std::vector<const PatternIsoMap*> chosenIsos(nR, nullptr);
+
+    const auto evaluateAutomorphism = [&]() {
+        const auto mapReactMol = [&](const MolKey& r) -> MolKey {
+            const std::size_t p2 = perm[r.first];
+            const std::size_t m2 = chosenIsos[r.first]->molMap[r.second];
+            return {p2, m2};
+        };
+        const auto mapReactComp = [&](const ReactionRule::ComponentRef& r) -> ReactionRule::ComponentRef {
+            const std::size_t p2 = perm[r.patternIndex];
+            const std::size_t m2 = chosenIsos[r.patternIndex]->molMap[r.moleculeIndex];
+            const std::size_t c2 = chosenIsos[r.patternIndex]->compMap[r.moleculeIndex][r.componentIndex];
+            return {p2, m2, c2};
+        };
+
+        // 1. Preserve surviving vs deleted molecules and components.
+        for (std::size_t pi = 0; pi < nR; ++pi) {
+            for (std::size_t mi = 0; mi < reactantInfo[pi].molecules.size(); ++mi) {
+                const MolKey rMol{pi, mi};
+                const MolKey rMolImg = mapReactMol(rMol);
+                if ((reactMolToProd.count(rMol) != 0) != (reactMolToProd.count(rMolImg) != 0)) {
+                    return;
+                }
+                for (std::size_t ci = 0; ci < reactantInfo[pi].molecules[mi].components.size(); ++ci) {
+                    const ReactionRule::ComponentRef rComp{pi, mi, ci};
+                    const ReactionRule::ComponentRef rCompImg = mapReactComp(rComp);
+                    if ((reactCompToProd.count(rComp) != 0) != (reactCompToProd.count(rCompImg) != 0)) {
+                        return;
+                    }
+                }
+            }
+        }
+
+        // 2. Construct induced product molecule permutation (Map.pm:get_induced_permutation).
+        std::map<MolKey, MolKey> betaMol;
+        std::set<MolKey> betaMolImages;
+        std::vector<std::optional<std::size_t>> prodPatImage(nP);
+        std::vector<bool> prodPatImageUsed(nP, false);
+        for (std::size_t pi = 0; pi < nP; ++pi) {
+            for (std::size_t mi = 0; mi < productInfo[pi].molecules.size(); ++mi) {
+                const MolKey pMol{pi, mi};
+                MolKey img = pMol;
+                const auto invIt = prodMolToReact.find(pMol);
+                if (invIt != prodMolToReact.end()) {
+                    const auto fwdIt = reactMolToProd.find(mapReactMol(invIt->second));
+                    if (fwdIt == reactMolToProd.end()) return;
+                    img = fwdIt->second;
+                }
+                if (!betaMolImages.insert(img).second) return;
+                if (!(prodMolSigs[pMol.first][pMol.second] == prodMolSigs[img.first][img.second])) {
+                    return;
+                }
+                if (!prodPatImage[pi].has_value()) {
+                    if (prodPatImageUsed[img.first]) return;
+                    if (productPatterns[pi].getCompartment() != productPatterns[img.first].getCompartment() ||
+                        productPatterns[pi].isCompartmentPrefix() != productPatterns[img.first].isCompartmentPrefix() ||
+                        productInfo[pi].molecules.size() != productInfo[img.first].molecules.size()) {
+                        return;
+                    }
+                    prodPatImage[pi] = img.first;
+                    prodPatImageUsed[img.first] = true;
+                } else if (*prodPatImage[pi] != img.first) {
+                    return;
+                }
+                betaMol[pMol] = img;
+            }
+        }
+
+        // 3. Construct induced product component permutation.
+        std::map<ReactionRule::ComponentRef, ReactionRule::ComponentRef> betaComp;
+        std::set<ReactionRule::ComponentRef> betaCompImages;
+        std::vector<ReactionRule::ComponentRef> productOnlyComps;
+        for (std::size_t pi = 0; pi < nP; ++pi) {
+            for (std::size_t mi = 0; mi < productInfo[pi].molecules.size(); ++mi) {
+                const MolKey pMol{pi, mi};
+                const MolKey pMolImg = betaMol.at(pMol);
+                const bool isNewMol = (prodMolToReact.count(pMol) == 0);
+                for (std::size_t ci = 0; ci < productInfo[pi].molecules[mi].components.size(); ++ci) {
+                    const ReactionRule::ComponentRef pComp{pi, mi, ci};
+                    const auto invIt = componentMappings.find(pComp);
+                    if (invIt != componentMappings.end()) {
+                        const auto fwdIt = reactCompToProd.find(mapReactComp(invIt->second));
+                        if (fwdIt == reactCompToProd.end()) return;
+                        const auto& img = fwdIt->second;
+                        if (img.patternIndex != pMolImg.first || img.moleculeIndex != pMolImg.second) {
+                            return;
+                        }
+                        if (!betaCompImages.insert(img).second) return;
+                        if (!(prodCompSigs[pi][mi][ci] ==
+                              prodCompSigs[img.patternIndex][img.moleculeIndex][img.componentIndex])) {
+                            return;
+                        }
+                        betaComp[pComp] = img;
+                    } else if (isNewMol) {
+                        if (!betaCompImages.insert(pComp).second) return;
+                        betaComp[pComp] = pComp;
+                    } else {
+                        productOnlyComps.push_back(pComp);
+                    }
+                }
+            }
+        }
+        // Resolve product-only components on mapped molecules (unmentioned in reactant).
+        for (const auto& pComp : productOnlyComps) {
+            const MolKey pMolImg = betaMol.at({pComp.patternIndex, pComp.moleculeIndex});
+            const auto& sig = prodCompSigs[pComp.patternIndex][pComp.moleculeIndex][pComp.componentIndex];
+            bool matched = false;
+            const auto& targetMol = productInfo[pMolImg.first].molecules[pMolImg.second];
+            for (std::size_t ci = 0; ci < targetMol.components.size(); ++ci) {
+                const ReactionRule::ComponentRef cand{pMolImg.first, pMolImg.second, ci};
+                if (betaCompImages.count(cand) != 0) continue;
+                if (!(sig == prodCompSigs[pMolImg.first][pMolImg.second][ci])) continue;
+                betaCompImages.insert(cand);
+                betaComp[pComp] = cand;
+                matched = true;
+                break;
+            }
+            if (!matched) return;
+        }
+
+        // 4. Verify product explicit bonds are preserved with identical multiplicities.
+        for (const auto& [bond, count] : productBondCounts) {
+            const auto img1 = betaComp.at(bond.first);
+            const auto img2 = betaComp.at(bond.second);
+            const auto found = productBondCounts.find(canonicalBondPair(img1, img2));
+            if (found == productBondCounts.end() || found->second != count) {
+                return;
+            }
+        }
+
+        // Valid element of RuleGroup!
+        ++ruleGroupSize;
+        ruleGroupPatternPerms.insert(perm);
+
+        // Check membership in Stab(RxnCntr).
+        bool fixesCenter = true;
+        for (std::size_t pi = 0; pi < nR && fixesCenter; ++pi) {
+            const bool isWholeDel = (pi < wholeSpeciesDeleted.size() && wholeSpeciesDeleted[pi]);
+            if ((pi < speciesTransportTarget.size() && speciesTransportTarget[pi].has_value()) ||
+                isWholeDel) {
+                if (perm[pi] != pi) {
+                    fixesCenter = false;
+                    break;
+                }
+                if (isWholeDel) {
+                    // findEmbeddingsForSpecies collapses whole-species deletion
+                    // to at most one embedding per species, so intra-pattern
+                    // automorphisms are already deduplicated.
+                    continue;
+                }
+            }
+            if (pi < reactionCenter.size()) {
+                for (const auto& ref : reactionCenter[pi]) {
+                    if (ref.isComponent) {
+                        const ReactionRule::ComponentRef orig{pi, ref.moleculeIndex, ref.componentIndex};
+                        if (!(mapReactComp(orig) == orig)) {
+                            fixesCenter = false;
+                            break;
+                        }
+                    } else {
+                        const MolKey orig{pi, ref.moleculeIndex};
+                        if (mapReactMol(orig) != orig) {
+                            fixesCenter = false;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if (fixesCenter) {
+            ++stabRxnCntrSize;
+        }
+    };
+
+    std::function<void(std::size_t)> chooseIsos = [&](std::size_t patIdx) {
+        if (patIdx == nR) {
+            evaluateAutomorphism();
+            return;
+        }
+        for (const auto& iso : isoMaps[patIdx][perm[patIdx]]) {
+            chosenIsos[patIdx] = &iso;
+            chooseIsos(patIdx + 1);
+        }
+    };
+
+    std::function<void(std::size_t)> choosePatternPerm = [&](std::size_t patIdx) {
+        if (patIdx == nR) {
+            chooseIsos(0);
+            return;
+        }
+        for (std::size_t target = 0; target < nR; ++target) {
+            if (permUsed[target]) continue;
+            if (isoMaps[patIdx][target].empty()) continue;
+            permUsed[target] = true;
+            perm[patIdx] = target;
+            choosePatternPerm(patIdx + 1);
+            permUsed[target] = false;
+        }
+    };
+
+    choosePatternPerm(0);
+
+    if (matchOnce) {
+        // MatchOnce suppresses intra-pattern multiplicity (at most 1 embedding
+        // per species per pattern), leaving only inter-pattern symmetries.
+        const std::size_t patternSym = std::max<std::size_t>(1, ruleGroupPatternPerms.size());
+        return 1.0 / static_cast<double>(patternSym);
+    }
+
+    // Pure-context reactant patterns: no reaction center, no species-level
+    // transport, and not whole-species deleted.
+    std::vector<std::size_t> pureContextPatterns;
+    for (std::size_t pi = 0; pi < nR; ++pi) {
+        const bool hasCenter = (pi < reactionCenter.size() && !reactionCenter[pi].empty());
+        const bool hasTransport = (pi < speciesTransportTarget.size() && speciesTransportTarget[pi].has_value());
+        const bool hasWholeDel = (pi < wholeSpeciesDeleted.size() && wholeSpeciesDeleted[pi]);
+        if (!hasCenter && !hasTransport && !hasWholeDel) {
+            pureContextPatterns.push_back(pi);
+        }
+    }
+    std::size_t crgPermutations = 1;
+    std::vector<bool> ctxVisited(pureContextPatterns.size(), false);
+    for (std::size_t a = 0; a < pureContextPatterns.size(); ++a) {
+        if (ctxVisited[a]) continue;
+        std::size_t groupSize = 1;
+        ctxVisited[a] = true;
+        for (std::size_t b = a + 1; b < pureContextPatterns.size(); ++b) {
+            if (!ctxVisited[b] &&
+                !isoMaps[pureContextPatterns[a]][pureContextPatterns[b]].empty()) {
+                ctxVisited[b] = true;
+                ++groupSize;
+            }
+        }
+        crgPermutations *= factorial(groupSize);
+    }
+
+    const double orbitSize = (ruleGroupSize > 0 && stabRxnCntrSize > 0)
+        ? (static_cast<double>(ruleGroupSize) / static_cast<double>(stabRxnCntrSize))
+        : 1.0;
+    return 1.0 / (orbitSize * static_cast<double>(crgPermutations));
 }
 
 // Check if two compartments are compatible for a bond between them.
@@ -912,7 +1526,11 @@ double identicalReactantPatternPermutationFactor(
     std::unordered_map<std::string, std::size_t> counts;
     double factor = 1.0;
     for (const auto& pattern : patterns) {
-        const auto count = ++counts[pattern.canonicalLabel()];
+        std::string key = pattern.canonicalLabel();
+        key += "|comp:" + pattern.getCompartment();
+        key += pattern.isCompartmentPrefix() ? "|P" : "|S";
+        key += "|dedup:" + pattern.toStringForDedup();
+        const auto count = ++counts[key];
         factor /= static_cast<double>(count);
     }
     return factor;
@@ -924,6 +1542,8 @@ double identicalReactantPatternPermutationFactor(
 struct ReactionRule::PatternCache {
     std::vector<PatternInfo> reactantInfo;
     std::vector<PatternInfo> productInfo;
+    std::vector<std::optional<std::size_t>> speciesTransportTarget;
+    double ruleSymmetryFactor = 1.0;
 };
 
 struct ReactionRule::ExecutionState::Impl {
@@ -1224,6 +1844,13 @@ void ReactionRule::initialize() {
         return;
     }
     if (productPatterns_.empty()) {
+        patternCache_->speciesTransportTarget.assign(reactantPatterns_.size(), std::nullopt);
+        patternCache_->ruleSymmetryFactor = computeRuleSymmetryFactor(
+            reactantPatterns_, productPatterns_,
+            patternCache_->reactantInfo, patternCache_->productInfo,
+            moleculeMappings_, componentMappings_,
+            reactionCenter_, patternCache_->speciesTransportTarget,
+            {}, hasModifier(modifiers_, "matchonce"));
         return;
     }
 
@@ -1232,17 +1859,49 @@ void ReactionRule::initialize() {
     const auto reactantMolecules = flattenMolecules(reactantInfo);
     const auto productMolecules = flattenMolecules(productInfo);
 
-    std::map<std::string, std::vector<std::size_t>> unmatchedReactantsByKey;
+    const auto effectiveMolCompartment = [](
+        const std::vector<SpeciesGraph>& patterns,
+        const std::vector<PatternInfo>& infos,
+        const FlattenedMoleculeRef& ref) -> std::string {
+        const auto& molComp = infos[ref.base.patternIndex].molecules[ref.base.moleculeIndex].node->get_compartment();
+        return !molComp.empty() ? molComp : patterns[ref.base.patternIndex].getCompartment();
+    };
+
+    std::map<std::pair<std::string, std::string>, std::vector<std::size_t>> unmatchedReactantsByKeyAndComp;
     for (std::size_t i = 0; i < reactantMolecules.size(); ++i) {
-        unmatchedReactantsByKey[moleculeKey(reactantMolecules[i])].push_back(i);
+        const std::string key = moleculeKey(reactantMolecules[i]);
+        const std::string comp = effectiveMolCompartment(reactantPatterns_, reactantInfo, reactantMolecules[i]);
+        unmatchedReactantsByKeyAndComp[{key, comp}].push_back(i);
     }
 
     std::vector<std::optional<std::size_t>> productToReactant(productMolecules.size());
     std::vector<bool> reactantMatched(reactantMolecules.size(), false);
 
-    // First pass: match by exact key (molecule name + sorted component names)
+    // Pass 1: match by exact key (molecule name + sorted component names) AND
+    // matching effective compartment so stationary catalysts stay paired with
+    // themselves when products are reordered relative to reactants.
     for (std::size_t i = 0; i < productMolecules.size(); ++i) {
-        auto& bucket = unmatchedReactantsByKey[moleculeKey(productMolecules[i])];
+        const std::string key = moleculeKey(productMolecules[i]);
+        const std::string comp = effectiveMolCompartment(productPatterns_, productInfo, productMolecules[i]);
+        auto& bucket = unmatchedReactantsByKeyAndComp[{key, comp}];
+        if (!bucket.empty()) {
+            const std::size_t matchedIndex = bucket.front();
+            bucket.erase(bucket.begin());
+            productToReactant[i] = matchedIndex;
+            reactantMatched[matchedIndex] = true;
+        }
+    }
+
+    // Pass 2: match remaining transported molecules by exact key regardless of compartment.
+    std::map<std::string, std::vector<std::size_t>> remainingReactantsByKey;
+    for (std::size_t i = 0; i < reactantMolecules.size(); ++i) {
+        if (!reactantMatched[i]) {
+            remainingReactantsByKey[moleculeKey(reactantMolecules[i])].push_back(i);
+        }
+    }
+    for (std::size_t i = 0; i < productMolecules.size(); ++i) {
+        if (productToReactant[i].has_value()) continue;
+        auto& bucket = remainingReactantsByKey[moleculeKey(productMolecules[i])];
         if (!bucket.empty()) {
             const std::size_t matchedIndex = bucket.front();
             bucket.erase(bucket.begin());
@@ -1316,6 +1975,8 @@ void ReactionRule::initialize() {
                 pRef.patternIndex, pRef.moleculeIndex,
                 pComp,
                 rRef.patternIndex, rRef.moleculeIndex});
+            reactionCenter_[rRef.patternIndex].push_back(
+                ReactionCenterRef{rRef.patternIndex, rRef.moleculeIndex, false, 0});
         }
     }
 
@@ -1429,6 +2090,8 @@ void ReactionRule::initialize() {
                         posc.newState = productComponent.state;  // may be empty
                         posc.breakBond = !hasRealBound;  // product has no real bond → break existing
                         productOnlyStateChanges_.push_back(posc);
+                        reactionCenter_[posc.reactantPatternIndex].push_back(
+                            ReactionCenterRef{posc.reactantPatternIndex, posc.reactantMoleculeIndex, false, 0});
                     }
                     continue;
                 }
@@ -1564,6 +2227,50 @@ void ReactionRule::initialize() {
                    std::tie(rhs.patternIndex, rhs.moleculeIndex, rhs.isComponent, rhs.componentIndex);
         }), refs.end());
     }
+
+    // Determine 1-to-1 reactant-pattern -> product-pattern species-level
+    // compartment transport targets (Perl RxnRule.pm:2354-2355 mapPattR).
+    patternCache_->speciesTransportTarget.assign(reactantPatterns_.size(), std::nullopt);
+    for (std::size_t rpi = 0; rpi < reactantPatterns_.size(); ++rpi) {
+        const std::size_t rMolCount = reactantInfo[rpi].molecules.size();
+        if (rMolCount == 0) continue;
+        std::set<std::size_t> mappedProductPatterns;
+        std::size_t mappedReactantMols = 0;
+        for (const auto& [pRef, rRef] : moleculeMappings_) {
+            if (rRef.patternIndex == rpi) {
+                mappedProductPatterns.insert(pRef.patternIndex);
+                ++mappedReactantMols;
+            }
+        }
+        if (mappedReactantMols != rMolCount || mappedProductPatterns.size() != 1) continue;
+        const std::size_t ppi = *mappedProductPatterns.begin();
+        const std::size_t pMolCount = productInfo[ppi].molecules.size();
+        if (pMolCount != rMolCount) continue;
+        std::size_t mappedProductMolsFromRpi = 0;
+        for (const auto& [pRef, rRef] : moleculeMappings_) {
+            if (pRef.patternIndex == ppi && rRef.patternIndex == rpi) {
+                ++mappedProductMolsFromRpi;
+            }
+        }
+        if (mappedProductMolsFromRpi != pMolCount) continue;
+        const auto& compR = reactantPatterns_[rpi].getCompartment();
+        const auto& compP = productPatterns_[ppi].getCompartment();
+        if (!compR.empty() && !compP.empty() && compR != compP) {
+            patternCache_->speciesTransportTarget[rpi] = ppi;
+        }
+    }
+
+    std::vector<bool> wholeSpeciesDeleted(reactantPatterns_.size(), false);
+    for (std::size_t rpi = 0; rpi < reactantPatterns_.size(); ++rpi) {
+        wholeSpeciesDeleted[rpi] = deletesWholeReactantPattern(rpi);
+    }
+
+    patternCache_->ruleSymmetryFactor = computeRuleSymmetryFactor(
+        reactantPatterns_, productPatterns_,
+        patternCache_->reactantInfo, patternCache_->productInfo,
+        moleculeMappings_, componentMappings_,
+        reactionCenter_, patternCache_->speciesTransportTarget,
+        wholeSpeciesDeleted, hasModifier(modifiers_, "matchonce"));
 }
 
 bool ReactionRule::removesWholeSpecies(bool deleteMolecules, std::size_t moleculeCount,
@@ -1744,19 +2451,18 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
         // of the same species do not create duplicate reaction pathways.
         const auto& reactantPattern = reactantPatterns_.at(patternIndex);
         const bool speciesLevelTransport = reactantPattern.isCompartmentPrefix() &&
-            std::any_of(productPatterns_.begin(), productPatterns_.end(),
-                [&reactantPattern](const SpeciesGraph& productPattern) {
-                    return productPattern.isCompartmentPrefix() &&
-                        productPattern.getCompartment() != reactantPattern.getCompartment();
-                });
+            patternIndex < patternCache_->speciesTransportTarget.size() &&
+            patternCache_->speciesTransportTarget[patternIndex].has_value() &&
+            productPatterns_[*patternCache_->speciesTransportTarget[patternIndex]].isCompartmentPrefix();
         const bool speciesLevelDeletion = deletesWholeReactantPatternForExecution(
             *this, patternIndex, hooks);
+        const bool matchOnce = hasModifier(modifiers_, "matchonce");
         bool foundEmbeddingForSpecies = false;
 
         // Track signature → index in results for multiplicity counting
         std::unordered_map<std::string, std::size_t> signatureToResultIndex;
         for (auto mapIter = maps.begin(); mapIter != maps.end(); ++mapIter) {
-            if ((speciesLevelTransport || speciesLevelDeletion) && foundEmbeddingForSpecies) break;
+            if ((speciesLevelTransport || speciesLevelDeletion || matchOnce) && foundEmbeddingForSpecies) break;
             if (!embeddingRespectsNodeStates(pattern, *mapIter)) {
                 continue;
             }
@@ -1830,7 +2536,7 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
             }
             signatureToResultIndex[signature] = results.size();
             results.push_back(EmbeddingResult {speciesIndex, *mapIter, 1});
-            if (speciesLevelTransport || speciesLevelDeletion) foundEmbeddingForSpecies = true;
+            if (speciesLevelTransport || speciesLevelDeletion || matchOnce) foundEmbeddingForSpecies = true;
         }
         if (debug && mapsBeforeDedup > 0) {
             std::cerr << "[DEBUG] Rule " << ruleName_ << " pattern " << patternIndex
@@ -2320,52 +3026,58 @@ bool ReactionRule::buildReaction(
     // - If surface + volume, they must be adjacent
     // - No mix of compartment/no-compartment species
     if (matchSet.size() > 1 && !g_compartmentDimensions.empty()) {
-        std::string uniqSurface, uniqVolume;
-        int hasMissing = 0, hasComp = 0;
-        bool valid = true;
-        bool hasDistinctVolumes = false;
+        std::vector<std::string> reactantCompartments;
+        reactantCompartments.reserve(matchSet.size());
+        bool allExplicit3DVolumes = true;
         for (const auto& match : matchSet) {
             const auto& comp = speciesList.get(match.speciesIndex).getCompartment();
-            if (comp.empty()) { hasMissing++; continue; }
-            hasComp++;
-            auto dimIt = g_compartmentDimensions.find(comp);
-            if (dimIt == g_compartmentDimensions.end()) continue;
-            if (dimIt->second == 2) {
-                if (uniqSurface.empty()) uniqSurface = comp;
-                else if (uniqSurface != comp) valid = false;
-            } else if (dimIt->second == 3) {
-                if (uniqVolume.empty()) uniqVolume = comp;
-                else if (uniqVolume != comp) {
-                    hasDistinctVolumes = true;
-                    valid = false;
+            reactantCompartments.push_back(comp);
+            if (comp.empty()) {
+                allExplicit3DVolumes = false;
+            } else {
+                const auto dimIt = g_compartmentDimensions.find(comp);
+                if (dimIt == g_compartmentDimensions.end() || dimIt->second != 3) {
+                    allExplicit3DVolumes = false;
                 }
             }
         }
-        if (valid && hasMissing > 0 && hasComp > 0) valid = false;
-        if (valid && !uniqSurface.empty() && !uniqVolume.empty()) {
-            valid = isAdjacentToSurface(uniqVolume, uniqSurface);
-        }
-        // A population-level reaction may legitimately consume species from
-        // distinct volume compartments and create a separate product species
-        // (for example, an SBML transport/association law).  The aggregate
-        // graph can represent that case without joining molecules.  Keep the
-        // stricter rejection for rules that actually create or break a bond:
-        // those would require a cross-compartment complex, which BNGL cannot
-        // represent safely.
-        bool hasBondOperation = false;
-        for (const auto& operation : operations_) {
-            if (operation.type == TransformOp::Type::AddBond ||
-                operation.type == TransformOp::Type::DeleteBond) {
-                hasBondOperation = true;
-                break;
+        if (!compartmentsFormInteractingSet(reactantCompartments)) {
+            // Only permit distinct 3D volumes for explicitly-compartmented
+            // population replacement or SBML absolute-flux rules with no bond
+            // operations (e.g. `@left:R() + @right:G() -> @left:RG()`).
+            bool allPatternsExplicitlyCompartmented = !reactantPatterns_.empty();
+            for (std::size_t pi = 0; pi < reactantPatterns_.size(); ++pi) {
+                bool hasExplicitComp = !reactantPatterns_[pi].getCompartment().empty();
+                if (!hasExplicitComp && pi < reactantInfo.size() &&
+                    !reactantInfo[pi].molecules.empty()) {
+                    hasExplicitComp = std::all_of(
+                        reactantInfo[pi].molecules.begin(),
+                        reactantInfo[pi].molecules.end(),
+                        [](const MoleculeInfo& mol) {
+                            return !mol.node->get_compartment().empty();
+                        });
+                }
+                if (!hasExplicitComp) {
+                    allPatternsExplicitlyCompartmented = false;
+                    break;
+                }
+            }
+            bool hasBondOperation = false;
+            for (const auto& operation : operations_) {
+                if (operation.type == TransformOp::Type::AddBond ||
+                    operation.type == TransformOp::Type::DeleteBond) {
+                    hasBondOperation = true;
+                    break;
+                }
+            }
+            const bool allowedPopulationCrossVolume =
+                allExplicit3DVolumes && !hasBondOperation &&
+                allPatternsExplicitlyCompartmented &&
+                (absoluteFlux_ || moleculeMappings_.empty());
+            if (!allowedPopulationCrossVolume) {
+                return false;
             }
         }
-        // Only the distinct-3D-volume case is safe to relax.  In particular,
-        // do not let this exception admit unrelated invalid combinations
-        // (different surfaces, surface/volume mixtures, or missing
-        // compartments) merely because the rule has no bond operation.
-        if (!valid && !(hasDistinctVolumes && !hasBondOperation &&
-                        hasMissing == 0 && uniqSurface.empty())) return false;
     }
 
     auto* graph = &aggregateGraph;
@@ -2696,27 +3408,19 @@ bool ReactionRule::buildReaction(
             const std::string& reactantState = stateIt->second;
             if (reactantState.empty() || reactantState == "?") continue;
 
-            // Find the product molecule in the aggregate graph by type
-            const auto& productMolInfo = productInfo[productRef.patternIndex].molecules[productRef.moleculeIndex];
-            for (auto nodeIter = graph->begin(); nodeIter != graph->end(); ++nodeIter) {
-                if (!isMoleculeNode(**nodeIter)) continue;
-                if ((*nodeIter)->get_type().get_type_name() != productMolInfo.name) continue;
-
-                std::size_t compIdx = 0;
-                for (auto edge = (*nodeIter)->edges_out_begin(); edge != (*nodeIter)->edges_out_end(); ++edge) {
-                    if (!isComponentNode(**edge)) continue;
-                    if (compIdx == productRef.componentIndex) {
-                        const auto& stateType = (*edge)->get_type().get_state_type();
-                        if (const auto* labelType = dynamic_cast<const BNGcore::LabelStateType*>(&stateType)) {
-                            std::string currentState = (*edge)->get_state().get_BNG2_string();
-                            if (currentState == "~?" || currentState == "?") {
-                                BNGcore::LabelState state(*labelType, reactantState);
-                                graph->set_node_state(*edge, state);
-                            }
-                        }
-                        break;
-                    }
-                    ++compIdx;
+            // Look up the exact cloned product component node via productCloneMaps
+            // so sibling newly-synthesized molecules of the same type receive
+            // their own tagged states rather than overwriting each other.
+            const auto& productCompInfo = getComponentInfo(productInfo, productRef);
+            auto cloneIt = productCloneMaps.find(productCompInfo.node);
+            if (cloneIt == productCloneMaps.end()) continue;
+            BNGcore::Node* targetComp = cloneIt->second;
+            const auto& stateType = targetComp->get_type().get_state_type();
+            if (const auto* labelType = dynamic_cast<const BNGcore::LabelStateType*>(&stateType)) {
+                std::string currentState = targetComp->get_state().get_BNG2_string();
+                if (currentState == "~?" || currentState == "?") {
+                    BNGcore::LabelState state(*labelType, reactantState);
+                    graph->set_node_state(targetComp, state);
                 }
             }
         }
@@ -2761,32 +3465,15 @@ bool ReactionRule::buildReaction(
         std::unordered_map<std::string, int>::const_iterator lastDimRIt = endIt;
         std::unordered_map<std::string, int>::const_iterator lastDimPIt = endIt;
 
-        for (std::size_t pi = 0; pi < reactantPatterns_.size() && pi < productPatterns_.size(); ++pi) {
-            const auto& compR = reactantPatterns_[pi].getCompartment();
-            const auto& compP = (pi < productPatterns_.size()) ? productPatterns_[pi].getCompartment() : std::string();
-            if (compR.empty() || compP.empty() || compR == compP) continue;
-
-            // The index-based pairing below is only valid when reactant pi is
-            // actually transported into product pi.  A catalyst that is also a
-            // product in its original compartment must stay there.  For
-            // example, `@nucleus:D() -> @cytoplasm:M() + @nucleus:D()`
-            // synthesizes a cytoplasmic M while D remains nuclear; pairing
-            // reactant 0 with product 0 would wrongly move D to cytoplasm.
-            // Detect that case structurally before building the compartment
-            // map so the catalyst is left untouched.
-            bool catalystStays = false;
-            for (const auto& productPattern : productPatterns_) {
-                if (productPattern.getCompartment() != compR) continue;
-                BNGcore::UllmannSGIso matcher(
-                    reactantPatterns_[pi].getGraph(), productPattern.getGraph());
-                BNGcore::List<BNGcore::Map> maps;
-                matcher.find_maps(maps);
-                if (maps.begin() != maps.end()) {
-                    catalystStays = true;
-                    break;
-                }
+        for (std::size_t rpi = 0; rpi < reactantPatterns_.size(); ++rpi) {
+            if (rpi >= patternCache_->speciesTransportTarget.size() ||
+                !patternCache_->speciesTransportTarget[rpi].has_value()) {
+                continue;
             }
-            if (catalystStays) continue;
+            const std::size_t ppi = *patternCache_->speciesTransportTarget[rpi];
+            const auto& compR = reactantPatterns_[rpi].getCompartment();
+            const auto& compP = productPatterns_[ppi].getCompartment();
+            if (compR.empty() || compP.empty() || compR == compP) continue;
 
             auto dimRIt = lastDimRIt;
             if (lastCompR != compR) {
@@ -2828,13 +3515,13 @@ bool ReactionRule::buildReaction(
             }
 
             // Apply compartment mapping to all molecule nodes in the aggregate graph
-            // that came from reactant pattern pi
-            if (pi < cloneMaps.size()) {
-                const auto& speciesGraph = speciesList.get(matchSet[pi].speciesIndex).getSpeciesGraph().getGraph();
+            // that came from reactant pattern rpi
+            if (rpi < cloneMaps.size()) {
+                const auto& speciesGraph = speciesList.get(matchSet[rpi].speciesIndex).getSpeciesGraph().getGraph();
                 for (auto nodeIter = speciesGraph.begin(); nodeIter != speciesGraph.end(); ++nodeIter) {
                     if (!isMoleculeNode(**nodeIter)) continue;
-                    auto cloneIt = cloneMaps[pi].find(*nodeIter);
-                    if (cloneIt == cloneMaps[pi].end()) continue;
+                    auto cloneIt = cloneMaps[rpi].find(*nodeIter);
+                    if (cloneIt == cloneMaps[rpi].end()) continue;
                     auto* clonedMol = cloneIt->second;
                     // A replacement rule may delete the matched reactant
                     // molecule before this transport pass (for example,
@@ -2861,7 +3548,11 @@ bool ReactionRule::buildReaction(
         // Apply compartment changes from the pre-computed moleculeCompartmentTransports_
         // table.  This handles both same-pattern and cross-pattern molecule mappings
         // (e.g., R(l)@PM + L(r)@EC <-> R(l!1)@PM.L(r!1)@PM where L moves EC→PM).
-        std::unordered_map<BNGcore::Node*, std::string> moleculeTransported; // clone → new compartment
+        struct TransportedMolecule {
+            std::string originalCompartment;
+            std::string targetCompartment;
+        };
+        std::unordered_map<BNGcore::Node*, TransportedMolecule> moleculeTransported;
         for (const auto& mct : moleculeCompartmentTransports_) {
             const std::size_t rpi = mct.reactantPatternIndex;
             const std::size_t rmi = mct.reactantMoleculeIndex;
@@ -2872,8 +3563,10 @@ bool ReactionRule::buildReaction(
             if (!targetMolNode) continue;
             auto cloneIt = cloneMaps[rpi].find(targetMolNode);
             if (cloneIt == cloneMaps[rpi].end()) continue;
+            const std::string originalComp = cloneIt->second->get_compartment();
             cloneIt->second->set_compartment(mct.productCompartment);
-            moleculeTransported[cloneIt->second] = mct.productCompartment;
+            moleculeTransported[cloneIt->second] =
+                TransportedMolecule{originalComp, mct.productCompartment};
         }
 
         // --- MoveConnected: transport connected cargo molecules ---
@@ -2899,7 +3592,10 @@ bool ReactionRule::buildReaction(
             }
 
             // For each molecule that was ACTUALLY transported, BFS to connected cargo
-            for (auto& [seed, targetComp] : moleculeTransported) {
+            // residing in the transported molecule's original compartment.
+            for (auto& [seed, transport] : moleculeTransported) {
+                const auto& originalComp = transport.originalCompartment;
+                const auto& targetComp = transport.targetCompartment;
                 // BFS through bonds in the aggregate graph
                 std::queue<BNGcore::Node*> q;
                 std::unordered_set<BNGcore::Node*> visited;
@@ -2925,6 +3621,10 @@ bool ReactionRule::buildReaction(
                                     visited.insert(*pme);
                                     // Skip pattern molecules (they have their own compartment handling)
                                     if (patternMols.count(*pme)) continue;
+                                    // Only move connected cargo in the same original compartment.
+                                    if (!originalComp.empty() && (*pme)->get_compartment() != originalComp) {
+                                        continue;
+                                    }
                                     // Transport this cargo molecule
                                     (*pme)->set_compartment(targetComp);
                                     q.push(*pme);
@@ -3027,7 +3727,9 @@ bool ReactionRule::buildReaction(
         // else: Pure degradation rule (e.g., A() -> 0): no products
         // productIndices and productLabels remain empty
     } else {
-        auto productGraphs = splitIntoSpeciesGraphs(aggregateGraph);
+        std::unordered_map<BNGcore::Node*, std::size_t> aggNodeToComp;
+        auto productGraphs = splitIntoSpeciesGraphsWithNodeMap(aggregateGraph, aggNodeToComp);
+        bool rebuiltFromPatterns = false;
 
         // If the operation-based product construction produced the wrong number of
         // graphs AND the rule has AddMolecule operations, try building the "new" product
@@ -3065,6 +3767,7 @@ bool ReactionRule::buildReaction(
                     cloneGraphIntoTarget(productPattern.getGraph(), productGraph);
                     productGraphs.emplace_back(productGraph);
                 }
+                rebuiltFromPatterns = true;
             }
         }
 
@@ -3091,178 +3794,182 @@ bool ReactionRule::buildReaction(
             }
         }
 
-        if (productGraphs.size() > productPatterns_.size()) {
-            // BNG2 rejects a bond-only transformation when applying the
-            // deletion splits one matched species into more connected
-            // products than the rule declares (RxnRule.pm:3112-3129).
-            // Extra fragments are permitted only for explicit
-            // DeleteMolecules/deletion semantics, not for an ordinary
-            // reversible bond rule.
-            if (isPureBondRule) {
+        if (rebuiltFromPatterns) {
+            productPatternIndices.reserve(productGraphs.size());
+            for (std::size_t i = 0; i < productGraphs.size(); ++i) {
+                productPatternIndices.push_back(i);
+            }
+        } else {
+            // Product molecularity (`+`): every product pattern must land in its own
+            // distinct connected component, even when DeleteMolecules is enabled.
+            if (productGraphs.size() < productPatterns_.size()) {
+                if (debug) {
+                    std::cerr << "[BUILD_RXN] FAIL: rule=" << ruleName_
+                              << " productGraphs.size()=" << productGraphs.size()
+                              << " < productPatterns_.size()=" << productPatterns_.size()
+                              << " hasMoleculeTypeMismatch=" << hasMoleculeTypeMismatch_ << "\n";
+                }
                 return false;
             }
 
-            // More product components than product patterns.  Match each product
-            // pattern to a product graph; unmatched graphs are orphan fragments.
-            // DeleteMolecules explicitly allows those extra graphs to be emitted.
-            // Replacements and plain molecule deletions cannot silently discard
-            // connected context; reject them below when extra graphs remain.
-            bool hasDeleteMoleculeOps = false;
-            for (const auto& op : operations_) {
-                if (op.type == TransformOp::Type::DeleteMolecule) {
-                    hasDeleteMoleculeOps = true;
-                    break;
+            if (productGraphs.size() > productPatterns_.size()) {
+                // BNG2 rejects a bond-only transformation when applying the
+                // deletion splits one matched species into more connected
+                // products than the rule declares (RxnRule.pm:3112-3129).
+                if (isPureBondRule) {
+                    return false;
                 }
-            }
-            // MoveConnected rules: when a compartment-transport rule with
-            // MoveConnected produces orphan fragments (from product-only bond
-            // breaking), Perl BNG2 does NOT generate the reaction.  The rule
-            // simply doesn't match species where applying it would disconnect
-            // connected molecules.  Reject such reactions here.
-            if (hasModifier(modifiers_, "MoveConnected") && !deleteMolecules) {
-                return false;
-            }
-            // Plain molecule deletions and molecule-pattern replacements can
-            // detach connected context. BNG2 rejects the reaction when those
-            // extra graphs exceed the declared products unless DeleteMolecules
-            // explicitly allows them to be released.
-            if ((hasDeleteMoleculeOps || hasMoleculeTypeMismatch_) &&
-                !deleteMolecules) {
-                return false;
-            }
-            std::vector<SpeciesGraph> orderedProducts;
-            std::vector<bool> used(productGraphs.size(), false);
-            for (std::size_t pi = 0; pi < productPatterns_.size(); ++pi) {
-                const auto& prodPat = productPatterns_[pi];
-                bool found = false;
-                for (std::size_t gi = 0; gi < productGraphs.size(); ++gi) {
-                    if (used[gi]) continue;
-                    BNGcore::UllmannSGIso matcher(prodPat.getGraph(), productGraphs[gi].getGraph());
-                    BNGcore::List<BNGcore::Map> maps;
-                    matcher.find_maps(maps);
-                    if (maps.begin() != maps.end()) {
-                        orderedProducts.push_back(std::move(productGraphs[gi]));
-                        productPatternIndices.push_back(pi);
-                        used[gi] = true;
-                        found = true;
+                bool hasDeleteMoleculeOps = false;
+                for (const auto& op : operations_) {
+                    if (op.type == TransformOp::Type::DeleteMolecule) {
+                        hasDeleteMoleculeOps = true;
                         break;
                     }
                 }
-                if (!found) {
+                if (hasModifier(modifiers_, "MoveConnected") && !deleteMolecules) {
                     return false;
                 }
+                if ((hasDeleteMoleculeOps || hasMoleculeTypeMismatch_) &&
+                    !deleteMolecules) {
+                    return false;
+                }
+            }
+
+            // Map each product pattern directly to the connected component containing
+            // its molecules using exact rule provenance (moleculeMappings_ +
+            // productCloneMaps). This enforces product molecularity (`+`) strictly
+            // (even when DeleteMolecules releases an orphan) and eliminates greedy
+            // pattern-ordering mismatches for include_products/exclude_products.
+            std::map<std::pair<std::size_t, std::size_t>, ComponentRef> prodMolToReactRef;
+            for (const auto& [pRef, rRef] : moleculeMappings_) {
+                prodMolToReactRef[{pRef.patternIndex, pRef.moleculeIndex}] = rRef;
+            }
+
+            std::vector<std::size_t> matchedGraphIndices(productPatterns_.size(), productGraphs.size());
+            bool provenanceComplete = true;
+            std::unordered_set<std::size_t> usedProvenanceComps;
+
+            for (std::size_t pi = 0; pi < productPatterns_.size(); ++pi) {
+                std::optional<std::size_t> compForPattern;
+                if (productInfo[pi].molecules.empty()) {
+                    provenanceComplete = false;
+                    break;
+                }
+                for (std::size_t mi = 0; mi < productInfo[pi].molecules.size(); ++mi) {
+                    BNGcore::Node* aggMolNode = nullptr;
+                    const auto mapIt = prodMolToReactRef.find({pi, mi});
+                    if (mapIt != prodMolToReactRef.end()) {
+                        const auto& rRef = mapIt->second;
+                        aggMolNode = mapMatchedNodeToAggregate(
+                            rRef, getMoleculeNode(reactantInfo, rRef.patternIndex, rRef.moleculeIndex));
+                    } else {
+                        const auto cloneIt = productCloneMaps.find(productInfo[pi].molecules[mi].node);
+                        if (cloneIt != productCloneMaps.end()) {
+                            aggMolNode = cloneIt->second;
+                        }
+                    }
+                    if (aggMolNode == nullptr) {
+                        provenanceComplete = false;
+                        break;
+                    }
+                    const auto compIt = aggNodeToComp.find(aggMolNode);
+                    if (compIt == aggNodeToComp.end()) {
+                        provenanceComplete = false;
+                        break;
+                    }
+                    if (!compForPattern.has_value()) {
+                        compForPattern = compIt->second;
+                    } else if (*compForPattern != compIt->second) {
+                        // Molecules belonging to the same connected product pattern
+                        // ended up in different connected components.
+                        return false;
+                    }
+                }
+                if (!provenanceComplete) break;
+                if (!compForPattern.has_value() ||
+                    !usedProvenanceComps.insert(*compForPattern).second) {
+                    // Distinct product patterns (`+`) landed in the same connected
+                    // component (e.g., ring-keeping bond break masked by a
+                    // DeleteMolecules orphan) — violates product molecularity.
+                    return false;
+                }
+                matchedGraphIndices[pi] = *compForPattern;
+            }
+
+            if (!provenanceComplete) {
+                // Defensive exact bipartite backtracking fallback (respecting
+                // BioNetGen node states/bonds/compartments).
+                const std::size_t nP = productPatterns_.size();
+                const std::size_t nG = productGraphs.size();
+                std::vector<std::vector<std::size_t>> candidates(nP);
+                for (std::size_t pi = 0; pi < nP; ++pi) {
+                    const auto& prodPat = productPatterns_[pi];
+                    for (std::size_t gi = 0; gi < nG; ++gi) {
+                        BNGcore::UllmannSGIso matcher(prodPat.getGraph(), productGraphs[gi].getGraph());
+                        BNGcore::List<BNGcore::Map> maps;
+                        matcher.find_maps(maps);
+                        for (auto mIt = maps.begin(); mIt != maps.end(); ++mIt) {
+                            if (embeddingRespectsNodeStates(prodPat.getGraph(), *mIt)) {
+                                candidates[pi].push_back(gi);
+                                break;
+                            }
+                        }
+                    }
+                }
+                std::vector<bool> usedGraph(nG, false);
+                matchedGraphIndices.assign(nP, nG);
+                std::function<bool(std::size_t)> backtrack = [&](std::size_t pi) -> bool {
+                    if (pi == nP) return true;
+                    for (const std::size_t gi : candidates[pi]) {
+                        if (usedGraph[gi]) continue;
+                        usedGraph[gi] = true;
+                        matchedGraphIndices[pi] = gi;
+                        if (backtrack(pi + 1)) return true;
+                        usedGraph[gi] = false;
+                    }
+                    return false;
+                };
+                if (!backtrack(0)) {
+                    return false;
+                }
+            }
+
+            std::vector<SpeciesGraph> orderedProducts;
+            orderedProducts.reserve(productGraphs.size());
+            std::vector<bool> used(productGraphs.size(), false);
+            for (std::size_t pi = 0; pi < productPatterns_.size(); ++pi) {
+                const std::size_t gi = matchedGraphIndices[pi];
+                orderedProducts.push_back(std::move(productGraphs[gi]));
+                productPatternIndices.push_back(pi);
+                used[gi] = true;
             }
             // Append allowed orphan fragments after the matched products.
             for (std::size_t gi = 0; gi < productGraphs.size(); ++gi) {
                 if (!used[gi]) {
                     orderedProducts.push_back(std::move(productGraphs[gi]));
-                    // Orphans don't correspond to any product pattern; use
-                    // productPatterns_.size() as sentinel so compartment
-                    // inference below falls through to molecule-level logic.
                     productPatternIndices.push_back(productPatterns_.size());
                 }
             }
             productGraphs = std::move(orderedProducts);
-        } else if (productGraphs.size() < productPatterns_.size() && !deleteMolecules) {
-            // Reject: fewer products than patterns (unexpected).
-            if (debug) {
-                std::cerr << "[BUILD_RXN] FAIL: rule=" << ruleName_
-                          << " productGraphs.size()=" << productGraphs.size()
-                          << " < productPatterns_.size()=" << productPatterns_.size()
-                          << " hasMoleculeTypeMismatch=" << hasMoleculeTypeMismatch_ << "\n";
-            }
-            return false;
-        } else {
-            // splitIntoSpeciesGraphs returns components in traversal order,
-            // which need not match the declared product pattern order. A
-            // catalyst that is also a reactant is emitted first even when a
-            // different product is declared first; assuming identity order
-            // then gives each product graph the wrong species-level
-            // compartment. Match patterns to graphs by isomorphism instead.
-            std::vector<std::size_t> matchedGraphIndices;
-            std::vector<bool> used(productGraphs.size(), false);
-            for (std::size_t pi = 0; pi < productPatterns_.size(); ++pi) {
-                const auto& prodPat = productPatterns_[pi];
-                bool found = false;
-                for (std::size_t gi = 0; gi < productGraphs.size(); ++gi) {
-                    if (used[gi]) continue;
-                    BNGcore::UllmannSGIso matcher(prodPat.getGraph(), productGraphs[gi].getGraph());
-                    BNGcore::List<BNGcore::Map> maps;
-                    matcher.find_maps(maps);
-                    if (maps.begin() != maps.end()) {
-                        matchedGraphIndices.push_back(gi);
-                        productPatternIndices.push_back(pi);
-                        used[gi] = true;
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    for (std::size_t i = 0; i < productPatterns_.size(); ++i) {
-                        productPatternIndices.push_back(i);
-                    }
-                    break;
-                }
-            }
-            if (matchedGraphIndices.size() == productPatterns_.size()) {
-                // Move only after every pattern has a graph. Moving during the
-                // search leaves moved-from empty graphs behind when a later
-                // pattern fails to match, which then become spurious species.
-                std::vector<SpeciesGraph> orderedProducts;
-                orderedProducts.reserve(matchedGraphIndices.size());
-                for (std::size_t gi : matchedGraphIndices) {
-                    orderedProducts.push_back(std::move(productGraphs[gi]));
-                }
-                productGraphs = std::move(orderedProducts);
-            } else {
-                productPatternIndices.clear();
-                for (std::size_t i = 0; i < productPatterns_.size(); ++i) {
-                    productPatternIndices.push_back(i);
-                }
-            }
         }
 
-        // Apply product-side filters (from reverse rule modifier transformation)
-        const bool passesCompiledProductFilters = hooks != nullptr && hooks->productFilter
-            ? hooks->productFilter(productGraphs)
-            : passesProductFilters(productGraphs);
-        if (!passesCompiledProductFilters) {
-            return false;
-        }
-
-        if (hooks != nullptr && hooks->rejectZeroRate) {
-            candidate.productSpeciesGraphs.reserve(productGraphs.size());
-            for (const auto& productGraph : productGraphs) {
-                candidate.productSpeciesGraphs.push_back(&productGraph.getGraph());
-            }
-            candidate.productPatternIndices = productPatternIndices;
-            if (hooks->rejectZeroRate(candidate)) return false;
-        }
-
-    if (hooks != nullptr && hooks->productLocalRateFingerprint) {
-      productLocalRateContext = hooks->productLocalRateFingerprint(
-          productGraphs, productPatternIndices);
-    }
-
-    for (std::size_t i = 0; i < productGraphs.size(); ++i) {
+        // Infer and validate product species compartments BEFORE product filters
+        // so include_products/exclude_products with @COMP: prefixes see the
+        // resolved species-level compartments and invalid products are rejected
+        // atomically before mutating speciesList.
+        std::vector<std::string> productCompartments(productGraphs.size());
+        for (std::size_t i = 0; i < productGraphs.size(); ++i) {
             auto& productGraph = productGraphs[i];
             if (productFilter && !productFilter(productGraph)) {
                 return false;
             }
             // Perl-faithful inferSpeciesCompartment (SpeciesGraph.pm:795-893):
             // Collect unique 2D surfaces and 3D volumes from molecule compartments.
-            // 0 surfaces: 1 volume → that volume; 0 volumes → undefined; >1 → first alphabetically
-            // 1 surface → that surface
-            // >1 surfaces → first alphabetically (Perl errors, we tolerate)
             std::string compartmentToUse;
             const auto& patternCompartment = productPatternIndices[i] < productPatterns_.size()
                 ? productPatterns_[productPatternIndices[i]].getCompartment()
                 : std::string();
             if (!g_compartmentDimensions.empty()) {
-                // Perl's inferSpeciesCompartment transfers the species-level compartment
-                // to molecules without explicit compartment BEFORE gathering. This is
-                // necessary for synthesis rules like `Source -> @PM:Mol1@CP.Mol2` where
-                // Mol2 inherits @PM from the species-level prefix.
                 std::set<std::string> surfaces, volumes;
                 for (auto nodeIter = productGraph.getGraph().begin(); nodeIter != productGraph.getGraph().end(); ++nodeIter) {
                     if (!isMoleculeNode(**nodeIter)) continue;
@@ -3283,11 +3990,8 @@ bool ReactionRule::buildReaction(
                     } else if (volumes.size() > 1) {
                         return false;
                     }
-                    // volumes.empty() → no inference from molecules
                 } else if (surfaces.size() == 1) {
                     const auto& surface = *surfaces.begin();
-                    // Perl checks all volumes are adjacent to the surface.
-                    // Reject if any volume is not adjacent (invalid compartment topology).
                     bool valid = true;
                     for (const auto& vol : volumes) {
                         if (!isAdjacentToSurface(vol, surface)) {
@@ -3311,9 +4015,10 @@ bool ReactionRule::buildReaction(
                     compartmentToUse = inferredCompartment;
                 }
             }
-            // Assign inferred compartment to molecules with empty compartments
-            // (mirrors Perl's assignCompartment in SpeciesGraph.pm:775-783)
+            // Assign inferred compartment to the SpeciesGraph and molecules with
+            // empty compartments (mirrors Perl's assignCompartment).
             if (!compartmentToUse.empty()) {
+                productGraph.setCompartment(compartmentToUse);
                 for (auto nodeIter = productGraph.getGraph().begin();
                      nodeIter != productGraph.getGraph().end(); ++nodeIter) {
                     if (isMoleculeNode(**nodeIter) && (*nodeIter)->get_compartment().empty()) {
@@ -3325,19 +4030,35 @@ bool ReactionRule::buildReaction(
             if (!verifyBondTopology(productGraph.getGraph())) {
                 return false;
             }
-            // Product pattern bond constraint check (Perl parity):
-            // When a product pattern mentions a component as explicitly UNBOUND
-            // and that component is NOT a target of any operation (AddBond,
-            // DeleteBond, ChangeState), it acts as a constraint: the corresponding
-            // component in the actual product species must also be unbound.
-            // If the reactant species has that component bonded and no operation
-            // breaks it, the product will still be bonded, violating the constraint.
-            // This prevents rules like GPCR(b!1,loc~mem).Arrestin(b!1) ->
-            // GPCR(l,b!1,loc~cyt,s~P).Arrestin(b!1) from applying to species where
-            // GPCR has 'l' bonded: the product pattern says 'l' should be unbound.
-            // (Product pattern bond constraint check would go here in a future version)
+            productCompartments[i] = std::move(compartmentToUse);
+        }
+
+        // Apply product-side filters (from reverse rule modifier transformation)
+        const bool passesCompiledProductFilters = hooks != nullptr && hooks->productFilter
+            ? hooks->productFilter(productGraphs)
+            : passesProductFilters(productGraphs);
+        if (!passesCompiledProductFilters) {
+            return false;
+        }
+
+        if (hooks != nullptr && hooks->rejectZeroRate) {
+            candidate.productSpeciesGraphs.reserve(productGraphs.size());
+            for (const auto& productGraph : productGraphs) {
+                candidate.productSpeciesGraphs.push_back(&productGraph.getGraph());
+            }
+            candidate.productPatternIndices = productPatternIndices;
+            if (hooks->rejectZeroRate(candidate)) return false;
+        }
+
+        if (hooks != nullptr && hooks->productLocalRateFingerprint) {
+            productLocalRateContext = hooks->productLocalRateFingerprint(
+                productGraphs, productPatternIndices);
+        }
+
+        for (std::size_t i = 0; i < productGraphs.size(); ++i) {
+            auto& productGraph = productGraphs[i];
             clearComponentLabels(productGraph.getGraph());
-            auto prodSp = Species(std::move(productGraph), 0.0, false, compartmentToUse);
+            auto prodSp = Species(std::move(productGraph), 0.0, false, productCompartments[i]);
             std::string exact;
             const auto exactIndex = speciesList.findExact(prodSp, exact);
             std::size_t index;
@@ -3355,37 +4076,14 @@ bool ReactionRule::buildReaction(
 
     // Do NOT sort reactantIndices or productIndices — preserve BNGL pattern order (Perl compatibility)
 
-    // Compute statistical factor using Perl-compatible MultScale convention:
-    // For each group of n identical reactant patterns (same canonical label),
-    // multiply the stat factor by 1/n!.  This accounts for:
-    //  - Identical reactive patterns (e.g., A(b)+A(b): 1/2!)
-    //  - Identical context patterns (e.g., B()+B(): 1/2!)
-    //  - Multiple groups (e.g., A(b)+A(b)+B()+B(): 1/2! * 1/2! = 0.25)
-    // Duplicate reaction instances from permuted pattern-to-species assignments
-    // are merged by rxnList dedup (stat factors sum), which combined with the
-    // 1/n! correction produces the correct combinatorial rate.
-    //
-    // For degradation rules with DeleteMolecules modifier (-> 0 DeleteMolecules),
-    // the initialize() function returns early, leaving operations_ and reactionCenter_
-    // empty.  In this case, automorphic Ullmann maps that collapse to the same
-    // embedding signature genuinely represent distinct reaction pathways (e.g.,
-    // DeleteMolecules on a symmetric dimer can remove either half).  Perl
-    // generates a separate reaction for each, which get merged with additive
-    // factors.  We replicate this by using the embedding multiplicity.
-    //
-    // For pure degradation (-> 0 without DeleteMolecules), the entire species is
-    // consumed regardless of how many embeddings exist.  All embeddings collapse
-    // to the same reaction (species → trash), so multiplicity must NOT be applied.
-    //
-    // For all other rules, the reaction center signature and/or the normal
-    // RxnList dedup already handle symmetry correctly.
-    // An absolute-flux (TotalRate) rule states the complete extent rate in its
-    // rate expression.  SBML's kinetic law already accounts for repeated
-    // reactants, so applying the identical-reactant permutation factor here
-    // would divide the source flux by the multiplicity factorial.
+    // Statistical symmetry factor (Perl BNG2 MultScale = 1 / ((|RuleGroup|/|StabRxnCntr|) * crg_permutations)):
+    // Accounts for exact rule automorphisms preserving compartments, molecule/component
+    // types, states, bonds, and product transformations rather than blindly dividing by
+    // n! for identical compartment-blind reactant labels.
+    // An absolute-flux (SBML) rule states the complete extent rate in its rate expression.
     double factor = absoluteFlux_
                         ? 1.0
-                        : identicalReactantPatternPermutationFactor(reactantPatterns_);
+                        : patternCache_->ruleSymmetryFactor;
     // NOTE: For -> 0 DeleteMolecules rules (operations_ empty, productPatterns_
     // empty), we intentionally do NOT apply the embedding multiplicity as a stat
     // factor.  The multiplicity counts automorphic embeddings that map the pattern

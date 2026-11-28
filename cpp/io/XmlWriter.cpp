@@ -917,6 +917,60 @@ void addFunctionReference(std::map<std::string, std::string>& references,
     }
 }
 
+bool isTimeSymbolReference(const std::string& name, const ast::Model& model) {
+    if (name == "time") {
+        return true;
+    }
+    if (name == "t") {
+        if (model.getParameters().contains(name)) return false;
+        if (modelHasFunction(model, name)) return false;
+        const bool isObs = std::any_of(
+            model.getObservables().begin(), model.getObservables().end(),
+            [&](const auto& obs) { return obs.getName() == name; });
+        return !isObs;
+    }
+    return false;
+}
+
+std::string formatXmlUnary(const std::string& op, const ast::Expression& child,
+                           const std::string& operand) {
+    if (op == "!" || op == "~") {
+        return "((" + operand + ")==0)";
+    }
+    if ((op == "-" || op == "+") &&
+        (child.kind() == ast::ExpressionKind::Unary ||
+         (child.kind() == ast::ExpressionKind::Number && child.numberValue() < 0.0))) {
+        return op + "(" + operand + ")";
+    }
+    return op + operand;
+}
+
+std::string formatXmlBinary(const std::string& op, const ast::Expression& lhsExpr,
+                            std::string lhs, const std::string& rhs) {
+    if (op == "&&" || op == "||") {
+        const char* xmlOp = (op == "&&") ? " and " : " or ";
+        return "((" + lhs + "!=0)" + xmlOp + "(" + rhs + "!=0))";
+    }
+    if (op == "^^") {
+        return "(((" + lhs + "!=0) and (" + rhs + "==0)) or ((" + lhs +
+               "==0) and (" + rhs + "!=0)))";
+    }
+    if (op == "%") {
+        const std::string q = "((" + lhs + ") / (" + rhs + "))";
+        return "((" + lhs + ") - (" + rhs + ") * if(" + q + " >= 0, floor(" + q +
+               "), ceil(" + q + ")))";
+    }
+    const std::string xmlOp =
+        (op == "**") ? "^" : ((op == "~=") ? "!=" : op);
+    if ((xmlOp == "^") &&
+        (lhsExpr.kind() == ast::ExpressionKind::Unary ||
+         (lhsExpr.kind() == ast::ExpressionKind::Number &&
+          lhsExpr.numberValue() < 0.0))) {
+        lhs = "(" + lhs + ")";
+    }
+    return "(" + lhs + " " + xmlOp + " " + rhs + ")";
+}
+
 void collectFunctionReferences(const ast::Expression& expression,
                                const ast::Model& model,
                                const std::set<std::string>& localNames,
@@ -932,8 +986,6 @@ void collectFunctionReferences(const ast::Expression& expression,
             addFunctionReference(references, name, "Local");
         } else if (isReactantCountReference(name)) {
             addFunctionReference(references, name, "Function");
-        } else if (name == "time" || name == "t") {
-            addFunctionReference(references, name, "Time");
         } else if (model.getParameters().contains(name)) {
             addFunctionReference(references, name, "Constant");
         } else if (modelHasFunction(model, name)) {
@@ -942,16 +994,17 @@ void collectFunctionReferences(const ast::Expression& expression,
             const auto isObservable = std::any_of(
                 model.getObservables().begin(), model.getObservables().end(),
                 [&](const auto& observable) { return observable.getName() == name; });
-            if (isObservable) addFunctionReference(references, name, "Observable");
+            if (isObservable) {
+                addFunctionReference(references, name, "Observable");
+            } else if (isTimeSymbolReference(name, model)) {
+                addFunctionReference(references, name, "Time");
+            }
         }
         return;
     }
     case ExpressionKind::Function:
-        if ((expression.name() == "time" || expression.name() == "t") &&
+        if (isReactantCountReference(expression.name()) &&
             expression.args().empty()) {
-            addFunctionReference(references, expression.name(), "Time");
-        } else if (isReactantCountReference(expression.name()) &&
-                   expression.args().empty()) {
             addFunctionReference(references, expression.name(), "Function");
         } else if (modelHasFunction(model, expression.name())) {
             addFunctionReference(references, expression.name(), "Function");
@@ -961,6 +1014,9 @@ void collectFunctionReferences(const ast::Expression& expression,
                                    return observable.getName() == expression.name();
                                })) {
             addFunctionReference(references, expression.name(), "Observable");
+        } else if (expression.args().empty() &&
+                   isTimeSymbolReference(expression.name(), model)) {
+            addFunctionReference(references, expression.name(), "Time");
         }
         for (const auto& child : expression.args()) {
             collectFunctionReferences(child, model, localNames, references);
@@ -1010,23 +1066,14 @@ std::string expressionForXml(const ast::Expression& expression) {
     case ExpressionKind::Identifier:
         return expression.toString();
     case ExpressionKind::Unary:
-        return expression.name() + expressionForXml(expression.args().front());
-    case ExpressionKind::Binary: {
-        std::string lhs = expressionForXml(expression.args()[0]);
-        std::string rhs = expressionForXml(expression.args()[1]);
-        const auto& op = expression.name();
-        if (op == "&&" || op == "||") {
-            const char* xmlOp = (op == "&&") ? " and " : " or ";
-            return "((" + lhs + "!=0)" + xmlOp + "(" + rhs + "!=0))";
-        }
-        if ((op == "^" || op == "**") &&
-            (expression.args()[0].kind() == ExpressionKind::Unary ||
-             (expression.args()[0].kind() == ExpressionKind::Number &&
-              expression.args()[0].numberValue() < 0.0))) {
-            lhs = "(" + lhs + ")";
-        }
-        return "(" + lhs + " " + op + " " + rhs + ")";
-    }
+        return formatXmlUnary(
+            expression.name(), expression.args().front(),
+            expressionForXml(expression.args().front()));
+    case ExpressionKind::Binary:
+        return formatXmlBinary(
+            expression.name(), expression.args()[0],
+            expressionForXml(expression.args()[0]),
+            expressionForXml(expression.args()[1]));
     case ExpressionKind::Function:
     case ExpressionKind::ObservableRef: {
         std::ostringstream output;
@@ -1100,17 +1147,11 @@ bool expandDynamicRateExpression(
     switch (expression.kind()) {
     case ExpressionKind::Number:
     case ExpressionKind::Identifier: {
-        const auto& name = expression.name();
-        if (expression.kind() == ExpressionKind::Identifier &&
-            (lowercaseName(name) == "time" || lowercaseName(name) == "t")) {
-            addFunctionReference(references, name, "Time");
-            expanded = name;
-            return true;
-        }
         if (expression.kind() == ExpressionKind::Number) {
             expanded = expression.toString();
             return true;
         }
+        const auto& name = expression.name();
         if (model.getParameters().contains(name)) {
             addFunctionReference(references, name, "Constant");
             expanded = name;
@@ -1134,6 +1175,11 @@ bool expandDynamicRateExpression(
             expanded = name;
             return true;
         }
+        if (isTimeSymbolReference(name, model)) {
+            addFunctionReference(references, name, "Time");
+            expanded = name;
+            return true;
+        }
         diagnostic = "unknown identifier '" + name + "' in dynamic reaction rate";
         return false;
     }
@@ -1148,7 +1194,7 @@ bool expandDynamicRateExpression(
                 activeFunctions, operand, diagnostic)) {
             return false;
         }
-        expanded = expression.name() + operand;
+        expanded = formatXmlUnary(expression.name(), expression.args().front(), operand);
         return true;
     }
     case ExpressionKind::Binary: {
@@ -1166,33 +1212,11 @@ bool expandDynamicRateExpression(
                 activeFunctions, rhs, diagnostic)) {
             return false;
         }
-        const auto& op = expression.name();
-        if (op == "&&" || op == "||") {
-            const char* xmlOp = (op == "&&") ? " and " : " or ";
-            expanded = "((" + lhs + "!=0)" + xmlOp + "(" + rhs + "!=0))";
-            return true;
-        }
-        if ((op == "^" || op == "**") &&
-            (expression.args()[0].kind() == ExpressionKind::Unary ||
-             (expression.args()[0].kind() == ExpressionKind::Number &&
-              expression.args()[0].numberValue() < 0.0))) {
-            lhs = "(" + lhs + ")";
-        }
-        expanded = "(" + lhs + " " + op + " " + rhs + ")";
+        expanded = formatXmlBinary(expression.name(), expression.args()[0], std::move(lhs), rhs);
         return true;
     }
     case ExpressionKind::Function: {
         const auto& name = expression.name();
-        const auto lowerName = lowercaseName(name);
-        if (lowerName == "time" || lowerName == "t") {
-            if (!expression.args().empty()) {
-                diagnostic = name + "() takes no arguments";
-                return false;
-            }
-            addFunctionReference(references, lowerName, "Time");
-            expanded = lowerName;
-            return true;
-        }
         if (isReactantCountReference(name)) {
             if (!expression.args().empty()) {
                 diagnostic = name + "() takes no arguments";
@@ -1215,6 +1239,15 @@ bool expandDynamicRateExpression(
                 return true;
             }
             return expandModelFunction(*function, expanded);
+        }
+        if (isTimeSymbolReference(name, model)) {
+            if (!expression.args().empty()) {
+                diagnostic = name + "() takes no arguments";
+                return false;
+            }
+            addFunctionReference(references, name, "Time");
+            expanded = name;
+            return true;
         }
         if (expression.args().empty() && hasObservable(name)) {
             addFunctionReference(references, name, "Observable");
@@ -1289,20 +1322,19 @@ bool expandDynamicRateExpression(
             return false;
         }
         const auto counterName = counter.name();
-        const auto lowerCounterName = lowercaseName(counterName);
-        if (lowerCounterName == "time" || lowerCounterName == "t") {
-            if (!counter.args().empty()) {
-                diagnostic = "TFUN time counter cannot take arguments";
-                return false;
-            }
-            addFunctionReference(references, lowerCounterName, "Time");
-        } else if (counter.kind() == ExpressionKind::Identifier &&
-                   model.getParameters().contains(counterName)) {
+        if (counter.kind() == ExpressionKind::Identifier &&
+            model.getParameters().contains(counterName)) {
             addFunctionReference(references, counterName, "Constant");
         } else if (counter.args().empty() && hasObservable(counterName)) {
             addFunctionReference(references, counterName, "Observable");
         } else if (counter.args().empty() && findFunction(counterName) != nullptr) {
             addFunctionReference(references, counterName, "Function");
+        } else if (isTimeSymbolReference(counterName, model)) {
+            if (!counter.args().empty()) {
+                diagnostic = "TFUN time counter cannot take arguments";
+                return false;
+            }
+            addFunctionReference(references, counterName, "Time");
         } else {
             diagnostic = "unsupported TFUN counter '" + counterName + "'";
             return false;
@@ -1345,25 +1377,24 @@ std::string lowercaseName(std::string value) {
     return value;
 }
 
-bool expressionUsesTimeReference(const ast::Expression& expression) {
-    if (expression.kind() == ast::ExpressionKind::Identifier &&
-        (lowercaseName(expression.name()) == "time" ||
-         lowercaseName(expression.name()) == "t")) {
-        return true;
-    }
-    if (expression.kind() == ast::ExpressionKind::Function &&
-        (lowercaseName(expression.name()) == "time" ||
-         lowercaseName(expression.name()) == "t")) {
+bool expressionUsesTimeReference(const ast::Expression& expression,
+                                 const ast::Model& model) {
+    if ((expression.kind() == ast::ExpressionKind::Identifier ||
+         (expression.kind() == ast::ExpressionKind::Function &&
+          expression.args().empty())) &&
+        isTimeSymbolReference(expression.name(), model)) {
         return true;
     }
     return std::any_of(expression.args().begin(), expression.args().end(),
-                       [](const auto& child) { return expressionUsesTimeReference(child); });
+                       [&](const auto& child) {
+                           return expressionUsesTimeReference(child, model);
+                       });
 }
 
 bool expressionCanEvaluateStatically(const ast::Expression& expression,
                                       const ast::Model& model,
                                       double& value) {
-    if (expressionUsesTimeReference(expression)) return false;
+    if (expressionUsesTimeReference(expression, model)) return false;
     for (const auto& dependency : expression.getDependencies()) {
         if (!model.getParameters().contains(dependency)) return false;
     }
@@ -1420,7 +1451,7 @@ bool needsGeneratedDynamicRateFunction(const ast::Model& model,
         if ((name == "functionproduct" && rate.args().size() == 2) ||
             (name == "mm" && rate.args().size() == 2) ||
             (name == "arrhenius" && rate.args().size() >= 2) ||
-            (name == "sat" && rate.args().size() == 2) ||
+            (name == "sat" && rate.args().size() >= 2) ||
             (name == "hill" && rate.args().size() == 3)) {
             return false;
         }
@@ -1452,7 +1483,7 @@ std::string xmlRateLawType(const ast::Model& model, const ast::Expression& rate)
         rate.args().size() >= 2) {
         return "Arrhenius";
     }
-    if (isCall && lowercaseName(rate.name()) == "sat" && rate.args().size() == 2) {
+    if (isCall && lowercaseName(rate.name()) == "sat" && rate.args().size() >= 2) {
         return "Sat";
     }
     if (isCall && lowercaseName(rate.name()) == "hill" && rate.args().size() == 3) {
@@ -1559,6 +1590,7 @@ std::string XmlWriter::writeStructural(const ast::Model& model, const engine::Ge
 
 std::string XmlWriter::writeParameters(const ast::Model& model) {
     std::ostringstream xml;
+    xml << std::setprecision(17);
     xml << "    <ListOfParameters>\n";
 
     for (const auto& param : model.getParameters().all()) {
@@ -1631,6 +1663,7 @@ std::string XmlWriter::writeCompartments(const ast::Model& model) {
     std::ostringstream xml;
     if (model.getCompartments().empty()) return {};
 
+    xml << std::setprecision(17);
     xml << "    <ListOfCompartments>\n";
 
     for (const auto& comp : model.getCompartments()) {
@@ -1665,6 +1698,7 @@ std::string XmlWriter::writeCompartments(const ast::Model& model) {
 
 std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::GeneratedNetwork* network) {
     std::ostringstream xml;
+    xml << std::setprecision(17);
     xml << "    <ListOfSpecies>\n";
 
     const auto markPopulationName = [&](std::string name, const ParsedPattern& pattern) {
@@ -1689,6 +1723,12 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
             std::string spId = "S" + std::to_string(i + 1);
             std::string patternStr = species.getSpeciesGraph().toString();
             auto parsed = parsePattern(patternStr);
+            if (!species.getCompartment().empty()) {
+                parsed.compartment = species.getCompartment();
+            }
+            if (!parsed.compartment.empty()) {
+                patternStr = patternToBngl(parsed, species.isConstant());
+            }
             patternStr = markPopulationName(std::move(patternStr), parsed);
 
             xml << "      <Species id=\"" << spId
@@ -1696,6 +1736,9 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
                 << "\" name=\"" << escapeXml(patternStr) << "\"";
             if (species.isConstant()) {
                 xml << " Fixed=\"1\"";
+            }
+            if (!parsed.compartment.empty()) {
+                xml << " compartment=\"" << escapeXml(parsed.compartment) << "\"";
             }
             xml << ">\n";
 
@@ -2279,7 +2322,7 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model, bool retainRa
             }
             ast::ReactionRule reverse(
                 "_reverse__" + rule.getRuleName(),
-                rule.getLabel().empty() ? "_reverse" : "_reverse__" + rule.getLabel(),
+                rule.getLabel().empty() ? "" : "_reverse__" + rule.getLabel(),
                 rule.getProducts(), rule.getReactants(),
                 std::vector<ast::Expression>{rule.getRates()[1]},
                 std::move(reverseModifiers), false,

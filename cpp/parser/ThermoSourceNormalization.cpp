@@ -89,20 +89,26 @@ bool extractDrivingWork(std::string& code, std::string& expression) {
     while (true) {
         const auto candidate = lowered.find(keyword, search);
         if (candidate == std::string::npos) break;
-        // Require an identifier boundary so a component or parameter named
-        // e.g. `not_driven_byX` is never mistaken for the annotation.
+        // Require identifier boundaries on both sides so a component or
+        // parameter named e.g. `not_driven_byX` or `driven_by_k` is never
+        // mistaken for the annotation.
         const bool leftBoundary =
             candidate == 0 ||
             (std::isalnum(static_cast<unsigned char>(code[candidate - 1])) == 0 &&
              code[candidate - 1] != '_');
-        if (leftBoundary) {
+        const auto afterKeyword = candidate + keyword.size();
+        const bool rightBoundary =
+            afterKeyword == code.size() ||
+            (std::isalnum(static_cast<unsigned char>(code[afterKeyword])) == 0 &&
+             code[afterKeyword] != '_');
+        if (leftBoundary && rightBoundary) {
             if (found != std::string::npos) {
                 throw std::runtime_error(
                     "a reaction rule accepts at most one driven_by() annotation");
             }
             found = candidate;
         }
-        search = candidate + keyword.size();
+        search = afterKeyword;
     }
     if (found == std::string::npos) return false;
 
@@ -148,6 +154,44 @@ struct LogicalLine {
     std::string comment;
     std::size_t physicalLines = 1;
 };
+
+bool hasTopLevelComma(const std::string& text) {
+    int parenDepth = 0;
+    int bracketDepth = 0;
+    int braceDepth = 0;
+    char quote = '\0';
+    bool escaped = false;
+    for (const char ch : text) {
+        if (quote != '\0') {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '\'' || ch == '"') {
+            quote = ch;
+        } else if (ch == '(') {
+            ++parenDepth;
+        } else if (ch == ')') {
+            if (parenDepth > 0) --parenDepth;
+        } else if (ch == '[') {
+            ++bracketDepth;
+        } else if (ch == ']') {
+            if (bracketDepth > 0) --bracketDepth;
+        } else if (ch == '{') {
+            ++braceDepth;
+        } else if (ch == '}') {
+            if (braceDepth > 0) --braceDepth;
+        } else if (ch == ',' && parenDepth == 0 && bracketDepth == 0 && braceDepth == 0) {
+            return true;
+        }
+    }
+    return false;
+}
 
 enum class BlockKind {
     None,
@@ -272,9 +316,11 @@ std::string normalizeThermodynamicSyntax(const std::string& source) {
         const bool isDefinition = !trimmedCode.empty();
 
         if (currentBlock == BlockKind::BarrierPatterns && isDefinition) {
-            // Reject rate-law commas: a barrier is symmetric, so a second
-            // expression has no meaning and must not be quietly ignored.
-            if (trimmedCode.find(',') != std::string::npos) {
+            // Reject top-level rate-law commas: a barrier is symmetric, so a
+            // second expression has no meaning and must not be quietly ignored.
+            // Commas inside molecule parentheses (e.g. A(b,s~0)) or function
+            // calls (e.g. min(a,b)) are valid and allowed.
+            if (hasTopLevelComma(trimmedCode)) {
                 throw std::runtime_error(
                     "a barrier pattern takes one transition-state energy, not a rate pair");
             }

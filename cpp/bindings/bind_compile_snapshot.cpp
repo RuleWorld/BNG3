@@ -48,6 +48,7 @@ const char* binaryName(BinaryOp op) {
     case BinaryOp::Subtract: return "subtract";
     case BinaryOp::Multiply: return "multiply";
     case BinaryOp::Divide: return "divide";
+    case BinaryOp::Modulo: return "modulo";
     case BinaryOp::Power: return "power";
     case BinaryOp::Less: return "less";
     case BinaryOp::LessEqual: return "less_equal";
@@ -57,6 +58,7 @@ const char* binaryName(BinaryOp op) {
     case BinaryOp::NotEqual: return "not_equal";
     case BinaryOp::LogicalAnd: return "and";
     case BinaryOp::LogicalOr: return "or";
+    case BinaryOp::LogicalXor: return "xor";
     case BinaryOp::Unknown: return "unknown";
     }
     return "unknown";

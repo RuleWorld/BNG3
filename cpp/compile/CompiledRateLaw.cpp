@@ -18,6 +18,17 @@ namespace bng::compile {
 
 namespace {
 
+std::string encodeHex(const std::string& value) {
+    static constexpr char digits[] = "0123456789abcdef";
+    std::string encoded;
+    encoded.reserve(value.size() * 2);
+    for (const unsigned char byte : value) {
+        encoded.push_back(digits[byte >> 4]);
+        encoded.push_back(digits[byte & 0x0f]);
+    }
+    return encoded;
+}
+
 std::string lower(std::string value) {
     std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -110,7 +121,7 @@ bool isBuiltinFunction(const std::string& rawName) {
 UnaryOp unaryOperator(const std::string& op) {
     if (op == "+") return UnaryOp::Plus;
     if (op == "-") return UnaryOp::Negate;
-    if (op == "!" || lower(op) == "not") return UnaryOp::LogicalNot;
+    if (op == "!" || op == "~" || lower(op) == "not") return UnaryOp::LogicalNot;
     return UnaryOp::Unknown;
 }
 
@@ -119,15 +130,17 @@ BinaryOp binaryOperator(const std::string& op) {
     if (op == "-") return BinaryOp::Subtract;
     if (op == "*") return BinaryOp::Multiply;
     if (op == "/") return BinaryOp::Divide;
+    if (op == "%") return BinaryOp::Modulo;
     if (op == "^" || op == "**") return BinaryOp::Power;
     if (op == "<") return BinaryOp::Less;
     if (op == "<=") return BinaryOp::LessEqual;
     if (op == ">") return BinaryOp::Greater;
     if (op == ">=") return BinaryOp::GreaterEqual;
     if (op == "==" || op == "=") return BinaryOp::Equal;
-    if (op == "!=") return BinaryOp::NotEqual;
+    if (op == "!=" || op == "~=") return BinaryOp::NotEqual;
     if (op == "&&" || lower(op) == "and") return BinaryOp::LogicalAnd;
     if (op == "||" || lower(op) == "or") return BinaryOp::LogicalOr;
+    if (op == "^^" || lower(op) == "xor") return BinaryOp::LogicalXor;
     return BinaryOp::Unknown;
 }
 
@@ -534,7 +547,8 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
         case BinaryOp::Add: return lhs + rhs;
         case BinaryOp::Subtract: return lhs - rhs;
         case BinaryOp::Multiply: return lhs * rhs;
-        case BinaryOp::Divide: return (rhs != 0.0) ? (lhs / rhs) : 0.0;
+        case BinaryOp::Divide: return lhs / rhs;
+        case BinaryOp::Modulo: return std::fmod(lhs, rhs);
         case BinaryOp::Power: return std::pow(lhs, rhs);
         case BinaryOp::Less: return (lhs < rhs) ? 1.0 : 0.0;
         case BinaryOp::LessEqual: return (lhs <= rhs) ? 1.0 : 0.0;
@@ -544,6 +558,7 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
         case BinaryOp::NotEqual: return (lhs != rhs) ? 1.0 : 0.0;
         case BinaryOp::LogicalAnd: return (lhs != 0.0 && rhs != 0.0) ? 1.0 : 0.0;
         case BinaryOp::LogicalOr: return (lhs != 0.0 || rhs != 0.0) ? 1.0 : 0.0;
+        case BinaryOp::LogicalXor: return ((lhs != 0.0) != (rhs != 0.0)) ? 1.0 : 0.0;
         default: return 0.0;
         }
     }
@@ -667,6 +682,9 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
                 const double Km = evalArg(1);
                 const double St = evalArg(2);
                 const double Et = evalArg(3);
+                if (Km == 0.0) {
+                    return (St > 0.0 && Et > 0.0) ? (kcat * std::min(St, Et)) : 0.0;
+                }
                 const double b = St - Km - Et;
                 const double q = std::sqrt(b * b + 4.0 * St * Km);
                 const double S = (b >= 0.0) ? 0.5 * (b + q)
@@ -677,6 +695,9 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
                 const double Vmax = evalArg(0);
                 const double Km = evalArg(1);
                 const double S = evalArg(2);
+                if (Km == 0.0) {
+                    return (S > 0.0) ? Vmax : 0.0;
+                }
                 return (Km + S != 0.0) ? (Vmax * S / (Km + S)) : 0.0;
             }
             return 0.0;
@@ -687,6 +708,7 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
                 const double Kh = evalArg(1);
                 const double n = evalArg(2);
                 const double S = evalArg(3);
+                if (S <= 0.0) return 0.0;
                 const double Sn = std::pow(S, n);
                 const double den = std::pow(Kh, n) + Sn;
                 return (den != 0.0) ? (Vmax * Sn / den) : 0.0;
@@ -697,8 +719,9 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
             if (arguments.size() >= 2) {
                 const double A = evalArg(0);
                 const double Ea = evalArg(1);
-                constexpr double kBT = 1.3806488e-23 * 298.15;
-                return A * std::exp(-Ea / kBT);
+                // Energies in BNGL are expressed in dimensionless RT units
+                // (RT = 1.0 by default, consistent with NetWriter), not SI Joules.
+                return A * std::exp(-Ea);
             }
             return 0.0;
         }
@@ -710,10 +733,13 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
         case BuiltinFunction::TableFunction: {
             const double counter = evalArg(0);
             if (!tableX.empty() && tableX.size() == tableY.size()) {
+                if (std::isnan(counter)) return counter;
                 if (tableX.size() == 1) return tableY.front();
                 if (counter <= tableX.front()) return tableY.front();
                 if (counter >= tableX.back()) return tableY.back();
                 const auto upper = std::upper_bound(tableX.begin(), tableX.end(), counter);
+                if (upper == tableX.begin()) return tableY.front();
+                if (upper == tableX.end()) return tableY.back();
                 const std::size_t right = static_cast<std::size_t>(upper - tableX.begin());
                 const std::size_t left = right - 1;
                 if (tableMethod == "step") return tableY[left];
@@ -722,6 +748,12 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
             }
             if (context.resolveTable && !tableFile.empty()) {
                 return context.resolveTable(tableFile, counter);
+            }
+            if (context.resolveIdentifier && !tableFile.empty()) {
+                std::ostringstream val;
+                val << std::scientific << std::setprecision(17) << counter;
+                return context.resolveIdentifier(
+                    "__tfun_file_hex_" + encodeHex(tableFile) + "_AT_" + val.str() + "__");
             }
             return 0.0;
         }
@@ -749,10 +781,13 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
         const double counter =
             (!arguments.empty()) ? arguments[0].evaluate(context) : context.time;
         if (!tableX.empty() && tableX.size() == tableY.size()) {
+            if (std::isnan(counter)) return counter;
             if (tableX.size() == 1) return tableY.front();
             if (counter <= tableX.front()) return tableY.front();
             if (counter >= tableX.back()) return tableY.back();
             const auto upper = std::upper_bound(tableX.begin(), tableX.end(), counter);
+            if (upper == tableX.begin()) return tableY.front();
+            if (upper == tableX.end()) return tableY.back();
             const std::size_t right = static_cast<std::size_t>(upper - tableX.begin());
             const std::size_t left = right - 1;
             if (tableMethod == "step") return tableY[left];
@@ -765,7 +800,8 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
         if (context.resolveIdentifier && !tableFile.empty()) {
             std::ostringstream val;
             val << std::scientific << std::setprecision(17) << counter;
-            return context.resolveIdentifier("__tfun_" + tableFile + "_AT_" + val.str() + "__");
+            return context.resolveIdentifier(
+                "__tfun_file_hex_" + encodeHex(tableFile) + "_AT_" + val.str() + "__");
         }
         return 0.0;
     }

@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
+#include <cctype>
 #include <utility>
 
 #include "ast/Model.hpp"
@@ -20,11 +21,51 @@
 namespace py = pybind11;
 using namespace bng::ast;
 
+namespace {
+
+std::string formatPatternWithScope(const SpeciesGraph& sg,
+                                   const std::vector<std::string>& rawPatterns,
+                                   std::size_t index) {
+    std::string rendered = sg.toString();
+    if (index >= rawPatterns.size()) return rendered;
+    const std::string& raw = rawPatterns[index];
+    const std::size_t first = raw.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return rendered;
+    const std::size_t last = raw.find_last_not_of(" \t\r\n");
+    const std::string trimmed = raw.substr(first, last - first + 1);
+    if (trimmed.size() > 2 && trimmed[0] == '%' &&
+        (std::isalpha(static_cast<unsigned char>(trimmed[1])) || trimmed[1] == '_')) {
+        std::size_t end = 2;
+        while (end < trimmed.size() &&
+               (std::isalnum(static_cast<unsigned char>(trimmed[end])) || trimmed[end] == '_')) {
+            ++end;
+        }
+        if (end < trimmed.size() && trimmed[end] == ':') {
+            const std::size_t colonEnd =
+                (end + 1 < trimmed.size() && trimmed[end + 1] == ':') ? end + 2 : end + 1;
+            const std::string prefix = trimmed.substr(0, colonEnd);
+            if (rendered.rfind(prefix, 0) != 0) {
+                return prefix + rendered;
+            }
+        }
+    }
+    for (std::size_t pos = 0; pos + 1 < trimmed.size(); ++pos) {
+        if (trimmed[pos] == '%' &&
+            (std::isalpha(static_cast<unsigned char>(trimmed[pos + 1])) || trimmed[pos + 1] == '_')) {
+            return trimmed;
+        }
+    }
+    return rendered;
+}
+
+} // anonymous namespace
+
 void bind_model(py::module_& m) {
 
     py::class_<Expression>(m, "Expression")
         .def("__str__", &Expression::toString)
-        .def("to_string", &Expression::toString);
+        .def("to_string", &Expression::toString)
+        .def("to_bngl_string", &Expression::toBnglString);
 
     py::class_<Parameter>(m, "Parameter")
         .def_property_readonly("name", &Parameter::getName)
@@ -118,22 +159,28 @@ void bind_model(py::module_& m) {
         .def_property_readonly("rule_name", &ReactionRule::getRuleName)
         .def_property_readonly("reactant_patterns", [](const ReactionRule& rr) {
             std::vector<std::string> result;
-            for (const auto& sg : rr.getReactantPatterns()) {
-                result.push_back(sg.toString());
+            const auto& patterns = rr.getReactantPatterns();
+            const auto& raw = rr.getReactants();
+            result.reserve(patterns.size());
+            for (std::size_t i = 0; i < patterns.size(); ++i) {
+                result.push_back(formatPatternWithScope(patterns[i], raw, i));
             }
             return result;
         })
         .def_property_readonly("product_patterns", [](const ReactionRule& rr) {
             std::vector<std::string> result;
-            for (const auto& sg : rr.getProductPatterns()) {
-                result.push_back(sg.toString());
+            const auto& patterns = rr.getProductPatterns();
+            const auto& raw = rr.getProducts();
+            result.reserve(patterns.size());
+            for (std::size_t i = 0; i < patterns.size(); ++i) {
+                result.push_back(formatPatternWithScope(patterns[i], raw, i));
             }
             return result;
         })
         .def_property_readonly("rates", [](const ReactionRule& rr) {
             std::vector<std::string> result;
             for (const auto& expr : rr.getRates()) {
-                result.push_back(expr.toString());
+                result.push_back(expr.toBnglString());
             }
             return result;
         })
@@ -248,9 +295,9 @@ void bind_model(py::module_& m) {
             if (!params.contains(name)) {
                 throw py::key_error("Parameter '" + name + "' not found");
             }
-            // Replace the parameter with a literal-value expression so that
-            // evaluateAll() picks up the new value instead of re-evaluating
-            // the original parsed expression.
+            // Replace only the targeted parameter with a literal-value expression so
+            // evaluateAll() picks up the new value while leaving unrelated and
+            // dependent parameter expressions intact.
             Parameter replacement(name, Expression::number(value));
             const auto& previous = params.get(name);
             if (previous.hasUnit()) {
@@ -259,6 +306,25 @@ void bind_model(py::module_& m) {
             params.add(std::move(replacement));
             model.updateParameters(std::move(params));
         })
+        .def("set_parameter_expression", [](Model& model, const std::string& name, const Expression& expr) {
+            auto params = model.getParameters();
+            if (!params.contains(name)) {
+                throw py::key_error("Parameter '" + name + "' not found");
+            }
+            Parameter replacement(name, expr);
+            const auto& previous = params.get(name);
+            if (previous.hasUnit()) {
+                replacement.setUnit(*previous.getUnit(), previous.getUnitName());
+            }
+            params.add(std::move(replacement));
+            model.updateParameters(std::move(params));
+        }, py::arg("name"), py::arg("expression"))
+        .def("snapshot_parameters", [](const Model& model) {
+            return model.getParameters();
+        })
+        .def("restore_parameters", [](Model& model, const ParameterList& snapshot) {
+            model.updateParameters(snapshot);
+        }, py::arg("parameters"))
         .def("get_parameter", [](const Model& m, const std::string& name) -> const Parameter& {
             return m.getParameters().get(name);
         }, py::return_value_policy::reference_internal)

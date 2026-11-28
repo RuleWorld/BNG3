@@ -26,6 +26,7 @@ std::string binaryToken(BinaryOp op) {
     case BinaryOp::Subtract: return "-";
     case BinaryOp::Multiply: return "*";
     case BinaryOp::Divide: return "/";
+    case BinaryOp::Modulo: return "%";
     case BinaryOp::Power: return "^";
     case BinaryOp::Less: return "<";
     case BinaryOp::LessEqual: return "<=";
@@ -35,6 +36,7 @@ std::string binaryToken(BinaryOp op) {
     case BinaryOp::NotEqual: return "!=";
     case BinaryOp::LogicalAnd: return "&&";
     case BinaryOp::LogicalOr: return "||";
+    case BinaryOp::LogicalXor: return "^^";
     case BinaryOp::Unknown: break;
     }
     throw std::invalid_argument("cannot lower unresolved binary operator");

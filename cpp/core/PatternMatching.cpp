@@ -38,7 +38,7 @@ bool embeddingRespectsBioNetGenSemantics(const BNGcore::PatternGraph& pattern,
             const auto& patternComp = (*nodeIter)->get_compartment();
             if (!patternComp.empty()) {
                 const auto& targetComp = target->get_compartment();
-                if (!targetComp.empty() && patternComp != targetComp) return false;
+                if (patternComp != targetComp) return false;
             }
         }
 
@@ -53,16 +53,21 @@ bool embeddingRespectsBioNetGenSemantics(const BNGcore::PatternGraph& pattern,
                  edge != target->edges_out_end(); ++edge) {
                 if (isBondNode(**edge)) targetBonds.push_back(*edge);
             }
-            if (patternBonds.size() == 1) {
-                const auto patternBondState = patternBonds.front()->get_state().get_BNG2_string();
-                if (patternBondState == "!?") {
-                    // Any target bond cardinality is valid.
-                } else if (patternBondState == "!+") {
-                    if (targetBonds.empty()) return false;
-                } else if (targetBonds.size() != patternBonds.size()) {
-                    return false;
+            bool hasAnyWildcard = false;
+            bool hasBoundWildcard = false;
+            for (const auto* pb : patternBonds) {
+                const auto pbState = pb->get_state().get_BNG2_string();
+                if (pbState == "!?") {
+                    hasAnyWildcard = true;
+                } else if (pbState == "!+" && pb->in_degree() == 1) {
+                    hasBoundWildcard = true;
                 }
-            } else if (patternBonds.size() != targetBonds.size()) {
+            }
+            if (hasAnyWildcard) {
+                // Any target bond cardinality >= matched non-wildcard bonds is valid.
+            } else if (hasBoundWildcard) {
+                if (targetBonds.size() < patternBonds.size()) return false;
+            } else if (targetBonds.size() != patternBonds.size()) {
                 return false;
             }
         }
@@ -87,6 +92,11 @@ bool patternMatchesSpecies(const BNGcore::PatternGraph& pattern,
 
 bool patternMatchesSpecies(const ast::SpeciesGraph& patternSpecies,
                            const ast::SpeciesGraph& species) {
+    if (patternSpecies.isCompartmentPrefix() &&
+        !patternSpecies.getCompartment().empty() &&
+        species.getCompartment() != patternSpecies.getCompartment()) {
+        return false;
+    }
     return patternMatchesSpecies(patternSpecies.getGraph(), species.getGraph());
 }
 

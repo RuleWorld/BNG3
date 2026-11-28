@@ -1,7 +1,9 @@
 #include "compile/CompiledModel.hpp"
+#include "compile/TotalRate.hpp"
 #include "MatlabWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
+#include "NetWriter.hpp"
 #include "engine/DelayedSemanticsGuard.hpp"
 
 #include <sstream>
@@ -9,8 +11,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <set>
+#include <unordered_map>
 
 #include "parser/antlr_compat.hpp"
 #include <antlr4-runtime.h>
@@ -260,10 +264,45 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
     m << "%% Calculate expressions from parameters\n";
     m << "function expressions = calc_expressions(parameters)\n";
     m << "    expressions = zeros(" << paramNames.size() << ", 1);\n";
-    for (std::size_t i = 0; i < paramNames.size(); ++i) {
-        // Simple: map parameter value directly to expressions array
-        m << "    expressions(" << (i + 1) << ") = parameters(" << (i + 1)
-          << "); % " << paramNames[i] << "\n";
+    {
+        const auto& allParams = model.getParameters().all();
+        std::unordered_map<std::string, std::size_t> paramIndex;
+        for (std::size_t i = 0; i < paramNames.size(); ++i) {
+            paramIndex[paramNames[i]] = i;
+        }
+        // Topological order so derived parameters evaluate after their dependencies
+        std::vector<int> state(paramNames.size(), 0);
+        std::vector<std::size_t> order;
+        std::function<void(std::size_t)> visit = [&](std::size_t idx) {
+            if (state[idx] != 0) return;
+            state[idx] = 1;
+            for (const auto& dep : allParams[idx].getExpression().getDependencies()) {
+                auto it = paramIndex.find(dep);
+                if (it != paramIndex.end()) visit(it->second);
+            }
+            state[idx] = 2;
+            order.push_back(idx);
+        };
+        for (std::size_t i = 0; i < paramNames.size(); ++i) visit(i);
+        for (const std::size_t i : order) {
+            const auto& expr = allParams[i].getExpression();
+            const auto deps = expr.getDependencies();
+            bool allKnown = !deps.empty();
+            for (const auto& dep : deps) {
+                if (paramIndex.find(dep) == paramIndex.end()) {
+                    allKnown = false;
+                    break;
+                }
+            }
+            if (allKnown) {
+                m << "    expressions(" << (i + 1) << ") = "
+                  << convertRateToMatlab(expr.toString(), paramNames)
+                  << "; % " << paramNames[i] << "\n";
+            } else {
+                m << "    expressions(" << (i + 1) << ") = parameters(" << (i + 1)
+                  << "); % " << paramNames[i] << "\n";
+            }
+        }
     }
     m << "end\n\n";
 
@@ -311,7 +350,17 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
                 *rxn.getRateExpression(), model.getFunctions()).toString();
         }
 
-        double statFactor = rxn.getFactor();
+        const bool absoluteFlux = compile::isAbsoluteFluxReaction(model, rxn);
+        const bool totalRate =
+            compile::isTotalRateReaction(model, rxn.getOriginRuleName()) ||
+            absoluteFlux;
+        double statFactor = totalRate ? 1.0 : rxn.getFactor();
+        if (!absoluteFlux) {
+            if (const auto unitFactor = NetWriter::computeUnitConversionFactor(rxn, model, network);
+                unitFactor.has_value()) {
+                statFactor *= *unitFactor;
+            }
+        }
 
         // Try as numeric rate
         bool isNumeric = false;
@@ -324,20 +373,22 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
 
         if (isNumeric) {
             double combined = statFactor * rateVal;
-            m << combined;
+            m << std::setprecision(17) << combined;
         } else {
             // Parameter reference - find index
             std::string rateRef = convertRateToMatlab(cleanRate, paramNames);
             if (std::abs(statFactor - 1.0) > 1e-12) {
-                m << statFactor << "*" << rateRef;
+                m << std::setprecision(17) << statFactor << "*" << rateRef;
             } else {
                 m << rateRef;
             }
         }
 
-        // Multiply by reactant concentrations
-        for (const auto idx : rxn.getReactants()) {
-            m << "*species(" << (idx + 1) << ")";
+        // Multiply by reactant concentrations (unless absoluteFlux already includes them)
+        if (!absoluteFlux) {
+            for (const auto idx : rxn.getReactants()) {
+                m << "*species(" << (idx + 1) << ")";
+            }
         }
 
         m << ";\n";
@@ -489,7 +540,7 @@ std::string MatlabWriter::convertRateToMatlab(const std::string& rate, const std
         std::string paramRef = "expressions(" + std::to_string(idx + 1) + ")";
         std::size_t pos = 0;
         while ((pos = result.find(name, pos)) != std::string::npos) {
-            bool validStart = (pos == 0 || !std::isalnum(static_cast<unsigned char>(result[pos - 1])) && result[pos - 1] != '_');
+            bool validStart = (pos == 0 || (!std::isalnum(static_cast<unsigned char>(result[pos - 1])) && result[pos - 1] != '_'));
             bool validEnd = (pos + name.length() >= result.length() ||
                            (!std::isalnum(static_cast<unsigned char>(result[pos + name.length()])) && result[pos + name.length()] != '_'));
             if (validStart && validEnd) {
@@ -498,6 +549,27 @@ std::string MatlabWriter::convertRateToMatlab(const std::string& rate, const std
             } else {
                 pos += name.length();
             }
+        }
+    }
+
+    // MATLAB uses `log` for natural logarithm and `^` for exponentiation
+    {
+        std::size_t pos = 0;
+        while ((pos = result.find("ln(", pos)) != std::string::npos) {
+            const bool validStart = (pos == 0 || (!std::isalnum(static_cast<unsigned char>(result[pos - 1])) && result[pos - 1] != '_'));
+            if (validStart) {
+                result.replace(pos, 2, "log");
+                pos += 4;
+            } else {
+                pos += 3;
+            }
+        }
+    }
+    {
+        std::size_t pos = 0;
+        while ((pos = result.find("**", pos)) != std::string::npos) {
+            result.replace(pos, 2, "^");
+            pos += 1;
         }
     }
 

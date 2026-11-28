@@ -1,6 +1,7 @@
 #include "CppExportWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
+#include "NetWriter.hpp"
 #include "engine/DelayedSemanticsGuard.hpp"
 
 #include <sstream>
@@ -8,13 +9,218 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <map>
+#include <unordered_map>
 
 #include "ast/Model.hpp"
 #include "compile/CompiledModel.hpp"
+#include "compile/TotalRate.hpp"
 #include "engine/ObservableProjection.hpp"
 
 namespace bng::io {
+
+namespace {
+
+std::string renderExprToCVode(
+    const ast::Expression& expr,
+    const std::unordered_map<std::string, std::size_t>& paramIndex,
+    const std::unordered_map<std::string, std::size_t>& obsIndex) {
+    using Kind = ast::ExpressionKind;
+    switch (expr.kind()) {
+    case Kind::Number: {
+        std::ostringstream out;
+        out << std::setprecision(17) << expr.numberValue();
+        return out.str();
+    }
+    case Kind::Identifier: {
+        const auto& name = expr.name();
+        if (auto it = paramIndex.find(name); it != paramIndex.end()) {
+            return "NV_Ith_S(expressions," + std::to_string(it->second) + ")";
+        }
+        if (auto it = obsIndex.find(name); it != obsIndex.end()) {
+            return "NV_Ith_S(observables," + std::to_string(it->second) + ")";
+        }
+        if (name == "_pi" || name == "pi" || name == "_PI") return "M_PI";
+        if (name == "_e" || name == "e") return "M_E";
+        return name;
+    }
+    case Kind::Unary: {
+        const auto arg = renderExprToCVode(expr.args().front(), paramIndex, obsIndex);
+        if (expr.name() == "-" || expr.name() == "+") {
+            return "(" + expr.name() + "(" + arg + "))";
+        }
+        if (expr.name() == "!" || expr.name() == "~") {
+            return "((" + arg + ") == 0.0 ? 1.0 : 0.0)";
+        }
+        return arg;
+    }
+    case Kind::Binary: {
+        const auto lhs = renderExprToCVode(expr.args()[0], paramIndex, obsIndex);
+        const auto rhs = renderExprToCVode(expr.args()[1], paramIndex, obsIndex);
+        const auto& op = expr.name();
+        if (op == "^" || op == "**") {
+            return "pow(" + lhs + ", " + rhs + ")";
+        }
+        if (op == "%") {
+            return "fmod(" + lhs + ", " + rhs + ")";
+        }
+        if (op == "~=") {
+            return "(" + lhs + " != " + rhs + ")";
+        }
+        if (op == "^^") {
+            return "(((" + lhs + ") != 0.0) != ((" + rhs + ") != 0.0) ? 1.0 : 0.0)";
+        }
+        return "(" + lhs + " " + op + " " + rhs + ")";
+    }
+    case Kind::Function:
+    case Kind::ObservableRef: {
+        const auto& name = expr.name();
+        if (expr.args().empty()) {
+            if (auto it = obsIndex.find(name); it != obsIndex.end()) {
+                return "NV_Ith_S(observables," + std::to_string(it->second) + ")";
+            }
+            if (auto it = paramIndex.find(name); it != paramIndex.end()) {
+                return "NV_Ith_S(expressions," + std::to_string(it->second) + ")";
+            }
+        }
+        std::vector<std::string> rendered;
+        rendered.reserve(expr.args().size());
+        for (const auto& a : expr.args()) {
+            rendered.push_back(renderExprToCVode(a, paramIndex, obsIndex));
+        }
+        if (name == "if" && rendered.size() == 3) {
+            return "((" + rendered[0] + ") != 0.0 ? (" + rendered[1] + ") : (" + rendered[2] + "))";
+        }
+        if (name == "ln" && rendered.size() == 1) return "log(" + rendered[0] + ")";
+        if (name == "abs" && rendered.size() == 1) return "fabs(" + rendered[0] + ")";
+        if (name == "rint" && rendered.size() == 1) return "floor((" + rendered[0] + ") + 0.5)";
+        if (name == "sign" && rendered.size() == 1) {
+            return "((" + rendered[0] + ") > 0.0 ? 1.0 : ((" + rendered[0] + ") < 0.0 ? -1.0 : 0.0))";
+        }
+        if ((name == "min" || name == "max") && !rendered.empty()) {
+            const std::string fn = (name == "min") ? "fmin" : "fmax";
+            std::string acc = rendered[0];
+            for (std::size_t i = 1; i < rendered.size(); ++i) {
+                acc = fn + "(" + acc + ", " + rendered[i] + ")";
+            }
+            return acc;
+        }
+        if (name == "sum") {
+            if (rendered.empty()) return "0.0";
+            std::string acc = "(" + rendered[0];
+            for (std::size_t i = 1; i < rendered.size(); ++i) acc += " + " + rendered[i];
+            return acc + ")";
+        }
+        if (name == "avg" && !rendered.empty()) {
+            std::string acc = "((" + rendered[0];
+            for (std::size_t i = 1; i < rendered.size(); ++i) acc += " + " + rendered[i];
+            return acc + ") / " + std::to_string(rendered.size()) + ".0)";
+        }
+        std::string cName = name;
+        if (name == "ceiling") cName = "ceil";
+        std::ostringstream call;
+        call << cName << "(";
+        for (std::size_t i = 0; i < rendered.size(); ++i) {
+            if (i > 0) call << ", ";
+            call << rendered[i];
+        }
+        call << ")";
+        return call.str();
+    }
+    case Kind::TableFunction:
+        return expr.toString();
+    }
+    return expr.toString();
+}
+
+std::string rewritePowOperatorToCVode(std::string text) {
+    while (true) {
+        std::size_t opPos = std::string::npos;
+        std::size_t opLen = 0;
+        for (std::size_t i = 0; i < text.size(); ++i) {
+            if (text[i] == '^') {
+                opPos = i;
+                opLen = 1;
+                break;
+            }
+            if (i + 1 < text.size() && text[i] == '*' && text[i + 1] == '*') {
+                opPos = i;
+                opLen = 2;
+                break;
+            }
+        }
+        if (opPos == std::string::npos) break;
+
+        std::size_t lhsEnd = opPos;
+        while (lhsEnd > 0 && std::isspace(static_cast<unsigned char>(text[lhsEnd - 1])) != 0) {
+            --lhsEnd;
+        }
+        std::size_t lhsStart = lhsEnd;
+        if (lhsStart > 0 && text[lhsStart - 1] == ')') {
+            int depth = 0;
+            do {
+                --lhsStart;
+                if (text[lhsStart] == ')') ++depth;
+                else if (text[lhsStart] == '(') --depth;
+            } while (lhsStart > 0 && depth > 0);
+            while (lhsStart > 0 &&
+                   (std::isalnum(static_cast<unsigned char>(text[lhsStart - 1])) != 0 ||
+                    text[lhsStart - 1] == '_')) {
+                --lhsStart;
+            }
+        } else {
+            while (lhsStart > 0 &&
+                   (std::isalnum(static_cast<unsigned char>(text[lhsStart - 1])) != 0 ||
+                    text[lhsStart - 1] == '_' || text[lhsStart - 1] == '.')) {
+                --lhsStart;
+            }
+        }
+
+        std::size_t rhsStart = opPos + opLen;
+        while (rhsStart < text.size() && std::isspace(static_cast<unsigned char>(text[rhsStart])) != 0) {
+            ++rhsStart;
+        }
+        std::size_t rhsEnd = rhsStart;
+        if (rhsEnd < text.size() && (text[rhsEnd] == '-' || text[rhsEnd] == '+')) {
+            ++rhsEnd;
+        }
+        if (rhsEnd < text.size() && text[rhsEnd] == '(') {
+            int depth = 0;
+            do {
+                if (text[rhsEnd] == '(') ++depth;
+                else if (text[rhsEnd] == ')') --depth;
+                ++rhsEnd;
+            } while (rhsEnd < text.size() && depth > 0);
+        } else {
+            while (rhsEnd < text.size()) {
+                const char c = text[rhsEnd];
+                if (c == '(') {
+                    int depth = 0;
+                    do {
+                        if (text[rhsEnd] == '(') ++depth;
+                        else if (text[rhsEnd] == ')') --depth;
+                        ++rhsEnd;
+                    } while (rhsEnd < text.size() && depth > 0);
+                    break;
+                }
+                if (std::isalnum(static_cast<unsigned char>(c)) != 0 || c == '_' || c == '.') {
+                    ++rhsEnd;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        if (lhsStart >= lhsEnd || rhsStart >= rhsEnd) break;
+        const std::string lhs = text.substr(lhsStart, lhsEnd - lhsStart);
+        const std::string rhs = text.substr(rhsStart, rhsEnd - rhsStart);
+        text.replace(lhsStart, rhsEnd - lhsStart, "pow(" + lhs + ", " + rhs + ")");
+    }
+    return text;
+}
+
+} // namespace
 
 std::string CppExportWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
     Options opts;
@@ -144,14 +350,53 @@ using namespace std;
     out << "#define __N_RATELAWS__     " << nRxns << "\n";
     out << "#define __N_SPECIES__      " << nSpecies << "\n\n";
 
+    std::unordered_map<std::string, std::size_t> paramIndex;
+    for (std::size_t i = 0; i < nParams; ++i) {
+        paramIndex[paramNames[i]] = i;
+    }
+    std::unordered_map<std::string, std::size_t> obsIndex;
+    for (std::size_t g = 0; g < groups.size(); ++g) {
+        obsIndex[groups[g].name] = g;
+    }
+
     // ===== calc_expressions =====
     out << "/* Calculate expressions */\n";
     out << "void\n";
     out << "calc_expressions ( N_Vector expressions, double * parameters )\n";
     out << "{\n";
-    for (std::size_t i = 0; i < nParams; ++i) {
-        out << "    NV_Ith_S(expressions," << i << ") = parameters[" << i << "];";
-        out << "   /* " << paramNames[i] << " */\n";
+    {
+        const auto& allParams = model.getParameters().all();
+        std::vector<int> state(nParams, 0);
+        std::vector<std::size_t> order;
+        std::function<void(std::size_t)> visit = [&](std::size_t idx) {
+            if (state[idx] != 0) return;
+            state[idx] = 1;
+            for (const auto& dep : allParams[idx].getExpression().getDependencies()) {
+                auto it = paramIndex.find(dep);
+                if (it != paramIndex.end()) visit(it->second);
+            }
+            state[idx] = 2;
+            order.push_back(idx);
+        };
+        for (std::size_t i = 0; i < nParams; ++i) visit(i);
+        for (const std::size_t i : order) {
+            const auto& expr = allParams[i].getExpression();
+            const auto deps = expr.getDependencies();
+            bool allKnown = !deps.empty();
+            for (const auto& dep : deps) {
+                if (paramIndex.find(dep) == paramIndex.end()) {
+                    allKnown = false;
+                    break;
+                }
+            }
+            if (allKnown) {
+                out << "    NV_Ith_S(expressions," << i << ") = "
+                    << renderExprToCVode(expr, paramIndex, obsIndex) << ";";
+            } else {
+                out << "    NV_Ith_S(expressions," << i << ") = parameters[" << i << "];";
+            }
+            out << "   /* " << paramNames[i] << " */\n";
+        }
     }
     out << "}\n\n";
 
@@ -196,31 +441,57 @@ using namespace std;
             cleanRate = cleanRate.substr(0, localPos);
         }
 
-        double statFactor = rxn.getFactor();
-
-        bool isNumeric = false;
-        double rateVal = 0.0;
-        try {
-            std::size_t pos = 0;
-            rateVal = std::stod(cleanRate, &pos);
-            if (pos == cleanRate.size()) isNumeric = true;
-        } catch (...) {}
-
-        if (isNumeric) {
-            double combined = statFactor * rateVal;
-            out << combined;
-        } else {
-            std::string rateRef = convertRateToCVode(cleanRate, paramNames);
-            if (std::abs(statFactor - 1.0) > 1e-12) {
-                out << statFactor << "*" << rateRef;
-            } else {
-                out << rateRef;
+        const bool absoluteFlux = compile::isAbsoluteFluxReaction(model, rxn);
+        const bool totalRate =
+            compile::isTotalRateReaction(model, rxn.getOriginRuleName()) ||
+            absoluteFlux;
+        double statFactor = totalRate ? 1.0 : rxn.getFactor();
+        if (!absoluteFlux) {
+            if (const auto unitFactor = NetWriter::computeUnitConversionFactor(rxn, model, network);
+                unitFactor.has_value()) {
+                statFactor *= *unitFactor;
             }
         }
 
-        // Multiply by reactant concentrations
-        for (const auto idx : rxn.getReactants()) {
-            out << "*NV_Ith_S(species," << idx << ")";
+        if (rxn.getRateExpression().has_value()) {
+            const auto expanded = ast::partialEvaluate(*rxn.getRateExpression(), model.getFunctions());
+            if (expanded.kind() == ast::ExpressionKind::Number) {
+                out << std::setprecision(17) << (statFactor * expanded.numberValue());
+            } else {
+                const std::string rateRef = renderExprToCVode(expanded, paramIndex, obsIndex);
+                if (std::abs(statFactor - 1.0) > 1e-12) {
+                    out << std::setprecision(17) << statFactor << "*" << rateRef;
+                } else {
+                    out << rateRef;
+                }
+            }
+        } else {
+            bool isNumeric = false;
+            double rateVal = 0.0;
+            try {
+                std::size_t pos = 0;
+                rateVal = std::stod(cleanRate, &pos);
+                if (pos == cleanRate.size()) isNumeric = true;
+            } catch (...) {}
+
+            if (isNumeric) {
+                double combined = statFactor * rateVal;
+                out << std::setprecision(17) << combined;
+            } else {
+                std::string rateRef = convertRateToCVode(cleanRate, paramNames);
+                if (std::abs(statFactor - 1.0) > 1e-12) {
+                    out << std::setprecision(17) << statFactor << "*" << rateRef;
+                } else {
+                    out << rateRef;
+                }
+            }
+        }
+
+        // Multiply by reactant concentrations (unless absoluteFlux already includes them)
+        if (!absoluteFlux) {
+            for (const auto idx : rxn.getReactants()) {
+                out << "*NV_Ith_S(species," << idx << ")";
+            }
         }
 
         out << ";\n";
@@ -570,6 +841,33 @@ std::string CppExportWriter::convertRateToCVode(const std::string& rate, const s
             }
         }
     }
+
+    // Translate BNGL math syntax (`^`/`**`, `ln`, `abs`) to C/C++ `<math.h>`
+    {
+        std::size_t pos = 0;
+        while ((pos = result.find("ln(", pos)) != std::string::npos) {
+            const bool validStart = (pos == 0 || (!std::isalnum(static_cast<unsigned char>(result[pos - 1])) && result[pos - 1] != '_'));
+            if (validStart) {
+                result.replace(pos, 2, "log");
+                pos += 4;
+            } else {
+                pos += 3;
+            }
+        }
+    }
+    {
+        std::size_t pos = 0;
+        while ((pos = result.find("abs(", pos)) != std::string::npos) {
+            const bool validStart = (pos == 0 || (!std::isalnum(static_cast<unsigned char>(result[pos - 1])) && result[pos - 1] != '_'));
+            if (validStart) {
+                result.replace(pos, 3, "fabs");
+                pos += 5;
+            } else {
+                pos += 4;
+            }
+        }
+    }
+    result = rewritePowOperatorToCVode(std::move(result));
 
     return result;
 }

@@ -210,14 +210,26 @@ double interpolateTable(const std::vector<double>& xs,
     if (xs.empty() || xs.size() != ys.size()) {
         throw std::runtime_error("TFUN table is empty or has mismatched columns");
     }
+    for (std::size_t i = 0; i < xs.size(); ++i) {
+        if (!std::isfinite(xs[i]) || !std::isfinite(ys[i])) {
+            throw std::runtime_error("TFUN table contains non-finite values");
+        }
+        if (i > 0 && xs[i] < xs[i - 1]) {
+            throw std::runtime_error("TFUN x-values must be monotonically non-decreasing");
+        }
+    }
+    if (std::isnan(x)) return std::numeric_limits<double>::quiet_NaN();
     if (xs.size() == 1) return ys.front();
     if (x <= xs.front()) return ys.front();
     if (x >= xs.back()) return ys.back();
 
     const auto upper = std::upper_bound(xs.begin(), xs.end(), x);
+    if (upper == xs.begin()) return ys.front();
+    if (upper == xs.end()) return ys.back();
     const std::size_t right = static_cast<std::size_t>(upper - xs.begin());
     const std::size_t left = right - 1;
     if (method == "step") return ys[left];
+    if (xs[right] == xs[left]) return ys[left];
 
     const double fraction = (x - xs[left]) / (xs[right] - xs[left]);
     return ys[left] + fraction * (ys[right] - ys[left]);
@@ -593,7 +605,27 @@ double Expression::evaluateWithFunctions(
     case ExpressionKind::Number:
         return numberValue_;
     case ExpressionKind::Identifier:
-        if (text_ == "time" || text_ == "t") {
+        if (text_ == "time") {
+            return t;
+        }
+        if (text_ == "t") {
+            if (resolveIdentifier) {
+                try {
+                    return resolveIdentifier(text_);
+                } catch (const std::exception& error) {
+                    // Fall back to simulation time ONLY when 't' itself is not
+                    // a declared user symbol. Propagate cycles and transitive
+                    // dependency errors inside a declared parameter 't'.
+                    const std::string msg = error.what();
+                    const bool unresolvedSelf =
+                        (msg.find("Unknown") != std::string::npos ||
+                         msg.find("Cannot resolve") != std::string::npos ||
+                         msg.find("unresolved") != std::string::npos) &&
+                        msg.find("referenced by 't'") == std::string::npos;
+                    if (!unresolvedSelf) throw;
+                    return t;
+                }
+            }
             return t;
         }
         return resolveIdentifier(text_);
@@ -655,7 +687,20 @@ double Expression::evaluateWithFunctions(
             return evaluateDelayed(children_[0], t - duration);
         }
 
-        if (text_ == "time" || text_ == "t") {
+        if (text_ == "time") {
+            requireArity(text_, children_, 0);
+            return t;
+        }
+        if (text_ == "t") {
+            if (resolveFunction && isUserFunction && isUserFunction(text_)) {
+                std::vector<double> values;
+                values.reserve(children_.size());
+                for (const auto& child : children_) {
+                    values.push_back(child.evaluateWithFunctions(
+                        resolveIdentifier, t, resolveFunction, isUserFunction, evaluateDelayed));
+                }
+                return resolveFunction(text_, values);
+            }
             requireArity(text_, children_, 0);
             return t;
         }
@@ -955,20 +1000,24 @@ std::string Expression::renderExpression(bool canonicalFunctionNames) const {
     }
     case ExpressionKind::Identifier:
         return text_;
-    case ExpressionKind::Unary:
-        return text_ + children_.front().renderExpression(canonicalFunctionNames);
+    case ExpressionKind::Unary: {
+        std::string operand = children_.front().renderExpression(canonicalFunctionNames);
+        if (children_.front().kind() == ExpressionKind::Unary ||
+            (children_.front().kind() == ExpressionKind::Number &&
+             children_.front().numberValue() < 0.0)) {
+            operand = "(" + operand + ")";
+        }
+        return text_ + operand;
+    }
     case ExpressionKind::Binary: {
         std::string lhs = children_[0].renderExpression(canonicalFunctionNames);
-        const auto isNegativeNumber = [](const Expression& expr) {
+        const auto needsPowerBaseParens = [](const Expression& expr) {
             if (expr.kind() == ExpressionKind::Number) {
                 return expr.numberValue() < 0.0;
             }
-            return expr.kind() == ExpressionKind::Unary &&
-                   expr.text_ == "-" &&
-                   expr.children_.size() == 1 &&
-                   expr.children_[0].kind() == ExpressionKind::Number;
+            return expr.kind() == ExpressionKind::Unary;
         };
-        if ((text_ == "^" || text_ == "**") && isNegativeNumber(children_[0])) {
+        if ((text_ == "^" || text_ == "**") && needsPowerBaseParens(children_[0])) {
             lhs = "(" + lhs + ")";
         }
         return "(" + lhs + " " + text_ + " " +

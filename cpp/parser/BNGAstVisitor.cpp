@@ -1186,10 +1186,90 @@ std::string extractTrailingCompartment(BNGParser::Species_defContext* ctx) {
 }
 
 double parseNumberLiteral(std::string text) {
-    std::replace(text.begin(), text.end(), 'D', 'E');
-    std::replace(text.begin(), text.end(), 'd', 'e');
-    return std::stod(text);
+    for (char& ch : text) {
+        if (ch == 'D' || ch == 'F' || ch == 'G') {
+            ch = 'E';
+        } else if (ch == 'd' || ch == 'f' || ch == 'g') {
+            ch = 'e';
+        }
+    }
+    std::size_t consumed = 0;
+    const double value = std::stod(text, &consumed);
+    if (consumed != text.size()) {
+        throw std::runtime_error("Invalid numeric literal '" + text + "'");
+    }
+    return value;
 }
+
+constexpr std::size_t kMaxExpressionNestingDepth = 256;
+
+void validateNestingDepth(std::string_view text) {
+    std::size_t depth = 0;
+    char quote = '\0';
+    bool escaped = false;
+    bool inComment = false;
+    for (const char ch : text) {
+        if (inComment) {
+            if (ch == '\n') inComment = false;
+            continue;
+        }
+        if (quote != '\0') {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '#') {
+            inComment = true;
+            continue;
+        }
+        if (ch == '\'' || ch == '"') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '(' || ch == '[' || ch == '{') {
+            if (++depth > kMaxExpressionNestingDepth) {
+                throw std::runtime_error(
+                    "Maximum expression nesting depth (" +
+                    std::to_string(kMaxExpressionNestingDepth) + ") exceeded");
+            }
+        } else if (ch == ')' || ch == ']' || ch == '}') {
+            if (depth > 0) --depth;
+        }
+    }
+}
+
+thread_local std::size_t g_expressionBuildDepth = 0;
+thread_local const std::unordered_set<std::string>* g_declaredUserCallables = nullptr;
+
+struct ExpressionDepthGuard {
+    ExpressionDepthGuard() {
+        if (++g_expressionBuildDepth > kMaxExpressionNestingDepth) {
+            --g_expressionBuildDepth;
+            throw std::runtime_error(
+                "Maximum expression nesting depth (" +
+                std::to_string(kMaxExpressionNestingDepth) + ") exceeded");
+        }
+    }
+    ~ExpressionDepthGuard() {
+        --g_expressionBuildDepth;
+    }
+};
+
+struct DeclaredUserCallablesGuard {
+    const std::unordered_set<std::string>* previous;
+    explicit DeclaredUserCallablesGuard(const std::unordered_set<std::string>& names)
+        : previous(g_declaredUserCallables) {
+        g_declaredUserCallables = &names;
+    }
+    ~DeclaredUserCallablesGuard() {
+        g_declaredUserCallables = previous;
+    }
+};
 
 double evaluateExpression(const ast::Expression& expression, ast::ParameterList& parameters) {
     parameters.evaluateAll();
@@ -1353,6 +1433,11 @@ ast::Expression buildTableFunction(std::vector<ast::Expression> args) {
         if (xValues.size() != yValues.size() || xValues.empty()) {
             throw std::runtime_error("TFUN arrays must have equal, non-zero lengths");
         }
+        for (std::size_t i = 1; i < xValues.size(); ++i) {
+            if (xValues[i] < xValues[i - 1]) {
+                throw std::runtime_error("TFUN x-values must be monotonically non-decreasing");
+            }
+        }
         return ast::Expression::tableFunction(
             std::move(xValues), std::move(yValues), {}, std::move(args[2]), std::move(method));
     }
@@ -1388,15 +1473,19 @@ ast::Expression buildObservableRef(BNGParser::Observable_refContext* ctx) {
         }
     }
     const auto name = ctx->observable_name()->getText();
-    // floor/ceil are valid BNGL expressions but are not lexer keywords in
-    // the legacy grammar. Treat their STRING(...) spelling as a built-in
-    // function instead of an unresolved observable reference.
-    const auto lower = toLower(name);
-    if (lower == "floor" || lower == "ceil" || lower == "ceiling" ||
-        lower == "factorial" || lower == "sign" || lower.rfind("distrib_", 0) == 0 ||
-        ast::builtins::isBuiltin(lower)) {
+    // User-defined functions and observables take precedence over non-keyword
+    // builtin names, and builtin lookup is strictly case-sensitive (matching
+    // ast::builtins::find / ExprTk) so user identifiers like Max(x) or Sign()
+    // are never silently hijacked.
+    const bool isDeclaredUserSymbol =
+        g_declaredUserCallables != nullptr &&
+        g_declaredUserCallables->find(name) != g_declaredUserCallables->end();
+    if (!isDeclaredUserSymbol &&
+        (name == "floor" || name == "ceil" || name == "ceiling" ||
+         name == "factorial" || name == "sign" || name.rfind("distrib_", 0) == 0 ||
+         ast::builtins::isBuiltin(name))) {
         return ast::Expression::function(
-            lower == "ceiling" ? "ceil" : lower, std::move(args));
+            name == "ceiling" ? "ceil" : name, std::move(args));
     }
     return ast::Expression::observableRef(name, std::move(args));
 }
@@ -1489,6 +1578,7 @@ ast::Expression buildOr(BNGParser::Or_exprContext* ctx) {
 }
 
 ast::Expression buildExpression(BNGParser::ExpressionContext* ctx) {
+    ExpressionDepthGuard guard;
     return buildOr(ctx->conditional_expr()->or_expr());
 }
 
@@ -1559,6 +1649,7 @@ ast::Expression buildRateLawOr(BNGParser::Rate_law_or_exprContext* ctx) {
 }
 
 ast::Expression buildRateLawExpression(BNGParser::Rate_law_exprContext* ctx) {
+    ExpressionDepthGuard guard;
     return buildRateLawOr(ctx->rate_law_or_expr());
 }
 
@@ -1590,7 +1681,9 @@ private:
 };
 
 ast::Expression parseExpressionImpl(const std::string& exprText) {
-    antlr4::ANTLRInputStream input(normalizeTfunSyntax(exprText));
+    const std::string normalizedExpr = normalizeTfunSyntax(exprText);
+    validateNestingDepth(normalizedExpr);
+    antlr4::ANTLRInputStream input(normalizedExpr);
     BNGLexer lexer(&input);
     LexerErrorFlag lexerErrors;
     lexer.removeErrorListeners();
@@ -1708,6 +1801,24 @@ std::unique_ptr<ast::Model> BNGAstVisitor::takeModel() {
 
 std::any BNGAstVisitor::visitProg(BNGParser::ProgContext* ctx) {
     seedUnitIndex_ = 0;
+    std::unordered_set<std::string> declaredUserCallables;
+    {
+        std::vector<BNGParser::Function_defContext*> functions;
+        collectParseContexts(ctx, functions);
+        for (auto* fn : functions) {
+            if (fn != nullptr && fn->function_name() != nullptr) {
+                declaredUserCallables.insert(fn->function_name()->getText());
+            }
+        }
+        std::vector<BNGParser::Observable_defContext*> observables;
+        collectParseContexts(ctx, observables);
+        for (auto* obs : observables) {
+            if (obs != nullptr && obs->observable_name() != nullptr) {
+                declaredUserCallables.insert(obs->observable_name()->getText());
+            }
+        }
+    }
+    DeclaredUserCallablesGuard callablesGuard(declaredUserCallables);
     predeclareMoleculeTypes(ctx);
     visitChildren(ctx);
     currentModel_->refreshParameterDependentCompartments();
@@ -1970,9 +2081,17 @@ std::any BNGAstVisitor::visitSeed_species_def(BNGParser::Seed_species_defContext
         return {};
     }
 
+    auto graph = buildPatternGraph(ctx->species_def(), *currentModel_, false);
+
     std::string compartment;
     if (ctx->AT() != nullptr && !ctx->STRING().empty()) {
         compartment = ctx->STRING().back()->getText();
+    } else if (isSpeciesCompartmentPrefix(ctx->species_def())) {
+        compartment = extractSpeciesCompartment(ctx->species_def());
+    }
+    if (compartment.empty()) {
+        ast::SpeciesGraph tempGraph(graph);
+        compartment = tempGraph.inferCompartment(currentModel_->getCompartments());
     }
     if (compartment.empty()) {
         compartment = extractTrailingCompartment(ctx->species_def());
@@ -1983,7 +2102,7 @@ std::any BNGAstVisitor::visitSeed_species_def(BNGParser::Seed_species_defContext
         ctx->expression() != nullptr ? buildExpression(ctx->expression()) : ast::Expression::number(0.0),
         ctx->DOLLAR() != nullptr,
         std::move(compartment),
-        buildPatternGraph(ctx->species_def(), *currentModel_, false));
+        std::move(graph));
     if (const auto* unitName = currentModel_->findSeedUnit(seedUnitIndex_)) {
         const auto parsed = currentModel_->getUnitSystem().parse(*unitName);
         if (!parsed) throw std::runtime_error("unknown seed unit '" + *unitName + "': " + parsed.error);
@@ -2003,7 +2122,7 @@ std::any BNGAstVisitor::visitEnergy_pattern_def(BNGParser::Energy_pattern_defCon
         ctx->STRING() != nullptr ? ctx->STRING()->getText() : std::string(),
         ctx->species_def()->getText(),
         buildExpression(ctx->expression()),
-        ast::SpeciesGraph(buildPatternGraph(ctx->species_def(), *currentModel_, true))));
+        ast::SpeciesGraph(buildPatternGraph(ctx->species_def(), *currentModel_, false))));
     return {};
 }
 
@@ -2313,6 +2432,14 @@ std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defCon
 }
 
 void BNGAstVisitor::finalizeThermodynamicMetadata() {
+    std::unordered_set<std::string> declaredUserCallables;
+    for (const auto& fn : currentModel_->getFunctions()) {
+        declaredUserCallables.insert(fn.getName());
+    }
+    for (const auto& obs : currentModel_->getObservables()) {
+        declaredUserCallables.insert(obs.getName());
+    }
+    DeclaredUserCallablesGuard callablesGuard(declaredUserCallables);
     // The lowering itself lives in ThermoModelFinalize so it can be exercised
     // without the generated parser; only expression parsing is supplied here.
     const bool rewritten = ::bng::parser::finalizeThermodynamicMetadata(
@@ -2459,6 +2586,7 @@ std::unique_ptr<ast::Model> parseModelSource(const std::string& sourceText,
                                              const std::string& sourceName) {
     StageTimer timer(timingEnabled());
     const std::string normalized = normalizeBNGLSource(sourceText);
+    validateNestingDepth(normalized);
     timer.lap("normalize");
     antlr4::ANTLRInputStream input(normalized);
     BNGLexer lexer(&input);
@@ -2512,6 +2640,7 @@ ast::Expression parseExpression(const std::string& exprText) {
 
 std::vector<std::pair<std::string, std::string>> parseNestedHashEntries(
     const std::string& sourceText) {
+    validateNestingDepth(sourceText);
     antlr4::ANTLRInputStream input(sourceText);
     BNGLexer lexer(&input);
     LexerErrorFlag lexerErrors;

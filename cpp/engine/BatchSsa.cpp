@@ -392,6 +392,8 @@ struct BatchVmCompiler {
             case compile::BinaryOp::NotEqual:     emitOp(kBatchVmNotEqual, -1); return;
             case compile::BinaryOp::LogicalAnd:
             case compile::BinaryOp::LogicalOr:
+            case compile::BinaryOp::Modulo:
+            case compile::BinaryOp::LogicalXor:
             case compile::BinaryOp::Unknown:
                 break;
             }

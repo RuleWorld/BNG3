@@ -1,10 +1,61 @@
 #include "engine/ObservableProjection.hpp"
 
+#include "core/List.hpp"
 #include "core/PatternMatching.hpp"
+#include "core/Ullmann.hpp"
 
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace bng::engine {
+namespace {
+
+bool isExactPatternAutomorphism(const BNGcore::PatternGraph& pattern,
+                                const BNGcore::Map& map) {
+    std::unordered_set<const BNGcore::Node*> mappedNodes;
+    for (auto node = pattern.begin(); node != pattern.end(); ++node) {
+        const auto* mapped = map.mapf(*node);
+        if (mapped == nullptr ||
+            !((*node)->get_type() == mapped->get_type()) ||
+            (*node)->get_state().get_BNG2_string() !=
+                mapped->get_state().get_BNG2_string() ||
+            (*node)->get_compartment() != mapped->get_compartment() ||
+            (*node)->in_degree() != mapped->in_degree() ||
+            (*node)->out_degree() != mapped->out_degree() ||
+            !mappedNodes.insert(mapped).second) {
+            return false;
+        }
+        std::unordered_map<const BNGcore::Node*, std::size_t> expectedEdges;
+        for (auto edge = (*node)->edges_out_begin();
+             edge != (*node)->edges_out_end(); ++edge) {
+            const auto* mappedTarget = map.mapf(*edge);
+            if (mappedTarget == nullptr) return false;
+            ++expectedEdges[mappedTarget];
+        }
+        std::unordered_map<const BNGcore::Node*, std::size_t> actualEdges;
+        for (auto edge = mapped->edges_out_begin();
+             edge != mapped->edges_out_end(); ++edge) {
+            ++actualEdges[*edge];
+        }
+        if (expectedEdges != actualEdges) return false;
+    }
+    return mappedNodes.size() == pattern.size();
+}
+
+std::size_t countExactPatternAutomorphisms(const BNGcore::PatternGraph& pattern) {
+    if (pattern.empty()) return 0;
+    BNGcore::UllmannSGIso matcher(pattern, pattern);
+    BNGcore::List<BNGcore::Map> maps;
+    matcher.find_maps(maps);
+    std::size_t count = 0;
+    for (auto it = maps.begin(); it != maps.end(); ++it) {
+        if (isExactPatternAutomorphism(pattern, *it)) ++count;
+    }
+    return count;
+}
+
+} // namespace
 
 ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
     : loweringContext_(model) {
@@ -63,7 +114,7 @@ ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
             std::size_t automorphisms = 1;
             if (source.kind == compile::ObservableKind::Molecules &&
                 moleculesMode_ == CountMode::CountUnique) {
-                automorphisms = core::countPatternMatches(lowered, lowered);
+                automorphisms = countExactPatternAutomorphisms(lowered);
                 if (automorphisms == 0) {
                     // A pattern always embeds into itself at least once, so
                     // zero means the matcher disagrees with itself. Fail

@@ -143,11 +143,18 @@ std::string unitDefinitionExpression(const TiXmlElement* definition) {
         if (!std::isfinite(multiplier) || multiplier <= 0.0) {
             throw std::runtime_error("SBML unit multiplier/scale must be positive and finite");
         }
+        // Per SBML spec, (multiplier * 10^scale * kind)^exponent raises
+        // the combined multiplier*10^scale factor to `exponent`.
+        const double effectiveMultiplier =
+            std::pow(multiplier, static_cast<double>(exponent));
+        if (!std::isfinite(effectiveMultiplier) || effectiveMultiplier <= 0.0) {
+            throw std::runtime_error("SBML unit multiplier^exponent must be positive and finite");
+        }
 
         if (!first) expression << '*';
         first = false;
-        if (std::abs(multiplier - 1.0) > 1e-15) {
-            expression << std::setprecision(17) << multiplier << '*';
+        if (std::abs(effectiveMultiplier - 1.0) > 1e-15) {
+            expression << std::setprecision(17) << effectiveMultiplier << '*';
         }
         expression << kind;
         if (exponent != 1) expression << '^' << exponent;
@@ -164,7 +171,10 @@ bool parseBool(const std::string& value) {
     return lower == "1" || lower == "true" || lower == "yes";
 }
 
-std::string mathExpression(const TiXmlElement* element);
+constexpr int kMaxMathDepth = 256;
+constexpr int kMaxStoichiometry = 10000;
+
+std::string mathExpression(const TiXmlElement* element, int depth = 0);
 
 std::vector<const TiXmlElement*> childElements(const TiXmlElement* element) {
     std::vector<const TiXmlElement*> children;
@@ -189,16 +199,59 @@ std::string join(const std::vector<std::string>& values, const std::string& op) 
     return result.str();
 }
 
-std::string mathExpression(const TiXmlElement* element) {
+std::string mathExpression(const TiXmlElement* element, int depth) {
+    if (depth > kMaxMathDepth) {
+        throw std::runtime_error(
+            "SBML MathML nesting depth exceeds maximum supported limit (" +
+            std::to_string(kMaxMathDepth) + ")");
+    }
     if (element == nullptr) {
         return {};
     }
     const std::string tag = element->Value();
     if (tag == "math") {
-        return mathExpression(element->FirstChildElement());
+        return mathExpression(element->FirstChildElement(), depth + 1);
     }
-    if (tag == "ci" || tag == "cn" || tag == "csymbol") {
+    if (tag == "cn") {
+        const auto type = attribute(element, "type");
+        if (type == "e-notation" || type == "rational") {
+            std::vector<std::string> parts;
+            std::string current;
+            for (const TiXmlNode* child = element->FirstChild(); child != nullptr;
+                 child = child->NextSibling()) {
+                if (child->ToText() != nullptr) {
+                    current += child->Value();
+                } else if (child->ToElement() != nullptr &&
+                           std::string(child->Value()) == "sep") {
+                    parts.push_back(trim(current));
+                    current.clear();
+                }
+            }
+            parts.push_back(trim(current));
+            if (parts.size() != 2 || parts[0].empty() || parts[1].empty()) {
+                throw std::runtime_error("malformed MathML <cn type=\"" + type + "\">");
+            }
+            if (type == "e-notation") {
+                return parts[0] + "e" + parts[1];
+            }
+            return "(" + parts[0] + "/" + parts[1] + ")";
+        }
         return elementText(element);
+    }
+    if (tag == "ci" || tag == "csymbol") {
+        return elementText(element);
+    }
+    if (tag == "pi") {
+        return "3.1415926535897932";
+    }
+    if (tag == "exponentiale") {
+        return "2.7182818284590451";
+    }
+    if (tag == "true") {
+        return "1";
+    }
+    if (tag == "false") {
+        return "0";
     }
     if (tag == "piecewise") {
         std::string result = "0";
@@ -206,7 +259,7 @@ std::string mathExpression(const TiXmlElement* element) {
         for (auto* part = element->FirstChildElement(); part != nullptr;
              part = part->NextSiblingElement()) {
             if (std::string(part->Value()) == "otherwise") {
-                result = mathExpression(part->FirstChildElement());
+                result = mathExpression(part->FirstChildElement(), depth + 1);
                 continue;
             }
             if (std::string(part->Value()) != "piece") {
@@ -216,8 +269,8 @@ std::string mathExpression(const TiXmlElement* element) {
             if (children.size() != 2) {
                 throw std::runtime_error("malformed MathML piecewise expression");
             }
-            const auto value = mathExpression(children[0]);
-            const auto condition = mathExpression(children[1]);
+            const auto value = mathExpression(children[0], depth + 1);
+            const auto condition = mathExpression(children[1], depth + 1);
             pieces.emplace_back(condition, value);
         }
         for (auto part = pieces.rbegin(); part != pieces.rend(); ++part) {
@@ -234,9 +287,44 @@ std::string mathExpression(const TiXmlElement* element) {
         return {};
     }
     const std::string op = children.front()->Value();
+    if (op == "root") {
+        if (children.size() == 3 && std::string(children[1]->Value()) == "degree") {
+            const auto degree = mathExpression(children[1]->FirstChildElement(), depth + 1);
+            const auto radicand = mathExpression(children[2], depth + 1);
+            if (degree.empty() || radicand.empty()) {
+                throw std::runtime_error("malformed MathML <root> with <degree>");
+            }
+            if (degree == "2") {
+                return "sqrt(" + radicand + ")";
+            }
+            return "(" + radicand + "^(1/(" + degree + ")))";
+        }
+        if (children.size() == 2) {
+            const auto radicand = mathExpression(children[1], depth + 1);
+            return "sqrt(" + radicand + ")";
+        }
+        throw std::runtime_error("malformed MathML <root> expression");
+    }
+    if (op == "log") {
+        if (children.size() == 3 && std::string(children[1]->Value()) == "logbase") {
+            const auto base = mathExpression(children[1]->FirstChildElement(), depth + 1);
+            const auto arg = mathExpression(children[2], depth + 1);
+            if (base.empty() || arg.empty()) {
+                throw std::runtime_error("malformed MathML <log> with <logbase>");
+            }
+            if (base == "10") return "log10(" + arg + ")";
+            if (base == "2") return "log2(" + arg + ")";
+            return "(ln(" + arg + ")/ln(" + base + "))";
+        }
+        if (children.size() == 2) {
+            const auto arg = mathExpression(children[1], depth + 1);
+            return "log10(" + arg + ")";
+        }
+        throw std::runtime_error("malformed MathML <log> expression");
+    }
     std::vector<std::string> args;
     for (std::size_t i = 1; i < children.size(); ++i) {
-        const auto value = mathExpression(children[i]);
+        const auto value = mathExpression(children[i], depth + 1);
         if (!value.empty()) {
             args.push_back(value);
         }
@@ -406,7 +494,13 @@ std::string stripReactantFactors(
     return remaining.empty() ? "1" : join(remaining, "*");
 }
 
-void collectIdentifiers(const TiXmlElement* element, std::vector<std::string>& ids) {
+void collectIdentifiers(const TiXmlElement* element, std::vector<std::string>& ids,
+                        int depth = 0) {
+    if (depth > kMaxMathDepth) {
+        throw std::runtime_error(
+            "SBML MathML nesting depth exceeds maximum supported limit (" +
+            std::to_string(kMaxMathDepth) + ")");
+    }
     if (element == nullptr) {
         return;
     }
@@ -418,8 +512,83 @@ void collectIdentifiers(const TiXmlElement* element, std::vector<std::string>& i
     }
     for (auto* child = element->FirstChildElement(); child != nullptr;
          child = child->NextSiblingElement()) {
-        collectIdentifiers(child, ids);
+        collectIdentifiers(child, ids, depth + 1);
     }
+}
+
+bool tryExtractPositiveIntCn(const TiXmlElement* element, int& outValue) {
+    if (element == nullptr || std::string(element->Value()) != "cn") return false;
+    const std::string text = mathExpression(element);
+    if (text.empty()) return false;
+    try {
+        std::size_t consumed = 0;
+        const double v = std::stod(text, &consumed);
+        if (consumed != text.size() || !std::isfinite(v) || v < 1.0 ||
+            std::floor(v) != v || v > 1000000.0) {
+            return false;
+        }
+        outValue = static_cast<int>(v);
+        return true;
+    } catch (...) {
+        return false;
+    }
+}
+
+// Extract a nonnegative integer linear combination of species (<ci>, k*<ci>,
+// and sums thereof) from an SBML assignmentRule MathML tree. Returns false for
+// any nonlinear or non-species expression so arbitrary rules are preserved as
+// functions instead of silently collapsed to species counts.
+bool tryExtractLinearSpeciesGroup(const TiXmlElement* element,
+                                  const std::unordered_map<std::string, int>& speciesIndices,
+                                  std::map<int, int>& weights,
+                                  int depth = 0) {
+    if (depth > kMaxMathDepth) {
+        throw std::runtime_error(
+            "SBML MathML nesting depth exceeds maximum supported limit (" +
+            std::to_string(kMaxMathDepth) + ")");
+    }
+    if (element == nullptr) return false;
+    const std::string tag = element->Value();
+    if (tag == "math") {
+        return tryExtractLinearSpeciesGroup(
+            element->FirstChildElement(), speciesIndices, weights, depth + 1);
+    }
+    if (tag == "ci") {
+        const auto found = speciesIndices.find(elementText(element));
+        if (found == speciesIndices.end()) return false;
+        weights[found->second] += 1;
+        return true;
+    }
+    if (tag != "apply") return false;
+    const auto children = childElements(element);
+    if (children.size() < 2) return false;
+    const std::string op = children.front()->Value();
+    if (op == "plus") {
+        for (std::size_t i = 1; i < children.size(); ++i) {
+            if (!tryExtractLinearSpeciesGroup(children[i], speciesIndices, weights, depth + 1)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    if (op == "times" && children.size() == 3) {
+        int coeff = 0;
+        const TiXmlElement* speciesChild = nullptr;
+        if (tryExtractPositiveIntCn(children[1], coeff) &&
+            std::string(children[2]->Value()) == "ci") {
+            speciesChild = children[2];
+        } else if (tryExtractPositiveIntCn(children[2], coeff) &&
+                   std::string(children[1]->Value()) == "ci") {
+            speciesChild = children[1];
+        } else {
+            return false;
+        }
+        const auto found = speciesIndices.find(elementText(speciesChild));
+        if (found == speciesIndices.end()) return false;
+        weights[found->second] += coeff;
+        return true;
+    }
+    return false;
 }
 
 std::string indexList(const std::vector<int>& indices) {
@@ -465,7 +634,13 @@ int stoichiometry(const TiXmlElement* reference) {
         throw std::runtime_error(
             "SBML stoichiometry must be a finite positive integer: " + text);
     }
-    return static_cast<int>(value);
+    const int count = static_cast<int>(value);
+    if (count > kMaxStoichiometry) {
+        throw std::runtime_error(
+            "SBML stoichiometry exceeds maximum supported repetition limit (" +
+            std::to_string(kMaxStoichiometry) + "): " + text);
+    }
+    return count;
 }
 
 struct StructuredSpeciesName {
@@ -1074,37 +1249,50 @@ NetReader::ParseResult SbmlReader::parse(
         if (rules != nullptr) {
             int groupIndex = 0;
             int functionIndex = 1;
+            std::set<std::string> emittedGroupNames;
             for (auto* rule = rules->FirstChildElement("assignmentRule");
                  rule != nullptr;
                  rule = rule->NextSiblingElement("assignmentRule")) {
-                std::vector<std::string> identifiers;
-                collectIdentifiers(rule->FirstChildElement("math"), identifiers);
-                std::map<int, int> entries;
-                for (const auto& identifier : identifiers) {
-                    const auto found = speciesIndices.find(identifier);
-                    if (found != speciesIndices.end()) {
-                        ++entries[found->second];
-                    }
-                }
-                if (entries.empty()) {
-                    const auto variable = attribute(rule, "variable");
-                    const auto expression = mathExpression(
-                        rule->FirstChildElement("math"));
-                    if (!variable.empty() && !expression.empty()) {
-                        result.functions.emplace_back(variable, expression);
-                        std::ostringstream line;
-                        line << functionIndex++ << ' ' << variable << "() "
-                             << expression;
-                        result.rawFunctionLines.push_back(line.str());
-                    }
+                const auto* ruleMath = rule->FirstChildElement("math");
+                std::map<int, int> linearWeights;
+                if (tryExtractLinearSpeciesGroup(ruleMath, speciesIndices, linearWeights) &&
+                    !linearWeights.empty()) {
+                    ++groupIndex;
+                    const auto variable = attribute(rule, "variable", "group");
+                    const auto sanitized = sanitizeName(variable);
+                    emittedGroupNames.insert(sanitized);
+                    std::ostringstream line;
+                    line << groupIndex << ' ' << sanitized << ' '
+                         << weightedList(linearWeights);
+                    result.rawGroupLines.push_back(line.str());
                     continue;
                 }
-                ++groupIndex;
-                const auto variable = attribute(rule, "variable", "group");
-                std::ostringstream line;
-                line << groupIndex << ' ' << sanitizeName(variable) << ' '
-                     << weightedList(entries);
-                result.rawGroupLines.push_back(line.str());
+
+                // General / nonlinear assignmentRule: preserve the exact
+                // mathematical expression as a function, and ensure any
+                // referenced species IDs are exposed as observable groups.
+                std::vector<std::string> identifiers;
+                collectIdentifiers(ruleMath, identifiers);
+                for (const auto& identifier : identifiers) {
+                    const auto found = speciesIndices.find(identifier);
+                    if (found != speciesIndices.end() &&
+                        emittedGroupNames.insert(identifier).second) {
+                        ++groupIndex;
+                        std::ostringstream gline;
+                        gline << groupIndex << ' ' << identifier << ' ' << found->second;
+                        result.rawGroupLines.push_back(gline.str());
+                    }
+                }
+                const auto variable = attribute(rule, "variable");
+                const auto expression = mathExpression(ruleMath);
+                if (!variable.empty() && !expression.empty()) {
+                    result.parameters.erase(variable);
+                    result.functions.emplace_back(variable, expression);
+                    std::ostringstream line;
+                    line << functionIndex++ << ' ' << variable << "() "
+                         << expression;
+                    result.rawFunctionLines.push_back(line.str());
+                }
             }
         }
 

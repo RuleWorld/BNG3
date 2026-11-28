@@ -96,6 +96,107 @@ bool resolveComponent(
     return true;
 }
 
+bool hasConcreteStateConstraint(const BNGcore::Node& componentNode) {
+    const std::string state = stateToken(componentNode);
+    return !state.empty() && state != "?";
+}
+
+bool hasNonWildcardBondConstraint(const BNGcore::Node& componentNode) {
+    for (auto edge = componentNode.edges_out_begin();
+         edge != componentNode.edges_out_end(); ++edge) {
+        if (!isBondNode(**edge)) continue;
+        const std::string bondState = (*edge)->get_state().get_BNG2_string();
+        if (bondState != "!?") return true;
+    }
+    return false;
+}
+
+// A BarrierTable entry is keyed only by its single reaction center, so any
+// extra spectator molecule or non-wildcard context constraint on a barrier
+// pattern would be silently stripped and leak onto unrelated species. Fail
+// closed when such context is present on a barrier pattern.
+bool validateUnconditionalBarrierTransition(
+    const ast::ReactionRule& transition,
+    std::string& diagnostic) {
+    const auto& operations = transition.getOperations();
+    if (operations.size() != 1) return false;
+    const auto& operation = operations.front();
+    const auto& reactants = transition.getReactantPatterns();
+
+    std::size_t totalMolecules = 0;
+    std::vector<std::vector<FlatMolecule>> flatReactants;
+    flatReactants.reserve(reactants.size());
+    for (const auto& reactant : reactants) {
+        auto molecules = flattenMolecules(reactant.getGraph());
+        totalMolecules += molecules.size();
+        flatReactants.push_back(std::move(molecules));
+    }
+
+    using Type = ast::ReactionRule::TransformOp::Type;
+    switch (operation.type) {
+    case Type::ChangeState: {
+        if (totalMolecules != 1) {
+            diagnostic = "barrier state transition with extra context molecules is not supported";
+            return false;
+        }
+        const auto& molecule =
+            flatReactants[operation.source.patternIndex][operation.source.moleculeIndex];
+        for (std::size_t ci = 0; ci < molecule.components.size(); ++ci) {
+            if (ci == operation.source.componentIndex) continue;
+            const auto& comp = molecule.components[ci];
+            if (hasConcreteStateConstraint(*comp.node) ||
+                hasNonWildcardBondConstraint(*comp.node)) {
+                diagnostic = "barrier pattern with context constraint on '" +
+                             molecule.name + "." + comp.name + "' is not supported";
+                return false;
+            }
+        }
+        return true;
+    }
+    case Type::AddBond:
+    case Type::DeleteBond: {
+        const bool intramolecular =
+            operation.source.patternIndex == operation.partner.patternIndex &&
+            operation.source.moleculeIndex == operation.partner.moleculeIndex;
+        const std::size_t expectedMolecules = intramolecular ? 1 : 2;
+        if (totalMolecules != expectedMolecules) {
+            diagnostic = "barrier bond transition with extra context molecules is not supported";
+            return false;
+        }
+        for (std::size_t pi = 0; pi < flatReactants.size(); ++pi) {
+            for (std::size_t mi = 0; mi < flatReactants[pi].size(); ++mi) {
+                const auto& molecule = flatReactants[pi][mi];
+                for (std::size_t ci = 0; ci < molecule.components.size(); ++ci) {
+                    const bool isCenter =
+                        (pi == operation.source.patternIndex &&
+                         mi == operation.source.moleculeIndex &&
+                         ci == operation.source.componentIndex) ||
+                        (pi == operation.partner.patternIndex &&
+                         mi == operation.partner.moleculeIndex &&
+                         ci == operation.partner.componentIndex);
+                    const auto& comp = molecule.components[ci];
+                    if (isCenter) {
+                        if (hasConcreteStateConstraint(*comp.node)) {
+                            diagnostic = "barrier bond transition with state constraint on '" +
+                                         molecule.name + "." + comp.name + "' is not supported";
+                            return false;
+                        }
+                    } else if (hasConcreteStateConstraint(*comp.node) ||
+                               hasNonWildcardBondConstraint(*comp.node)) {
+                        diagnostic = "barrier pattern with context constraint on '" +
+                                     molecule.name + "." + comp.name + "' is not supported";
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+    default:
+        return true;
+    }
+}
+
 } // namespace
 
 bool compileBarrierCenter(
@@ -199,7 +300,8 @@ bool buildBarrierTable(
 
         ReactionCenterKey key;
         std::string diagnostic;
-        if (!compileBarrierCenter(pattern.transition(), key, diagnostic)) {
+        if (!compileBarrierCenter(pattern.transition(), key, diagnostic) ||
+            !validateUnconditionalBarrierTransition(pattern.transition(), diagnostic)) {
             diagnostics.push_back("barrier pattern '" + label + "': " + diagnostic);
             ok = false;
             continue;

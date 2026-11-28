@@ -191,6 +191,10 @@ std::optional<double> evaluateStaticRateExpression(
             if (*rhs == 0.0) return std::nullopt;
             out = *lhs / *rhs;
             break;
+        case BinaryOp::Modulo:
+            if (*rhs == 0.0) return std::nullopt;
+            out = std::fmod(*lhs, *rhs);
+            break;
         case BinaryOp::Power: out = std::pow(*lhs, *rhs); break;
         case BinaryOp::Less: out = *lhs < *rhs ? 1.0 : 0.0; break;
         case BinaryOp::LessEqual: out = *lhs <= *rhs ? 1.0 : 0.0; break;
@@ -200,6 +204,7 @@ std::optional<double> evaluateStaticRateExpression(
         case BinaryOp::NotEqual: out = *lhs != *rhs ? 1.0 : 0.0; break;
         case BinaryOp::LogicalAnd: out = (*lhs != 0.0 && *rhs != 0.0) ? 1.0 : 0.0; break;
         case BinaryOp::LogicalOr: out = (*lhs != 0.0 || *rhs != 0.0) ? 1.0 : 0.0; break;
+        case BinaryOp::LogicalXor: out = ((*lhs != 0.0) != (*rhs != 0.0)) ? 1.0 : 0.0; break;
         case BinaryOp::Unknown: return std::nullopt;
         }
         return std::isfinite(out) ? std::optional<double>(out) : std::nullopt;

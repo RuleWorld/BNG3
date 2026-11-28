@@ -1,7 +1,9 @@
 #include "compile/CompiledModel.hpp"
+#include "compile/TotalRate.hpp"
 #include "PythonExportWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
+#include "NetWriter.hpp"
 #include "engine/DelayedSemanticsGuard.hpp"
 
 #include <sstream>
@@ -9,8 +11,10 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <map>
 #include <set>
+#include <unordered_map>
 
 #include "parser/antlr_compat.hpp"
 #include <antlr4-runtime.h>
@@ -20,6 +24,140 @@
 #include "core/Ullmann.hpp"
 
 namespace bng::io {
+
+namespace {
+
+std::string renderExprToPython(
+    const ast::Expression& expr,
+    const std::unordered_map<std::string, std::size_t>& paramIndex,
+    const std::unordered_map<std::string, std::size_t>& obsIndex) {
+    using Kind = ast::ExpressionKind;
+    switch (expr.kind()) {
+    case Kind::Number: {
+        std::ostringstream out;
+        out << std::setprecision(17) << expr.numberValue();
+        return out.str();
+    }
+    case Kind::Identifier: {
+        const auto& name = expr.name();
+        if (auto it = paramIndex.find(name); it != paramIndex.end()) {
+            return "expressions[" + std::to_string(it->second) + "]";
+        }
+        if (auto it = obsIndex.find(name); it != obsIndex.end()) {
+            return "observables[" + std::to_string(it->second) + "]";
+        }
+        if (name == "_pi" || name == "pi" || name == "_PI") return "math.pi";
+        if (name == "_e" || name == "e") return "math.e";
+        return name;
+    }
+    case Kind::Unary: {
+        const auto arg = renderExprToPython(expr.args().front(), paramIndex, obsIndex);
+        if (expr.name() == "-" || expr.name() == "+") {
+            return "(" + expr.name() + "(" + arg + "))";
+        }
+        if (expr.name() == "!" || expr.name() == "~") {
+            return "(1.0 if (" + arg + ") == 0.0 else 0.0)";
+        }
+        return arg;
+    }
+    case Kind::Binary: {
+        const auto lhs = renderExprToPython(expr.args()[0], paramIndex, obsIndex);
+        const auto rhs = renderExprToPython(expr.args()[1], paramIndex, obsIndex);
+        const auto& op = expr.name();
+        if (op == "^" || op == "**") {
+            return "((" + lhs + ") ** (" + rhs + "))";
+        }
+        if (op == "%") {
+            return "math.fmod(" + lhs + ", " + rhs + ")";
+        }
+        if (op == "~=") {
+            return "(1.0 if (" + lhs + ") != (" + rhs + ") else 0.0)";
+        }
+        if (op == "&&") {
+            return "(1.0 if ((" + lhs + ") != 0.0 and (" + rhs + ") != 0.0) else 0.0)";
+        }
+        if (op == "||") {
+            return "(1.0 if ((" + lhs + ") != 0.0 or (" + rhs + ") != 0.0) else 0.0)";
+        }
+        if (op == "^^") {
+            return "(1.0 if (((" + lhs + ") != 0.0) != ((" + rhs + ") != 0.0)) else 0.0)";
+        }
+        if (op == "==" || op == "!=" || op == "<" || op == "<=" || op == ">" || op == ">=") {
+            return "(1.0 if ((" + lhs + ") " + op + " (" + rhs + ")) else 0.0)";
+        }
+        return "(" + lhs + " " + op + " " + rhs + ")";
+    }
+    case Kind::Function:
+    case Kind::ObservableRef: {
+        const auto& name = expr.name();
+        if (expr.args().empty()) {
+            if (auto it = obsIndex.find(name); it != obsIndex.end()) {
+                return "observables[" + std::to_string(it->second) + "]";
+            }
+            if (auto it = paramIndex.find(name); it != paramIndex.end()) {
+                return "expressions[" + std::to_string(it->second) + "]";
+            }
+        }
+        std::vector<std::string> rendered;
+        rendered.reserve(expr.args().size());
+        for (const auto& a : expr.args()) {
+            rendered.push_back(renderExprToPython(a, paramIndex, obsIndex));
+        }
+        auto joinArgs = [&]() {
+            std::ostringstream oss;
+            for (std::size_t i = 0; i < rendered.size(); ++i) {
+                if (i > 0) oss << ", ";
+                oss << rendered[i];
+            }
+            return oss.str();
+        };
+        if (name == "if" && rendered.size() == 3) {
+            return "((" + rendered[1] + ") if ((" + rendered[0] + ") != 0.0) else (" + rendered[2] + "))";
+        }
+        if ((name == "ln" || name == "log") && rendered.size() == 1) {
+            return "math.log(" + rendered[0] + ")";
+        }
+        if (name == "ceiling" && rendered.size() == 1) {
+            return "math.ceil(" + rendered[0] + ")";
+        }
+        if (name == "abs" && rendered.size() == 1) {
+            return "abs(" + rendered[0] + ")";
+        }
+        if (name == "rint" && rendered.size() == 1) {
+            return "math.floor((" + rendered[0] + ") + 0.5)";
+        }
+        if (name == "sign" && rendered.size() == 1) {
+            return "(1.0 if (" + rendered[0] + ") > 0.0 else (-1.0 if (" + rendered[0] + ") < 0.0 else 0.0))";
+        }
+        if ((name == "min" || name == "max") && !rendered.empty()) {
+            if (rendered.size() == 1) return rendered[0];
+            return name + "(" + joinArgs() + ")";
+        }
+        if (name == "sum") {
+            if (rendered.empty()) return "0.0";
+            return "sum([" + joinArgs() + "])";
+        }
+        if (name == "avg" && !rendered.empty()) {
+            return "(sum([" + joinArgs() + "]) / " + std::to_string(rendered.size()) + ".0)";
+        }
+        static const std::set<std::string> kMathFuncs = {
+            "exp", "log10", "log2", "sqrt",
+            "sin", "cos", "tan", "asin", "acos", "atan",
+            "sinh", "cosh", "tanh", "asinh", "acosh", "atanh",
+            "floor", "ceil", "fabs"
+        };
+        if (kMathFuncs.count(name) > 0) {
+            return "math." + name + "(" + joinArgs() + ")";
+        }
+        return name + "(" + joinArgs() + ")";
+    }
+    case Kind::TableFunction:
+        return expr.toString();
+    }
+    return expr.toString();
+}
+
+} // namespace
 
 std::string PythonExportWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
     Options opts;
@@ -71,6 +209,7 @@ std::string PythonExportWriter::write(const ast::Model& model, const engine::Gen
     py << "#\n\n";
 
     // ===== Imports =====
+    py << "import math\n";
     py << "import numpy as np\n";
     if (hasDelayedRxns) {
         py << "from scipy.integrate import solve_ivp\n";
@@ -97,7 +236,7 @@ std::string PythonExportWriter::write(const ast::Model& model, const engine::Gen
     py << "# Default parameters\n";
     py << "default_parameters = np.array([\n";
     for (std::size_t i = 0; i < nParams; ++i) {
-        py << "    " << std::setprecision(15) << paramValues[i] << ",";
+        py << "    " << std::setprecision(17) << paramValues[i] << ",";
         py << "  # " << paramNames[i] << "\n";
     }
     py << "])\n\n";
@@ -122,7 +261,7 @@ std::string PythonExportWriter::write(const ast::Model& model, const engine::Gen
     py << "default_y0 = np.array([\n";
     for (std::size_t i = 0; i < nSpecies; ++i) {
         const auto& sp = network.species.get(i);
-        py << "    " << sp.getAmount() << ",";
+        py << "    " << std::setprecision(17) << sp.getAmount() << ",";
         py << "  # " << sp.getSpeciesGraph().toString() << "\n";
     }
     py << "])\n\n";
@@ -135,13 +274,52 @@ std::string PythonExportWriter::write(const ast::Model& model, const engine::Gen
     }
     py << "]\n\n";
 
+    std::unordered_map<std::string, std::size_t> paramIndex;
+    for (std::size_t i = 0; i < nParams; ++i) {
+        paramIndex[paramNames[i]] = i;
+    }
+    std::unordered_map<std::string, std::size_t> obsIndex;
+    for (std::size_t g = 0; g < groups.size(); ++g) {
+        obsIndex[groups[g].name] = g;
+    }
+
     // ===== calc_expressions =====
     py << "def calc_expressions(parameters):\n";
     py << "    \"\"\"Calculate expressions from parameters.\"\"\"\n";
     py << "    expressions = np.zeros(" << nParams << ")\n";
-    for (std::size_t i = 0; i < nParams; ++i) {
-        py << "    expressions[" << i << "] = parameters[" << i << "]";
-        py << "  # " << paramNames[i] << "\n";
+    {
+        const auto& allParams = model.getParameters().all();
+        std::vector<int> state(nParams, 0);
+        std::vector<std::size_t> order;
+        std::function<void(std::size_t)> visit = [&](std::size_t idx) {
+            if (state[idx] != 0) return;
+            state[idx] = 1;
+            for (const auto& dep : allParams[idx].getExpression().getDependencies()) {
+                auto it = paramIndex.find(dep);
+                if (it != paramIndex.end()) visit(it->second);
+            }
+            state[idx] = 2;
+            order.push_back(idx);
+        };
+        for (std::size_t i = 0; i < nParams; ++i) visit(i);
+        for (const std::size_t i : order) {
+            const auto& expr = allParams[i].getExpression();
+            const auto deps = expr.getDependencies();
+            bool allKnown = !deps.empty();
+            for (const auto& dep : deps) {
+                if (paramIndex.find(dep) == paramIndex.end()) {
+                    allKnown = false;
+                    break;
+                }
+            }
+            if (allKnown) {
+                py << "    expressions[" << i << "] = "
+                   << renderExprToPython(expr, paramIndex, obsIndex);
+            } else {
+                py << "    expressions[" << i << "] = parameters[" << i << "]";
+            }
+            py << "  # " << paramNames[i] << "\n";
+        }
     }
     py << "    return expressions\n\n";
 
@@ -183,31 +361,57 @@ std::string PythonExportWriter::write(const ast::Model& model, const engine::Gen
             cleanRate = cleanRate.substr(0, localPos);
         }
 
-        double statFactor = rxn.getFactor();
-
-        bool isNumeric = false;
-        double rateVal = 0.0;
-        try {
-            std::size_t pos = 0;
-            rateVal = std::stod(cleanRate, &pos);
-            if (pos == cleanRate.size()) isNumeric = true;
-        } catch (...) {}
-
-        if (isNumeric) {
-            double combined = statFactor * rateVal;
-            py << combined;
-        } else {
-            std::string rateRef = convertRateToPython(cleanRate, paramNames);
-            if (std::abs(statFactor - 1.0) > 1e-12) {
-                py << statFactor << "*" << rateRef;
-            } else {
-                py << rateRef;
+        const bool absoluteFlux = compile::isAbsoluteFluxReaction(model, rxn);
+        const bool totalRate =
+            compile::isTotalRateReaction(model, rxn.getOriginRuleName()) ||
+            absoluteFlux;
+        double statFactor = totalRate ? 1.0 : rxn.getFactor();
+        if (!absoluteFlux) {
+            if (const auto unitFactor = NetWriter::computeUnitConversionFactor(rxn, model, network);
+                unitFactor.has_value()) {
+                statFactor *= *unitFactor;
             }
         }
 
-        // Multiply by reactant concentrations
-        for (const auto idx : rxn.getReactants()) {
-            py << "*species[" << idx << "]";
+        if (rxn.getRateExpression().has_value()) {
+            const auto expanded = ast::partialEvaluate(*rxn.getRateExpression(), model.getFunctions());
+            if (expanded.kind() == ast::ExpressionKind::Number) {
+                py << std::setprecision(17) << (statFactor * expanded.numberValue());
+            } else {
+                const std::string rateRef = renderExprToPython(expanded, paramIndex, obsIndex);
+                if (std::abs(statFactor - 1.0) > 1e-12) {
+                    py << std::setprecision(17) << statFactor << "*" << rateRef;
+                } else {
+                    py << rateRef;
+                }
+            }
+        } else {
+            bool isNumeric = false;
+            double rateVal = 0.0;
+            try {
+                std::size_t pos = 0;
+                rateVal = std::stod(cleanRate, &pos);
+                if (pos == cleanRate.size()) isNumeric = true;
+            } catch (...) {}
+
+            if (isNumeric) {
+                double combined = statFactor * rateVal;
+                py << std::setprecision(17) << combined;
+            } else {
+                std::string rateRef = convertRateToPython(cleanRate, paramNames);
+                if (std::abs(statFactor - 1.0) > 1e-12) {
+                    py << std::setprecision(17) << statFactor << "*" << rateRef;
+                } else {
+                    py << rateRef;
+                }
+            }
+        }
+
+        // Multiply by reactant concentrations (unless absoluteFlux already includes them)
+        if (!absoluteFlux) {
+            for (const auto idx : rxn.getReactants()) {
+                py << "*species[" << idx << "]";
+            }
         }
 
         py << "\n";
@@ -225,10 +429,11 @@ std::string PythonExportWriter::write(const ast::Model& model, const engine::Gen
                 const auto& rxn = network.reactions.all()[r];
                 std::string exprPy;
                 if (rxn.getDelayExpression()) {
-                    exprPy = convertRateToPython(rxn.getDelayExpression()->toString(), paramNames);
+                    const auto expandedDelay = ast::partialEvaluate(*rxn.getDelayExpression(), model.getFunctions());
+                    exprPy = renderExprToPython(expandedDelay, paramIndex, {});
                 } else {
                     std::ostringstream ds;
-                    ds << std::setprecision(15) << rxnDelays[r];
+                    ds << std::setprecision(17) << rxnDelays[r];
                     exprPy = ds.str();
                 }
                 auto it = lagExprMap.find(exprPy);
@@ -568,6 +773,56 @@ std::string PythonExportWriter::convertRateToPython(const std::string& rate, con
     while ((pos = result.find('^', pos)) != std::string::npos) {
         result.replace(pos, 1, "**");
         pos += 2;
+    }
+
+    // Prefix bare math function calls with math. so exported Python never throws NameError
+    static const std::vector<std::pair<std::string, std::string>> kMathCalls = {
+        {"ceiling", "math.ceil"},
+        {"asinh", "math.asinh"},
+        {"acosh", "math.acosh"},
+        {"atanh", "math.atanh"},
+        {"log10", "math.log10"},
+        {"floor", "math.floor"},
+        {"sinh", "math.sinh"},
+        {"cosh", "math.cosh"},
+        {"tanh", "math.tanh"},
+        {"asin", "math.asin"},
+        {"acos", "math.acos"},
+        {"atan", "math.atan"},
+        {"sqrt", "math.sqrt"},
+        {"log2", "math.log2"},
+        {"ceil", "math.ceil"},
+        {"fabs", "math.fabs"},
+        {"exp", "math.exp"},
+        {"log", "math.log"},
+        {"sin", "math.sin"},
+        {"cos", "math.cos"},
+        {"tan", "math.tan"},
+        {"ln", "math.log"},
+    };
+    for (const auto& [fn, replacement] : kMathCalls) {
+        std::size_t fpos = 0;
+        while ((fpos = result.find(fn, fpos)) != std::string::npos) {
+            const bool validStart = (fpos == 0 ||
+                (!std::isalnum(static_cast<unsigned char>(result[fpos - 1])) &&
+                 result[fpos - 1] != '_' && result[fpos - 1] != '.'));
+            std::size_t after = fpos + fn.size();
+            const bool validEnd = (after >= result.size() ||
+                (!std::isalnum(static_cast<unsigned char>(result[after])) &&
+                 result[after] != '_'));
+            std::size_t parenPos = after;
+            while (parenPos < result.size() &&
+                   std::isspace(static_cast<unsigned char>(result[parenPos])) != 0) {
+                ++parenPos;
+            }
+            const bool isCall = (parenPos < result.size() && result[parenPos] == '(');
+            if (validStart && validEnd && isCall) {
+                result.replace(fpos, fn.size(), replacement);
+                fpos += replacement.size();
+            } else {
+                fpos += fn.size();
+            }
+        }
     }
 
     return result;

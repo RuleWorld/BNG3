@@ -57,6 +57,7 @@ enum class BinaryOp {
     Subtract,
     Multiply,
     Divide,
+    Modulo,
     Power,
     Less,
     LessEqual,
@@ -66,6 +67,7 @@ enum class BinaryOp {
     NotEqual,
     LogicalAnd,
     LogicalOr,
+    LogicalXor,
     Unknown,
 };
 

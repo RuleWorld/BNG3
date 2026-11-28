@@ -1,12 +1,14 @@
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+#include <fstream>
+#include <limits>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include <stdexcept>
-#include <fstream>
-#include <sstream>
-#include <algorithm>
 
 namespace bng::io {
 
@@ -17,6 +19,10 @@ struct TfunTable {
 
     double interpolate(double t) const {
         if (times.empty()) return 0.0;
+        if (times.size() != values.size()) {
+            throw std::runtime_error("TFUN table has mismatched time and value columns");
+        }
+        if (std::isnan(t)) return std::numeric_limits<double>::quiet_NaN();
         if (times.size() == 1) return values[0];
 
         // Clamp to range (constant extrapolation)
@@ -27,13 +33,17 @@ struct TfunTable {
         // knot use the new value for step interpolation, matching NFsim's
         // TFUN implementation.
         auto it = std::upper_bound(times.begin(), times.end(), t);
-        size_t i = static_cast<size_t>(it - times.begin()) - 1;
+        if (it == times.begin()) return values.front();
+        if (it == times.end()) return values.back();
+        const size_t right = static_cast<size_t>(it - times.begin());
+        const size_t i = right - 1;
 
-        // Linear interpolation
-        double t0 = times[i], t1 = times[i + 1];
-        double v0 = values[i], v1 = values[i + 1];
+        // Linear or step interpolation
+        const double t0 = times[i], t1 = times[right];
+        const double v0 = values[i], v1 = values[right];
         if (method == "step") return v0;
-        double alpha = (t - t0) / (t1 - t0);
+        if (t1 == t0) return v0;
+        const double alpha = (t - t0) / (t1 - t0);
         return v0 + alpha * (v1 - v0);
     }
 };
@@ -55,6 +65,13 @@ public:
             std::istringstream iss(line);
             double t, v;
             if (iss >> t >> v) {
+                if (!std::isfinite(t) || !std::isfinite(v)) {
+                    throw std::runtime_error("TFUN file contains non-finite value: " + filePath);
+                }
+                if (!table.times.empty() && t < table.times.back()) {
+                    throw std::runtime_error(
+                        "TFUN file x-values must be monotonically non-decreasing: " + filePath);
+                }
                 table.times.push_back(t);
                 table.values.push_back(v);
             }

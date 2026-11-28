@@ -203,7 +203,12 @@ PatternGraph::delete_edge ( Node * node1, Node * node2 )
 bool
 PatternGraph::set_node_state ( Node * node, const State & state )
 {
-    return node->set_state ( state );
+    if ( node->set_state ( state ) )
+    {
+        canonical_flag = false;
+        return true;
+    }
+    return false;
 }
 
 
@@ -461,28 +466,40 @@ PatternGraph::get_BNG2_string ( std::vector<std::string>& moleculeCompartments )
         return bonds;
     };
 
+    auto getSortedComponents = [&countBonds]( const Node* mol ) -> std::vector<const Node*> {
+        std::vector<const Node*> comps;
+        for ( auto it = mol->edges_out_begin(); it != mol->edges_out_end(); ++it )
+            if ( (*it)->get_type() < ENTITY_NODE_TYPE )
+                comps.push_back( *it );
+        std::sort( comps.begin(), comps.end(),
+            [&countBonds]( const Node* a, const Node* b ) -> bool {
+                if ( !(a->get_type() == b->get_type()) )
+                    return a->get_type().less( b->get_type() );
+                if ( !(a->get_state() == b->get_state()) )
+                    return a->get_state().less( b->get_state() );
+                int ab = countBonds(a), bb = countBonds(b);
+                if ( ab != bb ) return ab > bb;
+                return a->get_index() < b->get_index();
+            } );
+        return comps;
+    };
+
     std::sort( root_molecules.begin(), root_molecules.end(),
-        [&countBonds, &bond_index]( const Node* a, const Node* b ) -> bool {
-            const auto& nameA = a->get_type().get_type_name();
-            const auto& nameB = b->get_type().get_type_name();
-            if (nameA != nameB) return nameA < nameB;
-            auto compsA = std::vector<Node*>(a->edges_out_begin(), a->edges_out_end());
-            auto compsB = std::vector<Node*>(b->edges_out_begin(), b->edges_out_end());
-            compsA.erase(std::remove_if(compsA.begin(), compsA.end(),
-                [](const Node* n) { return !(n->get_type() < ENTITY_NODE_TYPE); }), compsA.end());
-            compsB.erase(std::remove_if(compsB.begin(), compsB.end(),
-                [](const Node* n) { return !(n->get_type() < ENTITY_NODE_TYPE); }), compsB.end());
-            if (compsA.size() != compsB.size()) return compsA.size() < compsB.size();
-            const auto minSize = std::min(compsA.size(), compsB.size());
-            for (std::size_t i = 0; i < minSize; ++i) {
-                const auto& tA = compsA[i]->get_type().get_type_name();
-                const auto& tB = compsB[i]->get_type().get_type_name();
-                if (tA != tB) return tA < tB;
-                const auto sA = compsA[i]->get_state().get_BNG2_string();
-                const auto sB = compsB[i]->get_state().get_BNG2_string();
-                if (sA != sB) return sA < sB;
-                int bA = countBonds(compsA[i]), bB = countBonds(compsB[i]);
-                if (bA != bB) return bA > bB;
+        [&getSortedComponents, &countBonds]( const Node* a, const Node* b ) -> bool {
+            if ( !(a->get_type() == b->get_type()) )
+                return a->get_type().less( b->get_type() );
+            auto ac = getSortedComponents(a);
+            auto bc = getSortedComponents(b);
+            if ( ac.size() != bc.size() )
+                return ac.size() < bc.size();
+            for ( std::size_t i = 0; i < ac.size(); ++i )
+            {
+                if ( !(ac[i]->get_type() == bc[i]->get_type()) )
+                    return ac[i]->get_type().less( bc[i]->get_type() );
+                if ( !(ac[i]->get_state() == bc[i]->get_state()) )
+                    return ac[i]->get_state().less( bc[i]->get_state() );
+                int ab = countBonds(ac[i]), bb = countBonds(bc[i]);
+                if ( ab != bb ) return ab > bb;
             }
             return a->get_index() < b->get_index();
         } );
@@ -704,8 +721,8 @@ PatternGraph::find_canonical_order ( bool preserve_prior_order ) const
 
     if ( nauty_required )
     {
-        // declare various data elements for Nauty
-        static DEFAULTOPTIONS_SPARSEGRAPH(options);
+        // declare various data elements for Nauty (stack-local for thread safety)
+        DEFAULTOPTIONS_SPARSEGRAPH(options);
         statsblk stats;
     
         // Select option for canonical labelling
@@ -1023,10 +1040,10 @@ PatternGraph::splice ( PatternGraph & g2, Map & overlap_map )
         node1 = node_map.mapf( node2 );  
         // add inbound edges
         for ( node_const_iter = node2->edges_in_begin();  node_const_iter != node2->edges_in_end();  ++node_const_iter )
-            g1.add_edge ( node_map.mapf( *node_iter ), node1 );
+            g1.add_edge ( node_map.mapf( *node_const_iter ), node1 );
         // add outbound edges
         for ( node_const_iter = node2->edges_out_begin();  node_const_iter != node2->edges_out_end();  ++node_const_iter )
-            g1.add_edge ( node1, node_map.mapf( *node_iter ) );
+            g1.add_edge ( node1, node_map.mapf( *node_const_iter ) );
         // NOTE: some edges may be added twice, but this won't cause any problems (edges will simply be
         //  ignored when added the second time).
     }

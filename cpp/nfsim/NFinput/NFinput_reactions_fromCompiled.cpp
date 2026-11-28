@@ -307,6 +307,7 @@ std::optional<double> evaluateStatic(const CompiledModel& model,
         case BinaryOp::Subtract: return *lhs - *rhs;
         case BinaryOp::Multiply: return *lhs * *rhs;
         case BinaryOp::Divide: return *rhs == 0.0 ? std::nullopt : std::optional<double>(*lhs / *rhs);
+        case BinaryOp::Modulo: return *rhs == 0.0 ? std::nullopt : std::optional<double>(std::fmod(*lhs, *rhs));
         case BinaryOp::Power: return std::pow(*lhs, *rhs);
         case BinaryOp::Less: return *lhs < *rhs ? 1.0 : 0.0;
         case BinaryOp::LessEqual: return *lhs <= *rhs ? 1.0 : 0.0;
@@ -316,6 +317,7 @@ std::optional<double> evaluateStatic(const CompiledModel& model,
         case BinaryOp::NotEqual: return *lhs != *rhs ? 1.0 : 0.0;
         case BinaryOp::LogicalAnd: return (*lhs != 0.0 && *rhs != 0.0) ? 1.0 : 0.0;
         case BinaryOp::LogicalOr: return (*lhs != 0.0 || *rhs != 0.0) ? 1.0 : 0.0;
+        case BinaryOp::LogicalXor: return ((*lhs != 0.0) != (*rhs != 0.0)) ? 1.0 : 0.0;
         case BinaryOp::Unknown: return std::nullopt;
         }
         return std::nullopt;
@@ -872,7 +874,10 @@ bool renderExpression(const CompiledModel& model,
         case BinaryOp::LessEqual: op = "<="; break; case BinaryOp::Greater: op = ">"; break;
         case BinaryOp::GreaterEqual: op = ">="; break; case BinaryOp::Equal: op = "=="; break;
         case BinaryOp::NotEqual: op = "!="; break; case BinaryOp::LogicalAnd: op = "&&"; break;
-        case BinaryOp::LogicalOr: op = "||"; break; case BinaryOp::Unknown: break;
+        case BinaryOp::LogicalOr: op = "||"; break;
+        case BinaryOp::Modulo:
+        case BinaryOp::LogicalXor:
+        case BinaryOp::Unknown: break;
         }
         if (op == nullptr) return false; result = "(" + lhs + " " + op + " " + rhs + ")"; return true;
     }
