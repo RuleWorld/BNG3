@@ -2287,6 +2287,7 @@ def _simulate_source_and_compare(
             source_model,
             observable_map,
             standardize_name,
+            bngl=bngl,
         )
         if target is None:
             unmapped.append(species_id)
@@ -2332,7 +2333,12 @@ def _simulate_source_and_compare(
         for source_id in sorted(dynamic_ids):
             parameter = source_model.parameters.get(standardize_name(source_id))
             target = _reference_output_target(
-                source_id, default_units, source_model, observable_map, standardize_name
+                source_id,
+                default_units,
+                source_model,
+                observable_map,
+                standardize_name,
+                bngl=bngl,
             )
             if parameter is None or target is None:
                 unmapped.append(source_id)
