@@ -15,7 +15,7 @@
     "by_construct": {
       "assignment:event-controlled-initial-value": 1,
       "constraints:flux-balance-not-kinetic": 18,
-      "events:untranslated": 35,
+      "events:untranslated": 30,
       "fast-reaction:no-fast-equilibrium-solve": 4,
       "format:no-usable-sbml": 2,
       "format:not-an-sbml-artifact": 11,
@@ -25,7 +25,7 @@
       "source:libsbml-invalid": 18
     },
     "by_side": {
-      "atomizer": 63,
+      "atomizer": 58,
       "not-applicable": 31
     }
   },
@@ -45,7 +45,8 @@
     "notes": [
       "Measured in hosted GitHub Actions run 45431796452 (curated-biomodels job 138578852142, artifact 14946592989) at exact commit 11b9e732e7c903e98075116585bbdb5a46722fcf using the installed distribution package verified same-source against python/bionetgen.",
       "Preserves all observed raw verdicts and limitations: BIOMD0000000537 (failed, PLATFORM_SENSITIVE_LIMIT), BIOMD0000000943 (failed, NUMERICAL_LIMIT), BIOMD0000000696 (unsupported: rateOf explicit guard), 16 bounded-budget timeouts, and all roundtrip_structure diffs.",
-      "Updated exactly 110 roundtrip_structure verdicts from failed to passed using retained exact-main artifact 15018970074 (curated-biomodels-41c66d26a340c4cf9ae6be44f57b7add8e96a76b-1, digest sha256:f4069c4ae880798e5a55f127e5a5cec52c658b64e65ddc254674b42e4d42745d, flat-report.json sha256:07cdcbef185735680ef01668dfccd91efa77c3ae6cb049ef5abb4608ef558c4c, workflow run 45589979861 at commit 41c66d26a340c4cf9ae6be44f57b7add8e96a76b) following #1020's written-SBML round-trip contract fix; preserves BIOMD0000000537, BIOMD0000000943, timeout handling, and all other stage verdicts unchanged."
+      "Updated exactly 110 roundtrip_structure verdicts from failed to passed using retained exact-main artifact 15018970074 (curated-biomodels-41c66d26a340c4cf9ae6be44f57b7add8e96a76b-1, digest sha256:f4069c4ae880798e5a55f127e5a5cec52c658b64e65ddc254674b42e4d42745d, flat-report.json sha256:07cdcbef185735680ef01668dfccd91efa77c3ae6cb049ef5abb4608ef558c4c, workflow run 45589979861 at commit 41c66d26a340c4cf9ae6be44f57b7add8e96a76b) following #1020's written-SBML round-trip contract fix; preserves BIOMD0000000537, BIOMD0000000943, timeout handling, and all other stage verdicts unchanged.",
+      "Updated 5 ODE-event records (BIOMD0000000338, BIOMD0000000339, BIOMD0000000408, BIOMD0000000480, BIOMD0000000901) from events:untranslated unsupported to passed following ODE-event expansion (698fc589) and simultaneous CVODE root / strict t=0+ output / zero-arg time() fixes (c1475c1e); verified against hosted run 46063431106 and local BioModels flat+atomized validation on c1475c1e, with full hosted exact-main re-qualification run immediately after this commit."
     ],
     "run_budget": {
       "command": "python scripts/ci/validate_published_biomodels.py --manifest provenance/published-biomodels.json --cache-dir $RUNNER_TEMP/biomodels-cache --json $RUNNER_TEMP/biomodels-artifacts/flat-report.json --source-bundle-receipt $RUNNER_TEMP/biomodels-artifacts/source-bundle-receipt.json --source-bundle-manifest provenance/curated-biomodels-source-bundle.json --mode flat --offline --isolate-models --jobs 3 --model-timeout 180",
@@ -82,19 +83,19 @@
   "stage_counts": {
     "conversion": {
       "failed": 2,
-      "passed": 984,
+      "passed": 989,
       "timeout": 16,
-      "unsupported": 83,
+      "unsupported": 78,
       "unsupported_format": 11
+    },
+    "roundtrip_structure": {
+      "not_tested": 105,
+      "passed": 991
     },
     "independent_comparison": {
       "failed": 2,
-      "not_tested": 110,
-      "passed": 984
-    },
-    "roundtrip_structure": {
-      "not_tested": 110,
-      "passed": 986
+      "not_tested": 105,
+      "passed": 989
     }
   },
   "stages": [
@@ -455,8 +456,8 @@
     "BIOMD0000000335": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000336": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000337": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000338": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
-    "BIOMD0000000339": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
+    "BIOMD0000000338": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
+    "BIOMD0000000339": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000340": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
     "BIOMD0000000341": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000342": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -525,7 +526,7 @@
     "BIOMD0000000405": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000406": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000407": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000408": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
+    "BIOMD0000000408": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000409": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000410": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000411": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -597,7 +598,7 @@
     "BIOMD0000000477": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000478": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000479": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000480": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
+    "BIOMD0000000480": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000481": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000482": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000483": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
@@ -1016,7 +1017,7 @@
     "BIOMD0000000898": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000899": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["other"], "construct": "source:libsbml-invalid", "side": "not-applicable"}}},
     "BIOMD0000000900": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
-    "BIOMD0000000901": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "gap": {"conversion": {"causes": ["events"], "construct": "events:untranslated", "side": "atomizer"}}},
+    "BIOMD0000000901": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000902": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000903": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},
     "BIOMD0000000904": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed"},

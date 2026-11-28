@@ -147,9 +147,9 @@ def _write_json(path, data):
 
 
 def _refusal_fixtures(mode_name):
-    """The full 44 pinned refusal records plus the harness by_cause view."""
+    """The full 39 pinned refusal records plus the harness by_cause view."""
     by_cause = {
-        "events": {"count": 36, "ids": sorted(disp.PINNED_REFUSAL_IDS["events"])},
+        "events": {"count": 31, "ids": sorted(disp.PINNED_REFUSAL_IDS["events"])},
         "fast_reactions": {
             "count": 5,
             "ids": sorted(
@@ -433,11 +433,11 @@ def test_timeout_fails_closed(mutation):
 
 def test_refusal_counts_are_pinned_from_the_real_report():
     assert disp.PINNED_REFUSAL_COUNTS == {
-        "events": 36,
+        "events": 31,
         "fast_reaction": 4,
         "other": 4,
     }
-    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 44
+    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 39
 
 
 def test_receipt_refuses_mismatched_counts():

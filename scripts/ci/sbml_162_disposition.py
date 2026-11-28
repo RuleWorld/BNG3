@@ -544,13 +544,9 @@ PINNED_REFUSAL_IDS = {
             "BIOMD0000000195",
             "BIOMD0000000241",
             "BIOMD0000000297",
-            "BIOMD0000000338",
-            "BIOMD0000000339",
             "BIOMD0000000340",
             "BIOMD0000000344",
-            "BIOMD0000000408",
             "BIOMD0000000436",
-            "BIOMD0000000480",
             "BIOMD0000000613",
             "BIOMD0000000628",
             "BIOMD0000000659",
@@ -564,7 +560,6 @@ PINNED_REFUSAL_IDS = {
             "BIOMD0000000828",
             "BIOMD0000000829",
             "BIOMD0000000856",
-            "BIOMD0000000901",
             "BIOMD0000001072",
         }
     ),
@@ -597,7 +592,7 @@ BORDER_TIMEOUT_REFUSAL_CLASS = "other"
 # events; the receipt's disjoint refusal classes therefore have 4 rather than
 # 5 fast-reaction rows.
 PINNED_BY_CAUSE_COUNTS = {
-    "events": 36,
+    "events": 31,
     "fast_reactions": 5,
     "mathml": 1,
 }

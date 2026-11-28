@@ -91,7 +91,7 @@ def _pinned_943(mode_name):
 
 def _pinned_refusals():
     by_cause = {
-        "events": {"count": 36, "ids": sorted(disp.PINNED_REFUSAL_IDS["events"])},
+        "events": {"count": 31, "ids": sorted(disp.PINNED_REFUSAL_IDS["events"])},
         "fast_reactions": {
             "count": 5,
             "ids": sorted(
