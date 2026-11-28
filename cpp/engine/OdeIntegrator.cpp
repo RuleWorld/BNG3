@@ -5838,28 +5838,31 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
     // transients (e.g. k=1e12 over t_end=1e10) never over-scale states by
     // 1e22 and induce conservation drift or mxstep failures.
     derivs(opts.tStart, initialState.data(), initialDerivatives.data());
-    const double span = (opts.tEnd > opts.tStart) ? (opts.tEnd - opts.tStart) : 1.0;
+    const double timeScale = std::max(std::abs(opts.tEnd - opts.tStart), 1.0);
     double maxInitialState = 0.0;
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         if (std::isfinite(initialState[i])) {
             maxInitialState = std::max(maxInitialState, std::abs(initialState[i]));
         }
     }
+    const double maxDerivCap = (maxInitialState >= 1e-30)
+        ? maxInitialState * 100.0
+        : 1e6;
     cvodeStateScale_.resize(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         double scale = std::abs(initialState[i]);
-        if (scale < 1e-30) {
-            if (std::isfinite(initialDerivatives[i]) &&
-                std::abs(initialDerivatives[i]) > 0.0) {
-                const double derivScale = std::abs(initialDerivatives[i]) * span;
-                if (maxInitialState >= 1e-30) {
-                    scale = std::min(derivScale, maxInitialState);
-                } else {
-                    scale = std::min(derivScale, 1e6);
-                }
-            } else if (maxInitialState >= 1e-30) {
-                scale = maxInitialState;
+        if (std::isfinite(initialDerivatives[i]) &&
+            std::abs(initialDerivatives[i]) > 0.0) {
+            const double derivScale = std::abs(initialDerivatives[i]) * timeScale;
+            if (scale < 1e-30) {
+                scale = (maxInitialState >= 1e-30)
+                    ? std::min(derivScale, maxInitialState)
+                    : std::min(derivScale, 1e6);
+            } else if (derivScale <= maxDerivCap) {
+                scale = std::max(scale, derivScale);
             }
+        } else if (scale < 1e-30 && maxInitialState >= 1e-30) {
+            scale = maxInitialState;
         }
         if (!std::isfinite(scale) || scale < 1e-30) scale = 1.0;
         // Event-only propagation is exact; scaling would unnecessarily round

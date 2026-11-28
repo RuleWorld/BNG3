@@ -9,6 +9,8 @@
           "bionetgen.core.tools.cli"
         ],
         "tests": [
+          "tests.python.test_audit_wave1_writers",
+          "tests.python.test_audit_wave3_bngir_api",
           "tests.python.test_bionetgen",
           "tests.python.test_bng_parsing",
           "tests.python.test_bngfile_compat",

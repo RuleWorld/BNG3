@@ -3062,7 +3062,7 @@ bool ReactionRule::buildReaction(
                     break;
                 }
             }
-            bool hasBondOperation = false;
+            bool hasBondOperation = !crossBonds_.empty() || !newMoleculeBonds_.empty();
             for (const auto& operation : operations_) {
                 if (operation.type == TransformOp::Type::AddBond ||
                     operation.type == TransformOp::Type::DeleteBond) {
@@ -3070,10 +3070,24 @@ bool ReactionRule::buildReaction(
                     break;
                 }
             }
+            bool hasCrossVolumeTransport = !moleculeCompartmentTransports_.empty();
+            if (!hasCrossVolumeTransport) {
+                for (const auto& [rRef, pRef] : moleculeMappings_) {
+                    if (rRef.patternIndex < reactantPatterns_.size() &&
+                        pRef.patternIndex < productPatterns_.size()) {
+                        const auto& rComp = reactantPatterns_[rRef.patternIndex].getCompartment();
+                        const auto& pComp = productPatterns_[pRef.patternIndex].getCompartment();
+                        if (!rComp.empty() && !pComp.empty() && rComp != pComp) {
+                            hasCrossVolumeTransport = true;
+                            break;
+                        }
+                    }
+                }
+            }
             const bool allowedPopulationCrossVolume =
                 allExplicit3DVolumes && !hasBondOperation &&
-                allPatternsExplicitlyCompartmented &&
-                (absoluteFlux_ || moleculeMappings_.empty());
+                !hasCrossVolumeTransport &&
+                allPatternsExplicitlyCompartmented;
             if (!allowedPopulationCrossVolume) {
                 return false;
             }

@@ -978,8 +978,21 @@ detail::NfnextGraphPlan compileGraphPlan(
             }
         } else if (rule.rate_law.kind == nfnext::RateLawKind::Function) {
             isDynamic = true;
+            // Single-copy local scoping was already verified above (lines 605-609):
+            // each scoped reactant type has <= 1 copy and is never created, so
+            // local_obs_<slot> evaluates identically to its global observable.
+            nfnext::FunctionEnvironment ruleFuncEnv = funcEnv;
+            for (const auto& lb : rule.local_observable_bindings) {
+                if (lb.observable_index >= source.observables().size()) {
+                    refuse("local observable index out of range in GPU graph kernel");
+                }
+                const auto obsId = static_cast<nfnext::ObservableId>(
+                    source.observables()[lb.observable_index].id.value());
+                ruleFuncEnv.addObservable(
+                    "local_obs_" + std::to_string(lb.slot), 0.0, obsId);
+            }
             const auto compiledFn =
-                nfnext::FunctionCompiler().compile(rule.rate_law.expression, funcEnv);
+                nfnext::FunctionCompiler().compile(rule.rate_law.expression, ruleFuncEnv);
             const auto& bc = compiledFn.sharedCode()->code;
             vmOffset = static_cast<std::uint32_t>(plan.vmCode.size());
             using Op = nfnext::function_vm_detail::Op;
@@ -991,7 +1004,7 @@ detail::NfnextGraphPlan compileGraphPlan(
                     g.value = static_cast<float>(ins.value);
                     break;
                 case Op::Symbol: {
-                    const auto* obsBind = funcEnv.observableBinding(ins.symbol);
+                    const auto* obsBind = ruleFuncEnv.observableBinding(ins.symbol);
                     if (!obsBind) {
                         refuse("unresolved symbol in GPU dynamic rate: " + ins.symbol);
                     }

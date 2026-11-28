@@ -349,8 +349,10 @@ end model
     rxn_rates = _parse_net_reaction_rates(net_text)
     assert len(rxn_rates) == 2
 
-    # dimer_tr: TotalRate omits symmetry factor 0.5, KEEPS 1/V_ec = 0.2 -> 0.2*kb
-    assert "0.2*kb" in rxn_rates[0]
+    # dimer_tr: TotalRate omits both symmetry factor 0.5 and compartment 1/V in BNG3
+    # (consistent with OdeIntegrator, NFnext, NFcore, and test_engine_network_factor_agreement)
+    assert rxn_rates[0] == "kb"
+    assert "0.5*kb" not in rxn_rates[0]
     assert "0.1*kb" not in rxn_rates[0]
 
     # synth_multi: products in EC and PM -> must NOT multiply ks by V_ec (5) or V_pm (2)
@@ -360,7 +362,7 @@ end model
 def test_net_writer_emits_valid_expressions_and_roundtrips_via_readfile(
     tmp_path: Path,
 ) -> None:
-    """RULEHUB-08: .net uses if(c,a,b), avoids --x, avoids Obs() parens, and round-trips."""
+    """RULEHUB-08: .net uses if(c,a,b), avoids --x, preserves Obs() parens, and round-trips."""
     bngl = """begin model
 begin parameters
     k 0.5
@@ -376,7 +378,7 @@ begin observables
     Molecules Aobs A()
 end observables
 begin functions
-    rate_fn() = if(Aobs > 5, -(-k), 0.1 * k)
+    rate_fn() = if(Aobs() > 5, -(-k), 0.1 * k)
 end functions
 begin reaction rules
     A() -> 0 rate_fn()
@@ -387,7 +389,7 @@ end model
     assert "if(" in net_text
     assert "if (" not in net_text
     assert "--" not in net_text
-    assert "Aobs()" not in net_text
+    assert "Aobs()" in net_text
 
     # Direct ODE vs readFile(.net) ODE must match
     model = cpp.parse_string(bngl)

@@ -1260,15 +1260,6 @@ std::string formatNetExpression(const ast::Expression& expr, const ast::Model& m
     }
     case Kind::ObservableRef: {
         if (expr.args().empty()) {
-            const bool isFunction = std::any_of(
-                model.getFunctions().begin(), model.getFunctions().end(),
-                [&](const auto& f) { return f.getName() == expr.name(); });
-            const bool isObservable = std::any_of(
-                model.getObservables().begin(), model.getObservables().end(),
-                [&](const auto& o) { return o.getName() == expr.name(); });
-            if (isObservable && !isFunction) {
-                return expr.name();
-            }
             return expr.name() + "()";
         }
         return expr.name() + "(" + joinArgs(expr.args()) + ")";
@@ -3115,11 +3106,11 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             // Bimolecular+: divide by remaining compartment sizes
             // Zero-order synthesis: multiply by product compartment size
             // Pre-multiply with stat factor for cleaner output (Perl convention)
-            // Note: TotalRate suppresses statistical symmetry factor only, NOT
-            // compartment unit_conversion (matching BNG2 Rxn.pm:70).
+            // TotalRate takes neither symmetry factor nor compartment 1/V in BNG3
+            // (matching OdeIntegrator, NFnext, NFcore, and Atomizer TotalRate fluxes).
             const auto convFactor = unitConversionFactor(reaction, model, network);
             double combinedFactor = totalRate ? 1.0 : reaction.getFactor();
-            if (!absoluteFlux && convFactor.has_value()) combinedFactor *= *convFactor;
+            if (!totalRate && !absoluteFlux && convFactor.has_value()) combinedFactor *= *convFactor;
             if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                 out << formatFactor(combinedFactor) << "*";
             }

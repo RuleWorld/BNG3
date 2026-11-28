@@ -116,10 +116,11 @@ public:
             if (!compartment.hasUnit()) continue;
             const auto& dim = compartment.getUnit()->dimension;
             const int expectedLength = compartment.getDimension();
-            // 2D surface compartments in cBNGL may declare either area (L^2)
-            // or effective membrane volume (L^3 = area * thickness).
-            const bool validDim = (dim.length == expectedLength) ||
-                                  (expectedLength == 2 && dim.length == 3);
+            // 1D/2D compartments in cBNGL may declare either matching spatial
+            // dimension or effective volume (L^3) before simulation-stage checks.
+            const bool validDim =
+                (dim.length == expectedLength) ||
+                ((expectedLength == 1 || expectedLength == 2) && dim.length == 3);
             if (!validDim || dim.substance != 0 || dim.time != 0) {
                 std::string expectedKind = "spatial";
                 if (expectedLength == 3) expectedKind = "volume";

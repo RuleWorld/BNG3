@@ -3,7 +3,8 @@ from unittest.mock import patch
 from bionetgen.atomizer.utils.pathwaycommons import queryBioGridByName
 
 
-def test_queryBioGridByName_httperror_with_organism():
+def test_queryBioGridByName_httperror_with_organism(monkeypatch):
+    monkeypatch.setenv("BIOGRID_API_KEY", "test-key")
     with (
         patch("urllib.request.urlopen") as mock_urlopen,
         patch("bionetgen.atomizer.utils.pathwaycommons.logMess") as mock_logMess,
@@ -34,7 +35,8 @@ def test_queryBioGridByName_httperror_with_organism():
         assert result is False
 
 
-def test_queryBioGridByName_httperror_no_organism():
+def test_queryBioGridByName_httperror_no_organism(monkeypatch):
+    monkeypatch.setenv("BIOGRID_API_KEY", "test-key")
     with (
         patch("urllib.request.urlopen") as mock_urlopen,
         patch("bionetgen.atomizer.utils.pathwaycommons.logMess") as mock_logMess,
