@@ -114,9 +114,21 @@ public:
 
         for (const auto& compartment : model_.getCompartments()) {
             if (!compartment.hasUnit()) continue;
-            if (compartment.getUnit()->dimension.length != 3) {
+            const auto& dim = compartment.getUnit()->dimension;
+            const int expectedLength = compartment.getDimension();
+            // 1D/2D compartments in cBNGL may declare either matching spatial
+            // dimension or effective volume (L^3) before simulation-stage checks.
+            const bool validDim =
+                (dim.length == expectedLength) ||
+                ((expectedLength == 1 || expectedLength == 2) && dim.length == 3);
+            if (!validDim || dim.substance != 0 || dim.time != 0) {
+                std::string expectedKind = "spatial";
+                if (expectedLength == 3) expectedKind = "volume";
+                else if (expectedLength == 2) expectedKind = "area";
+                else if (expectedLength == 1) expectedKind = "length";
+                else if (expectedLength == 0) expectedKind = "dimensionless";
                 addUnitDiagnostic(result_.diagnostics, Severity::Error, compartment.getName(),
-                                  "compartment size must have volume dimensions");
+                                  "compartment size must have " + expectedKind + " dimensions");
             }
         }
         for (const auto& seed : model_.getSeedSpecies()) {
@@ -217,6 +229,11 @@ private:
                                       "declared unit '" + parameter.getUnitName() +
                                       "' is incompatible with the inferred expression unit: " +
                                       conversion.error);
+                } else if (std::abs(*conversion.factor - 1.0) > 1e-12) {
+                    addUnitDiagnostic(result_.diagnostics, Severity::Error, name,
+                                      "declared unit '" + parameter.getUnitName() +
+                                      "' has a different scale from the inferred expression unit '" +
+                                      units::formatUnit(*inferred.unit) + "'");
                 }
             }
             // A bare numeric RHS is a quantity literal in declaration context;
@@ -274,7 +291,7 @@ private:
             const auto operand = expression.args().empty()
                                      ? InferredUnit {}
                                      : expressionUnit(expression.args().front(), entity);
-            if (expression.name() == "!") {
+            if (expression.name() == "!" || expression.name() == "~") {
                 auto dimensionless = model_.getUnitSystem().parse("dimensionless");
                 return {dimensionless.unit, operand.hasKnownOperand, operand.hasUnknownOperand};
             }
@@ -296,7 +313,7 @@ private:
         const auto op = expression.name();
         if (!lhs.unit.has_value() || !rhs.unit.has_value()) return result;
 
-        if (op == "+" || op == "-" || op == "%" || op == "==" || op == "!=" ||
+        if (op == "+" || op == "-" || op == "%" || op == "==" || op == "!=" || op == "~=" ||
             op == ">" || op == ">=" || op == "<" || op == "<=") {
             if (!units::dimensionallyCompatible(*lhs.unit, *rhs.unit)) {
                 addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
@@ -312,36 +329,84 @@ private:
                                   conversion.error);
                 return result;
             }
-            if (op == "==" || op == "!=" || op == ">" || op == ">=" || op == "<" || op == "<=") {
+            // Numeric evaluation does not rescale operands of additive or
+            // relational operators, so combining differently scaled units
+            // (e.g. `1 [s] + 1 [min]`) would silently add raw numbers without
+            // conversion. Reject scale mismatches unless conversion factor == 1.
+            if (lhs.hasKnownOperand && rhs.hasKnownOperand &&
+                std::abs(*conversion.factor - 1.0) > 1e-12) {
+                addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
+                                  "cannot combine differently scaled units '" +
+                                  units::formatUnit(*lhs.unit) + "' and '" +
+                                  units::formatUnit(*rhs.unit) + "' using '" + op +
+                                  "' without explicit unit conversion");
+                return result;
+            }
+            if (op == "==" || op == "!=" || op == "~=" || op == ">" || op == ">=" ||
+                op == "<" || op == "<=") {
                 result.unit = model_.getUnitSystem().parse("dimensionless").unit;
             } else {
                 result.unit = lhs.unit;
             }
             return result;
         }
-        if (op == "*") result.unit = units::multiplyUnits(*lhs.unit, *rhs.unit);
-        else if (op == "/") result.unit = units::divideUnits(*lhs.unit, *rhs.unit);
-        else if (op == "^") {
+        if (op == "*") {
+            try {
+                result.unit = units::multiplyUnits(*lhs.unit, *rhs.unit);
+            } catch (const std::exception& error) {
+                addUnitDiagnostic(result_.diagnostics, Severity::Error, entity, error.what());
+            }
+        } else if (op == "/") {
+            try {
+                result.unit = units::divideUnits(*lhs.unit, *rhs.unit);
+            } catch (const std::exception& error) {
+                addUnitDiagnostic(result_.diagnostics, Severity::Error, entity, error.what());
+            }
+        } else if (op == "^" || op == "**") {
             if (!rhs.unit->isDimensionless()) {
                 addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
                                   "unit exponent must be dimensionless");
                 return result;
             }
-            if (expression.args()[1].kind() != Kind::Number) {
+            const auto extractLiteralExponent = [](const ast::Expression& expExpr,
+                                                   double& value) -> bool {
+                if (expExpr.kind() == Kind::Number) {
+                    value = expExpr.numberValue();
+                    return true;
+                }
+                if (expExpr.kind() == Kind::Unary && expExpr.args().size() == 1 &&
+                    expExpr.args()[0].kind() == Kind::Number &&
+                    (expExpr.name() == "-" || expExpr.name() == "+")) {
+                    value = expExpr.args()[0].numberValue();
+                    if (expExpr.name() == "-") value = -value;
+                    return true;
+                }
+                return false;
+            };
+            double exponent = 0.0;
+            if (!extractLiteralExponent(expression.args()[1], exponent)) {
                 if (!lhs.unit->isDimensionless()) {
                     addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
                                       "dimensionful powers require an integer literal exponent");
+                } else {
+                    result.unit = model_.getUnitSystem().parse("dimensionless").unit;
                 }
                 return result;
             }
-            const double exponent = expression.args()[1].numberValue();
-            const auto integer = static_cast<int>(exponent);
-            if (!std::isfinite(exponent) || exponent != static_cast<double>(integer)) {
+            if (!std::isfinite(exponent) ||
+                exponent < static_cast<double>(std::numeric_limits<int>::min()) ||
+                exponent > static_cast<double>(std::numeric_limits<int>::max()) ||
+                std::trunc(exponent) != exponent) {
                 addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
                                   "unit exponents must be signed integers");
                 return result;
             }
-            result.unit = units::powerUnit(*lhs.unit, integer);
+            const int integer = static_cast<int>(exponent);
+            try {
+                result.unit = units::powerUnit(*lhs.unit, integer);
+            } catch (const std::exception& error) {
+                addUnitDiagnostic(result_.diagnostics, Severity::Error, entity, error.what());
+            }
         }
         return result;
     }
@@ -368,12 +433,20 @@ private:
                     !units::dimensionallyCompatible(*result.unit, *arguments[index].unit)) {
                     addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
                                       "function '" + name + "' requires compatible argument units");
-                } else if (result.unit.has_value() && arguments[index].unit.has_value() &&
-                           !units::conversionFactor(*result.unit, *arguments[index].unit,
-                                                    context_)) {
-                    addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
-                                      "function '" + name +
-                                      "' requires convertible argument units");
+                } else if (result.unit.has_value() && arguments[index].unit.has_value()) {
+                    const auto conv =
+                        units::conversionFactor(*result.unit, *arguments[index].unit, context_);
+                    if (!conv) {
+                        addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
+                                          "function '" + name +
+                                          "' requires convertible argument units");
+                    } else if (arguments.front().hasKnownOperand &&
+                               arguments[index].hasKnownOperand &&
+                               std::abs(*conv.factor - 1.0) > 1e-12) {
+                        addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
+                                          "function '" + name +
+                                          "' cannot combine differently scaled argument units");
+                    }
                 }
             }
             return result;
@@ -388,11 +461,17 @@ private:
                 !units::dimensionallyCompatible(*arguments[1].unit, *arguments[2].unit)) {
                 addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
                                   "if branches must have compatible units");
-            } else if (arguments[1].unit.has_value() && arguments[2].unit.has_value() &&
-                       !units::conversionFactor(*arguments[1].unit, *arguments[2].unit,
-                                                context_)) {
-                addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
-                                  "if branches must have convertible units");
+            } else if (arguments[1].unit.has_value() && arguments[2].unit.has_value()) {
+                const auto conv =
+                    units::conversionFactor(*arguments[1].unit, *arguments[2].unit, context_);
+                if (!conv) {
+                    addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
+                                      "if branches must have convertible units");
+                } else if (arguments[1].hasKnownOperand && arguments[2].hasKnownOperand &&
+                           std::abs(*conv.factor - 1.0) > 1e-12) {
+                    addUnitDiagnostic(result_.diagnostics, Severity::Error, entity,
+                                      "if branches cannot have differently scaled units");
+                }
             }
             result.unit = arguments[1].unit;
             return result;

@@ -228,15 +228,28 @@ private:
                         std::to_string(declaration.getArgs().size()) +
                         " arguments, got " + std::to_string(current.args().size()));
                 }
-                auto savedLocals = locals;
+                // Expand all call arguments in the caller's environment FIRST
+                // into a fresh callee scope so arguments never capture earlier
+                // formal parameters and caller locals never leak into the callee.
+                std::unordered_map<std::string, ast::Expression> calleeLocals;
+                calleeLocals.reserve(current.args().size());
                 for (std::size_t i = 0; i < current.args().size(); ++i) {
-                    locals[declaration.getArgs()[i]] = expand(current.args()[i]);
+                    calleeLocals.insert_or_assign(declaration.getArgs()[i],
+                                                  expand(current.args()[i]));
                 }
+                auto savedLocals = std::move(locals);
+                locals = std::move(calleeLocals);
                 callStack.push_back(index);
-                auto expandedBody = expand(declaration.getExpression());
-                callStack.pop_back();
-                locals = std::move(savedLocals);
-                return expandedBody;
+                try {
+                    auto expandedBody = expand(declaration.getExpression());
+                    callStack.pop_back();
+                    locals = std::move(savedLocals);
+                    return expandedBody;
+                } catch (...) {
+                    callStack.pop_back();
+                    locals = std::move(savedLocals);
+                    throw;
+                }
             }
             if (current.kind() == ast::ExpressionKind::Identifier) {
                 const auto local = locals.find(current.name());
@@ -250,10 +263,19 @@ private:
                         throw std::runtime_error(
                             "Recursive function dependency at '" + current.name() + "'");
                     }
+                    auto savedLocals = std::move(locals);
+                    locals.clear();
                     callStack.push_back(index);
-                    auto body = expand(model_.getFunctions()[index].getExpression());
-                    callStack.pop_back();
-                    return body;
+                    try {
+                        auto body = expand(model_.getFunctions()[index].getExpression());
+                        callStack.pop_back();
+                        locals = std::move(savedLocals);
+                        return body;
+                    } catch (...) {
+                        callStack.pop_back();
+                        locals = std::move(savedLocals);
+                        throw;
+                    }
                 }
                 return current;
             }

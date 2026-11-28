@@ -1,7 +1,7 @@
 from .blocks import ParameterBlock, CompartmentBlock, ObservableBlock
 from .blocks import SpeciesBlock, MoleculeTypeBlock
 from .blocks import FunctionBlock, RuleBlock
-from .blocks import EnergyPatternBlock, PopulationMapBlock
+from .blocks import EnergyPatternBlock, BarrierPatternBlock, PopulationMapBlock
 
 from .pattern import Pattern, Molecule, Component
 
@@ -579,9 +579,11 @@ class RuleBlockXML(XMLObj):
                     )
                 rate_constants = [self.resolve_ratelaw(rule["RateLaw"])]
                 rule_modifier = self.get_rule_mod(rule)
-                if rule["ListOfOperations"] is not None:
+                operations = []
+                if rule.get("ListOfOperations") is not None:
                     if len(rule["ListOfOperations"]) > 0:
                         operations = self.get_operations(rule["ListOfOperations"])
+                bidirectional = str(rule.get("@energyIncludeReverse", "0")) == "1"
 
                 block.add_rule(
                     name,
@@ -590,6 +592,7 @@ class RuleBlockXML(XMLObj):
                     rate_constants=rate_constants,
                     rule_mod=rule_modifier,
                     operations=operations,
+                    bidirectional=bidirectional,
                 )
         else:
             name = xml["@name"]
@@ -601,7 +604,12 @@ class RuleBlockXML(XMLObj):
                 )
             rate_constants = [self.resolve_ratelaw(xml["RateLaw"])]
             rule_modifier = self.get_rule_mod(xml)
-            operations = self.get_operations(xml["ListOfOperations"])
+            operations = (
+                self.get_operations(xml["ListOfOperations"])
+                if xml.get("ListOfOperations") is not None
+                else []
+            )
+            bidirectional = str(xml.get("@energyIncludeReverse", "0")) == "1"
 
             block.add_rule(
                 name,
@@ -610,6 +618,7 @@ class RuleBlockXML(XMLObj):
                 rate_constants=rate_constants,
                 rule_mod=rule_modifier,
                 operations=operations,
+                bidirectional=bidirectional,
             )
         block.consolidate_rules()
         return block
@@ -715,9 +724,7 @@ class RuleBlockXML(XMLObj):
     def get_rule_mod(self, xml):
         # TODO: create working rule mods class
         rule_mod = RuleMod()
-        list_ops = xml["ListOfOperations"]
-        if list_ops is None:
-            return None
+        list_ops = xml.get("ListOfOperations") or {}
         # determine which rule mod is being used, if any
         if "Delete" in list_ops:
             del_op = list_ops["Delete"]
@@ -728,6 +735,7 @@ class RuleBlockXML(XMLObj):
             # it does not apply to the whole rule
             if all(val == "1" for val in dmvals):
                 rule_mod.type = "DeleteMolecules"
+                rule_mod.add_modifier(rule_mod.type)
                 # JRF: I don't believe the id of the specific op rule_mod is currently used
                 # rule_mod.id = op["@id"]
         elif "ChangeCompartment" in list_ops:
@@ -743,6 +751,7 @@ class RuleBlockXML(XMLObj):
                     rule_mod.destination = move_op["@destination"]
                     rule_mod.flip = move_op["@flipOrientation"]
                     rule_mod.call = mod_call
+                    rule_mod.add_modifier("MoveConnected")
             else:
                 rule_mod.id = []
                 rule_mod.source = []
@@ -757,27 +766,67 @@ class RuleBlockXML(XMLObj):
                         rule_mod.destination.append(mo["@destination"])
                         rule_mod.flip.append(mo["@flipOrientation"])
                         rule_mod.call.append(mo["@moveConnected"])
-        elif "RateLaw" in xml:
-            # check if modifier is called
-            ratelaw = xml["RateLaw"]
-            rate_type = ratelaw["@type"]
-            if rate_type == "Function" and str(ratelaw.get("@totalrate", "0")) == "1":
-                rule_mod.type = "TotalRate"
-                rule_mod.id = ratelaw["@id"]
-                rule_mod.rate_type = ratelaw["@type"]
-                rule_mod.name = ratelaw["@name"]
-                rule_mod.call = ratelaw.get("@totalrate", "0")
+                if rule_mod.type == "MoveConnected":
+                    rule_mod.add_modifier("MoveConnected")
 
-        # TODO: add support for include/exclude reactants/products
-        if (
-            "ListOfIncludeReactants" in xml
-            or "ListOfIncludeProducts" in xml
-            or "ListOfExcludeReactants" in xml
-            or "ListOfExcludeProducts" in xml
+        if "RateLaw" in xml and isinstance(xml["RateLaw"], dict):
+            ratelaw = xml["RateLaw"]
+            if str(ratelaw.get("@totalrate", "0")) == "1":
+                if rule_mod.type is None:
+                    rule_mod.type = "TotalRate"
+                    rule_mod.id = ratelaw.get("@id")
+                    rule_mod.rate_type = ratelaw.get("@type")
+                    rule_mod.name = ratelaw.get("@name")
+                    rule_mod.call = ratelaw.get("@totalrate", "0")
+                rule_mod.add_modifier("TotalRate")
+            driving_work = ratelaw.get("@drivingWork")
+            if driving_work:
+                rule_mod.add_modifier(f"driven_by({driving_work})")
+
+        def _pattern_id_map(side_xml, elem_key):
+            id_map = {}
+            if not isinstance(side_xml, dict) or elem_key not in side_xml:
+                return id_map
+            items = side_xml[elem_key]
+            if not isinstance(items, list):
+                items = [items]
+            for idx, item in enumerate(items, start=1):
+                if isinstance(item, dict) and "@id" in item:
+                    id_map[item["@id"]] = idx
+            return id_map
+
+        rp_ids = _pattern_id_map(xml.get("ListOfReactantPatterns"), "ReactantPattern")
+        pp_ids = _pattern_id_map(xml.get("ListOfProductPatterns"), "ProductPattern")
+        for xml_tag, bngl_kw, id_map in (
+            ("ListOfIncludeReactants", "include_reactants", rp_ids),
+            ("ListOfExcludeReactants", "exclude_reactants", rp_ids),
+            ("ListOfIncludeProducts", "include_products", pp_ids),
+            ("ListOfExcludeProducts", "exclude_products", pp_ids),
         ):
-            print(
-                "WARNING: Include/Exclude Reactants/Products not currently supported as rule modifiers"
-            )
+            filter_xml = xml.get(xml_tag)
+            if filter_xml is None:
+                continue
+            entries = filter_xml if isinstance(filter_xml, list) else [filter_xml]
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                target_id = entry.get("@id", "")
+                pat_idx = id_map.get(target_id)
+                if pat_idx is None:
+                    digits = ""
+                    for ch in reversed(str(target_id)):
+                        if ch.isdigit():
+                            digits = ch + digits
+                        else:
+                            break
+                    pat_idx = int(digits) if digits else 1
+                raw_pats = entry.get("Pattern")
+                if raw_pats is None:
+                    continue
+                pat_list = raw_pats if isinstance(raw_pats, list) else [raw_pats]
+                pat_strs = [str(PatternXML(p).parsed_obj) for p in pat_list]
+                if pat_strs:
+                    rule_mod.add_modifier(f"{bngl_kw}({pat_idx},{','.join(pat_strs)})")
         return rule_mod
 
 
@@ -811,6 +860,43 @@ class EnergyPatternBlockXML(XMLObj):
             pattern = PatternXML(pattern_node).parsed_obj
             block.add_energy_pattern(epid, pattern, expr)
 
+        return block
+
+
+class BarrierPatternBlockXML(XMLObj):
+    """
+    BarrierPatternBlock XML parser, derived from XMLObj. Creates
+    a BarrierPatternBlock that contains the barrier patterns parsed.
+    """
+
+    def __init__(self, xml):
+        super().__init__(xml)
+
+    def _parse_side(self, side_xml):
+        if side_xml is None:
+            return []
+        pats = side_xml.get("Pattern")
+        if pats is None:
+            return []
+        if not isinstance(pats, list):
+            pats = [pats]
+        out = []
+        for pat in pats:
+            if isinstance(pat, dict) and pat.get("@pattern"):
+                out.append(pat["@pattern"])
+            else:
+                out.append(PatternXML(pat).parsed_obj)
+        return out
+
+    def parse_xml(self, xml):
+        block = BarrierPatternBlock()
+        entries = xml if isinstance(xml, list) else [xml]
+        for entry in entries:
+            bname = entry.get("@name") or entry.get("@id", "")
+            expr = entry["@expression"]
+            reactants = self._parse_side(entry.get("ListOfReactantPatterns"))
+            products = self._parse_side(entry.get("ListOfProductPatterns"))
+            block.add_barrier_pattern(bname, reactants, products, expr)
         return block
 
 

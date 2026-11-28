@@ -22,6 +22,7 @@
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
 #include "engine/NetworkGenerator.hpp"
+#include "engine/ObservableProjection.hpp"
 #include "engine/DelayedSemanticsGuard.hpp"
 #include "io/NetWriter.hpp"
 #include "compile/CompiledModel.hpp"
@@ -32,6 +33,29 @@
 namespace bng::io {
 
 namespace {
+
+thread_local bool gNextExprExpectsBoolean = false;
+thread_local int gCurrentSbmlVersion = 2;
+
+struct ScopedBooleanMathML {
+    bool previous;
+    ScopedBooleanMathML() : previous(gNextExprExpectsBoolean) {
+        gNextExprExpectsBoolean = true;
+    }
+    ~ScopedBooleanMathML() {
+        gNextExprExpectsBoolean = previous;
+    }
+};
+
+struct ScopedSbmlVersion {
+    int previous;
+    explicit ScopedSbmlVersion(int version) : previous(gCurrentSbmlVersion) {
+        gCurrentSbmlVersion = version;
+    }
+    ~ScopedSbmlVersion() {
+        gCurrentSbmlVersion = previous;
+    }
+};
 
 std::string base64Encode(const std::string& input) {
     static constexpr char alphabet[] =
@@ -413,6 +437,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     // Events
     if (model.getEventFormatVersion().has_value()) {
+        ScopedSbmlVersion scopedVersion(options.version);
         sbml << writeEvents(model, groups, symbolIds, network, options.level);
     }
 
@@ -781,37 +806,35 @@ std::string SbmlWriter::writeEvents(
         const auto idIt = symbolIds.events.find(event.id);
         const auto id = idIt == symbolIds.events.end()
             ? makeValidSBMLId(event.id) : idIt->second;
-        // SBML Level 2 carries the delay as an event attribute, and it must
-        // be a constant there; a Level 3 delay element carries an expression.
-        std::string delayAttribute;
-        if (event.delay && level < 3) {
-            const double value = event.delay->evaluate([&](const std::string& name) {
-                return model.getParameters().evaluate(name);
-            }, 0.0);
-            if (!std::isfinite(value) || value < 0) {
-                throw std::runtime_error(
-                    "SBML export cannot preserve a non-constant event delay");
-            }
-            delayAttribute = " delay=\"" + std::to_string(value) + "\"";
-        }
         if (event.priority && level < 3) {
             throw std::runtime_error(
                 "SBML export cannot preserve an event priority below Level 3");
         }
+        const bool emitUseValuesFromTriggerTime =
+            level >= 3 || (level == 2 && gCurrentSbmlVersion >= 4);
         sbml << "      <event id=\"" << escapeXml(id)
-             << "\" name=\"" << escapeXml(event.id)
-             << "\" useValuesFromTriggerTime=\""
-             << (event.useValuesFromTriggerTime ? "true" : "false")
-             << "\"" << delayAttribute << ">\n";
-        sbml << "        <trigger initialValue=\""
-             << (event.initialValue ? "true" : "false")
-             << "\" persistent=\"" << (event.persistent ? "true" : "false")
-             << "\">\n";
+             << "\" name=\"" << escapeXml(event.id) << "\"";
+        if (emitUseValuesFromTriggerTime) {
+            sbml << " useValuesFromTriggerTime=\""
+                 << (event.useValuesFromTriggerTime ? "true" : "false") << "\"";
+        }
+        sbml << ">\n";
+        sbml << "        <trigger";
+        if (level >= 3) {
+            sbml << " initialValue=\""
+                 << (event.initialValue ? "true" : "false")
+                 << "\" persistent=\"" << (event.persistent ? "true" : "false")
+                 << "\"";
+        }
+        sbml << ">\n";
         sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
-        sbml << exprToMathML(event.trigger, "            ", symbolIds, true);
+        {
+            ScopedBooleanMathML booleanTrigger;
+            sbml << exprToMathML(event.trigger, "            ", symbolIds, true);
+        }
         sbml << "          </math>\n";
         sbml << "        </trigger>\n";
-        if (event.delay && level >= 3) {
+        if (event.delay) {
             sbml << "        <delay>\n";
             sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
             sbml << exprToMathML(*event.delay, "            ", symbolIds, true);
@@ -998,9 +1021,13 @@ std::string SbmlWriter::writeReactions(
 std::vector<SbmlWriter::ObservableGroup> SbmlWriter::computeObservableGroups(
     const ast::Model& model, const engine::GeneratedNetwork& network) {
     std::vector<ObservableGroup> groups;
-    auto& mutableModel = const_cast<ast::Model&>(model);
+    const compile::CompiledModel compiled(model);
+    const engine::ObservableProjection projection(compiled);
+    const auto& observables = model.getObservables();
+    groups.reserve(observables.size());
 
-    for (const auto& observable : model.getObservables()) {
+    for (std::size_t observableIndex = 0; observableIndex < observables.size(); ++observableIndex) {
+        const auto& observable = observables[observableIndex];
         ObservableGroup group;
         group.name = observable.getName();
         group.type = observable.getType();
@@ -1037,49 +1064,24 @@ std::vector<SbmlWriter::ObservableGroup> SbmlWriter::computeObservableGroups(
             }
         }
 
-        for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
-            std::size_t weight = 0;
-
-            for (const auto& patternText : observable.getPatterns()) {
-                try {
-                    antlr4::ANTLRInputStream input(patternText);
-                    BNGLexer lexer(&input);
-                    antlr4::CommonTokenStream tokens(&lexer);
-                    BNGParser parser(&tokens);
-                    auto* species = parser.species_def();
-
-                    if (parser.getNumberOfSyntaxErrors() == 0) {
-                        // A species-level compartment prefix/suffix is a
-                        // filter on the observable pattern, not a molecule
-                        // node attribute.  Ullmann matching alone therefore
-                        // otherwise counts the same graph in every
-                        // compartment (for example GLCo and GLCi in the
-                        // glycolysis BioModel), corrupting the SBML
-                        // assignment rules on round-trip.
-                        const auto patternCompartment =
-                            bng::parser::extractSpeciesCompartment(species);
-                        if (!patternCompartment.empty() &&
-                            network.species.get(speciesIndex).getCompartment() !=
-                                patternCompartment) {
-                            continue;
-                        }
-                        const auto pattern = bng::parser::buildPatternGraph(species, mutableModel);
-                        BNGcore::UllmannSGIso matcher(pattern,
-                            network.species.get(speciesIndex).getSpeciesGraph().getGraph());
-                        BNGcore::List<BNGcore::Map> maps;
-                        weight += matcher.find_maps(maps);
-                    }
-                } catch (...) {
-                    // Skip patterns that fail to parse
+        if (const auto& indexedWeights = observable.getIndexedSpeciesWeights();
+            indexedWeights.has_value()) {
+            for (const auto& [speciesIndex, weight] : *indexedWeights) {
+                if (speciesIndex < network.species.size() && weight > 0.0) {
+                    group.entries.push_back(
+                        {speciesIndex, static_cast<std::size_t>(std::llround(weight))});
                 }
             }
-
-            if (observable.getType() == "Species" && weight > 0) {
-                weight = 1;
-            }
-
-            if (weight > 0) {
-                group.entries.push_back({speciesIndex, weight});
+        } else {
+            for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
+                const auto& species = network.species.get(speciesIndex);
+                const int weight = projection.weight(
+                    observableIndex,
+                    species.getSpeciesGraph().getGraph(),
+                    species.getCompartment());
+                if (weight > 0) {
+                    group.entries.push_back({speciesIndex, static_cast<std::size_t>(weight)});
+                }
             }
         }
 
@@ -1094,93 +1096,293 @@ std::string SbmlWriter::exprToMathML(
     const std::string& indent,
     const SymbolIds& symbolIds,
     bool preferSpecies) {
-    std::ostringstream out;
+    const bool topExpectBoolean = gNextExprExpectsBoolean;
+    gNextExprExpectsBoolean = false;
 
-    switch (expr.kind()) {
+    const auto isBooleanExpr = [](const ast::Expression& node) -> bool {
+        if (node.kind() == ast::ExpressionKind::Unary) {
+            return node.name() == "!" || node.name() == "~";
+        }
+        if (node.kind() == ast::ExpressionKind::Binary) {
+            const auto& op = node.name();
+            return op == "==" || op == "!=" || op == "~=" ||
+                   op == ">" || op == ">=" || op == "<" || op == "<=" ||
+                   op == "&&" || op == "||" || op == "^^";
+        }
+        return false;
+    };
+
+    std::function<std::string(const ast::Expression&, const std::string&, bool)> emit;
+    emit = [&](const ast::Expression& node,
+               const std::string& ind,
+               bool expectBoolean) -> std::string {
+        const bool nodeIsBoolean = isBooleanExpr(node);
+        if (expectBoolean && !nodeIsBoolean) {
+            std::ostringstream wrapped;
+            wrapped << ind << "<apply>\n"
+                    << ind << "  <neq/>\n"
+                    << emit(node, ind + "  ", false)
+                    << ind << "  <cn> 0 </cn>\n"
+                    << ind << "</apply>\n";
+            return wrapped.str();
+        }
+        if (!expectBoolean && nodeIsBoolean) {
+            std::ostringstream wrapped;
+            wrapped << ind << "<piecewise>\n"
+                    << ind << "  <piece>\n"
+                    << ind << "    <cn> 1 </cn>\n"
+                    << emit(node, ind + "    ", true)
+                    << ind << "  </piece>\n"
+                    << ind << "  <otherwise>\n"
+                    << ind << "    <cn> 0 </cn>\n"
+                    << ind << "  </otherwise>\n"
+                    << ind << "</piecewise>\n";
+            return wrapped.str();
+        }
+
+        std::ostringstream out;
+        switch (node.kind()) {
         case ast::ExpressionKind::Number:
-            out << indent << "<cn> " << std::setprecision(17)
-                << expr.numberValue() << " </cn>\n";
+            out << ind << "<cn> " << std::setprecision(17)
+                << node.numberValue() << " </cn>\n";
             break;
 
         case ast::ExpressionKind::Identifier:
-            if (expr.name() == "time") {
-                out << indent
+            if (node.name() == "time") {
+                out << ind
                     << "<csymbol encoding=\"text\" "
                     << "definitionURL=\"http://www.sbml.org/sbml/symbols/time\">"
                     << " time </csymbol>\n";
             } else {
-                std::string id = expr.name();
-                if (const auto it = symbolIds.parameters.find(expr.name());
+                std::string id = node.name();
+                if (const auto it = symbolIds.parameters.find(node.name());
                     it != symbolIds.parameters.end()) {
                     id = it->second;
-                } else if (const auto it = symbolIds.functions.find(expr.name());
+                } else if (const auto it = symbolIds.functions.find(node.name());
                            it != symbolIds.functions.end()) {
                     id = it->second;
                 } else if (preferSpecies &&
-                           symbolIds.observableSpecies.count(expr.name()) != 0) {
+                           symbolIds.observableSpecies.count(node.name()) != 0) {
                     // An observable that covers one species names that
                     // species, so the exported event keeps its meaning and a
                     // re-imported document can execute it.
-                    id = symbolIds.observableSpecies.at(expr.name());
-                } else if (const auto it = symbolIds.observables.find(expr.name());
+                    id = symbolIds.observableSpecies.at(node.name());
+                } else if (const auto it = symbolIds.observables.find(node.name());
                            it != symbolIds.observables.end()) {
                     id = it->second;
                 }
-                out << indent << "<ci> " << escapeXml(id) << " </ci>\n";
+                out << ind << "<ci> " << escapeXml(id) << " </ci>\n";
             }
             break;
 
         case ast::ExpressionKind::Unary:
-            if (expr.name() == "-") {
-                out << indent << "<apply>\n";
-                out << indent << "  <minus/>\n";
-                out << exprToMathML(expr.args()[0], indent + "  ", symbolIds, preferSpecies);
-                out << indent << "</apply>\n";
-            } else if (expr.name() == "!") {
-                out << indent << "<apply>\n";
-                out << indent << "  <not/>\n";
-                out << exprToMathML(expr.args()[0], indent + "  ", symbolIds, preferSpecies);
-                out << indent << "</apply>\n";
+            if (node.name() == "-") {
+                out << ind << "<apply>\n";
+                out << ind << "  <minus/>\n";
+                out << emit(node.args()[0], ind + "  ", false);
+                out << ind << "</apply>\n";
+            } else if (node.name() == "!" || node.name() == "~") {
+                out << ind << "<apply>\n";
+                out << ind << "  <not/>\n";
+                out << emit(node.args()[0], ind + "  ", true);
+                out << ind << "</apply>\n";
             } else {
-                out << exprToMathML(expr.args()[0], indent, symbolIds, preferSpecies);
+                out << emit(node.args()[0], ind, false);
             }
             break;
 
         case ast::ExpressionKind::Binary: {
-            out << indent << "<apply>\n";
-            const auto& op = expr.name();
-            if (op == "+") out << indent << "  <plus/>\n";
-            else if (op == "-") out << indent << "  <minus/>\n";
-            else if (op == "*") out << indent << "  <times/>\n";
-            else if (op == "/") out << indent << "  <divide/>\n";
-            else if (op == "^" || op == "**") out << indent << "  <power/>\n";
-            else if (op == "%") out << indent << "  <rem/>\n";
-            else if (op == "==") out << indent << "  <eq/>\n";
-            else if (op == "!=" || op == "~=") out << indent << "  <neq/>\n";
-            else if (op == ">") out << indent << "  <gt/>\n";
-            else if (op == ">=") out << indent << "  <geq/>\n";
-            else if (op == "<") out << indent << "  <lt/>\n";
-            else if (op == "<=") out << indent << "  <leq/>\n";
-            else if (op == "&&") out << indent << "  <and/>\n";
-            else if (op == "||") out << indent << "  <or/>\n";
-            else if (op == "^^") out << indent << "  <xor/>\n";
-            else out << indent << "  <times/>\n";
+            const auto& op = node.name();
+            if (op == "%") {
+                // Lower modulo (fmod semantics, truncating toward zero) using
+                // SBML L2-compatible MathML rather than L3-only <rem/>.
+                const auto q = ast::Expression::binary("/", node.args()[0], node.args()[1]);
+                const auto truncQ = ast::Expression::function(
+                    "if",
+                    {ast::Expression::binary(">=", q, ast::Expression::number(0.0)),
+                     ast::Expression::function("floor", {q}),
+                     ast::Expression::function("ceil", {q})});
+                const auto lowered = ast::Expression::binary(
+                    "-", node.args()[0], ast::Expression::binary("*", node.args()[1], truncQ));
+                return emit(lowered, ind, false);
+            }
+            const bool logicalOp = (op == "&&" || op == "||" || op == "^^");
+            out << ind << "<apply>\n";
+            if (op == "+") out << ind << "  <plus/>\n";
+            else if (op == "-") out << ind << "  <minus/>\n";
+            else if (op == "*") out << ind << "  <times/>\n";
+            else if (op == "/") out << ind << "  <divide/>\n";
+            else if (op == "^" || op == "**") out << ind << "  <power/>\n";
+            else if (op == "==") out << ind << "  <eq/>\n";
+            else if (op == "!=" || op == "~=") out << ind << "  <neq/>\n";
+            else if (op == ">") out << ind << "  <gt/>\n";
+            else if (op == ">=") out << ind << "  <geq/>\n";
+            else if (op == "<") out << ind << "  <lt/>\n";
+            else if (op == "<=") out << ind << "  <leq/>\n";
+            else if (op == "&&") out << ind << "  <and/>\n";
+            else if (op == "||") out << ind << "  <or/>\n";
+            else if (op == "^^") out << ind << "  <xor/>\n";
+            else out << ind << "  <times/>\n";
 
-            out << exprToMathML(expr.args()[0], indent + "  ", symbolIds, preferSpecies);
-            out << exprToMathML(expr.args()[1], indent + "  ", symbolIds, preferSpecies);
-            out << indent << "</apply>\n";
+            out << emit(node.args()[0], ind + "  ", logicalOp);
+            out << emit(node.args()[1], ind + "  ", logicalOp);
+            out << ind << "</apply>\n";
             break;
         }
 
         case ast::ExpressionKind::Function:
         case ast::ExpressionKind::ObservableRef: {
-            const auto& funcName = expr.name();
-            if (funcName == "time" && expr.args().empty()) {
-                out << indent
+            const auto& funcName = node.name();
+            std::string lowerName = funcName;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (funcName == "time" && node.args().empty()) {
+                out << ind
                     << "<csymbol encoding=\"text\" "
                     << "definitionURL=\"http://www.sbml.org/sbml/symbols/time\">"
                     << " time </csymbol>\n";
                 break;
+            }
+            if (funcName == "log10" || funcName == "log2") {
+                if (node.args().size() != 1) {
+                    throw std::invalid_argument(
+                        "SBML writer requires " + funcName + " to have 1 argument");
+                }
+                const int base = (funcName == "log10") ? 10 : 2;
+                out << ind << "<apply>\n"
+                    << ind << "  <log/>\n"
+                    << ind << "  <logbase>\n"
+                    << ind << "    <cn type=\"integer\"> " << base << " </cn>\n"
+                    << ind << "  </logbase>\n"
+                    << emit(node.args()[0], ind + "  ", false)
+                    << ind << "</apply>\n";
+                break;
+            }
+            if (funcName == "rint") {
+                if (node.args().size() != 1) {
+                    throw std::invalid_argument("SBML writer requires rint to have 1 argument");
+                }
+                const auto lowered = ast::Expression::function(
+                    "floor",
+                    {ast::Expression::binary("+", node.args()[0], ast::Expression::number(0.5))});
+                return emit(lowered, ind, false);
+            }
+            if (funcName == "sum") {
+                if (node.args().empty()) {
+                    out << ind << "<cn> 0 </cn>\n";
+                } else if (node.args().size() == 1) {
+                    out << emit(node.args()[0], ind, false);
+                } else {
+                    out << ind << "<apply>\n" << ind << "  <plus/>\n";
+                    for (const auto& arg : node.args()) {
+                        out << emit(arg, ind + "  ", false);
+                    }
+                    out << ind << "</apply>\n";
+                }
+                break;
+            }
+            if (funcName == "avg") {
+                if (node.args().empty()) {
+                    throw std::invalid_argument("SBML writer requires avg to have at least 1 argument");
+                }
+                if (node.args().size() == 1) {
+                    out << emit(node.args()[0], ind, false);
+                } else {
+                    out << ind << "<apply>\n"
+                        << ind << "  <divide/>\n"
+                        << ind << "  <apply>\n"
+                        << ind << "    <plus/>\n";
+                    for (const auto& arg : node.args()) {
+                        out << emit(arg, ind + "    ", false);
+                    }
+                    out << ind << "  </apply>\n"
+                        << ind << "  <cn> " << node.args().size() << " </cn>\n"
+                        << ind << "</apply>\n";
+                }
+                break;
+            }
+            if (funcName == "sign") {
+                if (node.args().size() != 1) {
+                    throw std::invalid_argument("SBML writer requires sign to have 1 argument");
+                }
+                const auto& x = node.args()[0];
+                out << ind << "<piecewise>\n"
+                    << ind << "  <piece>\n"
+                    << ind << "    <cn> 1 </cn>\n"
+                    << emit(ast::Expression::binary(">", x, ast::Expression::number(0.0)),
+                            ind + "    ", true)
+                    << ind << "  </piece>\n"
+                    << ind << "  <piece>\n"
+                    << ind << "    <cn> -1 </cn>\n"
+                    << emit(ast::Expression::binary("<", x, ast::Expression::number(0.0)),
+                            ind + "    ", true)
+                    << ind << "  </piece>\n"
+                    << ind << "  <otherwise>\n"
+                    << ind << "    <cn> 0 </cn>\n"
+                    << ind << "  </otherwise>\n"
+                    << ind << "</piecewise>\n";
+                break;
+            }
+            if (funcName == "mratio") {
+                throw std::invalid_argument(
+                    "SBML writer cannot lower BNGL built-in function 'mratio' to standard SBML MathML");
+            }
+            if (lowerName == "sat" && node.args().size() == 3) {
+                const auto lowered = ast::Expression::binary(
+                    "/",
+                    ast::Expression::binary("*", node.args()[0], node.args()[2]),
+                    ast::Expression::binary("+", node.args()[1], node.args()[2]));
+                return emit(lowered, ind, false);
+            }
+            if (lowerName == "mm" && (node.args().size() == 3 || node.args().size() == 4)) {
+                if (node.args().size() == 3) {
+                    const auto lowered = ast::Expression::binary(
+                        "/",
+                        ast::Expression::binary("*", node.args()[0], node.args()[2]),
+                        ast::Expression::binary("+", node.args()[1], node.args()[2]));
+                    return emit(lowered, ind, false);
+                }
+                const auto& kcat = node.args()[0];
+                const auto& Km = node.args()[1];
+                const auto& St = node.args()[2];
+                const auto& Et = node.args()[3];
+                const auto b = ast::Expression::binary(
+                    "-", ast::Expression::binary("-", St, Km), Et);
+                const auto q = ast::Expression::function(
+                    "sqrt",
+                    {ast::Expression::binary(
+                        "+",
+                        ast::Expression::binary("^", b, ast::Expression::number(2.0)),
+                        ast::Expression::binary(
+                            "*",
+                            ast::Expression::binary("*", ast::Expression::number(4.0), St),
+                            Km))});
+                const auto S = ast::Expression::function(
+                    "if",
+                    {ast::Expression::binary(">=", b, ast::Expression::number(0.0)),
+                     ast::Expression::binary("*", ast::Expression::number(0.5),
+                                             ast::Expression::binary("+", b, q)),
+                     ast::Expression::binary(
+                         "/",
+                         ast::Expression::binary(
+                             "*",
+                             ast::Expression::binary("*", ast::Expression::number(2.0), St),
+                             Km),
+                         ast::Expression::binary("-", q, b))});
+                const auto lowered = ast::Expression::binary(
+                    "/",
+                    ast::Expression::binary("*", ast::Expression::binary("*", kcat, Et), S),
+                    ast::Expression::binary("+", Km, S));
+                return emit(lowered, ind, false);
+            }
+            if (lowerName == "hill" && node.args().size() == 4) {
+                const auto sn = ast::Expression::binary("^", node.args()[3], node.args()[2]);
+                const auto khn = ast::Expression::binary("^", node.args()[1], node.args()[2]);
+                const auto lowered = ast::Expression::binary(
+                    "/",
+                    ast::Expression::binary("*", node.args()[0], sn),
+                    ast::Expression::binary("+", khn, sn));
+                return emit(lowered, ind, false);
             }
             // Built-in math functions
             if (funcName == "exp" || funcName == "log" || funcName == "ln" ||
@@ -1191,23 +1393,17 @@ std::string SbmlWriter::exprToMathML(
                 funcName == "abs" || funcName == "sqrt" || funcName == "floor" ||
                 funcName == "ceil" || funcName == "ceiling" ||
                 funcName == "factorial" || funcName == "min" || funcName == "max") {
-                // SBML Level 2 does not permit the Level 3 <min/> and
-                // <max/> MathML operators.  Lower an n-ary extremum to
-                // nested piecewise expressions so the declared L2V3
-                // document remains valid without changing the writer's
-                // historical output level.  This must happen before opening
-                // <apply>: piecewise is an expression, not an operator.
                 if (funcName == "min" || funcName == "max") {
-                    const auto& args = expr.args();
+                    const auto& args = node.args();
                     if (args.empty()) {
-                        out << indent << "<cn> NaN </cn>\n";
+                        out << ind << "<cn> NaN </cn>\n";
                     } else {
                         const bool isMin = funcName == "min";
                         const std::function<std::string(std::size_t, std::size_t, const std::string&)>
                             emitExtremum = [&](std::size_t first, std::size_t last,
                                                const std::string& levelIndent) {
                                 if (first == last) {
-                                    return exprToMathML(args[first], levelIndent, symbolIds, preferSpecies);
+                                    return emit(args[first], levelIndent, false);
                                 }
                                 std::ostringstream nested;
                                 nested << levelIndent << "<piecewise>\n";
@@ -1217,34 +1413,34 @@ std::string SbmlWriter::exprToMathML(
                                 nested << levelIndent << "      <"
                                        << (isMin ? "lt" : "gt") << "/>\n";
                                 nested << emitExtremum(first, last - 1, levelIndent + "      ");
-                                nested << exprToMathML(args[last], levelIndent + "      ", symbolIds, preferSpecies);
+                                nested << emit(args[last], levelIndent + "      ", false);
                                 nested << levelIndent << "    </apply>\n";
                                 nested << levelIndent << "  </piece>\n";
                                 nested << levelIndent << "  <otherwise>\n";
-                                nested << exprToMathML(args[last], levelIndent + "    ", symbolIds, preferSpecies);
+                                nested << emit(args[last], levelIndent + "    ", false);
                                 nested << levelIndent << "  </otherwise>\n";
                                 nested << levelIndent << "</piecewise>\n";
                                 return nested.str();
                             };
-                        out << emitExtremum(0, args.size() - 1, indent);
+                        out << emitExtremum(0, args.size() - 1, ind);
                     }
                     break;
                 }
-                out << indent << "<apply>\n";
+                out << ind << "<apply>\n";
                 if (funcName == "ln" || funcName == "log") {
-                    out << indent << "  <ln/>\n";
+                    out << ind << "  <ln/>\n";
                 } else if (funcName == "exp") {
-                    out << indent << "  <exp/>\n";
+                    out << ind << "  <exp/>\n";
                 } else if (funcName == "sqrt") {
-                    out << indent << "  <root/>\n";
+                    out << ind << "  <root/>\n";
                 } else if (funcName == "abs") {
-                    out << indent << "  <abs/>\n";
+                    out << ind << "  <abs/>\n";
                 } else if (funcName == "floor") {
-                    out << indent << "  <floor/>\n";
+                    out << ind << "  <floor/>\n";
                 } else if (funcName == "ceil" || funcName == "ceiling") {
-                    out << indent << "  <ceiling/>\n";
+                    out << ind << "  <ceiling/>\n";
                 } else if (funcName == "factorial") {
-                    out << indent << "  <factorial/>\n";
+                    out << ind << "  <factorial/>\n";
                 } else {
                     const auto sbmlFunctionName = [&]() -> const char* {
                         if (funcName == "asin") return "arcsin";
@@ -1255,12 +1451,12 @@ std::string SbmlWriter::exprToMathML(
                         if (funcName == "atanh") return "arctanh";
                         return funcName.c_str();
                     }();
-                    out << indent << "  <" << sbmlFunctionName << "/>\n";
+                    out << ind << "  <" << sbmlFunctionName << "/>\n";
                 }
-                for (const auto& arg : expr.args()) {
-                    out << exprToMathML(arg, indent + "  ", symbolIds, preferSpecies);
+                for (const auto& arg : node.args()) {
+                    out << emit(arg, ind + "  ", false);
                 }
-                out << indent << "</apply>\n";
+                out << ind << "</apply>\n";
             } else if (funcName == "delay" || funcName == "rateOf") {
                 // SBML Level 3 Version 2 spells the delay and rateOf csymbols
                 // as <csymbol> elements inside <apply> (Core Sec. 3.4.6, "Use
@@ -1269,13 +1465,6 @@ std::string SbmlWriter::exprToMathML(
                 // such an element would produce a document that libSBML
                 // rejects.  libSBML 5.21.1 serializes both csymbols in
                 // exactly this form.
-                //
-                // The csymbols are operators, not identifiers, so they are
-                // only the right lowering when the model does not declare a
-                // function of the same name.  A declared function with
-                // arguments has no SBML counterpart here, and writing the
-                // history operator for it would silently change the model's
-                // meaning, so the writer refuses instead.
                 const auto declared = symbolIds.parameterizedFunctions.find(funcName);
                 if (declared != symbolIds.parameterizedFunctions.end()) {
                     throw std::invalid_argument(
@@ -1286,24 +1475,24 @@ std::string SbmlWriter::exprToMathML(
                 }
                 const std::size_t expected =
                     funcName == "delay" ? 2U : 1U;
-                if (expr.args().size() != expected) {
+                if (node.args().size() != expected) {
                     throw std::invalid_argument(
                         "SBML writer cannot lower " + funcName + " with " +
-                        std::to_string(expr.args().size()) +
+                        std::to_string(node.args().size()) +
                         " arguments; SBML Level 3 Version 2 requires " +
                         std::to_string(expected));
                 }
-                out << indent << "<apply>\n";
-                out << indent
+                out << ind << "<apply>\n";
+                out << ind
                     << "  <csymbol encoding=\"text\" definitionURL=\""
                     << "http://www.sbml.org/sbml/symbols/" << funcName << "\">"
                     << " " << funcName << " </csymbol>\n";
-                for (const auto& arg : expr.args()) {
-                    out << exprToMathML(arg, indent + "  ", symbolIds, preferSpecies);
+                for (const auto& arg : node.args()) {
+                    out << emit(arg, ind + "  ", false);
                 }
-                out << indent << "</apply>\n";
+                out << ind << "</apply>\n";
             } else if (isDistribFunction(funcName)) {
-                const auto arity = expr.args().size();
+                const auto arity = node.args().size();
                 const bool validArity =
                     (funcName == "distrib_uniform" && arity == 2) ||
                     (funcName == "distrib_bernoulli" && arity == 1) ||
@@ -1326,36 +1515,48 @@ std::string SbmlWriter::exprToMathML(
                         "' has an invalid argument count");
                 }
                 const auto symbol = funcName.substr(std::string("distrib_").size());
-                out << indent << "<apply>\n"
-                    << indent << "  <csymbol encoding=\"text\" "
+                out << ind << "<apply>\n"
+                    << ind << "  <csymbol encoding=\"text\" "
                     << "definitionURL=\"http://www.sbml.org/sbml/symbols/distrib/"
                     << symbol << "\"> " << symbol << " </csymbol>\n";
-                for (const auto& arg : expr.args()) {
-                    out << exprToMathML(arg, indent + "  ", symbolIds, preferSpecies);
+                for (const auto& arg : node.args()) {
+                    out << emit(arg, ind + "  ", false);
                 }
-                out << indent << "</apply>\n";
-            } else if (funcName == "if" && expr.args().size() == 3) {
-                // Piecewise for if(cond, then, else)
-                out << indent << "<piecewise>\n";
-                out << indent << "  <piece>\n";
-                out << exprToMathML(expr.args()[1], indent + "    ", symbolIds, preferSpecies);
-                out << exprToMathML(expr.args()[0], indent + "    ", symbolIds, preferSpecies);
-                out << indent << "  </piece>\n";
-                out << indent << "  <otherwise>\n";
-                out << exprToMathML(expr.args()[2], indent + "    ", symbolIds, preferSpecies);
-                out << indent << "  </otherwise>\n";
-                out << indent << "</piecewise>\n";
+                out << ind << "</apply>\n";
+            } else if (funcName == "if" && node.args().size() == 3) {
+                // Piecewise for if(cond, then, else) with coerced boolean condition
+                out << ind << "<piecewise>\n";
+                out << ind << "  <piece>\n";
+                out << emit(node.args()[1], ind + "    ", false);
+                out << emit(node.args()[0], ind + "    ", true);
+                out << ind << "  </piece>\n";
+                out << ind << "  <otherwise>\n";
+                out << emit(node.args()[2], ind + "    ", false);
+                out << ind << "  </otherwise>\n";
+                out << ind << "</piecewise>\n";
+            } else if (!node.args().empty()) {
+                if (const auto it = symbolIds.functions.find(funcName);
+                    it != symbolIds.functions.end()) {
+                    out << ind << "<apply>\n";
+                    out << ind << "  <ci> " << escapeXml(it->second) << " </ci>\n";
+                    for (const auto& arg : node.args()) {
+                        out << emit(arg, ind + "  ", false);
+                    }
+                    out << ind << "</apply>\n";
+                } else {
+                    throw std::invalid_argument(
+                        "SBML writer cannot lower function '" + funcName + "' with " +
+                        std::to_string(node.args().size()) + " argument(s) to SBML MathML");
+                }
             } else {
-                // Reference to model-defined function or observable
+                // Reference to zero-argument model-defined function or observable
                 std::string id = funcName;
-                if (expr.kind() == ast::ExpressionKind::ObservableRef) {
+                if (node.kind() == ast::ExpressionKind::ObservableRef) {
                     if (const auto it = symbolIds.observables.find(funcName);
                         it != symbolIds.observables.end()) {
                         id = it->second;
                     } else if (const auto it = symbolIds.functions.find(funcName);
                                it != symbolIds.functions.end()) {
-                        // Forward calls may be parsed as ObservableRef before
-                        // their function declaration has been read.
                         id = it->second;
                     }
                 } else if (const auto it = symbolIds.functions.find(funcName);
@@ -1368,19 +1569,14 @@ std::string SbmlWriter::exprToMathML(
                            it != symbolIds.parameters.end()) {
                     id = it->second;
                 }
-                out << indent << "<ci> " << escapeXml(id) << " </ci>\n";
+                out << ind << "<ci> " << escapeXml(id) << " </ci>\n";
             }
             break;
         }
 
         case ast::ExpressionKind::TableFunction: {
-            // SBML Core has no table-function primitive.  Lower the finite
-            // BNGL table to a MathML piecewise expression.  The interval
-            // boundaries match Expression::evaluate: values below the first
-            // point clamp to y[0], values at x[i] select that point, and
-            // values above the last point clamp to y.back().
-            const auto& xValues = expr.tableXValues();
-            const auto& yValues = expr.tableYValues();
+            const auto& xValues = node.tableXValues();
+            const auto& yValues = node.tableYValues();
             if (xValues.empty() || xValues.size() != yValues.size()) {
                 throw std::invalid_argument(
                     "SBML writer cannot lower an empty or mismatched BNGL table function");
@@ -1392,7 +1588,7 @@ std::string SbmlWriter::exprToMathML(
                         "SBML writer cannot lower a non-finite or non-monotone BNGL table function");
                 }
             }
-            if (expr.args().size() != 1) {
+            if (node.args().size() != 1) {
                 throw std::invalid_argument(
                     "SBML writer cannot lower a table function without one counter expression");
             }
@@ -1403,9 +1599,9 @@ std::string SbmlWriter::exprToMathML(
                        << value << " </cn>\n";
                 return number.str();
             };
-            const auto& counter = expr.args().front();
+            const auto& counter = node.args().front();
             if (xValues.size() == 1) {
-                out << emitNumber(yValues.front(), indent);
+                out << emitNumber(yValues.front(), ind);
                 break;
             }
 
@@ -1413,18 +1609,15 @@ std::string SbmlWriter::exprToMathML(
                 std::ostringstream condition;
                 condition << conditionIndent << "<apply>\n"
                           << conditionIndent << "  <lt/>\n"
-                          << exprToMathML(counter, conditionIndent + "  ", symbolIds, preferSpecies)
+                          << emit(counter, conditionIndent + "  ", false)
                           << emitNumber(upper, conditionIndent + "  ")
                           << conditionIndent << "</apply>\n";
                 return condition.str();
             };
 
-            out << indent << "<piecewise>\n";
-            // Match the native table evaluator below the first breakpoint.
-            // The interval pieces use only an upper bound so that an exact
-            // breakpoint belongs to the interval starting at that point.
+            out << ind << "<piecewise>\n";
             {
-                const std::string pieceIndent = indent + "  ";
+                const std::string pieceIndent = ind + "  ";
                 out << pieceIndent << "<piece>\n";
                 const std::string valueIndent = pieceIndent + "  ";
                 out << emitNumber(yValues.front(), valueIndent)
@@ -1432,10 +1625,10 @@ std::string SbmlWriter::exprToMathML(
                     << pieceIndent << "</piece>\n";
             }
             for (std::size_t index = 0; index + 1 < xValues.size(); ++index) {
-                const std::string pieceIndent = indent + "  ";
+                const std::string pieceIndent = ind + "  ";
                 out << pieceIndent << "<piece>\n";
                 const std::string valueIndent = pieceIndent + "  ";
-                if (expr.tableMethod() == "step") {
+                if (node.tableMethod() == "step") {
                     out << emitNumber(yValues[index], valueIndent);
                 } else {
                     const double denominator = xValues[index + 1] - xValues[index];
@@ -1448,7 +1641,7 @@ std::string SbmlWriter::exprToMathML(
                         << valueIndent << "        <divide/>\n"
                         << valueIndent << "          <apply>\n"
                         << valueIndent << "            <minus/>\n"
-                        << exprToMathML(counter, valueIndent + "            ", symbolIds, preferSpecies)
+                        << emit(counter, valueIndent + "            ", false)
                         << emitNumber(xValues[index], valueIndent + "            ")
                         << valueIndent << "          </apply>\n"
                         << emitNumber(denominator, valueIndent + "          ")
@@ -1465,15 +1658,17 @@ std::string SbmlWriter::exprToMathML(
                 out << emitCondition(xValues[index + 1], valueIndent)
                     << pieceIndent << "</piece>\n";
             }
-            out << indent << "  <otherwise>\n"
-                << emitNumber(yValues.back(), indent + "    ")
-                << indent << "  </otherwise>\n"
-                << indent << "</piecewise>\n";
+            out << ind << "  <otherwise>\n"
+                << emitNumber(yValues.back(), ind + "    ")
+                << ind << "  </otherwise>\n"
+                << ind << "</piecewise>\n";
             break;
         }
-    }
+        }
+        return out.str();
+    };
 
-    return out.str();
+    return emit(expr, indent, topExpectBoolean);
 }
 
 std::string SbmlWriter::rateLawToMathML(

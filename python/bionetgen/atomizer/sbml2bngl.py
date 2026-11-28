@@ -44,6 +44,7 @@ from sympy import Function
 from sympy.abc import _clash
 from sympy.printing.str import StrPrinter
 from sympy.core.sympify import SympifyError
+from bionetgen.atomizer.utils.util import safe_sympify
 
 
 from bionetgen.atomizer.utils.sbml_math import (
@@ -751,7 +752,7 @@ class SBML2BNGL:
         all_names = [i[0] for i in react] + [i[0] for i in prod]
         # SymPy is wonderful, _clash1 avoids built-ins like E, I etc
         try:
-            sym = sympy.sympify(form, locals=self.all_syms)
+            sym = safe_sympify(form, locals=self.all_syms)
 
             # Adjust assignment rules here to ensure that variables
             # that have been turned into assignment rules are properly
@@ -2171,7 +2172,7 @@ class SBML2BNGL:
         # We might need this for debugging complicated
         # piecewise function forms.
         try:
-            sym = sympy.sympify(form, locals=self.all_syms)
+            sym = safe_sympify(form, locals=self.all_syms)
         except SympifyError as e:
             logMess(
                 "ERROR:SYMP001",
@@ -2313,7 +2314,7 @@ class SBML2BNGL:
         for item in formulaToAdjustWith.items():
             name, form = item
             try:
-                sympy_forms[name] = sympy.sympify(form, locals=self.all_syms)
+                sympy_forms[name] = safe_sympify(form, locals=self.all_syms)
             except:
                 sympy_forms[name] = None
         sympy_subs = {}
@@ -2537,7 +2538,7 @@ class SBML2BNGL:
                         # TODO: if for whatever reason a rate rule
                         # was defined as a parameter that is not 0
                         # remove it. This might not be exact behavior
-                        if re.search("^{0}\s".format(rawArule[0]), element):
+                        if re.search(r"^{0}\s".format(re.escape(rawArule[0])), element):
                             logMess(
                                 "WARNING:SIM106",
                                 "Parameter {0} corresponds both as a non zero parameter \
@@ -2719,7 +2720,7 @@ class SBML2BNGL:
             """
             elif rawArule[2] == True:
                 for parameter in parameters:
-                    if re.search('^{0}\s'.format(rawArule[0]),parameter):
+                    if re.search(r'^{0}\s'.format(re.escape(rawArule[0])),parameter):
                         print '////',rawArule[0]
             """
             # we can't decide any of this here, we need the

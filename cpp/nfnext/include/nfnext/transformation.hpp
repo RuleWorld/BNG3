@@ -38,9 +38,17 @@ public:
     }
     ParticleId particle(std::size_t node) const { return particles_.at(node); }
     const std::vector<ParticleId>& particles() const noexcept { return particles_; }
+    void setSiteMaps(std::vector<std::vector<std::uint16_t>> maps) { site_maps_ = std::move(maps); }
+    std::uint16_t mappedSite(std::size_t node, std::uint16_t pattern_site) const noexcept {
+        if (node < site_maps_.size() && pattern_site < site_maps_[node].size()) {
+            return site_maps_[node][pattern_site];
+        }
+        return pattern_site;
+    }
 
 private:
     std::vector<ParticleId> particles_;
+    std::vector<std::vector<std::uint16_t>> site_maps_;
     friend class CompiledTransformation;
 };
 

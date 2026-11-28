@@ -45,18 +45,30 @@ bool ParameterList::hasFreshValue(std::size_t index) const {
 
 namespace {
 
-// True when the expression reads the simulation clock. `time` and `t` are
-// both bound to the `t` argument by Expression::evaluate, and a zero-arg
-// `time()`/`t()` call is handled as the same binding, so both spellings and
-// both the identifier and function node kinds must be recognized here.
-bool referencesTime(const Expression& expression) {
-    if ((expression.kind() == ExpressionKind::Identifier ||
-         expression.kind() == ExpressionKind::Function) &&
-        (expression.name() == "time" || expression.name() == "t")) {
+// True when the expression reads the simulation clock. `time` (and `time()`)
+// always reads the simulation clock, while bare `t` is treated as the
+// simulation clock ONLY when no user parameter named `t` is declared.
+bool referencesTime(const Expression& expression, bool tIsUserParameter) {
+    if (expression.kind() == ExpressionKind::Identifier) {
+        if (expression.name() == "time") return true;
+        if (expression.name() == "t" && !tIsUserParameter) return true;
+    } else if (expression.kind() == ExpressionKind::Function) {
+        if (expression.name() == "time" || expression.name() == "t") return true;
+    }
+    for (const auto& child : expression.args()) {
+        if (referencesTime(child, tIsUserParameter)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool referencesIdentifier(const Expression& expression, const std::string& target) {
+    if (expression.kind() == ExpressionKind::Identifier && expression.name() == target) {
         return true;
     }
     for (const auto& child : expression.args()) {
-        if (referencesTime(child)) {
+        if (referencesIdentifier(child, target)) {
             return true;
         }
     }
@@ -70,9 +82,10 @@ bool ParameterList::isTimeDependent(const std::string& name) const {
 }
 
 bool ParameterList::expressionIsTimeDependent(const Expression& expression) const {
+    const bool tIsUserParameter = indexByName_.find("t") != indexByName_.end();
     std::unordered_set<std::string> visiting;
     const auto mayDependOnTime = [&](const auto& self, const Expression& candidate) -> bool {
-        if (referencesTime(candidate)) return true;
+        if (referencesTime(candidate, tIsUserParameter)) return true;
 
         switch (candidate.kind()) {
         case ExpressionKind::Number:
@@ -132,7 +145,8 @@ bool ParameterList::computeTimeDependent(std::size_t index, std::vector<bool>& v
     visiting[index] = true;
 
     const auto& expression = parameters_[index].getExpression();
-    bool dependent = referencesTime(expression);
+    const bool tIsUserParameter = indexByName_.find("t") != indexByName_.end();
+    bool dependent = referencesTime(expression, tIsUserParameter);
     if (!dependent) {
         for (const auto& dependency : expression.getDependencies()) {
             const auto iter = indexByName_.find(dependency);
@@ -140,6 +154,14 @@ bool ParameterList::computeTimeDependent(std::size_t index, std::vector<bool>& v
                 dependent = true;
                 break;
             }
+        }
+    }
+    // Expression::getDependencies() omits "t" for legacy time-alias callers;
+    // when "t" is declared as a user parameter, follow its dependency edge here.
+    if (!dependent && tIsUserParameter && referencesIdentifier(expression, "t")) {
+        const auto iter = indexByName_.find("t");
+        if (iter != indexByName_.end() && computeTimeDependent(iter->second, visiting)) {
+            dependent = true;
         }
     }
 

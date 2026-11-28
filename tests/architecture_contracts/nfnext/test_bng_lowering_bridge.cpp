@@ -1650,8 +1650,9 @@ end reaction rules
     assert(ep.energy == -3.5);
     assert(ep.expression == "G0");
     assert(ep.pattern.nodes.size() == 1);
-    assert(ep.pattern.nodes[0].constraints.size() == 1);
+    assert(ep.pattern.nodes[0].constraints.size() == 2);
     assert(ep.pattern.nodes[0].constraints[0].kind == nfnext::PatternIR::SiteConstraintKind::State);
+    assert(ep.pattern.nodes[0].constraints[1].kind == nfnext::PatternIR::SiteConstraintKind::Free);
 
     // Energy patterns on an elementary-rate rule do not require energy
     // modulation; execution is supported when otherwise valid.

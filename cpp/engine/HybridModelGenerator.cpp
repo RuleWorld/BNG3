@@ -1,5 +1,6 @@
 #include "HybridModelGenerator.hpp"
 
+#include <cctype>
 #include <fstream>
 #include <iostream>
 #include <set>
@@ -13,11 +14,157 @@
 #include "BNGParser.h"
 #include "parser/BNGAstVisitor.hpp"
 #include "parser/PatternGraphBuilder.hpp"
+#include "core/PatternMatching.hpp"
 #include "core/Ullmann.hpp"
 #include "io/BnglWriter.hpp"
 #include "ast/RefineRule.hpp"
 
 namespace bng::engine {
+
+namespace {
+
+bool hmgIsBondNode(const BNGcore::Node& node) {
+    return node.get_type().get_type_name() == BNGcore::BOND_NODE_TYPE.get_type_name();
+}
+
+bool hmgIsComponentNode(const BNGcore::Node& node) {
+    if (hmgIsBondNode(node)) return false;
+    for (auto edge = node.edges_in_begin(); edge != node.edges_in_end(); ++edge) {
+        if (!hmgIsBondNode(**edge)) return true;
+    }
+    return false;
+}
+
+bool hmgIsMoleculeNode(const BNGcore::Node& node) {
+    return !hmgIsBondNode(node) && !hmgIsComponentNode(node);
+}
+
+bool hmgIsWildcardBondNode(const BNGcore::Node& node) {
+    if (!hmgIsBondNode(node) || node.in_degree() != 1) return false;
+    const auto st = node.get_state().get_BNG2_string();
+    return st == "!+" || st == "!?";
+}
+
+bool hmgIsExactPatternAutomorphism(const BNGcore::PatternGraph& pattern,
+                                   const BNGcore::Map& map) {
+    for (auto it = pattern.begin(); it != pattern.end(); ++it) {
+        const auto* source = *it;
+        const auto* target = map.mapf(*it);
+        if (target == nullptr) return false;
+        if (!(source->get_type() == target->get_type())) return false;
+        if (source->get_state().get_BNG2_string() != target->get_state().get_BNG2_string())
+            return false;
+        if (hmgIsMoleculeNode(*source) != hmgIsMoleculeNode(*target)) return false;
+        if (hmgIsMoleculeNode(*source) &&
+            source->get_compartment() != target->get_compartment())
+            return false;
+        if (source->in_degree() != target->in_degree() ||
+            source->out_degree() != target->out_degree())
+            return false;
+    }
+    return true;
+}
+
+std::size_t hmgCountExactPatternAutomorphisms(const BNGcore::PatternGraph& pattern) {
+    if (pattern.empty()) return 0;
+    BNGcore::UllmannSGIso matcher(pattern, pattern);
+    BNGcore::List<BNGcore::Map> maps;
+    matcher.find_maps(maps);
+    bool hasWildcard = false;
+    std::vector<BNGcore::Node*> keyNodes;
+    for (auto it = pattern.begin(); it != pattern.end(); ++it) {
+        if (hmgIsWildcardBondNode(**it)) hasWildcard = true;
+        else keyNodes.push_back(*it);
+    }
+    if (!hasWildcard) {
+        std::size_t count = 0;
+        for (auto it = maps.begin(); it != maps.end(); ++it) {
+            if (hmgIsExactPatternAutomorphism(pattern, *it)) ++count;
+        }
+        return count;
+    }
+    std::set<std::vector<const BNGcore::Node*>> uniqueAuts;
+    for (auto it = maps.begin(); it != maps.end(); ++it) {
+        if (!hmgIsExactPatternAutomorphism(pattern, *it)) continue;
+        std::vector<const BNGcore::Node*> key;
+        key.reserve(keyNodes.size());
+        for (auto* pn : keyNodes) key.push_back(it->mapf(pn));
+        uniqueAuts.insert(std::move(key));
+    }
+    return uniqueAuts.size();
+}
+
+struct ParsedScopePrefix {
+    std::string raw;
+    std::string name;
+    std::string remainder;
+};
+
+ParsedScopePrefix splitLeadingScopePrefix(const std::string& text) {
+    const std::size_t pos = text.find_first_not_of(" \t\r\n");
+    if (pos == std::string::npos || text[pos] != '%') return {{}, {}, text};
+    const std::size_t begin = pos + 1;
+    if (begin >= text.size() ||
+        !(std::isalpha(static_cast<unsigned char>(text[begin])) || text[begin] == '_')) {
+        return {{}, {}, text};
+    }
+    std::size_t end = begin + 1;
+    while (end < text.size() &&
+           (std::isalnum(static_cast<unsigned char>(text[end])) || text[end] == '_')) {
+        ++end;
+    }
+    if (end < text.size() && text[end] == ':') {
+        std::size_t colonEnd = end + 1;
+        if (colonEnd < text.size() && text[colonEnd] == ':') ++colonEnd;
+        return {text.substr(pos, colonEnd - pos),
+                text.substr(begin, end - begin),
+                text.substr(colonEnd)};
+    }
+    return {{}, {}, text};
+}
+
+bool exprCanLiveInParameters(const ast::Expression& expr, const ast::Model& model) {
+    switch (expr.kind()) {
+    case ast::ExpressionKind::Number:
+        return true;
+    case ast::ExpressionKind::Identifier: {
+        const auto& name = expr.name();
+        if (name == "time" || name == "t") return false;
+        return model.getParameters().contains(name);
+    }
+    case ast::ExpressionKind::Unary:
+    case ast::ExpressionKind::Binary:
+        for (const auto& arg : expr.args()) {
+            if (!exprCanLiveInParameters(arg, model)) return false;
+        }
+        return true;
+    case ast::ExpressionKind::Function: {
+        const auto& fn = expr.name();
+        for (const auto& modelFn : model.getFunctions()) {
+            if (modelFn.getName() == fn) return false;
+        }
+        for (const auto& obs : model.getObservables()) {
+            if (obs.getName() == fn) return false;
+        }
+        for (const auto& arg : expr.args()) {
+            if (!exprCanLiveInParameters(arg, model)) return false;
+        }
+        return fn != "time" && fn != "tfun";
+    }
+    default:
+        return false;
+    }
+}
+
+bool exprMentionsIdentifier(const ast::Expression& expr, const std::string& name) {
+    if (expr.kind() == ast::ExpressionKind::Identifier && expr.name() == name) return true;
+    for (const auto& arg : expr.args()) {
+        if (exprMentionsIdentifier(arg, name)) return true;
+    }
+    return false;
+}
+
+} // namespace
 
 HybridModelGenerator::HybridModelGenerator(ast::Model& model) : model_(model) {}
 
@@ -34,7 +181,7 @@ bool HybridModelGenerator::isIsomorphic(const std::string& pattern1,
         BNGParser parser1(&tokens1);
         auto* species1 = parser1.species_def();
         if (parser1.getNumberOfSyntaxErrors() != 0) return false;
-        const auto graph1 = bng::parser::buildPatternGraph(species1, mutableModel, true);
+        const auto graph1 = bng::parser::buildPatternGraph(species1, mutableModel, false);
 
         antlr4::ANTLRInputStream input2(pattern2);
         BNGLexer lexer2(&input2);
@@ -42,12 +189,15 @@ bool HybridModelGenerator::isIsomorphic(const std::string& pattern1,
         BNGParser parser2(&tokens2);
         auto* species2 = parser2.species_def();
         if (parser2.getNumberOfSyntaxErrors() != 0) return false;
-        const auto graph2 = bng::parser::buildPatternGraph(species2, mutableModel, true);
+        const auto graph2 = bng::parser::buildPatternGraph(species2, mutableModel, false);
 
         // A population lumps the particles of one compartment: @EC:L(r) and
         // @CP:L(r) are different species even though their graphs match.
-        if (bng::parser::extractSpeciesCompartment(species1) !=
-            bng::parser::extractSpeciesCompartment(species2)) {
+        auto comp1 = bng::parser::extractSpeciesCompartment(species1);
+        if (comp1.empty()) comp1 = ast::SpeciesGraph(graph1).inferCompartment(model_.getCompartments());
+        auto comp2 = bng::parser::extractSpeciesCompartment(species2);
+        if (comp2.empty()) comp2 = ast::SpeciesGraph(graph2).inferCompartment(model_.getCompartments());
+        if (comp1 != comp2) {
             return false;
         }
 
@@ -77,7 +227,7 @@ std::size_t HybridModelGenerator::countMatches(const std::string& obsPattern,
         BNGParser parser1(&tokens1);
         auto* species1 = parser1.species_def();
         if (parser1.getNumberOfSyntaxErrors() != 0) return 0;
-        const auto pattern = bng::parser::buildPatternGraph(species1, mutableModel, true);
+        const auto pattern = bng::parser::buildPatternGraph(species1, mutableModel, false);
 
         antlr4::ANTLRInputStream input2(speciesPattern);
         BNGLexer lexer2(&input2);
@@ -85,17 +235,25 @@ std::size_t HybridModelGenerator::countMatches(const std::string& obsPattern,
         BNGParser parser2(&tokens2);
         auto* species2 = parser2.species_def();
         if (parser2.getNumberOfSyntaxErrors() != 0) return 0;
-        const auto target = bng::parser::buildPatternGraph(species2, mutableModel, true);
-        const auto observableCompartment =
+        const auto target = bng::parser::buildPatternGraph(species2, mutableModel, false);
+        auto observableCompartment =
             bng::parser::extractSpeciesCompartment(species1);
+        if (observableCompartment.empty()) {
+            observableCompartment =
+                ast::SpeciesGraph(pattern).inferCompartment(model_.getCompartments());
+        }
+        auto targetCompartment =
+            bng::parser::extractSpeciesCompartment(species2);
+        if (targetCompartment.empty()) {
+            targetCompartment =
+                ast::SpeciesGraph(target).inferCompartment(model_.getCompartments());
+        }
         if (!observableCompartment.empty() &&
-            observableCompartment != bng::parser::extractSpeciesCompartment(species2)) {
+            observableCompartment != targetCompartment) {
             return 0;
         }
 
-        BNGcore::UllmannSGIso matcher(pattern, target);
-        BNGcore::List<BNGcore::Map> maps;
-        return matcher.find_maps(maps);
+        return bng::core::countPatternMatches(pattern, target);
     } catch (...) {
         return 0;
     }
@@ -150,7 +308,12 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     // prefix += "_" + suffix
     std::string prefix;
     if (!opts.prefix.empty()) {
-        prefix = opts.prefix;
+        const std::filesystem::path prefixPath(opts.prefix);
+        if (prefixPath.is_relative() && !sourcePath.parent_path().empty()) {
+            prefix = (sourcePath.parent_path() / prefixPath).string();
+        } else {
+            prefix = opts.prefix;
+        }
     } else {
         prefix = (sourcePath.parent_path() / sourcePath.stem()).string();
     }
@@ -289,14 +452,19 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
         std::string populationName;   // The population molecule type name
         std::string compartment;      // Species-level compartment of the pattern
     };
-    auto speciesCompartmentOf = [](const std::string& text) {
+    auto speciesCompartmentOf = [&](const std::string& text) {
         antlr4::ANTLRInputStream input(text);
         BNGLexer lexer(&input);
         antlr4::CommonTokenStream tokens(&lexer);
         BNGParser parser(&tokens);
         auto* species = parser.species_def();
         if (parser.getNumberOfSyntaxErrors() != 0) return std::string();
-        return bng::parser::extractSpeciesCompartment(species);
+        auto comp = bng::parser::extractSpeciesCompartment(species);
+        if (comp.empty() && !model_.getCompartments().empty()) {
+            const auto graph = bng::parser::buildPatternGraph(species, model_, false);
+            comp = ast::SpeciesGraph(graph).inferCompartment(model_.getCompartments());
+        }
+        return comp;
     };
     std::vector<PopInfo> populations;
     for (const auto& pm : model_.getPopulationMaps()) {
@@ -426,27 +594,68 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
         return false;
     };
 
+    const auto optionValue = [&](const std::string& key) -> std::string {
+        const auto found = model_.getOptions().find(key);
+        return found != model_.getOptions().end() ? found->second : std::string();
+    };
+    const bool moleculesCountUnique = optionValue("MoleculesObservables") == "CountUnique";
+    const bool speciesCountUnique = optionValue("SpeciesObservables") == "CountUnique";
+
+    const auto patternAutomorphismCount = [&](const std::string& text) -> std::size_t {
+        try {
+            antlr4::ANTLRInputStream input(text);
+            BNGLexer lexer(&input);
+            antlr4::CommonTokenStream tokens(&lexer);
+            BNGParser parser(&tokens);
+            auto* species = parser.species_def();
+            if (parser.getNumberOfSyntaxErrors() != 0) return 1;
+            const auto graph = bng::parser::buildPatternGraph(species, model_, false);
+            const std::size_t aut = hmgCountExactPatternAutomorphisms(graph);
+            return aut > 0 ? aut : 1;
+        } catch (...) {
+            return 1;
+        }
+    };
+
     for (const auto& obs : model_.getObservables()) {
         // Copy the observable
         std::vector<std::string> patterns = obs.getPatterns();
 
-        // A Molecules observable counts embeddings, while a Species
-        // observable contributes once when its pattern (and any stoichiometry
-        // predicate) matches the concrete graph represented by a population.
+        // A Molecules observable counts embeddings (divided by |Aut(pattern)|
+        // when MoleculesObservables=CountUnique), while a Species observable
+        // contributes once when its pattern (and any stoichiometry predicate)
+        // matches the concrete graph represented by a population (short-
+        // circuiting across terms when SpeciesObservables=CountUnique).
         const bool speciesObservable = obs.getType() == "Species";
+        std::vector<bool> speciesPopTerminated(populations.size(), false);
         for (const auto& obsPattern : obs.getPatterns()) {
             const auto predicate = speciesObservable
                 ? countPredicate(obsPattern) : std::nullopt;
             const std::string& sourcePattern = predicate ? predicate->pattern : obsPattern;
             const std::string observableCompartment = speciesCompartmentOf(sourcePattern);
+            const std::size_t automorphisms = (!speciesObservable && moleculesCountUnique)
+                ? patternAutomorphismCount(sourcePattern)
+                : 1;
             std::set<std::string> matchedMappings;
-            for (const auto& pop : populations) {
-                const std::size_t matches = predicate
+            for (std::size_t popIdx = 0; popIdx < populations.size(); ++popIdx) {
+                const auto& pop = populations[popIdx];
+                if (speciesObservable && speciesCountUnique && speciesPopTerminated[popIdx]) {
+                    continue;
+                }
+                const std::size_t rawMatches = predicate
                     ? countMatches(predicate->pattern, pop.speciesPattern)
                     : countMatches(obsPattern, pop.speciesPattern);
+                const std::size_t matches = (!speciesObservable && moleculesCountUnique &&
+                                             automorphisms > 1 && rawMatches % automorphisms == 0)
+                    ? (rawMatches / automorphisms)
+                    : rawMatches;
                 const bool speciesMatch = predicate
-                    ? satisfiesPredicate(matches, *predicate)
-                    : matches > 0;
+                    ? satisfiesPredicate(rawMatches, *predicate)
+                    : rawMatches > 0;
+                if (speciesObservable && speciesCountUnique &&
+                    (predicate.has_value() || speciesMatch)) {
+                    speciesPopTerminated[popIdx] = true;
+                }
                 if (!(speciesObservable ? speciesMatch : matches > 0)) continue;
 
                 std::string populationPattern = pop.populationName + "()";
@@ -522,9 +731,12 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             throw std::runtime_error("Invalid population map species pattern: " +
                                      pop.speciesPattern);
         }
-        popSpeciesPatterns.emplace_back(
-            bng::parser::buildPatternGraph(particleSpecies, model_, false),
-            bng::parser::extractSpeciesCompartment(particleSpecies));
+        auto particleGraph = bng::parser::buildPatternGraph(particleSpecies, model_, false);
+        auto particleComp = bng::parser::extractSpeciesCompartment(particleSpecies);
+        if (particleComp.empty() && !model_.getCompartments().empty()) {
+            particleComp = ast::SpeciesGraph(particleGraph).inferCompartment(model_.getCompartments());
+        }
+        popSpeciesPatterns.emplace_back(std::move(particleGraph), std::move(particleComp));
 
         antlr4::ANTLRInputStream populationInput(pop.populationName + "()");
         BNGLexer populationLexer(&populationInput);
@@ -552,6 +764,126 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     }
     ast::CompartmentContextScope compartmentScope(compartmentDimensions, compartmentParents);
 
+    const auto evaluateObservableOnSpeciesPattern =
+        [&](const ast::Observable& obs, const std::string& speciesPat) -> std::size_t {
+        const bool isSpeciesObs = obs.getType() == "Species";
+        std::size_t total = 0;
+        for (const auto& obsPattern : obs.getPatterns()) {
+            const auto predicate = isSpeciesObs ? countPredicate(obsPattern) : std::nullopt;
+            const std::string& sourcePat = predicate ? predicate->pattern : obsPattern;
+            const std::size_t rawMatches = countMatches(sourcePat, speciesPat);
+            if (isSpeciesObs) {
+                const bool matched = predicate
+                    ? satisfiesPredicate(rawMatches, *predicate)
+                    : rawMatches > 0;
+                if (matched) ++total;
+                if (speciesCountUnique && (predicate.has_value() || matched)) break;
+            } else {
+                const std::size_t aut = moleculesCountUnique
+                    ? patternAutomorphismCount(sourcePat)
+                    : 1;
+                total += (aut > 1 && rawMatches % aut == 0) ? (rawMatches / aut) : rawMatches;
+            }
+        }
+        return total;
+    };
+
+    const auto specializeScopedExpression =
+        [&](const auto& self,
+            const ast::Expression& expr,
+            const std::unordered_map<std::string, std::string>& scopeToSpecies,
+            bool& substituted,
+            int depth) -> ast::Expression {
+        if (depth > 32) return expr;
+        switch (expr.kind()) {
+        case ast::ExpressionKind::Number:
+        case ast::ExpressionKind::Identifier:
+            return expr;
+        case ast::ExpressionKind::Unary: {
+            if (expr.args().empty()) return expr;
+            auto child = self(self, expr.args()[0], scopeToSpecies, substituted, depth + 1);
+            return ast::Expression::unary(expr.name(), std::move(child));
+        }
+        case ast::ExpressionKind::Binary: {
+            if (expr.args().size() < 2) return expr;
+            auto lhs = self(self, expr.args()[0], scopeToSpecies, substituted, depth + 1);
+            auto rhs = self(self, expr.args()[1], scopeToSpecies, substituted, depth + 1);
+            return ast::Expression::binary(expr.name(), std::move(lhs), std::move(rhs));
+        }
+        case ast::ExpressionKind::ObservableRef:
+        case ast::ExpressionKind::Function: {
+            const auto& fnName = expr.name();
+            const auto& args = expr.args();
+            // Scoped observable evaluation: Obs(x) where x is bound to a
+            // concrete population species pattern.
+            if (args.size() == 1 && args[0].kind() == ast::ExpressionKind::Identifier) {
+                const auto scopeIt = scopeToSpecies.find(args[0].name());
+                if (scopeIt != scopeToSpecies.end()) {
+                    for (const auto& obs : model_.getObservables()) {
+                        if (obs.getName() == fnName) {
+                            substituted = true;
+                            const std::size_t count =
+                                evaluateObservableOnSpeciesPattern(obs, scopeIt->second);
+                            return ast::Expression::number(static_cast<double>(count));
+                        }
+                    }
+                }
+            }
+            if (expr.kind() == ast::ExpressionKind::ObservableRef) {
+                std::vector<ast::Expression> newArgs;
+                newArgs.reserve(args.size());
+                for (const auto& arg : args) {
+                    newArgs.push_back(self(self, arg, scopeToSpecies, substituted, depth + 1));
+                }
+                return ast::Expression::observableRef(fnName, std::move(newArgs));
+            }
+            // Scoped user function call: f(x, ...) where at least one argument
+            // binds to a concrete population species pattern.
+            for (const auto& modelFn : model_.getFunctions()) {
+                if (modelFn.getName() != fnName ||
+                    modelFn.getArgs().size() != args.size() ||
+                    args.empty()) {
+                    continue;
+                }
+                std::unordered_map<std::string, std::string> nestedScopes;
+                bool anyBound = false;
+                for (std::size_t ai = 0; ai < args.size(); ++ai) {
+                    if (args[ai].kind() == ast::ExpressionKind::Identifier) {
+                        const auto scopeIt = scopeToSpecies.find(args[ai].name());
+                        if (scopeIt != scopeToSpecies.end()) {
+                            nestedScopes[modelFn.getArgs()[ai]] = scopeIt->second;
+                            anyBound = true;
+                        }
+                    }
+                }
+                if (anyBound) {
+                    substituted = true;
+                    return self(self, modelFn.getExpression(), nestedScopes, substituted, depth + 1);
+                }
+            }
+            std::vector<ast::Expression> newArgs;
+            newArgs.reserve(args.size());
+            for (const auto& arg : args) {
+                newArgs.push_back(self(self, arg, scopeToSpecies, substituted, depth + 1));
+            }
+            return ast::Expression::function(fnName, std::move(newArgs));
+        }
+        default:
+            return expr;
+        }
+    };
+
+    const auto findPopulationSpeciesPattern =
+        [&](const std::string& popName, const std::string& comp) -> std::optional<std::string> {
+        for (const auto& pop : populations) {
+            if (pop.populationName == popName &&
+                (comp.empty() || pop.compartment.empty() || pop.compartment == comp)) {
+                return pop.speciesPattern;
+            }
+        }
+        return std::nullopt;
+    };
+
     std::size_t ruleCount = 0;
     for (const auto& rule : model_.getReactionRules()) {
         ast::RefineRuleParams refineParams;
@@ -563,6 +895,105 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             rule, popSpeciesPatterns, model_, hybridModel, refineParams);
         const std::size_t childCount = expanded.childRules.size();
         for (auto& childRule : expanded.childRules) {
+            // If any scoped reactant (%x:Pop()) was specialized to a concrete
+            // population type, evaluate scoped functions referencing x against
+            // that population's particle graph so the emitted hybrid rule is
+            // self-contained and executable.
+            std::unordered_map<std::string, std::string> boundPopScopes;
+            std::vector<std::string> updatedReactants = childRule.getReactants();
+            std::vector<std::string> updatedProducts = childRule.getProducts();
+            for (std::size_t ri = 0; ri < updatedReactants.size(); ++ri) {
+                const auto parsed = splitLeadingScopePrefix(updatedReactants[ri]);
+                if (parsed.name.empty()) continue;
+                std::string body = parsed.remainder;
+                std::string comp;
+                if (!body.empty() && body.front() == '@') {
+                    const auto colon = body.find(':');
+                    if (colon != std::string::npos) {
+                        comp = body.substr(1, colon - 1);
+                        body = body.substr(colon + 1);
+                        if (!body.empty() && body.front() == ':') body.erase(0, 1);
+                    }
+                }
+                const auto lparen = body.find('(');
+                if (lparen != std::string::npos && body.find('.') == std::string::npos) {
+                    const std::string molName = body.substr(0, lparen);
+                    if (const auto sp = findPopulationSpeciesPattern(molName, comp)) {
+                        boundPopScopes[parsed.name] = *sp;
+                        updatedReactants[ri] = parsed.remainder;
+                    }
+                }
+            }
+            if (!boundPopScopes.empty() && !childRule.getRates().empty()) {
+                bool substituted = false;
+                const ast::Expression specialized = specializeScopedExpression(
+                    specializeScopedExpression,
+                    childRule.getRates()[0],
+                    boundPopScopes,
+                    substituted,
+                    0);
+                if (substituted) {
+                    for (auto& prodStr : updatedProducts) {
+                        const auto parsed = splitLeadingScopePrefix(prodStr);
+                        if (!parsed.name.empty() &&
+                            boundPopScopes.count(parsed.name) != 0 &&
+                            !exprMentionsIdentifier(specialized, parsed.name)) {
+                            prodStr = parsed.remainder;
+                        }
+                    }
+                    std::string baseRule = childRule.getRuleName();
+                    const auto cut = baseRule.rfind("_v");
+                    if (cut != std::string::npos) baseRule = baseRule.substr(0, cut);
+                    std::vector<ast::Expression> newRates;
+                    if (exprCanLiveInParameters(specialized, model_)) {
+                        std::string derivedName;
+                        for (int suffix = 1;; ++suffix) {
+                            derivedName = "_" + baseRule + "_local" + std::to_string(suffix);
+                            if (!hybridModel.getParameters().contains(derivedName)) break;
+                        }
+                        hybridModel.addParameter(ast::Parameter(derivedName, specialized));
+                        newRates.push_back(ast::Expression::identifier(derivedName));
+                    } else {
+                        std::string derivedName;
+                        for (int suffix = 1;; ++suffix) {
+                            derivedName = "_" + baseRule + "_local" + std::to_string(suffix);
+                            bool exists = hybridModel.getParameters().contains(derivedName);
+                            for (const auto& fn : hybridModel.getFunctions()) {
+                                if (fn.getName() == derivedName) exists = true;
+                            }
+                            if (!exists) break;
+                        }
+                        hybridModel.addFunction(ast::Function(derivedName, {}, specialized));
+                        newRates.push_back(ast::Expression::function(derivedName, {}));
+                    }
+                    for (std::size_t ri = 1; ri < childRule.getRates().size(); ++ri) {
+                        newRates.push_back(childRule.getRates()[ri]);
+                    }
+                    ast::ReactionRule specializedRule(
+                        childRule.getRuleName(),
+                        childRule.getLabel(),
+                        std::move(updatedReactants),
+                        std::move(updatedProducts),
+                        std::move(newRates),
+                        childRule.getModifiers(),
+                        childRule.isBidirectional(),
+                        childRule.getReactantPatterns(),
+                        childRule.getProductPatterns());
+                    bool stillScoped = false;
+                    for (const auto& rStr : specializedRule.getReactants()) {
+                        if (!splitLeadingScopePrefix(rStr).name.empty()) stillScoped = true;
+                    }
+                    specializedRule.setHasScopePrefix(stillScoped);
+                    if (childRule.getDelayExpression()) {
+                        specializedRule.setDelay(*childRule.getDelayExpression(),
+                                                 childRule.isNonConsuming());
+                    }
+                    if (childRule.hasDrivingWork()) {
+                        specializedRule.setDrivingWorkExpression(childRule.drivingWorkExpression());
+                    }
+                    childRule = std::move(specializedRule);
+                }
+            }
             hybridModel.addReactionRule(std::move(childRule));
             ++ruleCount;
         }

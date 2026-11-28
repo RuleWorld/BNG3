@@ -56,6 +56,7 @@ public:
         std::vector<std::string> rawReactionRuleLines;
         std::vector<std::string> rawMoleculeTypeLines;
         std::vector<std::string> rawGroupLines;
+        bool hasRateRules = false;
     };
 
     /**

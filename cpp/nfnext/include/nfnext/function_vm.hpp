@@ -122,6 +122,9 @@ inline bool builtin(const std::string& name, std::uint8_t& id) {
 
 class Parser {
 public:
+    static constexpr std::size_t kMaxEvalDepth = 256;
+    static constexpr std::size_t kMaxStackDepth = 256;
+
     Parser(const std::string& source, const FunctionEnvironment& environment,
            Bytecode& bytecode, std::vector<ParameterId>& parameter_dependencies,
            std::vector<ObservableId>& observable_dependencies)
@@ -137,6 +140,15 @@ public:
     }
 
 private:
+    struct DepthGuard {
+        std::size_t& depth;
+        const Parser* parser;
+        DepthGuard(std::size_t& d, const Parser* p) : depth(d), parser(p) {
+            if (++depth > kMaxEvalDepth) parser->fail("expression nesting depth exceeds limit");
+        }
+        ~DepthGuard() { --depth; }
+    };
+
     void skipSpace() {
         while (position_ < source_.size() && std::isspace(static_cast<unsigned char>(source_[position_]))) ++position_;
     }
@@ -160,6 +172,7 @@ private:
     }
 
     void expression() {
+        DepthGuard guard(depth_, this);
         comparison();
         for (;;) {
             if (consumePair('=', '=')) { comparison(); emitBinary(Op::Equal); }
@@ -194,13 +207,13 @@ private:
         }
     }
     void unary() {
-        if (consume('+')) { unary(); return; }
-        if (consume('-')) { unary(); emitUnary(function_vm_detail::Op::Negate); return; }
+        if (consume('+')) { DepthGuard guard(depth_, this); unary(); return; }
+        if (consume('-')) { DepthGuard guard(depth_, this); unary(); emitUnary(function_vm_detail::Op::Negate); return; }
         power();
     }
     void power() {
         primary();
-        if (consume('^')) { unary(); emitBinary(function_vm_detail::Op::Power); }
+        if (consume('^')) { DepthGuard guard(depth_, this); unary(); emitBinary(function_vm_detail::Op::Power); }
     }
     void conditional() {
         const auto incomingDepth = stack_depth_;
@@ -287,6 +300,7 @@ private:
     }
     void pushStack() {
         ++stack_depth_;
+        if (stack_depth_ > kMaxStackDepth) fail("expression stack depth exceeds limit");
         bytecode_.max_stack = std::max(bytecode_.max_stack, stack_depth_);
     }
     void emitUnary(Op op) { bytecode_.code.push_back({op}); }
@@ -299,6 +313,7 @@ private:
     std::vector<ObservableId>& observable_dependencies_;
     std::size_t position_{0};
     std::size_t stack_depth_{0};
+    std::size_t depth_{0};
 };
 
 inline double evaluateBuiltin(std::uint8_t id, const double* args) {

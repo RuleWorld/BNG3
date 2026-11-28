@@ -1,6 +1,7 @@
 #include <iostream>
 #include <sstream>
 #include <functional>
+#include <stdexcept>
 #include <unordered_map>
 
 #include "templateMolecule.hh"
@@ -167,7 +168,7 @@ string TemplateMolecule::getCompartmentId() const {
 bool TemplateMolecule::collectRootMembershipDependencies(
 		vector<MembershipPatternDependency> &out) const
 {
-	if (n_symComps != 0 || n_connectedTo != 0 || compartment != 0)
+	if (n_symComps != 0 || n_connectedTo != 0 || compartment != 0 || !bondExclusions.empty())
 		return false;
 
 	for (int i = 0; i < n_compStateConstraint; ++i) {
@@ -261,7 +262,7 @@ bool TemplateMolecule::collectMembershipDependencies(
 			it != templates.end(); ++it) {
 		TemplateMolecule *tm = *it;
 		if (tm->n_symComps != 0 || tm->n_connectedTo != 0 ||
-				tm->compartment != 0)
+				tm->compartment != 0 || !tm->bondExclusions.empty())
 			return false;
 	}
 
@@ -442,6 +443,54 @@ void TemplateMolecule::addComponentExclusion(string cName, int stateValue) {
 	if (compIsAlwaysMapped) compIsAlwaysMapped[compIndex]=true;
 }
 
+void TemplateMolecule::addBondExclusion(
+		const string &cName, MoleculeType *partnerType,
+		const string &partnerCompName,
+		const vector<pair<string, string>> &partnerStates,
+		Compartment *partnerCompartment) {
+	if (moleculeType->isEquivalentComponent(cName)) {
+		printErrorAndExit("Cannot add bond exclusion of a symmetric component with addBondExclusion() function.");
+	}
+	BondExclusion excl;
+	excl.compIndex = moleculeType->getCompIndexFromName(cName);
+	excl.partnerType = partnerType;
+	excl.partnerCompIndex = -1;
+	excl.partnerCompartment = partnerCompartment;
+	if (partnerType != 0 && !partnerCompName.empty() &&
+			!partnerType->isEquivalentComponent(partnerCompName)) {
+		excl.partnerCompIndex = partnerType->getCompIndexFromName(partnerCompName);
+	}
+	if (partnerType != 0) {
+		for (const auto &ps : partnerStates) {
+			int pCompIdx = partnerType->getCompIndexFromName(ps.first);
+			int pStateVal = partnerType->getStateValueFromName(pCompIdx, ps.second);
+			excl.partnerStates.emplace_back(pCompIdx, pStateVal);
+		}
+	}
+	bondExclusions.push_back(std::move(excl));
+}
+
+bool TemplateMolecule::matchesBondExclusions(Molecule *m) const {
+	for (const auto &excl : bondExclusions) {
+		if (!m->isBindingSiteBonded(excl.compIndex)) continue;
+		Molecule *partner = m->getBondedMolecule(excl.compIndex);
+		if (partner == 0) continue;
+		if (excl.partnerType != 0 && partner->getMoleculeType() != excl.partnerType) continue;
+		if (excl.partnerCompartment != 0 && partner->getCompartment() != excl.partnerCompartment) continue;
+		if (excl.partnerCompIndex >= 0 &&
+				m->getBondedMoleculeBindingSiteIndex(excl.compIndex) != excl.partnerCompIndex) continue;
+		bool allStatesMatch = true;
+		for (const auto &ps : excl.partnerStates) {
+			if (partner->getComponentState(ps.first) != ps.second) {
+				allStatesMatch = false;
+				break;
+			}
+		}
+		if (allStatesMatch) return false;
+	}
+	return true;
+}
+
 void TemplateMolecule::clearConnectedTo()
 {
 	delete [] connectedTo;
@@ -491,7 +540,7 @@ void TemplateMolecule::printErrorAndExit(string message) {
 	cerr<<"Error in TemplateMolecule!"<<endl;
 	cerr<<message<<endl;
 	cerr<<"\n In TemplateMolecule of type: "<< moleculeType->getName()<<endl;
-	exit(4);
+	throw std::runtime_error("TemplateMolecule (" + moleculeType->getName() + "): " + message);
 }
 
 
@@ -980,6 +1029,9 @@ bool TemplateMolecule::checkBasicComponents(Molecule *m) {
 			return false;
 		}
 	}
+	if (!bondExclusions.empty() && !matchesBondExclusions(m)) {
+		return false;
+	}
 
 	return true;
 }
@@ -1024,7 +1076,8 @@ void TemplateMolecule::buildCompiledSimpleMatcher()
 		[&](TemplateMolecule *tm, int parent, int parentComp, int selfComp) {
 			if (!compiledSimpleMatcherSafe) return;
 			if (tm == 0 || tm->n_symComps != 0 || tm->n_connectedTo != 0 ||
-					tm->compartment != 0) {
+					tm->compartment != 0 ||
+					!tm->excludedCompartments.empty()) {
 				compiledSimpleMatcherSafe = false;
 				return;
 			}
@@ -1495,6 +1548,11 @@ bool TemplateMolecule::compare(Molecule *m, ReactantContainer *rc, MappingSet *m
 			clear(); return false;
 		}
 	}
+	for (Compartment *excluded : excludedCompartments) {
+		if (m->getCompartment() == excluded) {
+			clear(); return false;
+		}
+	}
 
 	//Check all the basic components first to get them out of the way
 	//First check that all of our states match
@@ -1519,6 +1577,9 @@ bool TemplateMolecule::compare(Molecule *m, ReactantContainer *rc, MappingSet *m
 		if(!m->isBindingSiteBonded(occupiedComps[c])) {
 			clear(); return false;
 		}
+	}
+	if (!bondExclusions.empty() && !matchesBondExclusions(m)) {
+		clear(); return false;
 	}
 
 	//Good, good - everything matches so let's set our match molecule
@@ -1968,6 +2029,16 @@ bool TemplateMolecule::isTemplateCompatible(TemplateMolecule * tm) {
 			return false;
 		}
 	}
+	if (this->compartment != NULL &&
+		std::find(tm->excludedCompartments.begin(), tm->excludedCompartments.end(), this->compartment) !=
+			tm->excludedCompartments.end()) {
+		return false;
+	}
+	if (tm->compartment != NULL &&
+		std::find(this->excludedCompartments.begin(), this->excludedCompartments.end(), tm->compartment) !=
+			this->excludedCompartments.end()) {
+		return false;
+	}
 
 
 	// If there is no overlap between the components of the two TemplateMolecules,
@@ -2405,6 +2476,13 @@ bool TemplateMolecule::checkSymmetry(TemplateMolecule *tm1, TemplateMolecule *tm
 	//Now compare the numbers of basic states, they must all match
 	if(tm1->n_compStateConstraint != tm2->n_compStateConstraint) return false;
 	if(tm1->n_compStateExclusion != tm2->n_compStateExclusion) return false;
+	if(tm1->bondExclusions.size() != tm2->bondExclusions.size()) return false;
+	if (!checkMapping(static_cast<int>(tm2->bondExclusions.size()), [&](int i, int j) {
+		const auto &a = tm1->bondExclusions[static_cast<size_t>(i)];
+		const auto &b = tm2->bondExclusions[static_cast<size_t>(j)];
+		return a.compIndex == b.compIndex && a.partnerType == b.partnerType &&
+		       a.partnerCompIndex == b.partnerCompIndex && a.partnerStates == b.partnerStates;
+	})) return false;
 	if(tm1->n_connectedTo != tm2->n_connectedTo) return false;
 	if(tm1->n_emptyComps != tm2->n_emptyComps) return false;
 	if(tm1->n_occupiedComps != tm2->n_occupiedComps) return false;
@@ -2570,6 +2648,9 @@ bool TemplateMolecule::isMoleculeTypeAndComponentPresent(MoleculeType * mt, int 
 	for(int i=0; i<n_compStateExclusion; i++) {
 		if (this->compStateExclusion_Comp[i] == cIndex) return true;
 	}
+	for(const auto &excl : bondExclusions) {
+		if (excl.compIndex == cIndex) return true;
+	}
 	for(int c=0; c<n_symComps; c++) {
 		int *molEqComp; int n_molEqComp=0;
 		moleculeType->getEquivalencyClass(molEqComp, n_molEqComp, this->symCompName[c]);
@@ -2583,6 +2664,7 @@ bool TemplateMolecule::isMoleculeTypeAndComponentPresent(MoleculeType * mt, int 
 
 // Keep extraction transactional: unsupported graph constraints are not weakened.
 bool NFcore::TemplateMolecule::collectRootLocalConstraints(RootLocalConstraints& output) const {
+    if (!bondExclusions.empty()) return false;
     RootLocalConstraints result;
     for (int i = 0; i < n_emptyComps; ++i) result.empty.push_back(emptyComps[i]);
     for (int i = 0; i < n_occupiedComps; ++i) result.occupied.push_back(occupiedComps[i]);

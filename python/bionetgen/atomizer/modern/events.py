@@ -3482,7 +3482,10 @@ def _native_state_is_monotone(
             and math.isfinite(float(initial))
             and math.isfinite(float(exponent))
         ):
-            return float(initial) * float(exponent) >= 0.0
+            # y(t) = y0 * exp(r * t) has derivative y0 * r * exp(r * t), which
+            # never changes sign for any finite (y0, r) — both growth and decay
+            # are monotone and cross any threshold transversally.
+            return True
     square_linear = context.resolve_square_linear_rate_for_event(identifier, event)
     if square_linear is not None:
         try:

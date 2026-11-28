@@ -5,6 +5,8 @@
 #include "compartment.hh"
 #include <cmath>
 #include <iostream>
+#include <stdexcept>
+#include <unordered_set>
 
 using namespace NFcore;
 using namespace std;
@@ -50,10 +52,17 @@ bool Compartment::isInside(Compartment* other) const
 	if (!other) return false;
 	if (this == other) return true;
 	
-	// Check parent chain
+	// Check parent chain with cycle guard
+	std::unordered_set<const Compartment*> visited;
+	visited.insert(this);
 	Compartment* current = parent;
 	while (current) {
 		if (current == other) return true;
+		if (!visited.insert(current).second) {
+			throw std::runtime_error(
+				"Cyclic compartment parent hierarchy detected involving '" +
+				current->getId() + "'");
+		}
 		current = current->getParent();
 	}
 	

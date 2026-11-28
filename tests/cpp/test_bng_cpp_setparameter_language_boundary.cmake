@@ -290,7 +290,7 @@ foreach(action_scope IN ITEMS top_level protocol)
         "expr:(2 ^ Nd)" 0 0.000003125352)
     run_positive_case("${action_scope}" quoted_dynamic_parameter_base
         "setParameter(\"N\",4)\nsetParameter(\"k\",\"-N^2\")\n"
-        "expr:(-N ^ 2)" 0 0.000003125352)
+        "expr:((-N) ^ 2)" 0 0.000003125352)
     run_positive_case("${action_scope}" bare_identifier
         "setParameter(\"N\",4)\nsetParameter(\"k\",N)\n"
         4 0.183154388887 0.183158388887)

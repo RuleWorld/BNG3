@@ -12,6 +12,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <vector>
 
@@ -188,24 +189,31 @@ int runChild(const fs::path& executable, const Job& job, bool checkOnly, bool ve
     }
     return status;
 #else
+    const std::string workingDirText = job.workingDirectory.string();
+    const std::string executableText = executable.string();
+    const bool executableHasParent = executable.has_parent_path();
+    const char* workingDirCStr = workingDirText.c_str();
+    const char* executableCStr = executableText.c_str();
+    char* const* argvPtr = nativeArguments.data();
+
     const pid_t process = fork();
     if (process == -1) {
-        errorMessage = std::strerror(errno);
+        errorMessage = std::error_code(errno, std::generic_category()).message();
         return 1;
     }
     if (process == 0) {
-        if (chdir(job.workingDirectory.c_str()) != 0) _exit(126);
-        if (executable.has_parent_path()) {
-            execv(executable.c_str(), nativeArguments.data());
+        if (chdir(workingDirCStr) != 0) _exit(126);
+        if (executableHasParent) {
+            execv(executableCStr, argvPtr);
         } else {
-            execvp(executable.c_str(), nativeArguments.data());
+            execvp(executableCStr, argvPtr);
         }
         _exit(127);
     }
     int status = 0;
     while (waitpid(process, &status, 0) == -1) {
         if (errno != EINTR) {
-            errorMessage = std::strerror(errno);
+            errorMessage = std::error_code(errno, std::generic_category()).message();
             return 1;
         }
     }

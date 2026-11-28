@@ -1294,11 +1294,13 @@ def bngl_function(
         mapped = sbml_to_bngl_id.get(token)
         if mapped is not None:
             observed_name = standardize_name(token)
+            amt_name = observed_name + "_amt"
+            amt_collides = amt_name in sbml_to_bngl_id
             if is_saturation and observed_name in species_with_conc_functions:
-                return observed_name + "_amt"
+                return observed_name if amt_collides else amt_name
             if observed_name in species_with_conc_functions:
                 return "_c_" + observed_name + "()"
-            return observed_name + "_amt"
+            return observed_name if amt_collides else amt_name
         if token in BNGL_LEXER_KEYWORDS and token not in _PROTECTED_BUILTIN_OPERANDS:
             return standardize_name(token)
         return token
@@ -1327,10 +1329,16 @@ def bngl_function(
             for reaction_id, reaction_name in reaction_dict.items()
         }
         result = _substitute_id_map(result, rxn_map)
-    if assignment_rule_variables:
+    if assignment_rule_variables or rate_rule_variables:
         rate_replace: Dict[str, str] = {}
         assign_replace: Dict[str, str] = {}
-        for variable in assignment_rule_variables:
+        all_rule_vars = list(assignment_rule_variables)
+        seen_rule_vars = set(all_rule_vars)
+        for variable in rate_rule_variables:
+            if variable not in seen_rule_vars:
+                seen_rule_vars.add(variable)
+                all_rule_vars.append(variable)
+        for variable in all_rule_vars:
             standard = standardize_name(variable)
             if (
                 variable in observable_converted_rules
@@ -1548,16 +1556,20 @@ def _event_metadata_block(
     species_ids = sorted(
         (str(identifier) for identifier in model.species), key=len, reverse=True
     )
+    species_replacement_map = {
+        identifier: f"{standardize_name(identifier)}_amt" for identifier in species_ids
+    }
+    species_pattern = (
+        re.compile(r"\b(?:" + "|".join(re.escape(i) for i in species_ids) + r")\b")
+        if species_ids
+        else None
+    )
 
     def bngl_expression(expression: object) -> str:
         value = str(expression or "")
-        for identifier in species_ids:
-            value = re.sub(
-                rf"\b{re.escape(identifier)}\b",
-                f"{standardize_name(identifier)}_amt",
-                value,
-            )
-        return value
+        if not value or species_pattern is None:
+            return value
+        return species_pattern.sub(lambda m: species_replacement_map[m.group(0)], value)
 
     lines = ["# ==== SBML EVENT METADATA ===="]
     for index, event in enumerate(model.events):
@@ -1618,26 +1630,193 @@ def _source_metadata_block(model: SBMLModel) -> List[str]:
     ]
 
 
+def _species_automorphism_count(species: Species) -> int:
+    """Compute exact BNGL graph automorphism count |Aut(species)| for a species."""
+
+    molecules = list(getattr(species, "molecules", ()) or ())
+    if not molecules:
+        return 1
+
+    # Single-molecule fast path (handles repeated unbound sites and self-bonds).
+    if len(molecules) == 1:
+        mol = molecules[0]
+        unbound_counts: Dict[Tuple[str, str], int] = {}
+        bound_by_label: Dict[str, List[Tuple[str, str]]] = {}
+        for comp in mol.components:
+            sig = (str(comp.name), str(comp.active_state or ""))
+            if not comp.bonds:
+                unbound_counts[sig] = unbound_counts.get(sig, 0) + 1
+            else:
+                for bond in comp.bonds:
+                    bound_by_label.setdefault(str(bond), []).append(sig)
+        aut = 1
+        for count in unbound_counts.values():
+            if count > 1:
+                aut *= math.factorial(count)
+        # Parallel identical self-bonds on one molecule.
+        self_bond_counts: Dict[Tuple[Tuple[str, str], Tuple[str, str]], int] = {}
+        for endpoints in bound_by_label.values():
+            if len(endpoints) == 2:
+                pair = tuple(sorted(endpoints))
+                self_bond_counts[pair] = self_bond_counts.get(pair, 0) + 1
+                if pair[0] == pair[1]:
+                    aut *= 2
+        for count in self_bond_counts.values():
+            if count > 1:
+                aut *= math.factorial(count)
+        return aut
+
+    n = len(molecules)
+    if n > 10:
+        # Guard against combinatorial blowup on huge synthetic complexes;
+        # fall back to per-molecule unbound-site factor.
+        aut = 1
+        for mol in molecules:
+            unbound_counts = {}
+            for comp in mol.components:
+                if not comp.bonds:
+                    sig = (str(comp.name), str(comp.active_state or ""))
+                    unbound_counts[sig] = unbound_counts.get(sig, 0) + 1
+            for count in unbound_counts.values():
+                if count > 1:
+                    aut *= math.factorial(count)
+        return aut
+
+    # Partition molecules by intrinsic signature (name, compartment, component multiset).
+    mol_sigs: List[Tuple[str, str, Tuple[Tuple[str, str, int], ...]]] = []
+    per_mol_unbound_aut = 1
+    bond_endpoints: Dict[str, List[Tuple[int, Tuple[str, str]]]] = {}
+    for m_idx, mol in enumerate(molecules):
+        comp_sigs: List[Tuple[str, str, int]] = []
+        unbound_counts = {}
+        for comp in mol.components:
+            sig = (str(comp.name), str(comp.active_state or ""))
+            n_bonds = len(comp.bonds)
+            comp_sigs.append((sig[0], sig[1], n_bonds))
+            if n_bonds == 0:
+                unbound_counts[sig] = unbound_counts.get(sig, 0) + 1
+            else:
+                for bond in comp.bonds:
+                    bond_endpoints.setdefault(str(bond), []).append((m_idx, sig))
+        for count in unbound_counts.values():
+            if count > 1:
+                per_mol_unbound_aut *= math.factorial(count)
+        mol_sigs.append(
+            (str(mol.name), str(mol.compartment or ""), tuple(sorted(comp_sigs)))
+        )
+
+    # Build directed edge signature multisets between molecule index pairs.
+    # For each ordered pair (u, v), edges[u][v] is the sorted tuple of
+    # (sig_on_u, sig_on_v) for every bond connecting u to v.
+    raw_edges: Dict[Tuple[int, int], List[Tuple[Tuple[str, str], Tuple[str, str]]]] = {}
+    parallel_bond_factor = 1
+    for endpoints in bond_endpoints.values():
+        if len(endpoints) != 2:
+            continue
+        (u, su), (v, sv) = endpoints
+        raw_edges.setdefault((u, v), []).append((su, sv))
+        if u != v:
+            raw_edges.setdefault((v, u), []).append((sv, su))
+        elif su == sv:
+            parallel_bond_factor *= 2
+    edges: Dict[
+        Tuple[int, int], Tuple[Tuple[Tuple[str, str], Tuple[str, str]], ...]
+    ] = {}
+    for (u, v), elist in raw_edges.items():
+        edges[(u, v)] = tuple(sorted(elist))
+        if u <= v:
+            pair_counts: Dict[Tuple[Tuple[str, str], Tuple[str, str]], int] = {}
+            for e in elist:
+                key = tuple(sorted(e)) if u == v else e
+                pair_counts[key] = pair_counts.get(key, 0) + 1
+            for count in pair_counts.values():
+                if count > 1:
+                    parallel_bond_factor *= math.factorial(count)
+
+    # Backtracking over molecule permutations preserving signatures and edges.
+    groups: Dict[Tuple[str, str, Tuple[Tuple[str, str, int], ...]], List[int]] = {}
+    for idx, sig in enumerate(mol_sigs):
+        groups.setdefault(sig, []).append(idx)
+
+    # If every molecule has a unique signature, only the identity permutation exists.
+    if all(len(members) == 1 for members in groups.values()):
+        return per_mol_unbound_aut * parallel_bond_factor
+
+    perm = [-1] * n
+    used = [False] * n
+    mol_perms = 0
+
+    def backtrack(idx: int) -> None:
+        nonlocal mol_perms
+        if idx == n:
+            mol_perms += 1
+            return
+        for cand in groups[mol_sigs[idx]]:
+            if used[cand]:
+                continue
+            ok = True
+            if edges.get((idx, idx)) != edges.get((cand, cand)):
+                ok = False
+            if ok:
+                for prev in range(idx):
+                    if edges.get((prev, idx)) != edges.get((perm[prev], cand)):
+                        ok = False
+                        break
+            if not ok:
+                continue
+            perm[idx] = cand
+            used[cand] = True
+            backtrack(idx + 1)
+            used[cand] = False
+            perm[idx] = -1
+
+    backtrack(0)
+    return max(1, mol_perms) * per_mol_unbound_aut * parallel_bond_factor
+
+
 def _extract_statistical_factor(
-    rate: str, reactant_structures: Mapping[str, Species]
+    rate: str,
+    reactant_structures: Mapping[str, Species],
+    product_structures: Optional[Mapping[str, Species]] = None,
+    reactant_counts: Optional[Mapping[str, int]] = None,
+    product_counts: Optional[Mapping[str, int]] = None,
 ) -> str:
-    """Remove a leading repeated-site factor already represented by BNGL patterns."""
+    """Remove a leading symmetry factor already represented by BNGL patterns."""
+
+    lhs_internal_aut = 1
+    for species_id, species in reactant_structures.items():
+        aut = _species_automorphism_count(species)
+        count = int((reactant_counts or {}).get(species_id, 1))
+        if aut > 1 and count > 0:
+            lhs_internal_aut *= aut**count
+
+    rhs_aut = 1
+    if product_structures is not None:
+        for species_id, species in product_structures.items():
+            aut = _species_automorphism_count(species)
+            count = int((product_counts or {}).get(species_id, 1))
+            if count > 1:
+                rhs_aut *= math.factorial(count)
+            if aut > 1 and count > 0:
+                rhs_aut *= aut**count
+    elif product_counts is not None:
+        for count in product_counts.values():
+            if count > 1:
+                rhs_aut *= math.factorial(int(count))
+
+    expected = (
+        lhs_internal_aut // math.gcd(lhs_internal_aut, rhs_aut)
+        if lhs_internal_aut > 1
+        else 1
+    )
+    if expected <= 1:
+        return rate
 
     match = re.match(r"^\s*\(?\s*(\d+(?:\.\d+)?)\s*\*\s*(.+?)\s*\)?\s*$", rate)
-    if match is None:
-        return rate
-    coefficient = float(match.group(1))
-    expected = 1
-    for species in reactant_structures.values():
-        for molecule in species.molecules:
-            counts: Dict[str, int] = {}
-            for component in molecule.components:
-                counts[component.name] = counts.get(component.name, 0) + 1
-            for count in counts.values():
-                if count > 1:
-                    expected *= count
-    if expected > 1 and abs(coefficient - expected) < 1e-9:
-        return match.group(2).strip()
+    if match is not None:
+        coefficient = float(match.group(1))
+        if abs(coefficient - expected) < 1e-9:
+            return match.group(2).strip()
     return rate
 
 
@@ -2794,6 +2973,7 @@ def _rate_for_reaction(
     }
     observable_converted_rules = observable_converted_rules or set()
     synthetic_rate_rule_variables = synthetic_rate_rule_variables or set()
+    assignment_variables.update(synthetic_rate_rule_variables)
     rate_rule_variables = {
         standardize_name(rule.variable)
         for rule in model.rules
@@ -2831,11 +3011,29 @@ def _rate_for_reaction(
             }
         )
     }
-    if reactant_structures is not None:
+    all_species_structures = reactant_structures
+    reactant_counts: Dict[str, int] = {}
+    for species_id in reactants:
+        reactant_counts[species_id] = reactant_counts.get(species_id, 0) + 1
+    product_counts: Dict[str, int] = {}
+    for reference in reaction.products:
+        if reference.species != "EmptySet":
+            stoich = max(0, int(round(reference.stoichiometry)))
+            if stoich > 0:
+                product_counts[reference.species] = (
+                    product_counts.get(reference.species, 0) + stoich
+                )
+    product_structures: Optional[Dict[str, Species]] = None
+    if all_species_structures is not None:
         reactant_structures = {
             species_id: structure
-            for species_id, structure in reactant_structures.items()
-            if species_id in reactants
+            for species_id, structure in all_species_structures.items()
+            if species_id in reactant_counts
+        }
+        product_structures = {
+            species_id: structure
+            for species_id, structure in all_species_structures.items()
+            if species_id in product_counts
         }
 
     # Undo amount/V normalization only for concentration-valued operands.
@@ -2862,7 +3060,11 @@ def _rate_for_reaction(
         # writer emits that factor as a kinetic constant instead of removing
         # the factor already represented by the BNGL pattern.
         math = _extract_statistical_factor(
-            convert_math_expression(math, protected=protected), reactant_structures
+            convert_math_expression(math, protected=protected),
+            reactant_structures,
+            product_structures=product_structures,
+            reactant_counts=reactant_counts,
+            product_counts=product_counts,
         )
     # Multi sums and sub-compartment species references are source
     # amount/concentration projections. Keep explicit volume factors rather
@@ -3280,7 +3482,11 @@ def _expression_mentions_species(expression: str, species_id: str) -> bool:
     )
 
 
-def _count_species_mentions(expression: str, species_id: str) -> int:
+def _count_species_mentions(
+    expression: str,
+    species_id: str,
+    allow_amt_alias: bool = True,
+) -> int:
     """Count operand occurrences of one species in an emitted rate expression."""
 
     standardized = standardize_name(species_id)
@@ -3293,14 +3499,23 @@ def _count_species_mentions(expression: str, species_id: str) -> int:
                     expression,
                 )
             )
-    count += len(
-        re.findall(
-            rf"(?:_c_{re.escape(standardized)}\s*\(|"
-            rf"\b{re.escape(standardized)}_amt\b)",
-            expression,
-            re.IGNORECASE,
+    if allow_amt_alias:
+        count += len(
+            re.findall(
+                rf"(?:_c_{re.escape(standardized)}\s*\(|"
+                rf"\b{re.escape(standardized)}_amt\b)",
+                expression,
+                re.IGNORECASE,
+            )
         )
-    )
+    else:
+        count += len(
+            re.findall(
+                rf"_c_{re.escape(standardized)}\s*\(",
+                expression,
+                re.IGNORECASE,
+            )
+        )
     return count
 
 
@@ -3308,6 +3523,7 @@ def _rate_requires_total_rate(
     rate: str,
     reactant_ids: Optional[Sequence[str]] = None,
     source_rate: Optional[str] = None,
+    known_species_names: Optional[Set[str]] = None,
 ) -> bool:
     """Identify retained SBML fluxes that still contain dynamic state factors.
 
@@ -3362,8 +3578,22 @@ def _rate_requires_total_rate(
             # mass-action expansion; treating the partial law as an absolute
             # flux would drop that factor and change the trajectory.
             if any(
-                _count_species_mentions(source_part, species_id)
-                > _count_species_mentions(part, species_id)
+                _count_species_mentions(
+                    source_part,
+                    species_id,
+                    allow_amt_alias=(
+                        f"{standardize_name(species_id)}_amt"
+                        not in (known_species_names or set())
+                    ),
+                )
+                > _count_species_mentions(
+                    part,
+                    species_id,
+                    allow_amt_alias=(
+                        f"{standardize_name(species_id)}_amt"
+                        not in (known_species_names or set())
+                    ),
+                )
                 for species_id in reactants
             ):
                 continue
@@ -3454,6 +3684,7 @@ def process_reaction_rate(
                 rate,
                 _reaction_species_ids(reaction.reactants),
                 prepared_math,
+                known_species_names={standardize_name(sid) for sid in model.species},
             ),
         )
 
@@ -3485,6 +3716,7 @@ def process_reaction_rate(
                 rate,
                 _reaction_species_ids(reaction.reactants),
                 prepared_math,
+                known_species_names={standardize_name(sid) for sid in model.species},
             ),
         )
 
@@ -3528,11 +3760,12 @@ def process_reaction_rate(
             force_irreversible=True,
             is_split_rxn=True,
         )
+    known_species = {standardize_name(sid) for sid in model.species}
     forward_is_total_rate = _rate_requires_total_rate(
-        forward_rate, forward_ids, split[0]
+        forward_rate, forward_ids, split[0], known_species_names=known_species
     )
     reverse_is_total_rate = _rate_requires_total_rate(
-        reverse_rate, reverse_ids, split[1]
+        reverse_rate, reverse_ids, split[1], known_species_names=known_species
     )
     return ProcessedRate(
         f"{forward_rate}, {reverse_rate}",
@@ -5462,21 +5695,21 @@ def _substitute_seed_symbols(
     expression: str, symbols: Mapping[str, float]
 ) -> Optional[float]:
     result = convert_math_expression(expression)
-    for _ in range(8):
-        changed = False
-        for symbol, value in list(symbols.items()):
-            if symbol not in result:
-                continue
-            escaped = re.escape(symbol)
-            result, call_count = re.subn(
-                rf"\b{escaped}\s*\(\s*\)", _number(value), result
+    if symbols and result:
+        formatted = {symbol: _number(value) for symbol, value in symbols.items()}
+        for _ in range(8):
+            present = [symbol for symbol in formatted if symbol in result]
+            if not present:
+                break
+            present.sort(key=len, reverse=True)
+            pattern = re.compile(
+                r"\b("
+                + "|".join(re.escape(symbol) for symbol in present)
+                + r")(?:\s*\(\s*\)|\b(?!\s*\())"
             )
-            result, bare_count = re.subn(
-                rf"\b{escaped}\b(?!\s*\()", _number(value), result
-            )
-            changed = changed or bool(call_count or bare_count)
-        if not changed:
-            break
+            result, count = pattern.subn(lambda m: formatted[m.group(1)], result)
+            if not count:
+                break
     value = _evaluate_arithmetic(result)
     if value is not None:
         return value
@@ -5631,15 +5864,42 @@ def _seed_symbol_values(
     # BNGL seed amounts instead of invalid runtime expressions.
     _add_seed_symbol(symbols, "time", 0)
 
+    initial_assignment_symbols = {
+        str(getattr(assignment, "symbol", "") or "")
+        for assignment in model.initial_assignments
+        if getattr(assignment, "symbol", None)
+    }
+    assignment_rule_symbols = {
+        str(rule.variable)
+        for rule in model.rules
+        if getattr(rule, "type", "") == "assignment" and getattr(rule, "variable", None)
+    }
+    overridden_t0_keys = {
+        standardize_name(symbol)
+        for symbol in (initial_assignment_symbols | assignment_rule_symbols)
+    }
+    alg_symbol_keys = {
+        standardize_name(token)
+        for rule in model.rules
+        if getattr(rule, "type", "") == "algebraic" and getattr(rule, "math", None)
+        for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", str(rule.math))
+    }
+
     # --- Base: explicit initial values from attributes ---------------------
     # A constant parameter defaults to 0 when SBML omits its ``value``
     # attribute.  A non-constant parameter without a ``value`` attribute has
     # no established value (Sec. 3.4.9), so it is deliberately left out of
     # the table rather than filled in with a 0.
     for parameter_id, parameter in model.parameters.items():
+        norm = standardize_name(str(parameter_id))
+        if norm in overridden_t0_keys:
+            continue
         if parameter.value_set or parameter.constant:
             _add_seed_symbol(symbols, parameter_id, parameter.value)
     for compartment_id, compartment in model.compartments.items():
+        norm = standardize_name(str(compartment_id))
+        if norm in overridden_t0_keys:
+            continue
         size = getattr(compartment, "size", None)
         _add_seed_symbol(symbols, compartment_id, size)
         _add_seed_symbol(
@@ -5655,12 +5915,12 @@ def _seed_symbol_values(
     # which case Sec. 4.11.3 says the attribute is ignored.  Seed the symbol
     # with the attribute value here; the initial-assignment pass below
     # replaces it where the source model assigns one.
-    initial_assignment_symbols = {
-        str(getattr(assignment, "symbol", "") or "")
-        for assignment in model.initial_assignments
-    }
     for reference_id, value in _species_reference_stoichiometry_symbols(model).items():
-        if value is None or reference_id in initial_assignment_symbols:
+        if (
+            value is None
+            or reference_id in initial_assignment_symbols
+            or standardize_name(reference_id) in overridden_t0_keys
+        ):
             continue
         if reference_id in symbols or standardize_name(reference_id) in symbols:
             continue
@@ -5772,8 +6032,6 @@ def _seed_symbol_values(
             variable = getattr(rule, "variable", None)
             if not variable or getattr(rule, "type", "") != "assignment":
                 continue
-            if is_species(variable):
-                continue
             value = _substitute_seed_symbols(
                 str(getattr(rule, "math", "") or ""), resolved_values()
             )
@@ -5800,7 +6058,18 @@ def _seed_symbol_values(
         for seed in seed_species:
             identifier = seed.sbml_id
             values = resolved_values()
-            if identifier in values or standardize_name(identifier) in values:
+            species = model.species.get(identifier)
+            norm_id = standardize_name(identifier)
+            if (
+                identifier in values
+                or norm_id in values
+                or norm_id in overridden_t0_keys
+                or (
+                    species is not None
+                    and not getattr(species, "constant", False)
+                    and norm_id in alg_symbol_keys
+                )
+            ):
                 continue
             species = model.species.get(identifier)
             if species is not None and not _has_known_initial_quantity(species, model):
@@ -5818,11 +6087,34 @@ def _seed_symbol_values(
             value = _substitute_seed_symbols(str(seed.concentration), values)
             if value is None:
                 continue
-            changed = _add_seed_symbol(symbols, identifier, value) or changed
             species = model.species.get(identifier)
             compartment_id = getattr(species, "compartment", "") if species else ""
             compartment = model.compartments.get(compartment_id)
             size = _numeric_value(getattr(compartment, "size", None))
+            if compartment_id:
+                resolved_size = values.get(
+                    f"__compartment_{standardize_name(compartment_id)}__"
+                )
+                if resolved_size not in (None, 0):
+                    size = resolved_size
+            raw_dims = (
+                getattr(compartment, "spatial_dimensions", 3)
+                if compartment is not None
+                else 3
+            )
+            dims = 3.0 if raw_dims is None else float(raw_dims)
+            is_concentration_species = (
+                species is not None
+                and not bool(getattr(species, "has_only_substance_units", False))
+                and dims != 0
+                and size not in (None, 0)
+            )
+            # In SBML math (initialAssignment / assignmentRule), a species
+            # identifier with hasOnlySubstanceUnits=false in a non-0D
+            # compartment denotes concentration (amount / volume), whereas
+            # hasOnlySubstanceUnits=true denotes substance amount.
+            symbol_value = value / size if is_concentration_species else value
+            changed = _add_seed_symbol(symbols, identifier, symbol_value) or changed
             if size not in (None, 0):
                 _add_seed_symbol(
                     symbols,
@@ -5836,7 +6128,10 @@ def _seed_symbol_values(
 
 
 def _freeze_initial_only_parameters(
-    model: SBMLModel, initial_values: Mapping[str, float]
+    model: SBMLModel,
+    initial_values: Mapping[str, float],
+    *,
+    only_symbols: Optional[Set[str]] = None,
 ) -> None:
     """Emit solved time-zero values of parameters with no runtime controller."""
     controlled = {
@@ -5846,18 +6141,31 @@ def _freeze_initial_only_parameters(
         standardize_name(assignment.variable)
         for event in model.events
         for assignment in event.assignments
+        if getattr(assignment, "variable", None)
     )
     retained = []
     for assignment in model.initial_assignments:
         symbol = str(assignment.symbol or "")
         target = standardize_name(symbol)
-        parameter = model.parameters.get(target)
-        value = initial_values.get(symbol)
-        if parameter is None or value is None or target in controlled:
+        if only_symbols is not None and target not in only_symbols:
             retained.append(assignment)
             continue
-        parameter.value = value
-        parameter.value_set = True
+        parameter = model.parameters.get(symbol) or model.parameters.get(target)
+        compartment = model.compartments.get(symbol) or model.compartments.get(target)
+        value = initial_values.get(symbol)
+        if value is None:
+            value = initial_values.get(target)
+        if value is None or not math.isfinite(value) or target in controlled:
+            retained.append(assignment)
+            continue
+        if parameter is not None:
+            parameter.value = value
+            parameter.value_set = True
+        elif compartment is not None:
+            compartment.size = value
+            compartment.size_set = True
+        else:
+            retained.append(assignment)
     model.initial_assignments = retained
 
 
@@ -5930,11 +6238,12 @@ def write_seed_species(
         # Seed sections use the prefix form, which is accepted by both the
         # BNG3 parser and the historical BNG2 writer.
         if seed.compartment:
+            std_comp = standardize_name(seed.compartment)
             pattern = (
                 "@"
-                + standardize_name(seed.compartment)
+                + std_comp
                 + ":"
-                + pattern.replace("@" + standardize_name(seed.compartment), "")
+                + re.sub(rf"@{re.escape(std_comp)}(?![A-Za-z0-9_])", "", pattern)
             )
         source_species = model.species.get(seed.sbml_id)
         fixed = bool(
@@ -5977,6 +6286,11 @@ def write_observables(
     observable_map: Dict[str, str] = OrderedDict()
     used = set()
     species_assignment_targets = set(_lowerable_species_assignment_rules(model))
+    primary_species_names = {
+        standardize_name(sp_id)
+        for sp_id in model.species
+        if sp_id not in species_assignment_targets
+    }
     for species_id, species in model.species.items():
         if species_id in species_assignment_targets:
             # The source species is algebraically defined; exposing its
@@ -6017,8 +6331,12 @@ def write_observables(
                     pattern = f"@{standardize_name(species.compartment)}:{pattern}"
         # Keep both amount and concentration-facing observable names.  The
         # amount alias is used by saturation laws; the plain name remains the
-        # historical/public observable used by callers.
-        lines.append(f"Species {name}_amt {pattern} # {species_id} amount")
+        # historical/public observable used by callers.  Skip the synthetic
+        # ``<name>_amt`` alias when another species already owns that name.
+        amt_name = f"{name}_amt"
+        if amt_name not in primary_species_names and amt_name not in used:
+            used.add(amt_name)
+            lines.append(f"Species {amt_name} {pattern} # {species_id} amount")
         lines.append(f"Species {name} {pattern} # {species_id}")
         observable_map[species_id] = name
 
@@ -6126,6 +6444,7 @@ def write_observables(
         if re.search(r"[/^()]", rule.math):
             continue
         pattern_counts: Dict[str, int] = OrderedDict()
+        pattern_automorphisms: Dict[str, int] = {}
         rule_compartment = ""
         concentration_operands = False
         for term in rule.math.split("+"):
@@ -6152,8 +6471,8 @@ def write_observables(
                 break
             pattern = species_to_pattern.get(species_id)
             species = model.species.get(species_id)
+            entry = sct.entries.get(species_id)
             if not pattern:
-                entry = sct.entries.get(species_id)
                 if entry is not None and species is not None:
                     pattern = _pattern(entry.structure, species.compartment)
             if not pattern:
@@ -6162,6 +6481,12 @@ def write_observables(
             # Repeated terms are repeated contributions, not alternatives:
             # `p = A + A` is two A, which the pattern spells as two copies.
             pattern_counts[pattern] = pattern_counts.get(pattern, 0) + coefficient
+            if pattern not in pattern_automorphisms:
+                pattern_automorphisms[pattern] = (
+                    _species_automorphism_count(entry.structure)
+                    if entry is not None
+                    else 1
+                )
             if species is not None and species.compartment and not rule_compartment:
                 rule_compartment = species.compartment
             if (
@@ -6183,6 +6508,31 @@ def write_observables(
             continue
         if concentration_operands:
             continue
+        # Account for internal pattern automorphisms: in BNGL, a ``Molecules``
+        # observable already multiplies each matched species by |Aut(pattern)|.
+        # Repeating a symmetric pattern ``coefficient`` times would multiply
+        # the count by ``coefficient * |Aut(pattern)|``.
+        obs_kind = "Molecules"
+        expanded = []
+        can_lower_observable = True
+        if any(pattern_automorphisms.get(p, 1) > 1 for p in pattern_counts):
+            if all(
+                coefficient % pattern_automorphisms.get(pattern, 1) == 0
+                for pattern, coefficient in pattern_counts.items()
+            ):
+                for pattern, coefficient in pattern_counts.items():
+                    copies = coefficient // pattern_automorphisms.get(pattern, 1)
+                    expanded.extend([pattern] * copies)
+            elif all(coefficient == 1 for coefficient in pattern_counts.values()):
+                obs_kind = "Species"
+                expanded = list(pattern_counts.keys())
+            else:
+                can_lower_observable = False
+        else:
+            for pattern, coefficient in pattern_counts.items():
+                expanded.extend([pattern] * coefficient)
+        if not can_lower_observable:
+            continue
         name = standardize_name(rule.variable)
         # Replace every prior observable with these names.  A round-tripped
         # SBML network can contain the same assignment rule both as a
@@ -6199,13 +6549,10 @@ def write_observables(
                 for candidate in names_to_replace
             )
         ]
-        expanded = []
-        for pattern, coefficient in pattern_counts.items():
-            expanded.extend([pattern] * coefficient)
         pattern_string = " ".join(expanded)
-        lines.append(f"Molecules {name} {pattern_string}")
-        if not name.endswith("_amt"):
-            lines.append(f"Molecules {name}_amt {pattern_string}")
+        lines.append(f"{obs_kind} {name} {pattern_string}")
+        if not name.endswith("_amt") and f"{name}_amt" not in primary_species_names:
+            lines.append(f"{obs_kind} {name}_amt {pattern_string}")
     return lines, observable_map
 
 
@@ -6449,8 +6796,89 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
     return ordered
 
 
+def _time_varying_symbol_names(model: SBMLModel) -> Set[str]:
+    """Return raw and standardized names of symbols that can vary for t > 0."""
+
+    varying: Set[str] = {"time"}
+    for rule in model.rules:
+        if not rule.variable:
+            continue
+        if getattr(rule, "type", "") == "rate":
+            varying.add(str(rule.variable))
+            varying.add(standardize_name(str(rule.variable)))
+    for rule in model.rules:
+        if getattr(rule, "type", "") != "algebraic" or not rule.math:
+            continue
+        for token in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", str(rule.math)):
+            norm = standardize_name(token)
+            param = model.parameters.get(token)
+            comp = model.compartments.get(token)
+            sp = model.species.get(token)
+            if (
+                (param is not None and not param.constant)
+                or (comp is not None and not comp.constant)
+                or (sp is not None and not sp.constant)
+            ):
+                varying.add(token)
+                varying.add(norm)
+    for event in model.events:
+        for assignment in event.assignments:
+            variable = getattr(assignment, "variable", None)
+            if variable:
+                varying.add(str(variable))
+                varying.add(standardize_name(str(variable)))
+    for reaction in model.reactions.values():
+        for reference in [*reaction.reactants, *reaction.products]:
+            species_id = getattr(reference, "species", None)
+            if not species_id:
+                continue
+            species = model.species.get(str(species_id))
+            if species is not None and (
+                getattr(species, "constant", False)
+                or getattr(species, "boundary_condition", False)
+            ):
+                continue
+            varying.add(str(species_id))
+            varying.add(standardize_name(str(species_id)))
+
+    # Propagate time dependence transitively through assignment rules.
+    assignment_rules = [
+        rule
+        for rule in model.rules
+        if getattr(rule, "type", "") == "assignment" and getattr(rule, "variable", None)
+    ]
+    for _ in range(len(assignment_rules) + 1):
+        changed = False
+        for rule in assignment_rules:
+            variable = str(rule.variable)
+            norm = standardize_name(variable)
+            if variable in varying and norm in varying:
+                continue
+            if _expression_is_time_varying(str(rule.math or ""), varying):
+                varying.add(variable)
+                varying.add(norm)
+                changed = True
+        if not changed:
+            break
+    return varying
+
+
+def _expression_is_time_varying(expression: str, varying_names: Set[str]) -> bool:
+    """Return whether *expression* references simulation time or a time-varying symbol."""
+
+    text = str(expression or "")
+    if not text:
+        return False
+    if re.search(r"\b(?:time|delay|rateOf)\b", text, re.IGNORECASE):
+        return True
+    for token in _expression_identifiers(text):
+        if token in varying_names or standardize_name(token) in varying_names:
+            return True
+    return False
+
+
 def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
-    """Build source-shaped assignment rules, including non-species initial assignments."""
+    """Build source-shaped assignment rules, including static non-species initial assignments."""
 
     rules = [
         rule
@@ -6461,6 +6889,11 @@ def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
     if not initial_assignments:
         return rules
     existing = {standardize_name(str(rule.variable)) for rule in rules}
+    rate_rule_targets = {
+        standardize_name(str(rule.variable))
+        for rule in model.rules
+        if getattr(rule, "type", "") == "rate" and getattr(rule, "variable", None)
+    }
     species_names = {standardize_name(str(species_id)) for species_id in model.species}
     param_names = {
         standardize_name(str(parameter_id)) for parameter_id in model.parameters
@@ -6483,23 +6916,27 @@ def _assignment_rules_for_writer(model: SBMLModel) -> List[object]:
                 event_parameter_targets.add(std_var)
             if std_var in species_ref_names:
                 event_species_reference_targets.add(std_var)
+    varying_names = _time_varying_symbol_names(model)
     for initial_assignment in initial_assignments:
         symbol = str(getattr(initial_assignment, "symbol", "") or "")
         if not symbol:
             continue
         standardized = standardize_name(symbol)
+        math_expr = str(getattr(initial_assignment, "math", "") or "")
         if (
             standardized in species_names
             or standardized in existing
+            or standardized in rate_rule_targets
             or standardized in event_parameter_targets
             or standardized in event_species_reference_targets
+            or _expression_is_time_varying(math_expr, varying_names)
         ):
             continue
         rules.append(
             SBMLRule(
                 type="assignment",
                 variable=symbol,
-                math=str(getattr(initial_assignment, "math", "") or ""),
+                math=math_expr,
             )
         )
         existing.add(standardized)
@@ -7170,8 +7607,7 @@ def _species_compartment_prefix(pattern: str, compartment: Optional[str]) -> str
     # the C++ rule engine uses that form to keep an SBML species in its
     # declared compartment when a reaction also transports another
     # participant to an adjacent compartment.
-    suffix = "@" + normalized
-    stripped = pattern.replace(suffix, "")
+    stripped = re.sub(rf"@{re.escape(normalized)}(?![A-Za-z0-9_])", "", pattern)
     if stripped.startswith("@" + normalized + ":"):
         return stripped
     return f"@{normalized}:{stripped}"
@@ -8980,6 +9416,97 @@ def _native_event_ids_for_promotion(
     return native_ids
 
 
+def _disambiguate_colliding_compartment_parameters(
+    model: SBMLModel,
+) -> Tuple[SBMLModel, Dict[str, Tuple[str, str]]]:
+    """Disambiguate user parameters colliding with synthetic ``__compartment_<c>__``."""
+
+    comp_param_names = {
+        f"__compartment_{standardize_name(cid)}__": standardize_name(cid)
+        for cid in model.compartments
+    }
+    colliding = [
+        pid for pid in model.parameters if standardize_name(pid) in comp_param_names
+    ]
+    if not colliding:
+        return model, {}
+    working = copy.deepcopy(model)
+    used_names = (
+        {standardize_name(k) for k in working.parameters}
+        | {standardize_name(k) for k in working.species}
+        | {standardize_name(k) for k in working.compartments}
+        | {standardize_name(k) for k in working.function_definitions}
+    )
+    swaps: Dict[str, Tuple[str, str]] = {}
+    rename_map: Dict[str, str] = {}
+    for pid in colliding:
+        std_pid = standardize_name(pid)
+        std_cid = comp_param_names[std_pid]
+        temp_user = f"__bng3_user_param_{std_cid}__"
+        suffix = 1
+        while temp_user in used_names:
+            temp_user = f"__bng3_user_param_{std_cid}_{suffix}__"
+            suffix += 1
+        used_names.add(temp_user)
+        comp_alias = f"__bng3_compartment_{std_cid}__"
+        suffix = 1
+        while comp_alias in used_names:
+            comp_alias = f"__bng3_compartment_{std_cid}_{suffix}__"
+            suffix += 1
+        used_names.add(comp_alias)
+        swaps[std_pid] = (temp_user, comp_alias)
+        rename_map[pid] = temp_user
+        rename_map[std_pid] = temp_user
+        param_obj = working.parameters.pop(pid)
+        param_obj.id = temp_user
+        working.parameters[temp_user] = param_obj
+
+    rename_re = re.compile(
+        r"\b(?:"
+        + "|".join(re.escape(k) for k in sorted(rename_map, key=len, reverse=True))
+        + r")\b"
+    )
+
+    def _sub(expr: Optional[str]) -> Optional[str]:
+        if not expr:
+            return expr
+        return rename_re.sub(lambda m: rename_map[m.group(0)], expr)
+
+    for rxn in working.reactions.values():
+        kl = getattr(rxn, "kinetic_law", None)
+        if kl is not None:
+            if isinstance(kl, dict) and kl.get("math"):
+                kl["math"] = _sub(str(kl["math"]))
+            elif getattr(kl, "math", None):
+                kl.math = _sub(kl.math)
+    for rule in working.rules:
+        if rule.variable in rename_map:
+            rule.variable = rename_map[rule.variable]
+        if rule.math:
+            rule.math = _sub(rule.math)
+    for ia in working.initial_assignments:
+        if ia.symbol in rename_map:
+            ia.symbol = rename_map[ia.symbol]
+        if ia.math:
+            ia.math = _sub(ia.math)
+    for event in working.events:
+        if event.trigger:
+            event.trigger = _sub(event.trigger)
+        if event.delay:
+            event.delay = _sub(event.delay)
+        if getattr(event, "priority", None):
+            event.priority = _sub(event.priority)
+        for assign in event.assignments:
+            if getattr(assign, "variable", None) in rename_map:
+                assign.variable = rename_map[assign.variable]
+            if getattr(assign, "math", None):
+                assign.math = _sub(assign.math)
+    for fn in working.function_definitions.values():
+        if getattr(fn, "math", None):
+            fn.math = _sub(fn.math)
+    return working, swaps
+
+
 def generate_bngl(
     model: SBMLModel,
     sct: SpeciesCompositionTable,
@@ -9000,6 +9527,8 @@ def generate_bngl(
         global _missing_kinetic_log_count, _transport_log_count
         _missing_kinetic_log_count = 0
         _transport_log_count = 0
+    caller_model = model
+    model, comp_param_swaps = _disambiguate_colliding_compartment_parameters(model)
     import_warnings_before_generation = copy.deepcopy(model.import_warnings)
     unsupported_import = next(
         (
@@ -9233,22 +9762,90 @@ def generate_bngl(
     augmented_molecule_types = list(molecule_types)
     augmented_seed_species = list(seed_species)
     seed_symbol_values, initial_values = _seed_symbol_values(model, seed_species)
-    # Parameter-only ODE models can read changing state in an initial
-    # assignment. After t=0, a parameter with no controller keeps that value.
-    # Retain initialization history when a delay can observe t < 0.
-    if (
-        initial_values
-        and not model.species
-        and not model.reactions
-        and not any(
-            _delay_arguments(expression)
-            for expression in (
-                *math_sources,
-                *(str(event.delay or "") for event in model.events),
-            )
-        )
+    # Initial assignments are evaluated once at t=0. Freeze resolved values
+    # for parameters/compartments with no runtime controller whenever either
+    # the model is parameter-only (with no active delay) or the initial
+    # assignment reads time-varying state (so it never becomes a live rule).
+    delay_referenced_symbols: Set[str] = set()
+    has_any_delay = False
+    for expression in (
+        *math_sources,
+        *(str(event.delay or "") for event in model.events),
     ):
-        _freeze_initial_only_parameters(model, initial_values)
+        for first_arg, _second_arg in _delay_arguments(expression):
+            has_any_delay = True
+            for token in _expression_identifiers(first_arg):
+                delay_referenced_symbols.add(standardize_name(token))
+    if initial_values:
+        if not model.species and not model.reactions and not has_any_delay:
+            _freeze_initial_only_parameters(model, initial_values)
+        else:
+            varying_names = _time_varying_symbol_names(model)
+            freeze_targets = {
+                standardize_name(str(assignment.symbol))
+                for assignment in model.initial_assignments
+                if getattr(assignment, "symbol", None)
+                and _expression_is_time_varying(
+                    str(getattr(assignment, "math", "") or ""), varying_names
+                )
+                and not (
+                    re.search(
+                        r"\btime\b",
+                        str(getattr(assignment, "math", "") or ""),
+                        re.IGNORECASE,
+                    )
+                    and standardize_name(str(assignment.symbol))
+                    in delay_referenced_symbols
+                )
+            }
+            if freeze_targets:
+                _freeze_initial_only_parameters(
+                    model, initial_values, only_symbols=freeze_targets
+                )
+    # Fail closed if an unfolded non-species initialAssignment depends on a
+    # time-varying symbol and could not be frozen at t=0: converting it into a
+    # live assignmentRule would silently corrupt t > 0 trajectories.
+    if model.initial_assignments:
+        varying_names = _time_varying_symbol_names(model)
+        controlled_targets = {
+            standardize_name(str(rule.variable))
+            for rule in model.rules
+            if getattr(rule, "variable", None)
+        }
+        controlled_targets.update(
+            standardize_name(str(assignment.variable))
+            for event in model.events
+            for assignment in event.assignments
+            if getattr(assignment, "variable", None)
+        )
+        species_norm_names = {
+            standardize_name(str(species_id)) for species_id in model.species
+        }
+        for assignment in model.initial_assignments:
+            symbol = str(getattr(assignment, "symbol", "") or "")
+            if not symbol:
+                continue
+            std_symbol = standardize_name(symbol)
+            math_expr = str(getattr(assignment, "math", "") or "")
+            if (
+                std_symbol in species_norm_names
+                or std_symbol in controlled_targets
+                or not _expression_is_time_varying(math_expr, varying_names)
+            ):
+                continue
+            if (
+                re.search(r"\btime\b", math_expr, re.IGNORECASE)
+                and std_symbol in delay_referenced_symbols
+            ):
+                continue
+            _record_import_warning(
+                model,
+                f'Initial assignment for "{symbol}" depends on time-varying '
+                "state and could not be resolved to a fixed time-zero value; "
+                "it cannot be lowered as a live assignment rule.",
+                category="initialAssignment",
+                severity="dropped",
+            )
     assignment_variables = {
         standardize_name(rule.variable)
         for rule in _assignment_rules_for_writer(model)
@@ -13793,35 +14390,43 @@ def generate_bngl(
             ),
         )
         if _force_all_native_events:
-            scheduled_result = (
-                synthesize_event_actions(scheduled_event_candidates, event_context)
-                if scheduled_event_candidates
-                else None
-            )
-            # Events that could not be scheduled must join the native block;
-            # dropping them here would silently lose their execution.
-            native_candidates = list(native_event_candidates)
-            known = {id(event) for event in native_candidates}
-            if scheduled_result is not None:
-                for event, _reason in scheduled_result.untranslated:
-                    if id(event) not in known:
-                        native_candidates.append(event)
-                        known.add(id(event))
-            event_result = EventTranslationResult(
-                scheduled_result.actions_block if scheduled_result else None,
-                0,
-                [(event, "native event runtime") for event in native_candidates],
-                0,
-                tuple(scheduled_result.scheduled_times) if scheduled_result else (),
-            )
-        elif native_dae_runtime and any(
-            rule.type == "algebraic" for rule in model.rules
-        ):
+            if native_dae_runtime:
+                event_result = EventTranslationResult(
+                    None,
+                    0,
+                    [
+                        (event, "native event runtime")
+                        for event in event_translation_events
+                    ],
+                )
+            else:
+                scheduled_result = (
+                    synthesize_event_actions(scheduled_event_candidates, event_context)
+                    if scheduled_event_candidates
+                    else None
+                )
+                # Events that could not be scheduled must join the native block;
+                # dropping them here would silently lose their execution.
+                native_candidates = list(native_event_candidates)
+                known = {id(event) for event in native_candidates}
+                if scheduled_result is not None:
+                    for event, _reason in scheduled_result.untranslated:
+                        if id(event) not in known:
+                            native_candidates.append(event)
+                            known.add(id(event))
+                event_result = EventTranslationResult(
+                    scheduled_result.actions_block if scheduled_result else None,
+                    0,
+                    [(event, "native event runtime") for event in native_candidates],
+                    0,
+                    tuple(scheduled_result.scheduled_times) if scheduled_result else (),
+                )
+        elif native_dae_runtime:
             event_result = EventTranslationResult(
                 None,
                 0,
                 [
-                    (event, "state event routed to native DAE event runtime")
+                    (event, "event routed to native BNG3 event runtime")
                     for event in event_translation_events
                 ],
             )
@@ -13965,10 +14570,14 @@ def generate_bngl(
                         _allow_event_parameter_promotion=False,
                         native_dae_runtime=native_dae_runtime,
                         _force_all_native_events=True,
-                        _native_event_ids=_native_event_ids_for_promotion(
-                            event_translation_events,
-                            native_events,
-                            event_context,
+                        _native_event_ids=(
+                            {str(event.id) for event in event_translation_events}
+                            if native_dae_runtime
+                            else _native_event_ids_for_promotion(
+                                event_translation_events,
+                                native_events,
+                                event_context,
+                            )
                         ),
                     )
                     if "begin bng3_events version 1" in promoted.bngl:
@@ -13976,6 +14585,31 @@ def generate_bngl(
                         model.reaction_rate_functions = (
                             promoted_model.reaction_rate_functions
                         )
+                        if comp_param_swaps:
+                            swapped_bngl = promoted.bngl
+                            for orig_std, (
+                                temp_user,
+                                comp_alias,
+                            ) in comp_param_swaps.items():
+                                swapped_bngl = re.sub(
+                                    rf"\b{re.escape(orig_std)}\b",
+                                    comp_alias,
+                                    swapped_bngl,
+                                )
+                                swapped_bngl = re.sub(
+                                    rf"\b{re.escape(temp_user)}\b",
+                                    orig_std,
+                                    swapped_bngl,
+                                )
+                            caller_model.import_warnings = model.import_warnings
+                            caller_model.reaction_rate_functions = (
+                                model.reaction_rate_functions
+                            )
+                            return BNGLGenerationResult(
+                                swapped_bngl,
+                                promoted.observable_map,
+                                promoted.warnings,
+                            )
                         return promoted
         _update_event_translation_warning(
             model, event_result, native_event_block, native_event_count
@@ -14141,6 +14775,12 @@ def generate_bngl(
     model.import_warnings = [
         coerce_import_warning(warning) for warning in model.import_warnings
     ]
+    if comp_param_swaps:
+        for orig_std, (temp_user, comp_alias) in comp_param_swaps.items():
+            model_text = re.sub(rf"\b{re.escape(orig_std)}\b", comp_alias, model_text)
+            model_text = re.sub(rf"\b{re.escape(temp_user)}\b", orig_std, model_text)
+        caller_model.import_warnings = model.import_warnings
+        caller_model.reaction_rate_functions = model.reaction_rate_functions
 
     warnings = [
         str(warning.get("message", ""))

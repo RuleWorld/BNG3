@@ -1,4 +1,6 @@
 #include "NFinput.hh"
+#include <cmath>
+#include <stdexcept>
 
 
 
@@ -74,7 +76,8 @@ bool NFinput::readRNFfile(map<string,string> &argMap, vector<string> &commands, 
 						cout<<"\nSyntax error in rnf file: '"<<filename<<"' on line ["<<lineCounter<<"]\n";
 						cout<<"   >> "+line+"\n";
 						cout<<"   This line gives no argument and is not commented out."<<endl;
-						break;
+						rnfFile.close();
+						return false;
 					}
 
 					string::size_type firstWhiteSpace = line.find_first_of(" \t");
@@ -117,7 +120,8 @@ bool NFinput::readRNFfile(map<string,string> &argMap, vector<string> &commands, 
 						cout<<"   >> "+line+"\n";
 						cout<<"   This argument was previously defined either in the actual command line\n";
 						cout<<"   or directly in this RNF file."<<endl;
-						break;
+						rnfFile.close();
+						return false;
 					}
 
 					argMap[argName] = argValue;
@@ -201,9 +205,21 @@ void print(const string& com,System *s)
 
 void simulate(const string& command,System *s, bool verbose)
 {
-	int id1=command.find("sim");
+	const string::size_type id1 = command.find("sim");
+	if (id1 == string::npos || id1 + 3 >= command.size()) {
+		cout<<"\nError in RNF execution command. \n";
+		cout<<"   >> "+command+"\n";
+		cout<<"   Missing simulation time argument.\n"<<endl;
+		return;
+	}
 	string times = command.substr(id1+3);
 	NFutil::trim(times);
+	if (times.empty()) {
+		cout<<"\nError in RNF execution command. \n";
+		cout<<"   >> "+command+"\n";
+		cout<<"   Missing simulation time argument.\n"<<endl;
+		return;
+	}
 
 	string::size_type firstWhiteSpace = times.find_first_of(" \t");
 
@@ -222,23 +238,42 @@ void simulate(const string& command,System *s, bool verbose)
 	try {
 		simTime=NFutil::convertToDouble(simTime_str);
 		oSteps=NFutil::convertToInt(oSteps_str);
-		cout<<">> ";
-		s->sim(simTime,oSteps,verbose);
-	} catch (std::runtime_error e) {
+	} catch (const std::runtime_error &e) {
 		cout<<"\nError in RNF execution command. \n";
 		cout<<"   >> "+command+"\n";
 		cout<<"   Could not convert simulation times or output steps to numbers.\n"<<endl;
 		cerr<<e.what()<<endl;
+		throw;
 	}
+	if (!std::isfinite(simTime) || simTime < 0.0) {
+		throw std::invalid_argument("RNF sim duration must be finite and non-negative");
+	}
+	if (oSteps < 0) {
+		throw std::invalid_argument("RNF sim output steps must be non-negative");
+	}
+	cout<<">> ";
+	s->sim(simTime,oSteps,verbose);
 
 	cout<<"\n"<<endl;
 }
 
 void equilibrate(const string& command,System *s)
 {
-	int id1=command.find("eq");
-	string times = command.substr(id1+3);
+	const string::size_type id1 = command.find("eq");
+	if (id1 == string::npos || id1 + 2 >= command.size()) {
+		cout<<"\nError in RNF execution command. \n";
+		cout<<"   >> "+command+"\n";
+		cout<<"   Missing equilibration time argument.\n"<<endl;
+		return;
+	}
+	string times = command.substr(id1+2);
 	NFutil::trim(times);
+	if (times.empty()) {
+		cout<<"\nError in RNF execution command. \n";
+		cout<<"   >> "+command+"\n";
+		cout<<"   Missing equilibration time argument.\n"<<endl;
+		return;
+	}
 
 	string::size_type firstWhiteSpace = times.find_first_of(" \t");
 
@@ -257,15 +292,21 @@ void equilibrate(const string& command,System *s)
 	try {
 		simTime=NFutil::convertToDouble(simTime_str);
 		oSteps=NFutil::convertToInt(oSteps_str);
-		cout<<">> equilibrating the system for "<<simTime<<" seconds"<<endl;
-		s->equilibrate(simTime,oSteps);
-
-	} catch (std::runtime_error e) {
+	} catch (const std::runtime_error &e) {
 		cout<<"\nError in RNF execution command. \n";
 		cout<<"   >> "+command+"\n";
 		cout<<"   Could not convert eq times or output steps to numbers.\n"<<endl;
 		cerr<<e.what()<<endl;
+		throw;
 	}
+	if (!std::isfinite(simTime) || simTime < 0.0) {
+		throw std::invalid_argument("RNF eq duration must be finite and non-negative");
+	}
+	if (oSteps < 0) {
+		throw std::invalid_argument("RNF eq output steps must be non-negative");
+	}
+	cout<<">> equilibrating the system for "<<simTime<<" seconds"<<endl;
+	s->equilibrate(simTime,oSteps);
 
 	cout<<"\n"<<endl;
 }

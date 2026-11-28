@@ -6,10 +6,29 @@
 #include <cstdlib>
 #include <limits>
 #include <sstream>
+#include <stdexcept>
 #include <utility>
 
 namespace bng::units {
 namespace {
+
+bool checkedAddInt(int a, int b, int& out) {
+    const long long sum = static_cast<long long>(a) + static_cast<long long>(b);
+    if (sum < std::numeric_limits<int>::min() || sum > std::numeric_limits<int>::max()) {
+        return false;
+    }
+    out = static_cast<int>(sum);
+    return true;
+}
+
+bool checkedMulInt(int a, int b, int& out) {
+    const long long prod = static_cast<long long>(a) * static_cast<long long>(b);
+    if (prod < std::numeric_limits<int>::min() || prod > std::numeric_limits<int>::max()) {
+        return false;
+    }
+    out = static_cast<int>(prod);
+    return true;
+}
 
 Unit makeBase(BaseUnit base, Dimension dimension, double factor,
               std::string name = {}) {
@@ -23,28 +42,48 @@ Unit makeBase(BaseUnit base, Dimension dimension, double factor,
 
 Unit multiply(Unit lhs, const Unit& rhs, int sign = 1) {
     lhs.name.clear();
-    lhs.dimension.substance += sign * rhs.dimension.substance;
-    lhs.dimension.length += sign * rhs.dimension.length;
-    lhs.dimension.time += sign * rhs.dimension.time;
+    int deltaSub = 0, deltaLen = 0, deltaTime = 0;
+    if (!checkedMulInt(sign, rhs.dimension.substance, deltaSub) ||
+        !checkedMulInt(sign, rhs.dimension.length, deltaLen) ||
+        !checkedMulInt(sign, rhs.dimension.time, deltaTime) ||
+        !checkedAddInt(lhs.dimension.substance, deltaSub, lhs.dimension.substance) ||
+        !checkedAddInt(lhs.dimension.length, deltaLen, lhs.dimension.length) ||
+        !checkedAddInt(lhs.dimension.time, deltaTime, lhs.dimension.time)) {
+        throw std::overflow_error("unit exponent overflow");
+    }
     for (const auto& [base, exponent] : rhs.baseExponents) {
-        lhs.baseExponents[base] += sign * exponent;
+        int delta = 0;
+        if (!checkedMulInt(sign, exponent, delta) ||
+            !checkedAddInt(lhs.baseExponents[base], delta, lhs.baseExponents[base])) {
+            throw std::overflow_error("unit exponent overflow");
+        }
         if (lhs.baseExponents[base] == 0) lhs.baseExponents.erase(base);
     }
     if (sign == 1) {
         lhs.factor *= rhs.factor;
     } else {
+        if (!std::isfinite(rhs.factor) || rhs.factor <= 0.0) {
+            throw std::runtime_error("unit scale factor must be finite and positive");
+        }
         lhs.factor /= rhs.factor;
+    }
+    if (!std::isfinite(lhs.factor) || lhs.factor <= 0.0) {
+        throw std::overflow_error("unit scale factor overflow or underflow");
     }
     return lhs;
 }
 
 Unit power(Unit unit, int exponent) {
     unit.name.clear();
-    unit.dimension.substance *= exponent;
-    unit.dimension.length *= exponent;
-    unit.dimension.time *= exponent;
+    if (!checkedMulInt(unit.dimension.substance, exponent, unit.dimension.substance) ||
+        !checkedMulInt(unit.dimension.length, exponent, unit.dimension.length) ||
+        !checkedMulInt(unit.dimension.time, exponent, unit.dimension.time)) {
+        throw std::overflow_error("unit exponent overflow");
+    }
     for (auto it = unit.baseExponents.begin(); it != unit.baseExponents.end();) {
-        it->second *= exponent;
+        if (!checkedMulInt(it->second, exponent, it->second)) {
+            throw std::overflow_error("unit exponent overflow");
+        }
         if (it->second == 0) {
             it = unit.baseExponents.erase(it);
         } else {
@@ -52,6 +91,9 @@ Unit power(Unit unit, int exponent) {
         }
     }
     unit.factor = std::pow(unit.factor, static_cast<double>(exponent));
+    if (!std::isfinite(unit.factor) || unit.factor <= 0.0) {
+        throw std::overflow_error("unit scale factor overflow or underflow");
+    }
     return unit;
 }
 
@@ -73,7 +115,11 @@ public:
             advance();
             auto rhs = parseFactor();
             if (!rhs) return {std::nullopt, error_};
-            result = multiply(result, *rhs, -1);
+            try {
+                result = multiply(result, *rhs, -1);
+            } catch (const std::exception& error) {
+                return fail(error.what());
+            }
         } else {
             auto first = parseFactor();
             if (!first) return {std::nullopt, error_};
@@ -91,7 +137,11 @@ public:
             advance();
             auto rhs = parseFactor();
             if (!rhs) return {std::nullopt, error_};
-            result = multiply(result, *rhs, op == '*' ? 1 : -1);
+            try {
+                result = multiply(result, *rhs, op == '*' ? 1 : -1);
+            } catch (const std::exception& error) {
+                return fail(error.what());
+            }
         }
         if (composed_) result.name.clear();
         return {result, {}};
@@ -202,6 +252,10 @@ private:
             advance();
             result = *nested;
         } else if (const auto number = parseNumber()) {
+            if (!std::isfinite(*number) || *number <= 0.0) {
+                fail("unit scale factor must be finite and positive");
+                return std::nullopt;
+            }
             result.name.clear();
             result.dimension = {};
             result.factor = *number;
@@ -226,7 +280,12 @@ private:
                 fail("unit exponents must be signed integers");
                 return std::nullopt;
             }
-            result = power(result, *exponent);
+            try {
+                result = power(result, *exponent);
+            } catch (const std::exception& error) {
+                fail(error.what());
+                return std::nullopt;
+            }
         }
         return result;
     }
@@ -242,7 +301,12 @@ private:
             advance();
             auto rhs = parseFactor();
             if (!rhs) return std::nullopt;
-            result = multiply(result, *rhs, op == '*' ? 1 : -1);
+            try {
+                result = multiply(result, *rhs, op == '*' ? 1 : -1);
+            } catch (const std::exception& error) {
+                fail(error.what());
+                return std::nullopt;
+            }
         }
         return result;
     }

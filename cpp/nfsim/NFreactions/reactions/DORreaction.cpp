@@ -159,6 +159,7 @@ DORRxnClass::DORRxnClass(
 	//Set up the reactantLists
 	reactantLists = new ReactantList *[n_reactants];
 	for(unsigned int r=0; r<n_reactants; r++) {
+		reactantLists[r] = 0;
 		if((signed)r!=this->DORreactantIndex)
 			reactantLists[r]=(new ReactantList(r,transformationSet,25,this->system));
 	}
@@ -176,6 +177,9 @@ DORRxnClass::DORRxnClass(
 	//is reevaluated on a molecule, the molecule knows to update this reaction.
 	//This is only necessary for the DOR reactant.
 	cf->addTypeIMoleculeDependency( reactantTemplates[DORreactantIndex]->getMoleculeType() );
+	if (cf != nullptr && s != nullptr) {
+		cf->setGlobalObservableDependency(this, s);
+	}
 
 }
 
@@ -704,6 +708,14 @@ double DORRxnClass::evaluateLocalFunctions(MappingSet *ms)
 
 double DORRxnClass::update_a() {
 	refreshTimeDependentLocalFunctions();
+	if (globalObsDirty) {
+		globalObsDirty = false;
+		for (int i = 0; i < reactantTree->size(); ++i) {
+			MappingSet *ms = reactantTree->getMappingSetByIndex(static_cast<unsigned int>(i));
+			if (ms == nullptr) continue;
+			reactantTree->updateValue(ms->getId(), evaluateLocalFunctions(ms));
+		}
+	}
 	if (useRuleMonkey) {
 		a = exactRuleMonkey_a();
 		return a;
@@ -761,8 +773,14 @@ double DORRxnClass::exactRuleMonkey_a()
 	} else if (n_reactants == 2) {
 		static thread_local vector<MappingSet*> reps0, reps1;
 		static thread_local vector<int> idx0, idx1;
-		collectReactantRepresentatives(reactantLists[0], contextCountsPerComplex[0], reps0, &idx0);
-		collectReactantRepresentatives(reactantLists[1], contextCountsPerComplex[1], reps1, &idx1);
+		if (0 == DORreactantIndex)
+			collectReactantRepresentatives(reactantTree, contextCountsPerComplex[0], reps0, &idx0);
+		else
+			collectReactantRepresentatives(reactantLists[0], contextCountsPerComplex[0], reps0, &idx0);
+		if (1 == DORreactantIndex)
+			collectReactantRepresentatives(reactantTree, contextCountsPerComplex[1], reps1, &idx1);
+		else
+			collectReactantRepresentatives(reactantLists[1], contextCountsPerComplex[1], reps1, &idx1);
 		double totalCombinations = 1.0;
 		for(unsigned int i=0; i<n_reactants; i++) {
 			if(i!=DORreactantIndex) {
@@ -812,88 +830,93 @@ double DORRxnClass::exactRuleMonkey_a()
 
 void DORRxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 {
-	if (n_reactants != 2 || totalRateFlag) {
+	auto pickNonDorAndDor = [&]() {
 		double rateFactorMultiplier = baseRate;
 		for(unsigned int i=0; i<n_reactants; i++) {
 			if(i!=(unsigned)DORreactantIndex) {
 				if ( isPopulationType[i] ) {
-                    reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
+					reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
+				} else if ( contextCountsPerComplex[i] ) {
+					pickRandomPerComplex(reactantLists[i], mappingSet[i], system->getMappingRNG());
 				} else {
-                    reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
+					reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
 				}
-				rateFactorMultiplier*=getReactantCount(i);
+				rateFactorMultiplier *= getCorrectedReactantCount(i);
 			}
 		}
 
-		if(random_A_number<0) random_A_number = system->getRNG().random(this->a);
-		reactantTree->pickReactantFromValue(mappingSet[DORreactantIndex],random_A_number,rateFactorMultiplier);
+		double rval = random_A_number;
+		if (rval < 0) rval = system->getRNG().random(this->a);
+		if (contextCountsPerComplex[DORreactantIndex]) {
+			const double target = (rateFactorMultiplier > 0.0) ? (rval / rateFactorMultiplier) : 0.0;
+			pickPerComplexFromTree(reactantTree, mappingSet[DORreactantIndex], target);
+		} else {
+			reactantTree->pickReactantFromValue(mappingSet[DORreactantIndex], rval, rateFactorMultiplier);
+		}
+	};
+
+	if (n_reactants != 2 || totalRateFlag) {
+		pickNonDorAndDor();
 		return;
 	}
 
-	// For molecularity=2, we have to find a valid pair (no null events)
-	int size0 = getReactantCount(0);
-	int size1 = getReactantCount(1);
-	
+	// For molecularity=2, find a valid pair (no null events) over representatives
+	static thread_local vector<MappingSet*> reps0, reps1;
+	static thread_local vector<int> idx0, idx1;
+	if (0 == DORreactantIndex)
+		collectReactantRepresentatives(reactantTree, contextCountsPerComplex[0], reps0, &idx0);
+	else
+		collectReactantRepresentatives(reactantLists[0], contextCountsPerComplex[0], reps0, &idx0);
+	if (1 == DORreactantIndex)
+		collectReactantRepresentatives(reactantTree, contextCountsPerComplex[1], reps1, &idx1);
+	else
+		collectReactantRepresentatives(reactantLists[1], contextCountsPerComplex[1], reps1, &idx1);
+
 	validPairsBuffer.clear();
 	validWeightsBuffer.clear();
 	double totalWeight = 0.0;
-	
-	for (int i = 0; i < size0; ++i) {
-		msPairBuffer[0] = reactantLists[0]->getMappingSet(i);
-		for (int j = 0; j < size1; ++j) {
-			msPairBuffer[1] = reactantLists[1]->getMappingSet(j);
-			
+
+	for (size_t i = 0; i < reps0.size(); ++i) {
+		msPairBuffer[0] = reps0[i];
+		for (size_t j = 0; j < reps1.size(); ++j) {
+			msPairBuffer[1] = reps1[j];
+
 			if (transformationSet->checkMolecularity(msPairBuffer)) {
-				validPairsBuffer.push_back(make_pair(i, j));
+				validPairsBuffer.push_back(make_pair(static_cast<int>(i), static_cast<int>(j)));
 				double weight = 1.0;
 				if (0 == DORreactantIndex) {
-					weight = reactantTree->getRateFactor(i);
+					weight = reactantTree->getRateFactor(idx0[i]);
 				} else if (1 == DORreactantIndex) {
-					weight = reactantTree->getRateFactor(j);
+					weight = reactantTree->getRateFactor(idx1[j]);
 				}
 				validWeightsBuffer.push_back(weight);
 				totalWeight += weight;
 			}
 		}
 	}
-	
-	if (validPairsBuffer.empty() || totalWeight <= 0) {
-		// Safety fallback: this should be unreachable when exactRuleMonkey_a() > 0.
-		// If reached, preserve legacy behavior by falling back to the standard selector.
-		double rateFactorMultiplier = baseRate;
-		for(unsigned int i=0; i<n_reactants; i++) {
-			if(i!=(unsigned)DORreactantIndex) {
-				if ( isPopulationType[i] ) {
-                    reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
-				} else {
-                    reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
-				}
-				rateFactorMultiplier*=getReactantCount(i);
-			}
-		}
 
-		if(random_A_number<0) random_A_number = system->getRNG().random(this->a);
-		reactantTree->pickReactantFromValue(mappingSet[DORreactantIndex],random_A_number,rateFactorMultiplier);
+	if (validPairsBuffer.empty() || totalWeight <= 0) {
+		pickNonDorAndDor();
 		return;
 	}
-	
+
 	// Select a valid pair weighted by the DOR tree factors
 	double randNum = system->getRNG().random(totalWeight);
 	double cumulative = 0;
-	int selectedIndex = validPairsBuffer.size() - 1;
+	int selectedIndex = static_cast<int>(validPairsBuffer.size()) - 1;
 	for (size_t k = 0; k < validPairsBuffer.size(); ++k) {
 		cumulative += validWeightsBuffer[k];
 		if (randNum <= cumulative) {
-			selectedIndex = k;
+			selectedIndex = static_cast<int>(k);
 			break;
 		}
 	}
-	
+
 	int i = validPairsBuffer[selectedIndex].first;
 	int j = validPairsBuffer[selectedIndex].second;
-	
-	mappingSet[0] = reactantLists[0]->getMappingSet(i);
-	mappingSet[1] = reactantLists[1]->getMappingSet(j);
+
+	mappingSet[0] = reps0[static_cast<size_t>(i)];
+	mappingSet[1] = reps1[static_cast<size_t>(j)];
 }
 
 
@@ -903,27 +926,27 @@ void DORRxnClass::pickMappingSets(double randNumber) const
 		pickRuleMonkeyMappingSets(randNumber);
 		return;
 	}
-	//here we cannot just select a random molecule.  This is where all of our hard
-	//(as well as all the other reactants.  So here we go...
 	double rateFactorMultiplier = baseRate;
 	for(unsigned int i=0; i<n_reactants; i++) {
 		if(i!=(unsigned)DORreactantIndex) {
 			if ( isPopulationType[i] ) {
-                reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
+				reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
+			} else if ( contextCountsPerComplex[i] ) {
+				pickRandomPerComplex(reactantLists[i], mappingSet[i], system->getMappingRNG());
 			} else {
-                reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
+				reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
 			}
-			rateFactorMultiplier*=getReactantCount(i);
+			rateFactorMultiplier *= getCorrectedReactantCount(i);
 		}
 	}
 
 	if(randNumber<0) randNumber = system->getRNG().random(this->a);
-	reactantTree->pickReactantFromValue(mappingSet[DORreactantIndex],randNumber,rateFactorMultiplier);
-
-	//cout<<"tree size:        "<<reactantTree->size()<<endl;
-	//cout<<"Choosing at tree: "<<mappingSet[DORreactantIndex]->getId()<<endl;
-	//mappingSet[DORreactantIndex]->printDetails();
-	//reactantTree->printDetails();
+	if (contextCountsPerComplex[DORreactantIndex]) {
+		const double target = (rateFactorMultiplier > 0.0) ? (randNumber / rateFactorMultiplier) : 0.0;
+		pickPerComplexFromTree(reactantTree, mappingSet[DORreactantIndex], target);
+	} else {
+		reactantTree->pickReactantFromValue(mappingSet[DORreactantIndex], randNumber, rateFactorMultiplier);
+	}
 }
 
 void DORRxnClass::notifyRateFactorChange(Molecule * m, int reactantIndex, int rxnListIndex) {
@@ -987,6 +1010,8 @@ EnergyRxnClass::EnergyRxnClass(
 	DORRxnClass(name,baseRate,baseRateName,transformationSet,dorReactantIndex,
 					 s,1,1,false),
 	conditionalTerms(context.conditionalTerms),
+	basePatternIndices(context.basePatternIndices),
+	requiresPartnerCheck(false),
 	conditionalComponentMasks(),
 	componentMaskFastPath(true),
 	simpleMembership(false),
@@ -1004,6 +1029,7 @@ EnergyRxnClass::EnergyRxnClass(
 	phi(phi),
 	RT(RT),
 	isForward(isForward),
+	barrierEnergy(0.0),
 	weightedDependencyMask(0),
 	dependencyMaskValid(true),
 	singleConditionalTermFastPath(false),
@@ -1040,6 +1066,18 @@ EnergyRxnClass::EnergyRxnClass(
 			exit(1);
 		}
 		conditionComponentIndices.push_back(componentIndex);
+		MoleculeType *expectedPartnerMT = 0;
+		int expectedPartnerCompIdx = -1;
+		if (!condition.partnerType.empty() && system != 0) {
+			expectedPartnerMT = system->getMoleculeTypeByName(condition.partnerType);
+			if (expectedPartnerMT != 0 && !condition.partnerComp.empty() &&
+					!expectedPartnerMT->isEquivalentComponent(condition.partnerComp)) {
+				expectedPartnerCompIdx = expectedPartnerMT->getCompIndexFromName(condition.partnerComp);
+			}
+			if (expectedPartnerMT != 0) requiresPartnerCheck = true;
+		}
+		conditionPartnerTypes.push_back(expectedPartnerMT);
+		conditionPartnerCompIndices.push_back(expectedPartnerCompIdx);
 	}
 	for (unsigned int ti = 0; ti < conditionalTerms.size(); ++ti) {
 		std::uint64_t componentMask = 0;
@@ -1091,6 +1129,8 @@ EnergyRxnClass::EnergyRxnClass(
 			simpleMembership =
 					partner->getType() == TransformationFactory::EMPTY &&
 					!partnerMoleculeType->isPopulationType() &&
+					reactantTemplates[0]->getCompartment() == 0 &&
+					reactantTemplates[1]->getCompartment() == 0 &&
 					reactantTemplates[0]->getN_symComps() == 0 &&
 					reactantTemplates[0]->getN_connectedTo() == 0 &&
 					reactantTemplates[1]->getN_symComps() == 0 &&
@@ -1104,6 +1144,8 @@ EnergyRxnClass::EnergyRxnClass(
 			partnerMoleculeType = partnerTemplate->getMoleculeType();
 			simpleMembership =
 					partner->getType() == TransformationFactory::EMPTY &&
+					reactantTemplates[0]->getCompartment() == 0 &&
+					partnerTemplate->getCompartment() == 0 &&
 					reactantTemplates[0]->getN_symComps() == 0 &&
 					reactantTemplates[0]->getN_connectedTo() == 0 &&
 					partnerTemplate->getN_symComps() == 0 &&
@@ -1152,9 +1194,14 @@ EnergyRxnClass::EnergyRxnClass(
 		reactantLists[1] = new ReactantList(1, transformationSet, 25, this->system);
 	}
 
-	/* Cache the small Arrhenius factor table once.  Membership updates still
-	 * perform the same occupancy-mask tests, but avoid recomputing exponentials
-	 * for every weighted molecule. */
+	rebuildFactorCache();
+}
+
+void EnergyRxnClass::rebuildFactorCache()
+{
+	singleConditionalTermFastPath = false;
+	multiConditionalTermFastPath = false;
+	conditionalRateFactors.clear();
 	if (componentMaskFastPath && conditionalTerms.size() == 1) {
 		double energyCoefficient = isForward ? phi : (phi - 1.0);
 		baseEnergyRateFactor = std::exp(
@@ -1181,6 +1228,97 @@ EnergyRxnClass::EnergyRxnClass(
 		}
 		multiConditionalTermFastPath = true;
 	}
+}
+
+void EnergyRxnClass::setLiveEnergyExpressions(
+		std::function<double()> phiExprFn,
+		std::function<double()> ea0ExprFn,
+		double barrierVal)
+{
+	phiExpression = std::move(phiExprFn);
+	ea0Expression = std::move(ea0ExprFn);
+	barrierEnergy = barrierVal;
+}
+
+void EnergyRxnClass::resetBaseRateFromSystemParamter()
+{
+	bool changed = false;
+	if (phiExpression) {
+		const double newPhi = phiExpression();
+		if (std::isfinite(newPhi)) {
+			phi = newPhi;
+			changed = true;
+		}
+	}
+	if (ea0Expression) {
+		const double newEa0 = ea0Expression();
+		if (std::isfinite(newEa0)) {
+			double updatedBaseRate = std::exp(-(newEa0 + barrierEnergy) / RT);
+			if (!this->totalRateFlag) {
+				if (transformationSet->usingSymmetryFactor()) {
+					updatedBaseRate *= transformationSet->getSymmetryFactor();
+				} else if (isDimerStyle) {
+					updatedBaseRate *= 0.5;
+				}
+			}
+			if (reactantVolumeScaling && n_reactants > 0) {
+				reactantUnscaledBaseRate = updatedBaseRate;
+				updatedBaseRate *= reactantVolumeConversionFactor;
+			}
+			if (std::isfinite(updatedBaseRate) && updatedBaseRate >= 0.0) {
+				this->baseRate = updatedBaseRate;
+				changed = true;
+			}
+		}
+	}
+	EnergyFunction *ef = (system != 0) ? system->getEnergyFunction() : 0;
+	if (ef != 0) {
+		if (!basePatternIndices.empty()) {
+			double newBaseG = 0.0;
+			for (int pi : basePatternIndices) {
+				if (pi >= 0 && pi < ef->getNumPatterns()) {
+					newBaseG += ef->getPattern(pi).energyValue;
+				}
+			}
+			baseEnergy = newBaseG;
+			changed = true;
+		}
+		for (auto &term : conditionalTerms) {
+			if (term.sourcePatternIndex >= 0 && term.sourcePatternIndex < ef->getNumPatterns()) {
+				term.energyValue = ef->getPattern(term.sourcePatternIndex).energyValue;
+				changed = true;
+			}
+		}
+	}
+	if (changed) {
+		rebuildFactorCache();
+		for (int i = 0; i < reactantTree->size(); ++i) {
+			MappingSet *ms = reactantTree->getMappingSetByIndex(static_cast<unsigned int>(i));
+			if (ms == 0) continue;
+			reactantTree->updateValue(ms->getId(), evaluateLocalFunctions(ms));
+		}
+		if (compactFactorizedPropensity) {
+			refreshCompactRateFactor();
+		}
+		update_a();
+	} else {
+		ReactionClass::resetBaseRateFromSystemParamter();
+	}
+}
+
+bool EnergyRxnClass::conditionMatchesMolecule(Molecule *weightedMolecule, unsigned int ci) const
+{
+	const int compIdx = conditionComponentIndices[ci];
+	if (!weightedMolecule->isBindingSiteBonded(compIdx)) return false;
+	if (ci < conditionPartnerTypes.size() && conditionPartnerTypes[ci] != 0) {
+		Molecule *partner = weightedMolecule->getBondedMolecule(compIdx);
+		if (partner == 0 || partner->getMoleculeType() != conditionPartnerTypes[ci])
+			return false;
+		if (ci < conditionPartnerCompIndices.size() && conditionPartnerCompIndices[ci] >= 0 &&
+				weightedMolecule->getBondedMoleculeBindingSiteIndex(compIdx) != conditionPartnerCompIndices[ci])
+			return false;
+	}
+	return true;
 }
 
 EnergyRxnClass::~EnergyRxnClass()
@@ -1647,10 +1785,19 @@ double EnergyRxnClass::evaluateLocalFunctions(MappingSet *ms)
 	}
 
 	Molecule *weightedMolecule = ms->get(0)->getMolecule();
+	auto termPartnersMatch = [&](unsigned int ti) -> bool {
+		if (!requiresPartnerCheck) return true;
+		const std::uint64_t mask = conditionalTerms[ti].conditionMask;
+		for (unsigned int ci = 0; ci < conditionComponentIndices.size(); ++ci) {
+			if ((mask & (std::uint64_t(1) << ci)) == 0) continue;
+			if (!conditionMatchesMolecule(weightedMolecule, ci)) return false;
+		}
+		return true;
+	};
 	if (singleConditionalTermFastPath) {
 		std::uint64_t boundMask = weightedMolecule->getBoundComponentMask();
-		return (boundMask & conditionalComponentMasks[0]) ==
-				conditionalComponentMasks[0]
+		return ((boundMask & conditionalComponentMasks[0]) == conditionalComponentMasks[0] &&
+				termPartnersMatch(0))
 			? conditionedEnergyRateFactor : baseEnergyRateFactor;
 	}
 	if (multiConditionalTermFastPath) {
@@ -1658,14 +1805,14 @@ double EnergyRxnClass::evaluateLocalFunctions(MappingSet *ms)
 		unsigned int activeTerms = 0;
 		for (unsigned int ti = 0; ti < conditionalTerms.size(); ++ti) {
 			std::uint64_t requiredMask = conditionalComponentMasks[ti];
-			if ((boundMask & requiredMask) == requiredMask)
+			if ((boundMask & requiredMask) == requiredMask && termPartnersMatch(ti))
 				activeTerms |= (1u << ti);
 		}
 		return conditionalRateFactors[activeTerms];
 	}
 	std::uint64_t conditionMask = 0;
 	for (unsigned int ci=0; ci<conditionComponentIndices.size(); ci++) {
-		if (weightedMolecule->isBindingSiteBonded(conditionComponentIndices[ci]))
+		if (conditionMatchesMolecule(weightedMolecule, ci))
 			conditionMask |= (std::uint64_t(1) << ci);
 	}
 
@@ -2068,6 +2215,12 @@ DOR2RxnClass::DOR2RxnClass(
 	//This is only necessary for the DOR reactants.
 	cf1->addTypeIMoleculeDependency( reactantTemplates[DORreactantIndex1]->getMoleculeType() );
 	cf2->addTypeIMoleculeDependency( reactantTemplates[DORreactantIndex2]->getMoleculeType() );
+	if (cf1 != nullptr && s != nullptr) {
+		cf1->setGlobalObservableDependency(this, s);
+	}
+	if (cf2 != nullptr && s != nullptr) {
+		cf2->setGlobalObservableDependency(this, s);
+	}
 
 }
 
@@ -2378,6 +2531,19 @@ double DOR2RxnClass::evaluateLocalFunctions2(MappingSet *ms)
 
 double DOR2RxnClass::update_a() {
 	refreshTimeDependentLocalFunctions();
+	if (globalObsDirty) {
+		globalObsDirty = false;
+		for (int i = 0; i < reactantTree1->size(); ++i) {
+			MappingSet *ms = reactantTree1->getMappingSetByIndex(static_cast<unsigned int>(i));
+			if (ms == nullptr) continue;
+			reactantTree1->updateValue(ms->getId(), evaluateLocalFunctions1(ms));
+		}
+		for (int i = 0; i < reactantTree2->size(); ++i) {
+			MappingSet *ms = reactantTree2->getMappingSetByIndex(static_cast<unsigned int>(i));
+			if (ms == nullptr) continue;
+			reactantTree2->updateValue(ms->getId(), evaluateLocalFunctions2(ms));
+		}
+	}
 	if (useRuleMonkey) {
 		a = exactRuleMonkey_a();
 		return a;
@@ -2464,8 +2630,16 @@ double DOR2RxnClass::exactRuleMonkey_a()
 	} else if (n_reactants == 2) {
 		static thread_local vector<MappingSet*> reps0, reps1;
 		static thread_local vector<int> idx0, idx1;
-		collectReactantRepresentatives(reactantLists[0], contextCountsPerComplex[0], reps0, &idx0);
-		collectReactantRepresentatives(reactantLists[1], contextCountsPerComplex[1], reps1, &idx1);
+		auto collectFor = [&](int r, vector<MappingSet*> &reps, vector<int> &idx) {
+			if (r == DORreactantIndex1)
+				collectReactantRepresentatives(reactantTree1, contextCountsPerComplex[r], reps, &idx);
+			else if (r == DORreactantIndex2)
+				collectReactantRepresentatives(reactantTree2, contextCountsPerComplex[r], reps, &idx);
+			else
+				collectReactantRepresentatives(reactantLists[r], contextCountsPerComplex[r], reps, &idx);
+		};
+		collectFor(0, reps0, idx0);
+		collectFor(1, reps1, idx1);
 		double totalCombinations = 1.0;
 		for (unsigned int i=0; i<n_reactants; i++) {
 			if (i==(unsigned int)DORreactantIndex1) {
@@ -2522,88 +2696,98 @@ double DOR2RxnClass::exactRuleMonkey_a()
 
 void DOR2RxnClass::pickRuleMonkeyMappingSets(double random_A_number) const
 {
-	if (n_reactants != 2 || totalRateFlag) {
+	auto pickIndependent = [&]() {
 		for(unsigned int i=0; i<n_reactants; i++) {
 			if( i!=(unsigned)DORreactantIndex1 && i!=(unsigned)DORreactantIndex2) {
 				if ( isPopulationType[i] ) {
-                    reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
+					reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
+				} else if ( contextCountsPerComplex[i] ) {
+					pickRandomPerComplex(reactantLists[i], mappingSet[i], system->getMappingRNG());
 				} else {
-                    reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
+					reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
 				}
 			}
 		}
 
-		double randNumber1 = system->getRNG().random( reactantTree1->getRateFactorSum() );
-		reactantTree1->pickReactantFromValue( mappingSet[DORreactantIndex1], randNumber1, 1.0);
+		if (contextCountsPerComplex[DORreactantIndex1]) {
+			double r1 = system->getRNG().random(perComplexRateFactorSum(reactantTree1));
+			pickPerComplexFromTree(reactantTree1, mappingSet[DORreactantIndex1], r1);
+		} else {
+			double r1 = system->getRNG().random(reactantTree1->getRateFactorSum());
+			reactantTree1->pickReactantFromValue(mappingSet[DORreactantIndex1], r1, 1.0);
+		}
 
-		double randNumber2 = system->getRNG().random( reactantTree2->getRateFactorSum() );
-		reactantTree2->pickReactantFromValue( mappingSet[DORreactantIndex2], randNumber2, 1.0);
+		if (contextCountsPerComplex[DORreactantIndex2]) {
+			double r2 = system->getRNG().random(perComplexRateFactorSum(reactantTree2));
+			pickPerComplexFromTree(reactantTree2, mappingSet[DORreactantIndex2], r2);
+		} else {
+			double r2 = system->getRNG().random(reactantTree2->getRateFactorSum());
+			reactantTree2->pickReactantFromValue(mappingSet[DORreactantIndex2], r2, 1.0);
+		}
+	};
+
+	if (n_reactants != 2 || totalRateFlag) {
+		pickIndependent();
 		return;
 	}
 
-	int size0 = getReactantCount(0);
-	int size1 = getReactantCount(1);
-	
+	static thread_local vector<MappingSet*> reps0, reps1;
+	static thread_local vector<int> idx0, idx1;
+	auto collectFor = [&](int r, vector<MappingSet*> &reps, vector<int> &idx) {
+		if (r == DORreactantIndex1)
+			collectReactantRepresentatives(reactantTree1, contextCountsPerComplex[r], reps, &idx);
+		else if (r == DORreactantIndex2)
+			collectReactantRepresentatives(reactantTree2, contextCountsPerComplex[r], reps, &idx);
+		else
+			collectReactantRepresentatives(reactantLists[r], contextCountsPerComplex[r], reps, &idx);
+	};
+	collectFor(0, reps0, idx0);
+	collectFor(1, reps1, idx1);
+
 	validPairsBuffer.clear();
 	validWeightsBuffer.clear();
 	double totalWeight = 0.0;
-	
-	for (int i = 0; i < size0; ++i) {
-		msPairBuffer[0] = reactantLists[0]->getMappingSet(i);
-		for (int j = 0; j < size1; ++j) {
-			msPairBuffer[1] = reactantLists[1]->getMappingSet(j);
-			
+
+	for (size_t i = 0; i < reps0.size(); ++i) {
+		msPairBuffer[0] = reps0[i];
+		for (size_t j = 0; j < reps1.size(); ++j) {
+			msPairBuffer[1] = reps1[j];
+
 			if (transformationSet->checkMolecularity(msPairBuffer)) {
-				validPairsBuffer.push_back(make_pair(i, j));
-				double weight0 = (0 == DORreactantIndex1) ? reactantTree1->getRateFactor(i) :
-				                 ((0 == DORreactantIndex2) ? reactantTree2->getRateFactor(i) : 1.0);
-				double weight1 = (1 == DORreactantIndex1) ? reactantTree1->getRateFactor(j) :
-				                 ((1 == DORreactantIndex2) ? reactantTree2->getRateFactor(j) : 1.0);
-				
+				validPairsBuffer.push_back(make_pair(static_cast<int>(i), static_cast<int>(j)));
+				double weight0 = (0 == DORreactantIndex1) ? reactantTree1->getRateFactor(idx0[i]) :
+				                 ((0 == DORreactantIndex2) ? reactantTree2->getRateFactor(idx0[i]) : 1.0);
+				double weight1 = (1 == DORreactantIndex1) ? reactantTree1->getRateFactor(idx1[j]) :
+				                 ((1 == DORreactantIndex2) ? reactantTree2->getRateFactor(idx1[j]) : 1.0);
+
 				double weight = weight0 * weight1;
 				validWeightsBuffer.push_back(weight);
 				totalWeight += weight;
 			}
 		}
 	}
-	
+
 	if (validPairsBuffer.empty() || totalWeight <= 0) {
-		// Safety fallback: this should be unreachable when exactRuleMonkey_a() > 0.
-		// If reached, preserve legacy behavior by falling back to the standard selector.
-		for(unsigned int i=0; i<n_reactants; i++) {
-			if( i!=(unsigned)DORreactantIndex1 && i!=(unsigned)DORreactantIndex2) {
-				if ( isPopulationType[i] ) {
-                    reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
-				} else {
-                    reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
-				}
-			}
-		}
-
-		double randNumber1 = system->getRNG().random( reactantTree1->getRateFactorSum() );
-		reactantTree1->pickReactantFromValue( mappingSet[DORreactantIndex1], randNumber1, 1.0);
-
-		double randNumber2 = system->getRNG().random( reactantTree2->getRateFactorSum() );
-		reactantTree2->pickReactantFromValue( mappingSet[DORreactantIndex2], randNumber2, 1.0);
+		pickIndependent();
 		return;
 	}
-	
+
 	double randNum = system->getRNG().random(totalWeight);
 	double cumulative = 0;
-	int selectedIndex = validPairsBuffer.size() - 1;
+	int selectedIndex = static_cast<int>(validPairsBuffer.size()) - 1;
 	for (size_t k = 0; k < validPairsBuffer.size(); ++k) {
 		cumulative += validWeightsBuffer[k];
 		if (randNum <= cumulative) {
-			selectedIndex = k;
+			selectedIndex = static_cast<int>(k);
 			break;
 		}
 	}
-	
+
 	int i = validPairsBuffer[selectedIndex].first;
 	int j = validPairsBuffer[selectedIndex].second;
-	
-	mappingSet[0] = reactantLists[0]->getMappingSet(i);
-	mappingSet[1] = reactantLists[1]->getMappingSet(j);
+
+	mappingSet[0] = reps0[static_cast<size_t>(i)];
+	mappingSet[1] = reps1[static_cast<size_t>(j)];
 }
 
 void DOR2RxnClass::pickMappingSets(double randNumber) const
@@ -2612,26 +2796,33 @@ void DOR2RxnClass::pickMappingSets(double randNumber) const
 		pickRuleMonkeyMappingSets(randNumber);
 		return;
 	}
-	//here we cannot just select a random molecule.  This is where all of our hard
-	//(as well as all the other reactants.  So here we go...
-	//double rateFactorMultiplier = baseRate;
 	for(unsigned int i=0; i<n_reactants; i++) {
 		if( i!=(unsigned)DORreactantIndex1 && i!=(unsigned)DORreactantIndex2) {
 			if ( isPopulationType[i] ) {
-                reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
+				reactantLists[i]->pickRandomFromPopulation(mappingSet[i], system->getMappingRNG());
+			} else if ( contextCountsPerComplex[i] ) {
+				pickRandomPerComplex(reactantLists[i], mappingSet[i], system->getMappingRNG());
 			} else {
-                reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
+				reactantLists[i]->pickRandom(mappingSet[i], system->getMappingRNG());
 			}
-			//rateFactorMultiplier*=getReactantCount(i);
 		}
 	}
 
-	double randNumber1 = system->getRNG().random( reactantTree1->getRateFactorSum() );
-	reactantTree1->pickReactantFromValue( mappingSet[DORreactantIndex1], randNumber1, 1.0);
+	if (contextCountsPerComplex[DORreactantIndex1]) {
+		double randNumber1 = system->getRNG().random( perComplexRateFactorSum(reactantTree1) );
+		pickPerComplexFromTree( reactantTree1, mappingSet[DORreactantIndex1], randNumber1 );
+	} else {
+		double randNumber1 = system->getRNG().random( reactantTree1->getRateFactorSum() );
+		reactantTree1->pickReactantFromValue( mappingSet[DORreactantIndex1], randNumber1, 1.0);
+	}
 
-	double randNumber2 = system->getRNG().random( reactantTree2->getRateFactorSum() );
-	reactantTree2->pickReactantFromValue( mappingSet[DORreactantIndex2], randNumber2, 1.0);
-
+	if (contextCountsPerComplex[DORreactantIndex2]) {
+		double randNumber2 = system->getRNG().random( perComplexRateFactorSum(reactantTree2) );
+		pickPerComplexFromTree( reactantTree2, mappingSet[DORreactantIndex2], randNumber2 );
+	} else {
+		double randNumber2 = system->getRNG().random( reactantTree2->getRateFactorSum() );
+		reactantTree2->pickReactantFromValue( mappingSet[DORreactantIndex2], randNumber2, 1.0);
+	}
 }
 
 

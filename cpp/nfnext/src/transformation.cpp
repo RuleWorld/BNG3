@@ -48,6 +48,132 @@ void recordBond(MutationSet& mutations, Mutation::Kind kind,
     mutations.record(std::move(mutation));
 }
 
+bool validateBeforeExecute(const TransformationIR& transformation, const MatchEmbedding& embedding,
+                           const GenericGraphState& state) {
+    for (const auto particle : embedding.particles()) {
+        if (!particle.valid() || !state.alive(particle))
+            throw StaleEmbeddingError("transformation embedding is stale");
+    }
+    std::set<std::pair<ParticleId, std::uint16_t>> unbound_in_tx;
+    std::set<std::pair<ParticleId, std::uint16_t>> bound_in_tx;
+    std::set<CreatedMoleculeId> created_in_tx;
+    std::set<std::pair<CreatedMoleculeId, std::uint16_t>> created_bound_in_tx;
+    std::set<ParticleId> destroyed_in_tx;
+
+    auto siteCurrentlyBound = [&](ParticleId p, std::uint16_t s) -> bool {
+        if (bound_in_tx.count({p, s})) return true;
+        if (unbound_in_tx.count({p, s})) return false;
+        return state.bound(p, s);
+    };
+
+    const auto& ops = transformation.operations();
+    for (std::size_t idx = 0; idx < ops.size(); ++idx) {
+        const auto& op = ops[idx];
+        switch (op.kind) {
+            case TransformationOpKind::SetState: {
+                const auto particle = embedded(embedding, op.first_node, state);
+                if (destroyed_in_tx.count(particle))
+                    throw StaleEmbeddingError("transformation embedding is stale");
+                const auto site = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
+                const auto& type = typeFor(state.model(), state.type(particle));
+                validateState(type, site, op.state);
+                break;
+            }
+            case TransformationOpKind::AddBond: {
+                const auto first = embedded(embedding, op.first_node, state);
+                const auto second = embedded(embedding, op.second_node, state);
+                if (destroyed_in_tx.count(first) || destroyed_in_tx.count(second))
+                    throw StaleEmbeddingError("transformation embedding is stale");
+                const auto first_site = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
+                const auto second_site = embedding.mappedSite(op.second_node, static_cast<std::uint16_t>(op.second_site));
+                if ((first == second && first_site == second_site) ||
+                    siteCurrentlyBound(first, first_site) ||
+                    siteCurrentlyBound(second, second_site))
+                    throw TransformationError("transformation binds an already-bound site");
+                unbound_in_tx.erase({first, first_site});
+                unbound_in_tx.erase({second, second_site});
+                bound_in_tx.emplace(first, first_site);
+                bound_in_tx.emplace(second, second_site);
+                break;
+            }
+            case TransformationOpKind::DeleteBond: {
+                const auto first = embedded(embedding, op.first_node, state);
+                const auto second = embedded(embedding, op.second_node, state);
+                if (destroyed_in_tx.count(first) || destroyed_in_tx.count(second))
+                    throw StaleEmbeddingError("transformation embedding is stale");
+                const auto first_site = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
+                const auto second_site = embedding.mappedSite(op.second_node, static_cast<std::uint16_t>(op.second_site));
+                if (bound_in_tx.count({first, first_site}) || bound_in_tx.count({second, second_site})) {
+                    // Deleting a bond added earlier in the same tx is rare; fall back to transactional copy.
+                    return false;
+                }
+                if (unbound_in_tx.count({first, first_site}) || unbound_in_tx.count({second, second_site}))
+                    throw TransformationError("transformation deletes a missing bond");
+                const auto first_bond = state.bond(first, first_site);
+                const auto second_bond = state.bond(second, second_site);
+                if (first_bond.particle != second || first_bond.site != second_site ||
+                    second_bond.particle != first || second_bond.site != first_site)
+                    throw TransformationError("transformation deletes a missing bond");
+                unbound_in_tx.emplace(first, first_site);
+                unbound_in_tx.emplace(second, second_site);
+                break;
+            }
+            case TransformationOpKind::CreateMolecule: {
+                const auto& type = typeFor(state.model(), op.molecule_type);
+                for (const auto& initial : op.initial_states) validateState(type, initial.first, initial.second);
+                created_in_tx.insert(op.created);
+                break;
+            }
+            case TransformationOpKind::AddBondExistingToCreated: {
+                const auto first = embedded(embedding, op.first_node, state);
+                if (destroyed_in_tx.count(first))
+                    throw StaleEmbeddingError("transformation embedding is stale");
+                if (!created_in_tx.count(op.created))
+                    throw TransformationError("bond references a molecule not yet created");
+                const auto first_site = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
+                const auto created_site = static_cast<std::uint16_t>(op.second_site);
+                if (siteCurrentlyBound(first, first_site) ||
+                    created_bound_in_tx.count({op.created, created_site}))
+                    throw TransformationError("transformation binds an already-bound site");
+                unbound_in_tx.erase({first, first_site});
+                bound_in_tx.emplace(first, first_site);
+                created_bound_in_tx.emplace(op.created, created_site);
+                break;
+            }
+            case TransformationOpKind::AddBondCreated: {
+                if (!created_in_tx.count(op.created) || !created_in_tx.count(op.second_created))
+                    throw TransformationError("bond references a molecule not yet created");
+                const auto s1 = static_cast<std::uint16_t>(op.first_site);
+                const auto s2 = static_cast<std::uint16_t>(op.second_site);
+                if ((op.created == op.second_created && s1 == s2) ||
+                    created_bound_in_tx.count({op.created, s1}) ||
+                    created_bound_in_tx.count({op.second_created, s2}))
+                    throw TransformationError("transformation binds an already-bound site");
+                created_bound_in_tx.emplace(op.created, s1);
+                created_bound_in_tx.emplace(op.second_created, s2);
+                break;
+            }
+            case TransformationOpKind::DestroyMolecule: {
+                const auto particle = embedded(embedding, op.first_node, state);
+                if (destroyed_in_tx.count(particle))
+                    throw StaleEmbeddingError("transformation embedding is stale");
+                destroyed_in_tx.insert(particle);
+                break;
+            }
+            case TransformationOpKind::DestroyComplex: {
+                const auto root = embedded(embedding, op.first_node, state);
+                if (destroyed_in_tx.count(root))
+                    throw StaleEmbeddingError("transformation embedding is stale");
+                // If there are more ops after DestroyComplex, validate via copy to be 100% safe.
+                if (idx + 1 < ops.size()) return false;
+                destroyed_in_tx.insert(root);
+                break;
+            }
+        }
+    }
+    return true;
+}
+
 void execute(const TransformationIR& transformation, const MatchEmbedding& embedding,
              GenericGraphState& state, TransformationResult& result) {
     for (const auto particle : embedding.particles()) {
@@ -56,30 +182,32 @@ void execute(const TransformationIR& transformation, const MatchEmbedding& embed
     }
     result.setReactantParticles(embedding.particles());
     std::map<CreatedMoleculeId, ParticleId> created;
+    std::vector<ParticleId> complex_members_scratch;
     for (const auto& op : transformation.operations()) {
         switch (op.kind) {
             case TransformationOpKind::SetState: {
                 const auto particle = embedded(embedding, op.first_node, state);
+                const auto site = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
                 const auto& type = typeFor(state.model(), state.type(particle));
-                validateState(type, op.first_site, op.state);
-                const auto old_state = state.siteState(particle, static_cast<std::uint16_t>(op.first_site));
-                state.setSiteState(particle, static_cast<std::uint16_t>(op.first_site), op.state);
+                validateState(type, site, op.state);
+                const auto old_state = state.siteState(particle, site);
+                state.setSiteState(particle, site, op.state);
                 result.mutations.record(Mutation::siteStateChanged(
-                    particle, op.first_site, old_state, op.state));
+                    particle, site, old_state, op.state));
                 break;
             }
             case TransformationOpKind::AddBond:
             case TransformationOpKind::DeleteBond: {
                 const auto first = embedded(embedding, op.first_node, state);
                 const auto second = embedded(embedding, op.second_node, state);
-                const auto first_site = static_cast<std::uint16_t>(op.first_site);
-                const auto second_site = static_cast<std::uint16_t>(op.second_site);
+                const auto first_site = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
+                const auto second_site = embedding.mappedSite(op.second_node, static_cast<std::uint16_t>(op.second_site));
                 if (op.kind == TransformationOpKind::AddBond) {
                     if (state.bound(first, first_site) || state.bound(second, second_site))
                         throw TransformationError("transformation binds an already-bound site");
                     state.bind(first, first_site, second, second_site);
-                    recordBond(result.mutations, Mutation::Kind::Bind, first, op.first_site,
-                               second, op.second_site, state);
+                    recordBond(result.mutations, Mutation::Kind::Bind, first, first_site,
+                               second, second_site, state);
                 } else {
                     const auto first_bond = state.bond(first, first_site);
                     const auto second_bond = state.bond(second, second_site);
@@ -87,8 +215,8 @@ void execute(const TransformationIR& transformation, const MatchEmbedding& embed
                         second_bond.particle != first || second_bond.site != first_site)
                         throw TransformationError("transformation deletes a missing bond");
                     state.unbind(first, first_site);
-                    recordBond(result.mutations, Mutation::Kind::Unbind, first, op.first_site,
-                               second, op.second_site, state);
+                    recordBond(result.mutations, Mutation::Kind::Unbind, first, first_site,
+                               second, second_site, state);
                 }
                 break;
             }
@@ -106,12 +234,12 @@ void execute(const TransformationIR& transformation, const MatchEmbedding& embed
                 const auto first = embedded(embedding, op.first_node, state);
                 const auto found = created.find(op.created);
                 if (found == created.end()) throw TransformationError("bond references a molecule not yet created");
-                if (state.bound(first, static_cast<std::uint16_t>(op.first_site)) ||
-                    state.bound(found->second, static_cast<std::uint16_t>(op.second_site)))
+                const auto first_site = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
+                const auto second_site = static_cast<std::uint16_t>(op.second_site);
+                if (state.bound(first, first_site) || state.bound(found->second, second_site))
                     throw TransformationError("transformation binds an already-bound site");
-                state.bind(first, static_cast<std::uint16_t>(op.first_site), found->second,
-                           static_cast<std::uint16_t>(op.second_site));
-                recordBond(result.mutations, Mutation::Kind::Bind, first, op.first_site,
+                state.bind(first, first_site, found->second, second_site);
+                recordBond(result.mutations, Mutation::Kind::Bind, first, first_site,
                            found->second, op.second_site, state);
                 break;
             }
@@ -136,10 +264,10 @@ void execute(const TransformationIR& transformation, const MatchEmbedding& embed
             }
             case TransformationOpKind::DestroyComplex: {
                 const auto root = embedded(embedding, op.first_node, state);
-                std::vector<ParticleId> members;
-                for (const auto particle : state.liveParticles())
-                    if (state.sameComplex(root, particle)) members.push_back(particle);
-                for (const auto particle : members) state.destroy(particle);
+                state.complexMembers(root, complex_members_scratch);
+                for (const auto particle : complex_members_scratch) {
+                    if (state.alive(particle)) state.destroy(particle);
+                }
                 break;
             }
         }
@@ -204,16 +332,22 @@ CompiledTransformation CompiledTransformation::inverseFor(const MatchEmbedding& 
         switch (op.kind) {
             case TransformationOpKind::SetState: {
                 const auto particle = embedded(embedding, op.first_node, state);
-                inverse.setState(op.first_node, op.first_site,
-                                  state.siteState(particle, static_cast<std::uint16_t>(op.first_site)));
+                const auto site = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
+                inverse.setState(op.first_node, site, state.siteState(particle, site));
                 break;
             }
-            case TransformationOpKind::AddBond:
-                inverse.deleteBond(op.first_node, op.first_site, op.second_node, op.second_site);
+            case TransformationOpKind::AddBond: {
+                const auto s1 = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
+                const auto s2 = embedding.mappedSite(op.second_node, static_cast<std::uint16_t>(op.second_site));
+                inverse.deleteBond(op.first_node, s1, op.second_node, s2);
                 break;
-            case TransformationOpKind::DeleteBond:
-                inverse.addBond(op.first_node, op.first_site, op.second_node, op.second_site);
+            }
+            case TransformationOpKind::DeleteBond: {
+                const auto s1 = embedding.mappedSite(op.first_node, static_cast<std::uint16_t>(op.first_site));
+                const auto s2 = embedding.mappedSite(op.second_node, static_cast<std::uint16_t>(op.second_site));
+                inverse.addBond(op.first_node, s1, op.second_node, s2);
                 break;
+            }
             default:
                 throw TransformationError("inverse is not defined for this transformation");
         }
@@ -230,8 +364,12 @@ TransformationResult applyTransformation(const TransformationIR& transformation,
 TransformationResult applyTransformation(const CompiledTransformation& transformation,
                                           const MatchEmbedding& embedding,
                                           GenericGraphState& state) {
-    GenericGraphState candidate = state;
     TransformationResult result;
+    if (validateBeforeExecute(transformation.ir_, embedding, state)) {
+        execute(transformation.ir_, embedding, state, result);
+        return result;
+    }
+    GenericGraphState candidate = state;
     execute(transformation.ir_, embedding, candidate, result);
     state = std::move(candidate);
     return result;

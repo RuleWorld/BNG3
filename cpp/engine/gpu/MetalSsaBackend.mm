@@ -26,6 +26,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <random>
 #include <stdexcept>
 #include <string>
 
@@ -264,19 +265,30 @@ struct TrajectoryContext {
         PCG32 rng;
         rng.init(123456789ULL + params.baseSeed, (ulong)trajId);
 
-        float t = params.tStart;
+        // Relative elapsed time in [0, duration] accumulated in double-float
+        // (Knuth twoSum) so large tStart offsets and small tau steps never
+        // suffer float32 clock stall or time dilation.
+        const float duration = params.tEnd;
+        const float stepDt = (params.numOutputPoints > 1u)
+            ? (duration / (float)(params.numOutputPoints - 1u))
+            : duration;
+        const float timeTol = min(16.0f * 1.1920929e-7f * duration, 1e-3f * stepDt);
+        const float kFltMax = 3.402823466e+38f;
+
+        float t_hi = 0.0f;
+        float t_lo = 0.0f;
         uint nextOutputTime = 0;
         uint ssaStepCount = 0;
 
         // Initial state output
-        while (nextOutputTime < params.numOutputPoints && outputTimes[nextOutputTime] <= t + 1e-6f) {
+        while (nextOutputTime < params.numOutputPoints && outputTimes[nextOutputTime] <= (t_hi + t_lo) + timeTol) {
             recordObservables(nextOutputTime);
             ++nextOutputTime;
         }
 
         // Direct SSA Main Loop
-        while (t < params.tEnd) {
-            while (nextOutputTime < params.numOutputPoints && outputTimes[nextOutputTime] <= t + 1e-6f) {
+        while ((t_hi + t_lo) < duration) {
+            while (nextOutputTime < params.numOutputPoints && outputTimes[nextOutputTime] <= (t_hi + t_lo) + timeTol) {
                 recordObservables(nextOutputTime);
                 ++nextOutputTime;
             }
@@ -289,55 +301,105 @@ struct TrajectoryContext {
                 refresh_obs_cache();
             }
 
-            // Pass 1: compute total propensity
+            // Pass 1: compute total propensity using double-float summation
+            // and guard float32 dynamic range so slow channels are never starved.
             bool ok = true;
-            float totalPropensity = 0.0f;
+            float tot_hi = 0.0f;
+            float tot_lo = 0.0f;
+            float minPosProp = kFltMax;
             for (uint r = 0; r < params.numReactions; ++r) {
-                totalPropensity += compute_prop(r, ok);
+                float p = compute_prop(r, ok);
                 if (!ok) {
                     errorFlags[trajId] = 1u;
                     trajectoryEventCounts[trajId] = ssaStepCount;
                     return;
                 }
+                if (p > 0.0f) {
+                    if (p < minPosProp) minPosProp = p;
+                    float s1 = tot_hi + p;
+                    float v1 = s1 - tot_hi;
+                    float e1 = (tot_hi - (s1 - v1)) + (p - v1) + tot_lo;
+                    tot_hi = s1 + e1;
+                    tot_lo = e1 - (tot_hi - s1);
+                }
+            }
+            float totalPropensity = tot_hi + tot_lo;
+            if (!isfinite(totalPropensity) ||
+                (minPosProp < kFltMax && totalPropensity > minPosProp * 1e5f)) {
+                errorFlags[trajId] = 2u;
+                trajectoryEventCounts[trajId] = ssaStepCount;
+                return;
             }
 
             if (totalPropensity <= 0.0f) {
-                t = params.tEnd;
+                t_hi = duration;
+                t_lo = 0.0f;
                 break;
             }
 
             float r1 = rng.next_float01();
             float tau = -log(r1) / totalPropensity;
+            if (!isfinite(tau) || tau < 0.0f) {
+                errorFlags[trajId] = 2u;
+                trajectoryEventCounts[trajId] = ssaStepCount;
+                return;
+            }
 
-            if (t + tau > params.tEnd) {
-                t = params.tEnd;
+            float next_s = t_hi + tau;
+            float next_v = next_s - t_hi;
+            float next_e = (t_hi - (next_s - next_v)) + (tau - next_v) + t_lo;
+            float next_hi = next_s + next_e;
+            float next_lo = next_e - (next_hi - next_s);
+            float eventTime = next_hi + next_lo;
+
+            if (eventTime > duration) {
+                t_hi = duration;
+                t_lo = 0.0f;
                 break;
             }
 
-            float eventTime = t + tau;
-            while (nextOutputTime < params.numOutputPoints && outputTimes[nextOutputTime] < eventTime - 1e-6f) {
+            while (nextOutputTime < params.numOutputPoints && outputTimes[nextOutputTime] < eventTime - timeTol) {
                 recordObservables(nextOutputTime);
                 ++nextOutputTime;
             }
 
-            t = eventTime;
+            t_hi = next_hi;
+            t_lo = next_lo;
 
             // Pass 2: reaction selection
             float r2 = rng.next_float01();
             float target = r2 * totalPropensity;
-            float cum = 0.0f;
-            uint selected = params.numReactions - 1;
+            float cum_hi = 0.0f;
+            float cum_lo = 0.0f;
+            uint selected = params.numReactions;
+            uint lastPositive = params.numReactions;
             for (uint r = 0; r < params.numReactions; ++r) {
-                cum += compute_prop(r, ok);
+                float p = compute_prop(r, ok);
                 if (!ok) {
                     errorFlags[trajId] = 1u;
                     trajectoryEventCounts[trajId] = ssaStepCount;
                     return;
                 }
-                if (cum >= target) {
-                    selected = r;
-                    break;
+                if (p > 0.0f) {
+                    lastPositive = r;
+                    float cs = cum_hi + p;
+                    float cv = cs - cum_hi;
+                    float ce = (cum_hi - (cs - cv)) + (p - cv) + cum_lo;
+                    cum_hi = cs + ce;
+                    cum_lo = ce - (cum_hi - cs);
+                    if ((cum_hi + cum_lo) >= target) {
+                        selected = r;
+                        break;
+                    }
                 }
+            }
+            if (selected == params.numReactions) {
+                selected = lastPositive;
+            }
+            if (selected >= params.numReactions) {
+                t_hi = duration;
+                t_lo = 0.0f;
+                break;
             }
 
             // Fire reaction
@@ -371,7 +433,7 @@ struct TrajectoryContext {
 
             ++ssaStepCount;
 
-            while (nextOutputTime < params.numOutputPoints && outputTimes[nextOutputTime] <= t + 1e-6f) {
+            while (nextOutputTime < params.numOutputPoints && outputTimes[nextOutputTime] <= (t_hi + t_lo) + timeTol) {
                 recordObservables(nextOutputTime);
                 ++nextOutputTime;
             }
@@ -442,6 +504,31 @@ std::size_t checkedBufferBytes(std::size_t count, std::size_t itemSize) {
     return count * itemSize;
 }
 
+// Centered Welford online moments prevent catastrophic variance cancellation
+// when ensemble means are large relative to standard deviations (e.g. > 1e7).
+struct RunningMoments {
+    std::size_t count = 0;
+    double mean = 0.0;
+    double m2 = 0.0;
+
+    void add(double value) {
+        ++count;
+        const double delta = value - mean;
+        mean += delta / static_cast<double>(count);
+        m2 += delta * (value - mean);
+    }
+
+    double average() const {
+        return count > 0 ? mean : 0.0;
+    }
+
+    double standardDeviation() const {
+        return count > 0
+            ? std::sqrt(std::max(0.0, m2 / static_cast<double>(count)))
+            : 0.0;
+    }
+};
+
 struct MetalSimulatorImpl {
     id<MTLDevice> device = nil;
     id<MTLCommandQueue> commandQueue = nil;
@@ -483,7 +570,22 @@ struct MetalSimulatorImpl {
 
             NSError* error = nil;
             NSString* src = [NSString stringWithUTF8String:kMetalSsaShaderSource];
-            id<MTLLibrary> library = [device newLibraryWithSource:src options:nil error:&error];
+            MTLCompileOptions* compileOpts = [[MTLCompileOptions alloc] init];
+#if defined(__MAC_15_0) && __MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_15_0
+            if (@available(macOS 15.0, *)) {
+                compileOpts.mathMode = MTLMathModeSafe;
+            } else
+#endif
+            {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+                compileOpts.fastMathEnabled = NO;
+#pragma clang diagnostic pop
+            }
+            id<MTLLibrary> library = [device newLibraryWithSource:src options:compileOpts error:&error];
+#if !__has_feature(objc_arc)
+            [compileOpts release];
+#endif
             if (!library) {
                 std::string errStr = error ? [[error localizedDescription] UTF8String] : "Unknown error";
                 throw std::runtime_error("Metal backend: shader compile error: " + errStr);
@@ -585,6 +687,79 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
 
     const auto tStartTotal = std::chrono::high_resolution_clock::now();
 
+    const double duration = options.tEnd - options.tStart;
+    const float durationF32 = static_cast<float>(duration);
+    if (duration > 0.0 && (!std::isfinite(durationF32) || durationF32 <= 0.0f)) {
+        throw std::runtime_error(
+            "Metal backend: simulation duration outside float32 normal range; falling back to CPU");
+    }
+
+    // Host pre-check: guard against extreme initial propensity dynamic range
+    // exceeding float32 / 24-bit RNG selection resolution (> 1e5), and fail
+    // closed to CPU when functional VM rates operate on populations > 2^24.
+    {
+        if (impl_->flatNet.hasFunctional) {
+            constexpr int32_t kMaxExactFloat32Int = 16777216;
+            for (uint32_t s = 0; s < impl_->flatNet.numSpecies; ++s) {
+                if (impl_->flatNet.initialSpecies[s] > kMaxExactFloat32Int ||
+                    impl_->flatNet.initialSpecies[s] < -kMaxExactFloat32Int) {
+                    throw std::runtime_error(
+                        "Metal backend: functional rate with species count exceeding float32 "
+                        "exact integer range (2^24); falling back to CPU");
+                }
+            }
+        }
+        double initSumProp = 0.0;
+        double initMinPosProp = std::numeric_limits<double>::infinity();
+        for (uint32_t r = 0; r < impl_->flatNet.numReactions; ++r) {
+            const uint8_t flags = (r < impl_->flatNet.reactionFlags.size())
+                ? impl_->flatNet.reactionFlags[r] : 0u;
+            if ((flags & kBatchRxnFlagFunctional) != 0u) continue;
+            double prop = static_cast<double>(impl_->flatNet.rateConstants[r]);
+            const uint32_t rStart = impl_->flatNet.reactantOffsets[r];
+            const uint32_t rEnd = impl_->flatNet.reactantOffsets[r + 1];
+            if ((flags & kBatchRxnFlagAbsoluteFlux) != 0u) {
+                for (uint32_t i = rStart; i < rEnd; ++i) {
+                    const double pop = static_cast<double>(
+                        impl_->flatNet.initialSpecies[impl_->flatNet.reactantSpecies[i]]);
+                    if (pop <= static_cast<double>(impl_->flatNet.reactantStoichOffsets[i])) {
+                        prop = 0.0;
+                        break;
+                    }
+                }
+            } else {
+                for (uint32_t i = rStart; i < rEnd; ++i) {
+                    const double pop = static_cast<double>(
+                        impl_->flatNet.initialSpecies[impl_->flatNet.reactantSpecies[i]]);
+                    const double eff = std::max(
+                        0.0, pop - static_cast<double>(impl_->flatNet.reactantStoichOffsets[i]));
+                    prop *= eff;
+                }
+            }
+            if (!std::isfinite(prop)) {
+                throw std::runtime_error(
+                    "Metal backend: initial propensity overflows float32; falling back to CPU");
+            }
+            if (prop > 0.0) {
+                initSumProp += prop;
+                if (prop < initMinPosProp) initMinPosProp = prop;
+            }
+        }
+        if (!std::isfinite(initSumProp) ||
+            (initMinPosProp < std::numeric_limits<double>::infinity() &&
+             initSumProp > initMinPosProp * 1e5)) {
+            throw std::runtime_error(
+                "Metal backend: propensity dynamic range exceeds float32 resolution; falling back to CPU");
+        }
+    }
+
+    uint64_t effectiveSeed = options.baseSeed;
+    if (effectiveSeed == 0) {
+        std::random_device rd;
+        effectiveSeed = (static_cast<uint64_t>(rd()) << 32) ^ static_cast<uint64_t>(rd());
+        if (effectiveSeed == 0) effectiveSeed = 1ULL;
+    }
+
     BatchSsaMetrics metrics;
     metrics.batchSize = options.batchSize;
     metrics.modelPrepTimeMs = impl_->modelPrepTimeMs;
@@ -595,8 +770,24 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
     const uint32_t numObs = impl_->flatNet.numObservables;
     const uint32_t batchSize = static_cast<uint32_t>(options.batchSize);
 
+    // Shift GPU clock to relative elapsed time [0, duration] while keeping
+    // double-precision absolute output timestamps on the host.
     std::vector<float> h_outputTimes = detail::batchOutputTimes(options);
     metrics.timePoints = h_outputTimes;
+    metrics.timePointsDouble.resize(numPoints);
+    std::vector<float> h_relOutputTimes(numPoints, 0.0f);
+    const double stepDouble = (options.nSteps > 0)
+        ? (duration / static_cast<double>(options.nSteps))
+        : 0.0;
+    for (uint32_t i = 0; i < numPoints; ++i) {
+        const double rel = static_cast<double>(i) * stepDouble;
+        metrics.timePointsDouble[i] = options.tStart + rel;
+        h_relOutputTimes[i] = static_cast<float>(rel);
+        if (duration > 0.0 && i > 0 && h_relOutputTimes[i] <= h_relOutputTimes[i - 1]) {
+            throw std::runtime_error(
+                "Metal backend: output time step underflows float32 resolution; falling back to CPU");
+        }
+    }
 
     GpuSimParams params;
     params.numSpecies = numSpecies;
@@ -605,9 +796,9 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
     params.numOutputPoints = numPoints;
     params.batchSize = batchSize;
     params.maxSimSteps = static_cast<uint32_t>(options.maxSimSteps);
-    params.tStart = static_cast<float>(options.tStart);
-    params.tEnd = static_cast<float>(options.tEnd);
-    params.baseSeed = options.baseSeed;
+    params.tStart = 0.0f;
+    params.tEnd = durationF32;
+    params.baseSeed = effectiveSeed;
     params.hasFunctional = impl_->flatNet.hasFunctional ? 1u : 0u;
     params.pad0 = 0u;
 
@@ -636,7 +827,7 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
 
     @autoreleasepool {
         bufParams = [impl_->device newBufferWithBytes:&params length:sizeof(GpuSimParams) options:MTLResourceStorageModeShared];
-        bufOutputTimes = [impl_->device newBufferWithBytes:h_outputTimes.data() length:timesBytes options:MTLResourceStorageModeShared];
+        bufOutputTimes = [impl_->device newBufferWithBytes:h_relOutputTimes.data() length:timesBytes options:MTLResourceStorageModeShared];
         bufStates = [impl_->device newBufferWithLength:(stateBytes > 0 ? stateBytes : sizeof(int32_t)) options:MTLResourceStorageModeShared];
         bufObservables = [impl_->device newBufferWithLength:(obsBytes > 0 ? obsBytes : sizeof(float)) options:MTLResourceStorageModeShared];
         bufEventCounts = [impl_->device newBufferWithLength:eventBytes options:MTLResourceStorageModeShared];
@@ -709,6 +900,11 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
         }
         const auto* errFlags = static_cast<const uint32_t*>([bufErrorFlags contents]);
         for (uint32_t b = 0; b < batchSize; ++b) {
+            if (errFlags[b] == 2u) {
+                throw std::runtime_error(
+                    "Metal backend: runtime propensity dynamic range exceeded float32 resolution in trajectory " +
+                    std::to_string(b) + "; falling back to CPU");
+            }
             if (errFlags[b] != 0u) {
                 throw std::runtime_error(
                     "Metal backend: invalid/non-finite functional rate in trajectory " +
@@ -767,52 +963,83 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
     metrics.observableMeans.resize(numPoints, std::vector<float>(numObs, 0.0f));
     metrics.observableStdDevs.resize(numPoints, std::vector<float>(numObs, 0.0f));
 
-    if (numObs > 0) {
-        const double N = static_cast<double>(batchSize);
-        for (uint32_t step = 0; step < numPoints; ++step) {
-            for (uint32_t g = 0; g < numObs; ++g) {
-                double sum = 0.0;
-                double sumSq = 0.0;
-                for (uint32_t b = 0; b < batchSize; ++b) {
-                    const double val = allObs[(static_cast<std::size_t>(b) * numPoints + step) * numObs + g];
-                    sum += val;
-                    sumSq += val * val;
-                }
-                const double mean = sum / N;
-                const double variance = std::max(0.0, (sumSq / N) - (mean * mean));
-                metrics.observableMeans[step][g] = static_cast<float>(mean);
-                metrics.observableStdDevs[step][g] = static_cast<float>(std::sqrt(variance));
-            }
-        }
-    }
-    // Aggregate the device-side species history into the full [time][species]
-    // grid required by the common OdeResult contract. This is read back once
-    // and converted on the host; it does not change RNG state or draw order.
+    // Read back the exact int32 device-side species history once and compute
+    // both species and observable moments on the host in double precision with
+    // centered Welford accumulation. This avoids float32 truncation of integer
+    // species counts above 2^24 and eliminates catastrophic sumSq/N - mean^2
+    // variance cancellation without altering device RNG state or draw order.
+    std::vector<int32_t> allSpecies;
     if (speciesBytes > 0) {
-        std::vector<int32_t> allSpecies;
         allSpecies.resize(speciesBytes / sizeof(int32_t));
         std::memcpy(allSpecies.data(), [bufSpeciesHistory contents], speciesBytes);
         metrics.meanSpecies.assign(numPoints, std::vector<double>(numSpecies, 0.0));
         metrics.stdSpecies.assign(numPoints, std::vector<double>(numSpecies, 0.0));
-        const double N = static_cast<double>(batchSize);
         for (uint32_t step = 0; step < numPoints; ++step) {
             for (uint32_t s = 0; s < numSpecies; ++s) {
-                double sum = 0.0;
-                double sumSq = 0.0;
+                RunningMoments moments;
                 for (uint32_t b = 0; b < batchSize; ++b) {
                     const double value = static_cast<double>(
                         allSpecies[(static_cast<std::size_t>(b) * numPoints + step) * numSpecies + s]);
-                    sum += value;
-                    sumSq += value * value;
+                    moments.add(value);
                 }
-                const double mean = sum / N;
-                metrics.meanSpecies[step][s] = mean;
-                metrics.stdSpecies[step][s] =
-                    std::sqrt(std::max(0.0, sumSq / N - mean * mean));
+                metrics.meanSpecies[step][s] = moments.average();
+                metrics.stdSpecies[step][s] = moments.standardDeviation();
+            }
+        }
+    }
+
+    std::vector<std::vector<double>> exactObsMeans(numPoints, std::vector<double>(numObs, 0.0));
+    std::vector<std::vector<double>> exactObsStds(numPoints, std::vector<double>(numObs, 0.0));
+    if (numObs > 0) {
+        const auto& obsOffsets = impl_->flatNet.obsOffsets;
+        const auto& obsSpecies = impl_->flatNet.obsSpecies;
+        const auto& obsWeights = impl_->flatNet.obsWeights;
+        for (uint32_t step = 0; step < numPoints; ++step) {
+            for (uint32_t g = 0; g < numObs; ++g) {
+                RunningMoments moments;
+                const uint32_t oStart = obsOffsets[g];
+                const uint32_t oEnd = obsOffsets[g + 1];
+                for (uint32_t b = 0; b < batchSize; ++b) {
+                    double val = 0.0;
+                    if (speciesBytes > 0) {
+                        const std::size_t rowBase =
+                            (static_cast<std::size_t>(b) * numPoints + step) * numSpecies;
+                        for (uint32_t i = oStart; i < oEnd; ++i) {
+                            val += static_cast<double>(obsWeights[i]) *
+                                   static_cast<double>(allSpecies[rowBase + obsSpecies[i]]);
+                        }
+                    }
+                    moments.add(val);
+                }
+                const double mean = moments.average();
+                const double stdDev = moments.standardDeviation();
+                exactObsMeans[step][g] = mean;
+                exactObsStds[step][g] = stdDev;
+                metrics.observableMeans[step][g] = static_cast<float>(mean);
+                metrics.observableStdDevs[step][g] = static_cast<float>(stdDev);
+            }
+        }
+        if (speciesBytes > 0 && !metrics.finalSpecies.empty()) {
+            metrics.finalObservables.resize(static_cast<std::size_t>(batchSize) * numObs, 0.0f);
+            for (uint32_t b = 0; b < batchSize; ++b) {
+                const std::size_t spBase = static_cast<std::size_t>(b) * numSpecies;
+                for (uint32_t g = 0; g < numObs; ++g) {
+                    double val = 0.0;
+                    for (uint32_t i = obsOffsets[g]; i < obsOffsets[g + 1]; ++i) {
+                        val += static_cast<double>(obsWeights[i]) *
+                               static_cast<double>(metrics.finalSpecies[spBase + obsSpecies[i]]);
+                    }
+                    metrics.finalObservables[static_cast<std::size_t>(b) * numObs + g] =
+                        static_cast<float>(val);
+                }
             }
         }
     }
     detail::fillDoubleFields(metrics);
+    if (numObs > 0) {
+        metrics.meanObservables = std::move(exactObsMeans);
+        metrics.stdObservables = std::move(exactObsStds);
+    }
     return metrics;
 }
 

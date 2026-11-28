@@ -4,7 +4,12 @@ from bionetgen.core.exc import BNGParseError, BNGModelError
 from .bngfile import BNGFile, _compact_action
 from .xmlparsers import ParameterBlockXML, CompartmentBlockXML, ObservableBlockXML
 from .xmlparsers import SpeciesBlockXML, MoleculeTypeBlockXML, FunctionBlockXML
-from .xmlparsers import RuleBlockXML, EnergyPatternBlockXML, PopulationMapBlockXML
+from .xmlparsers import (
+    RuleBlockXML,
+    EnergyPatternBlockXML,
+    BarrierPatternBlockXML,
+    PopulationMapBlockXML,
+)
 from .blocks import ActionBlock, ProtocolBlock
 from bionetgen.core.utils.utils import ActionList
 
@@ -375,6 +380,12 @@ class BNGParser:
                 if ep_list is not None:
                     eps = ep_list["EnergyPattern"]
                     xml_parser = EnergyPatternBlockXML(eps)
+                    model_obj.add_block(xml_parser.parsed_obj)
+            elif listkey == "ListOfBarrierPatterns":
+                bp_list = xml_model[listkey]
+                if bp_list is not None and "BarrierPattern" in bp_list:
+                    bps = bp_list["BarrierPattern"]
+                    xml_parser = BarrierPatternBlockXML(bps)
                     model_obj.add_block(xml_parser.parsed_obj)
             elif listkey == "ListOfPopulationMaps":
                 pm_list = xml_model[listkey]

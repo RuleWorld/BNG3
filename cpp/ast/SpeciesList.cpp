@@ -27,12 +27,11 @@ std::optional<std::size_t> SpeciesList::findExact(const Species& species) const 
 
 std::optional<std::size_t> SpeciesList::findExact(
     const Species& species, std::string& exact) const {
-    exact.clear();
-    if (!checkIso_) {
+    exact = species.getSpeciesGraph().toStringForDedup();
+    if (exact.empty()) {
         return std::nullopt;
     }
 
-    exact = species.getSpeciesGraph().toStringForDedup();
     const auto exactBucket = indicesByExactString_.find(exact);
     if (exactBucket == indicesByExactString_.end()) {
         return std::nullopt;
@@ -47,11 +46,18 @@ std::optional<std::size_t> SpeciesList::findExact(
 }
 
 std::pair<std::size_t, bool> SpeciesList::add(Species species) {
-    // When check_iso is disabled, skip all dedup and add unconditionally
+    // When check_iso is disabled, direct add() preserves all explicitly added
+    // rows (e.g. .net import and seed loading) while still indexing non-empty
+    // exact keys so product lookup via findExact()/addWithExactKey() deduplicates
+    // by exact string without running graph isomorphism.
     if (!checkIso_) {
+        const std::string exact = species.getSpeciesGraph().toStringForDedup();
         const std::size_t index = species_.size();
         species.setIndex(index);
         species_.push_back(std::move(species));
+        if (!exact.empty()) {
+            indicesByExactString_[exact].push_back(index);
+        }
         return {index, true};
     }
 
@@ -60,14 +66,6 @@ std::pair<std::size_t, bool> SpeciesList::add(Species species) {
 
 std::pair<std::size_t, bool> SpeciesList::addWithExactKey(
     Species species, std::string exact) {
-    // When check_iso is disabled, skip all dedup and add unconditionally
-    if (!checkIso_) {
-        const std::size_t index = species_.size();
-        species.setIndex(index);
-        species_.push_back(std::move(species));
-        return {index, true};
-    }
-
     return addChecked(std::move(species), std::move(exact), true);
 }
 
@@ -80,18 +78,53 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
     }
 
     // Fast path 1: exact string match (O(1))
-    const auto exactBucket = indicesByExactString_.find(exact);
-    if (exactBucket != indicesByExactString_.end()) {
-        for (const auto index : exactBucket->second) {
-            auto& existingSpecies = species_[index];
-            if (existingSpecies.getCompartment() != species.getCompartment()) {
-                continue;
+    if (!exact.empty()) {
+        const auto exactBucket = indicesByExactString_.find(exact);
+        if (exactBucket != indicesByExactString_.end()) {
+            for (const auto index : exactBucket->second) {
+                auto& existingSpecies = species_[index];
+                if (existingSpecies.getCompartment() != species.getCompartment()) {
+                    continue;
+                }
+                if (existingSpecies.getCompartment().empty() && !species.getCompartment().empty()) {
+                    existingSpecies.setCompartment(species.getCompartment());
+                }
+                return {index, false};
             }
-            if (existingSpecies.getCompartment().empty() && !species.getCompartment().empty()) {
-                existingSpecies.setCompartment(species.getCompartment());
-            }
-            return {index, false};
         }
+    }
+
+    // When check_iso is disabled (check_iso=>0), skip graph isomorphism checks
+    // after exact-string deduplication. Re-check the current printed dedup key
+    // (the caller may have canonicalized the graph after findExact()) so two
+    // species with identical printed strings are never inserted as duplicates.
+    if (!checkIso_) {
+        const std::string currentExact = species.getSpeciesGraph().toStringForDedup();
+        if (!currentExact.empty() && currentExact != exact) {
+            const auto currentBucket = indicesByExactString_.find(currentExact);
+            if (currentBucket != indicesByExactString_.end()) {
+                for (const auto index : currentBucket->second) {
+                    auto& existingSpecies = species_[index];
+                    if (existingSpecies.getCompartment() != species.getCompartment()) {
+                        continue;
+                    }
+                    if (existingSpecies.getCompartment().empty() && !species.getCompartment().empty()) {
+                        existingSpecies.setCompartment(species.getCompartment());
+                    }
+                    return {index, false};
+                }
+            }
+        }
+        const std::size_t index = species_.size();
+        species.setIndex(index);
+        species_.push_back(std::move(species));
+        if (!exact.empty()) {
+            indicesByExactString_[exact].push_back(index);
+        }
+        if (!currentExact.empty() && currentExact != exact) {
+            indicesByExactString_[currentExact].push_back(index);
+        }
+        return {index, true};
     }
 
     // Canonical labeling is substantially more expensive than exact string

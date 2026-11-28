@@ -1,7 +1,9 @@
 #include "transformationSet.hh"
 #include "transformation.hh"
 #include "../../NFcore/compartment.hh"
+#include <memory>
 #include <queue>
+#include <unordered_map>
 #include <unordered_set>
 
 using namespace NFcore;
@@ -163,6 +165,10 @@ TransformationSet::~TransformationSet()
 		rf.parsedTemplates.clear();
 	}
 	reactantFilters.clear();
+	for (auto &pf : productFilters) {
+		pf.parsedTemplates.clear();
+	}
+	productFilters.clear();
 
 	delete [] transformations;
 	delete [] reactants;
@@ -1537,6 +1543,68 @@ void TransformationSet::finalize()
 
 	}
 
+	// Resolve product-filter anchor mappings before marking finalized.
+	for (auto &pf : productFilters) {
+		if (pf.anchorIsAdded) continue;
+		if (pf.anchorTemplate == nullptr) continue;
+		const int foundIdx = find(pf.anchorTemplate);
+		if (foundIdx >= static_cast<int>(n_reactants)) {
+			pf.anchorIsAdded = true;
+			pf.anchorAddIndex = foundIdx - static_cast<int>(n_reactants);
+			continue;
+		}
+		if (foundIdx < 0) continue;
+		if (pf.anchorTemplate->getN_mapGenerators() > 0) {
+			pf.anchorReactantIndex = foundIdx;
+			pf.anchorMappingIndex = pf.anchorTemplate->getMapGenerator(0)->getMappingIndex();
+			pf.anchorBondPath.clear();
+			continue;
+		}
+		// Anchor template has no direct MapGenerator (e.g., partner of an
+		// unbinding transform). BFS along explicit bonds from mapped templates
+		// in the same reactant pattern so we can locate it pre-transform.
+		vector<TemplateMolecule *> tmList;
+		TemplateMolecule::traverse(reactants[foundIdx], tmList, false);
+		std::unordered_map<TemplateMolecule *, std::pair<TemplateMolecule *, int>> prevEdge;
+		std::queue<TemplateMolecule *> q;
+		for (TemplateMolecule *tm : tmList) {
+			if (tm != nullptr && tm->getN_mapGenerators() > 0) {
+				prevEdge.emplace(tm, std::make_pair(static_cast<TemplateMolecule *>(nullptr), -1));
+				q.push(tm);
+			}
+		}
+		bool reached = false;
+		while (!q.empty() && !reached) {
+			TemplateMolecule *cur = q.front();
+			q.pop();
+			const int nBonds = cur->getBondConstraintCount();
+			for (int b = 0; b < nBonds; ++b) {
+				TemplateMolecule *next = cur->getBondPartner(b);
+				const int compIdx = cur->getBondComponent(b);
+				if (next == nullptr || compIdx < 0) continue;
+				if (prevEdge.find(next) != prevEdge.end()) continue;
+				prevEdge.emplace(next, std::make_pair(cur, compIdx));
+				if (next == pf.anchorTemplate) {
+					reached = true;
+					break;
+				}
+				q.push(next);
+			}
+		}
+		if (reached) {
+			vector<int> revPath;
+			TemplateMolecule *cur = pf.anchorTemplate;
+			while (prevEdge[cur].first != nullptr) {
+				revPath.push_back(prevEdge[cur].second);
+				cur = prevEdge[cur].first;
+			}
+			std::reverse(revPath.begin(), revPath.end());
+			pf.anchorReactantIndex = foundIdx;
+			pf.anchorMappingIndex = cur->getMapGenerator(0)->getMappingIndex();
+			pf.anchorBondPath = std::move(revPath);
+		}
+	}
+
 	finalized = true;
 }
 
@@ -1691,5 +1759,256 @@ bool TransformationSet::checkReactantFilters(int reactantIndex, Molecule *mol) c
 			return false;
 		}
 	}
+	return true;
+}
+
+void TransformationSet::addExcludeProduct(
+	int productPatternIndex,
+	TemplateMolecule *pattern,
+	const map<string, TemplateMolecule*>& parsedTemplates,
+	TemplateMolecule *anchorTemplate,
+	int anchorAddIndex)
+{
+	ProductFilter pf;
+	pf.productPatternIndex = productPatternIndex;
+	pf.pattern = pattern;
+	pf.isExclude = true;
+	pf.parsedTemplates = parsedTemplates;
+	pf.anchorTemplate = anchorTemplate;
+	if (anchorAddIndex >= 0) {
+		pf.anchorIsAdded = true;
+		pf.anchorAddIndex = anchorAddIndex;
+	}
+	productFilters.push_back(std::move(pf));
+}
+
+void TransformationSet::addIncludeProduct(
+	int productPatternIndex,
+	TemplateMolecule *pattern,
+	const map<string, TemplateMolecule*>& parsedTemplates,
+	TemplateMolecule *anchorTemplate,
+	int anchorAddIndex)
+{
+	ProductFilter pf;
+	pf.productPatternIndex = productPatternIndex;
+	pf.pattern = pattern;
+	pf.isExclude = false;
+	pf.parsedTemplates = parsedTemplates;
+	pf.anchorTemplate = anchorTemplate;
+	if (anchorAddIndex >= 0) {
+		pf.anchorIsAdded = true;
+		pf.anchorAddIndex = anchorAddIndex;
+	}
+	productFilters.push_back(std::move(pf));
+}
+
+bool TransformationSet::checkProductFilters(MappingSet **mappingSets) const
+{
+	if (productFilters.empty()) return true;
+
+	// 1. Gather all live molecules in the bonded neighborhoods of all reactants.
+	std::vector<Molecule *> origMols;
+	std::unordered_map<Molecule *, std::size_t> origToIdx;
+	for (unsigned int r = 0; r < n_reactants; ++r) {
+		if (mappingSets == nullptr || mappingSets[r] == nullptr ||
+		    mappingSets[r]->getNumOfMappings() == 0) continue;
+		Mapping *m0 = mappingSets[r]->get(0);
+		if (m0 == nullptr || m0->getMolecule() == nullptr) continue;
+		list<Molecule *> neighborhood;
+		m0->getMolecule()->traverseBondedNeighborhood(neighborhood, ReactionClass::NO_LIMIT);
+		for (Molecule *mol : neighborhood) {
+			if (mol == nullptr || !mol->isAlive()) continue;
+			if (origToIdx.emplace(mol, origMols.size()).second) {
+				origMols.push_back(mol);
+			}
+		}
+	}
+
+	// 2. Build side-effect-free shadow copies of reactant complex molecules.
+	std::vector<std::unique_ptr<Molecule>> shadowMols;
+	shadowMols.reserve(origMols.size() + addMoleculeTransformations.size());
+	for (Molecule *orig : origMols) {
+		auto shadow = std::make_unique<Molecule>(
+			Molecule::ShadowTag{}, orig->getMoleculeType(), orig->getCompartment());
+		const int nComps = orig->getMoleculeType()->getNumOfComponents();
+		for (int c = 0; c < nComps; ++c) {
+			shadow->setShadowComponentState(c, orig->getComponentState(c));
+		}
+		shadowMols.push_back(std::move(shadow));
+	}
+
+	// Copy internal bonds among shadow molecules.
+	for (std::size_t idx = 0; idx < origMols.size(); ++idx) {
+		Molecule *orig = origMols[idx];
+		const int nComps = orig->getMoleculeType()->getNumOfComponents();
+		for (int c = 0; c < nComps; ++c) {
+			if (!orig->isBindingSiteBonded(c)) continue;
+			Molecule *partner = orig->getBondedMolecule(c);
+			const int partnerComp = orig->getBondedMoleculeBindingSiteIndex(c);
+			auto it = origToIdx.find(partner);
+			if (it == origToIdx.end()) continue;
+			if (idx < it->second || (idx == it->second && c < partnerComp)) {
+				Molecule::bindShadow(shadowMols[idx].get(), c,
+				                     shadowMols[it->second].get(), partnerComp);
+			}
+		}
+	}
+
+	// 3. Create shadow copies of any molecules created by AddMolecule transforms.
+	std::vector<Molecule *> addedShadows(addMoleculeTransformations.size(), nullptr);
+	if (!addMoleculeTransformations.empty()) {
+		bool compatibleCompartment = true;
+		Compartment *inheritedCompartment =
+			n_reactants > 0 ? selectReactionCompartment(mappingSets, n_reactants, compatibleCompartment)
+			                : nullptr;
+		for (std::size_t i = 0; i < addMoleculeTransformations.size(); ++i) {
+			MoleculeCreator *mc = addMoleculeTransformations[i]->getMoleculeCreator();
+			if (mc == nullptr) continue;
+			Compartment *comp = mc->getCompartment() != nullptr
+				? mc->getCompartment() : inheritedCompartment;
+			auto shadow = std::make_unique<Molecule>(
+				Molecule::ShadowTag{}, mc->getMoleculeType(), comp);
+			for (const auto &cs : mc->getComponentStates()) {
+				shadow->setShadowComponentState(cs.first, cs.second);
+			}
+			addedShadows[i] = shadow.get();
+			shadowMols.push_back(std::move(shadow));
+		}
+	}
+
+	auto resolveShadow = [&](unsigned int r, unsigned int t) -> Molecule * {
+		if (r < n_reactants) {
+			if (mappingSets == nullptr || mappingSets[r] == nullptr ||
+			    t >= mappingSets[r]->getNumOfMappings()) return nullptr;
+			Mapping *mp = mappingSets[r]->get(t);
+			if (mp == nullptr || mp->getMolecule() == nullptr) return nullptr;
+			auto it = origToIdx.find(mp->getMolecule());
+			return it == origToIdx.end() ? nullptr : shadowMols[it->second].get();
+		}
+		const std::size_t addIdx = static_cast<std::size_t>(r - n_reactants);
+		return addIdx < addedShadows.size() ? addedShadows[addIdx] : nullptr;
+	};
+
+	// 4. Apply the rule's transformations onto the shadow graph.
+	std::vector<Molecule *> shadowDeletes;
+	for (unsigned int r = 0; r < getNmappingSets(); ++r) {
+		for (unsigned int t = 0; t < transformations[r].size(); ++t) {
+			Transformation *tr = transformations[r][t];
+			if (tr == nullptr) continue;
+			const int type = tr->getType();
+			if (type == (int)TransformationFactory::EMPTY ||
+			    type == (int)TransformationFactory::LOCAL_FUNCTION_REFERENCE ||
+			    type == (int)TransformationFactory::DECREMENT_POPULATION) {
+				continue;
+			}
+			Molecule *s1 = resolveShadow(r, t);
+			if (s1 == nullptr) continue;
+
+			if (type == (int)TransformationFactory::STATE_CHANGE) {
+				auto *sc = static_cast<StateChangeTransform *>(tr);
+				s1->setShadowComponentState(sc->getComponentIndex(), sc->getFinalStateValue());
+			} else if (type == (int)TransformationFactory::INCREMENT_STATE) {
+				const int cIdx = tr->getComponentIndex();
+				s1->setShadowComponentState(cIdx, s1->getComponentState(cIdx) + 1);
+			} else if (type == (int)TransformationFactory::DECREMENT_STATE) {
+				const int cIdx = tr->getComponentIndex();
+				s1->setShadowComponentState(cIdx, s1->getComponentState(cIdx) - 1);
+			} else if (type == (int)TransformationFactory::BINDING) {
+				auto *bt = static_cast<BindingTransform *>(tr);
+				const int otherR = bt->getOtherReactantIndex();
+				const int otherM = bt->getOtherMappingIndex();
+				if (otherR >= 0 && otherM >= 0 &&
+				    static_cast<unsigned int>(otherR) < getNmappingSets() &&
+				    static_cast<unsigned int>(otherM) < transformations[otherR].size()) {
+					Molecule *s2 = resolveShadow(
+						static_cast<unsigned int>(otherR),
+						static_cast<unsigned int>(otherM));
+					const int c2 = transformations[otherR][otherM]->getComponentIndex();
+					Molecule::bindShadow(s1, bt->getComponentIndex(), s2, c2);
+				}
+			} else if (type == (int)TransformationFactory::UNBINDING) {
+				Molecule::unbindShadow(s1, tr->getComponentIndex());
+			} else if (type == (int)TransformationFactory::MOVE) {
+				auto *mv = static_cast<MoveTransformation *>(tr);
+				if (mv->isMoveConnected()) {
+					list<Molecule *> connected;
+					s1->traverseBondedNeighborhood(connected, ReactionClass::NO_LIMIT);
+					for (Molecule *cm : connected) {
+						cm->setShadowCompartment(mv->getNewCompartment());
+					}
+				} else {
+					s1->setShadowCompartment(mv->getNewCompartment());
+				}
+			} else if (type == (int)TransformationFactory::REMOVE) {
+				if (tr->getRemovalType() == (int)TransformationFactory::COMPLETE_SPECIES_REMOVAL) {
+					list<Molecule *> connected;
+					s1->traverseBondedNeighborhood(connected, ReactionClass::NO_LIMIT);
+					for (Molecule *cm : connected) shadowDeletes.push_back(cm);
+				} else {
+					shadowDeletes.push_back(s1);
+				}
+			}
+		}
+	}
+	for (Molecule *dm : shadowDeletes) {
+		if (dm == nullptr || !dm->isAlive()) continue;
+		const int nComps = dm->getMoleculeType()->getNumOfComponents();
+		for (int c = 0; c < nComps; ++c) {
+			if (dm->isBindingSiteBonded(c)) {
+				Molecule::unbindShadow(dm, c);
+			}
+		}
+		dm->setAlive(false);
+	}
+
+	// 5. Evaluate every product filter against its anchored shadow product complex.
+	for (const auto &pf : productFilters) {
+		Molecule *anchorShadow = nullptr;
+		if (pf.anchorIsAdded) {
+			if (pf.anchorAddIndex >= 0 &&
+			    static_cast<std::size_t>(pf.anchorAddIndex) < addedShadows.size()) {
+				anchorShadow = addedShadows[static_cast<std::size_t>(pf.anchorAddIndex)];
+			}
+		} else if (pf.anchorReactantIndex >= 0 &&
+		           static_cast<unsigned int>(pf.anchorReactantIndex) < n_reactants &&
+		           pf.anchorMappingIndex >= 0 &&
+		           mappingSets != nullptr &&
+		           mappingSets[pf.anchorReactantIndex] != nullptr &&
+		           static_cast<unsigned int>(pf.anchorMappingIndex) <
+		               mappingSets[pf.anchorReactantIndex]->getNumOfMappings()) {
+			Mapping *mp = mappingSets[pf.anchorReactantIndex]->get(
+				static_cast<unsigned int>(pf.anchorMappingIndex));
+			Molecule *orig = mp != nullptr ? mp->getMolecule() : nullptr;
+			for (int hopComp : pf.anchorBondPath) {
+				if (orig == nullptr || !orig->isBindingSiteBonded(hopComp)) {
+					orig = nullptr;
+					break;
+				}
+				orig = orig->getBondedMolecule(hopComp);
+			}
+			if (orig != nullptr) {
+				auto it = origToIdx.find(orig);
+				if (it != origToIdx.end()) {
+					anchorShadow = shadowMols[it->second].get();
+				}
+			}
+		}
+
+		bool patternMatches = false;
+		if (anchorShadow != nullptr && anchorShadow->isAlive()) {
+			list<Molecule *> productComplex;
+			anchorShadow->traverseBondedNeighborhood(productComplex, ReactionClass::NO_LIMIT);
+			for (Molecule *cm : productComplex) {
+				if (cm != nullptr && cm->isAlive() && pf.pattern->compare(cm)) {
+					patternMatches = true;
+					break;
+				}
+			}
+		}
+
+		if (pf.isExclude && patternMatches) return false;
+		if (!pf.isExclude && !patternMatches) return false;
+	}
+
 	return true;
 }

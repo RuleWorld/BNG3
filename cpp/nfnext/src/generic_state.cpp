@@ -11,6 +11,7 @@ GenericGraphState::GenericGraphState(const ModelIR& model) : model_(&model) {
     TypeId max_id = 0;
     for (const auto& mt : model.molecule_types) max_id = std::max(max_id, mt.id);
     type_site_counts_.assign(static_cast<std::size_t>(max_id) + 1, 0);
+    slots_by_type_.resize(static_cast<std::size_t>(max_id) + 1);
     for (const auto& mt : model.molecule_types) {
         if (mt.sites.size() > 65535) throw std::invalid_argument("too many sites for compact graph backend");
         type_site_counts_[mt.id] = static_cast<std::uint16_t>(mt.sites.size());
@@ -65,10 +66,14 @@ ParticleId GenericGraphState::create(TypeId type, CompartmentId comp) {
         slot = static_cast<std::uint32_t>(types_.size());
         types_.push_back(type); generations_.push_back(1); alive_.push_back(1);
         compartments_.push_back(comp);
+        type_slot_pos_.push_back(0);
         site_states_.resize((static_cast<std::size_t>(slot) + 1) * stride_, 0);
         bond_particles_.resize((static_cast<std::size_t>(slot) + 1) * stride_);
         bond_sites_.resize((static_cast<std::size_t>(slot) + 1) * stride_, 0);
     }
+    auto& typeSlots = slots_by_type_[type];
+    type_slot_pos_[slot] = static_cast<std::uint32_t>(typeSlots.size());
+    typeSlots.push_back(slot);
     const ParticleId id{slot, generations_[slot]};
     for (std::uint16_t s = 0; s < stride_; ++s) {
         const auto o = static_cast<std::size_t>(slot) * stride_ + s;
@@ -99,8 +104,15 @@ std::size_t GenericGraphState::offset(ParticleId id, std::uint16_t site) const {
 
 void GenericGraphState::destroy(ParticleId id) {
     require(id);
-    const auto count = typeSiteCount(types_[id.index]);
+    const TypeId oldType = types_[id.index];
+    const auto count = typeSiteCount(oldType);
     for (std::uint16_t s = 0; s < count; ++s) if (bound(id, s)) unbind(id, s);
+    auto& typeSlots = slots_by_type_[oldType];
+    const std::uint32_t pos = type_slot_pos_[id.index];
+    const std::uint32_t backSlot = typeSlots.back();
+    typeSlots[pos] = backSlot;
+    type_slot_pos_[backSlot] = pos;
+    typeSlots.pop_back();
     if (id.index < compartments_.size()) compartments_[id.index] = 0;
     alive_[id.index] = 0; ++generations_[id.index]; free_.push_back(id.index); --live_count_;
 }
@@ -150,24 +162,50 @@ std::vector<ParticleId> GenericGraphState::liveParticles() const {
     return particles;
 }
 
+const std::vector<std::uint32_t>& GenericGraphState::liveSlotsOfType(TypeId type) const {
+    static const std::vector<std::uint32_t> empty;
+    if (type >= slots_by_type_.size()) return empty;
+    return slots_by_type_[type];
+}
+
+bool GenericGraphState::anySiteBound(ParticleId id) const noexcept {
+    if (!alive(id)) return false;
+    const auto count = type_site_counts_[types_[id.index]];
+    const auto base = static_cast<std::size_t>(id.index) * stride_;
+    for (std::uint16_t site = 0; site < count; ++site) {
+        if (bond_particles_[base + site].valid()) return true;
+    }
+    return false;
+}
+
+std::uint32_t GenericGraphState::nextBfsEpoch() const {
+    if (bfs_stamp_.size() < types_.size()) bfs_stamp_.resize(types_.size(), 0);
+    if (++bfs_epoch_ == 0) {
+        std::fill(bfs_stamp_.begin(), bfs_stamp_.end(), 0);
+        bfs_epoch_ = 1;
+    }
+    return bfs_epoch_;
+}
+
 bool GenericGraphState::sameComplex(ParticleId a, ParticleId b) const {
     require(a);
     require(b);
     if (a == b) return true;
-    std::vector<std::uint8_t> visited(types_.size(), 0);
-    std::queue<ParticleId> pending;
-    pending.push(a);
-    visited[a.index] = 1;
-    while (!pending.empty()) {
-        const auto current = pending.front();
-        pending.pop();
-        const auto count = typeSiteCount(types_[current.index]);
+    if (!anySiteBound(a) || !anySiteBound(b)) return false;
+    const auto epoch = nextBfsEpoch();
+    bfs_queue_.clear();
+    bfs_queue_.push_back(a);
+    bfs_stamp_[a.index] = epoch;
+    for (std::size_t head = 0; head < bfs_queue_.size(); ++head) {
+        const auto current = bfs_queue_[head];
+        const auto count = type_site_counts_[types_[current.index]];
+        const auto base = static_cast<std::size_t>(current.index) * stride_;
         for (std::uint16_t site = 0; site < count; ++site) {
-            const auto partner = bond(current, site).particle;
-            if (!alive(partner) || visited[partner.index] != 0) continue;
+            const auto partner = bond_particles_[base + site];
+            if (!alive(partner) || bfs_stamp_[partner.index] == epoch) continue;
             if (partner == b) return true;
-            visited[partner.index] = 1;
-            pending.push(partner);
+            bfs_stamp_[partner.index] = epoch;
+            bfs_queue_.push_back(partner);
         }
     }
     return false;
@@ -175,24 +213,45 @@ bool GenericGraphState::sameComplex(ParticleId a, ParticleId b) const {
 
 std::uint32_t GenericGraphState::complexId(ParticleId id) const {
     require(id);
-    std::vector<std::uint8_t> visited(types_.size(), 0);
-    std::queue<ParticleId> pending;
-    pending.push(id);
-    visited[id.index] = 1;
+    if (!anySiteBound(id)) return id.index;
+    const auto epoch = nextBfsEpoch();
+    bfs_queue_.clear();
+    bfs_queue_.push_back(id);
+    bfs_stamp_[id.index] = epoch;
     std::uint32_t minimum = id.index;
-    while (!pending.empty()) {
-        const auto current = pending.front();
-        pending.pop();
+    for (std::size_t head = 0; head < bfs_queue_.size(); ++head) {
+        const auto current = bfs_queue_[head];
         minimum = std::min(minimum, current.index);
-        const auto count = typeSiteCount(types_[current.index]);
+        const auto count = type_site_counts_[types_[current.index]];
+        const auto base = static_cast<std::size_t>(current.index) * stride_;
         for (std::uint16_t site = 0; site < count; ++site) {
-            const auto partner = bond(current, site).particle;
-            if (!alive(partner) || visited[partner.index] != 0) continue;
-            visited[partner.index] = 1;
-            pending.push(partner);
+            const auto partner = bond_particles_[base + site];
+            if (!alive(partner) || bfs_stamp_[partner.index] == epoch) continue;
+            bfs_stamp_[partner.index] = epoch;
+            bfs_queue_.push_back(partner);
         }
     }
     return minimum;
+}
+
+void GenericGraphState::complexMembers(ParticleId root, std::vector<ParticleId>& out) const {
+    require(root);
+    out.clear();
+    out.push_back(root);
+    if (!anySiteBound(root)) return;
+    const auto epoch = nextBfsEpoch();
+    bfs_stamp_[root.index] = epoch;
+    for (std::size_t head = 0; head < out.size(); ++head) {
+        const auto current = out[head];
+        const auto count = type_site_counts_[types_[current.index]];
+        const auto base = static_cast<std::size_t>(current.index) * stride_;
+        for (std::uint16_t site = 0; site < count; ++site) {
+            const auto partner = bond_particles_[base + site];
+            if (!alive(partner) || bfs_stamp_[partner.index] == epoch) continue;
+            bfs_stamp_[partner.index] = epoch;
+            out.push_back(partner);
+        }
+    }
 }
 
 std::string GenericGraphState::snapshot() const {

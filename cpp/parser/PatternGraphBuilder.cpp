@@ -246,30 +246,50 @@ std::string extractSpeciesCompartment(BNGParser::Species_defContext* ctx) {
         }
     }
 
-    // Next, check for explicit species-level suffix compartment: @COMP at the end
-    auto text = ctx->getText();
-    const auto atPos = text.rfind('@');
-    if (atPos != std::string::npos && atPos > 0) {
-        // Make sure it's after all the parentheses and molecule patterns
-        const auto lastCloseParen = text.rfind(')');
-        if (lastCloseParen != std::string::npos && atPos > lastCloseParen) {
-            // This is a suffix compartment
-            return text.substr(atPos + 1);
-        }
+    // Next, check for an explicit species-level suffix `(AT STRING)` token
+    // directly on `species_def` (outside `molecule_compartment` children).
+    // For multi-molecule patterns with per-molecule compartments such as
+    // `R(l,c!1)@PM.A(r!1)@CP`, the trailing `@CP` belongs to the last
+    // `molecule_compartment` and must not be mistaken for a species-level
+    // override.
+    const std::size_t prefixAtCount = (ctx->COLON() != nullptr) ? 1u : 0u;
+    if (ctx->AT().size() > prefixAtCount && !ctx->STRING().empty()) {
+        return ctx->STRING().back()->getText();
     }
 
-    // Finally, try to infer from molecule-level compartments
-    // If all molecules have the same compartment, use that
+    // Finally, infer from per-molecule compartments (both `A@C(...)` and
+    // `A(...)@C` forms). Return the shared compartment only when all annotated
+    // molecules agree; otherwise leave empty so 2D-surface precedence inference
+    // resolves the complex compartment from the model's compartment hierarchy.
+    const auto& moleculePatterns = ctx->molecule_pattern();
+    const auto& speciesMolComps = ctx->molecule_compartment();
     std::string inferredCompartment;
     bool allSame = true;
-    for (auto* molPattern : ctx->molecule_pattern()) {
+    for (std::size_t mi = 0; mi < moleculePatterns.size(); ++mi) {
+        auto* molPattern = moleculePatterns[mi];
         if (molPattern == nullptr) continue;
 
         std::string molCompartment;
-        if (molPattern->molecule_compartment() != nullptr) {
-            auto* molComp = molPattern->molecule_compartment();
-            if (molComp->STRING() != nullptr) {
-                molCompartment = molComp->STRING()->getText();
+        if (molPattern->molecule_compartment() != nullptr &&
+            molPattern->molecule_compartment()->STRING() != nullptr) {
+            molCompartment = molPattern->molecule_compartment()->STRING()->getText();
+        } else {
+            const auto moleculeEnd = molPattern->getStop()->getTokenIndex();
+            const auto nextMoleculeStart = mi + 1 < moleculePatterns.size()
+                ? moleculePatterns[mi + 1]->getStart()->getTokenIndex()
+                : ctx->getStop()->getTokenIndex() + 1;
+            const auto suffixCompartment = std::find_if(
+                speciesMolComps.begin(), speciesMolComps.end(),
+                [&](const auto* candidate) {
+                    const auto* start = candidate->getStart();
+                    return start != nullptr &&
+                           start->getTokenIndex() > moleculeEnd &&
+                           start->getTokenIndex() < nextMoleculeStart;
+                });
+            if (suffixCompartment != speciesMolComps.end() &&
+                *suffixCompartment != nullptr &&
+                (*suffixCompartment)->STRING() != nullptr) {
+                molCompartment = (*suffixCompartment)->STRING()->getText();
             }
         }
 

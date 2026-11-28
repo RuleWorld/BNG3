@@ -910,10 +910,10 @@ def _feature_defs(
     result: List[Tuple[str, str, List[str], int]] = []
     for feature_id, (feature_name, labels) in species_type.feature_definitions.items():
         occur = species_type.feature_occurs.get(feature_id, 1)
+        # Repeated occurrences share the same component label so BNGL
+        # preserves exact multiset symmetry and statistical factors.
+        label = _clean(feature_name)
         for occurrence in range(1, occur + 1):
-            label = _clean(feature_name)
-            if occur > 1:
-                label = f"{label}_{occurrence}"
             result.append((feature_id, label, list(labels.values()), occurrence))
     return result
 
@@ -1282,7 +1282,10 @@ def _attach_species_type_bonds(
                 )
             )
             continue
-        if endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id:
+        if (
+            endpoint1[0] is endpoint2[0]
+            and endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id
+        ):
             warnings.append(
                 _warning(
                     f'Multi bond in speciesType "{type_id}" uses endpoints '
@@ -2262,16 +2265,41 @@ def _species_pattern_from_multi(
                 )
             )
             return None
+        # For repeated identical-label component groups (occur > 1) under DNF
+        # expansion, expand any remaining don't-care slots in those groups and
+        # deduplicate symmetric permutations so emitted DNF variants remain
+        # pairwise disjoint under BNGL multiset matching.
+        repeated_label_groups: Dict[Tuple[int, str], List[Tuple[int, int]]] = {}
+        for mol_idx, molecule in enumerate(flat.molecules):
+            for comp_idx, comp in enumerate(molecule.components):
+                if comp.feature_ids and not comp.is_binding_site:
+                    repeated_label_groups.setdefault((mol_idx, comp.label), []).append(
+                        (mol_idx, comp_idx)
+                    )
+        symmetric_groups = [
+            group
+            for group in repeated_label_groups.values()
+            if len(group) > 1 and any(pos in domains for pos in group)
+        ]
+        expand_slots: List[Tuple[int, int]] = []
         if force_expand_feature_ids:
-            forced_slots = [
+            expand_slots.extend(
                 (mol_idx, comp_idx)
                 for mol_idx, molecule in enumerate(flat.molecules)
                 for comp_idx, comp in enumerate(molecule.components)
                 if comp.feature_ids & force_expand_feature_ids
-            ]
+            )
+        for group in symmetric_groups:
+            for pos in group:
+                if pos not in domains:
+                    comp = flat.molecules[pos[0]].components[pos[1]]
+                    domains[pos] = tuple(comp.states)
+                if pos not in expand_slots:
+                    expand_slots.append(pos)
+        if expand_slots:
             expanded: List[Dict[Tuple[int, int], str]] = []
             for branch in branch_assignments:
-                missing = [pos for pos in forced_slots if pos not in branch]
+                missing = [pos for pos in expand_slots if pos not in branch]
                 if not missing:
                     expanded.append(branch)
                     continue
@@ -2295,6 +2323,27 @@ def _species_pattern_from_multi(
                     queue = next_queue
                 expanded.extend(queue)
             branch_assignments = expanded
+        if symmetric_groups:
+            symmetric_slot_set = {pos for group in symmetric_groups for pos in group}
+            seen_signatures: Set[Tuple[Any, ...]] = set()
+            deduped: List[Dict[Tuple[int, int], str]] = []
+            for branch in branch_assignments:
+                non_sym = tuple(
+                    sorted(
+                        (pos, val)
+                        for pos, val in branch.items()
+                        if pos not in symmetric_slot_set
+                    )
+                )
+                sym_sig = tuple(
+                    tuple(sorted(branch.get(pos, "") for pos in group))
+                    for group in symmetric_groups
+                )
+                sig = (non_sym, sym_sig)
+                if sig not in seen_signatures:
+                    seen_signatures.add(sig)
+                    deduped.append(branch)
+            branch_assignments = deduped
     if out_branch_assignments is not None:
         out_branch_assignments.clear()
         out_branch_assignments.extend(branch_assignments)

@@ -542,6 +542,8 @@ std::optional<double> evaluateStructuralExpression(
         case BinaryOp::Multiply: return finiteValue(*lhs * *rhs);
         case BinaryOp::Divide:
             return *rhs == 0.0 ? std::nullopt : finiteValue(*lhs / *rhs);
+        case BinaryOp::Modulo:
+            return *rhs == 0.0 ? std::nullopt : finiteValue(std::fmod(*lhs, *rhs));
         case BinaryOp::Power: return finiteValue(std::pow(*lhs, *rhs));
         case BinaryOp::Less: return *lhs < *rhs ? 1.0 : 0.0;
         case BinaryOp::LessEqual: return *lhs <= *rhs ? 1.0 : 0.0;
@@ -551,6 +553,7 @@ std::optional<double> evaluateStructuralExpression(
         case BinaryOp::NotEqual: return *lhs != *rhs ? 1.0 : 0.0;
         case BinaryOp::LogicalAnd:
         case BinaryOp::LogicalOr:
+        case BinaryOp::LogicalXor:
         case BinaryOp::Unknown: return std::nullopt;
         }
         return std::nullopt;
@@ -640,6 +643,50 @@ bool unboundOnly(const compile::PatternSiteDescriptor& site) {
                            [&](const auto& bond) { return unbound(bond.kind); });
     }
     return unbound(site.bondKind);
+}
+
+bool singleExactBondOnly(const compile::PatternSiteDescriptor& site) {
+    if (!site.bondConstraints.empty()) {
+        return site.bondConstraints.size() == 1 &&
+               site.bondConstraints.front().kind == compile::BondConstraintKind::Exact;
+    }
+    return site.bondKind == compile::BondConstraintKind::Exact;
+}
+
+bool sameMoleculeCanonicalUnorderedSites(
+    const compile::PatternMoleculeDescriptor& lhs,
+    const compile::PatternMoleculeDescriptor& rhs) {
+    if (lhs.moleculeTypeId != rhs.moleculeTypeId ||
+        lhs.compartment != rhs.compartment ||
+        lhs.sites.size() != rhs.sites.size()) {
+        return false;
+    }
+    for (const auto& siteL : lhs.sites) {
+        if (!siteL.componentType.has_value()) return false;
+        const auto found = std::find_if(
+            rhs.sites.begin(), rhs.sites.end(),
+            [&](const compile::PatternSiteDescriptor& siteR) {
+                return siteR.componentType == siteL.componentType;
+            });
+        if (found == rhs.sites.end()) return false;
+        if (siteL.stateConstraintResolved.kind != found->stateConstraintResolved.kind ||
+            siteL.stateConstraintResolved.exact != found->stateConstraintResolved.exact ||
+            siteL.stateConstraintResolved.states != found->stateConstraintResolved.states) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool sameSingleMoleculePatternCanonical(const compile::Pattern& lhs,
+                                        const compile::Pattern& rhs) {
+    if (lhs.molecules().size() != 1 || rhs.molecules().size() != 1 ||
+        lhs.compartment() != rhs.compartment() ||
+        lhs.compartmentIsPrefix() != rhs.compartmentIsPrefix()) {
+        return false;
+    }
+    return sameMoleculeCanonicalUnorderedSites(
+        lhs.molecules().front(), rhs.molecules().front());
 }
 
 std::optional<double> staticCompiledParameterRate(
@@ -1024,7 +1071,11 @@ bool qualifiesDirectBinaryUnbinding(
         if (!site.componentType.has_value()) return false;
         const auto* comp = typeA->component(*site.componentType);
         if (comp == nullptr) return false;
-        if (i != siteIdxA && !unboundOnly(site)) return false;
+        if (i == siteIdxA) {
+            if (!singleExactBondOnly(site)) return false;
+        } else if (!unboundOnly(site)) {
+            return false;
+        }
         if (comp->stateNames.size() > 1 &&
             site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
             return false;
@@ -1035,7 +1086,11 @@ bool qualifiesDirectBinaryUnbinding(
         if (!site.componentType.has_value()) return false;
         const auto* comp = typeB->component(*site.componentType);
         if (comp == nullptr) return false;
-        if (i != siteIdxB && !unboundOnly(site)) return false;
+        if (i == siteIdxB) {
+            if (!singleExactBondOnly(site)) return false;
+        } else if (!unboundOnly(site)) {
+            return false;
+        }
         if (comp->stateNames.size() > 1 &&
             site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
             return false;
@@ -1186,6 +1241,7 @@ struct NetworkRulePlan::Impl {
           pruneZeroRates(pruneZeroRates),
           directSynthesis(direction.reactantPatterns.empty() &&
                           direction.localScopes.empty() &&
+                          model.compartments().empty() &&
                           !compiledRule.delayExpression().has_value() &&
                           !compiledRule.resolvedDelayExpression().has_value() &&
                           !compiledRule.hasDrivingWork()),
@@ -1265,7 +1321,10 @@ struct NetworkRulePlan::Impl {
             bindingComponentNameA = model.component(*molA.sites[siteA].componentType)->name;
             bindingComponentNameB = model.component(*molB.sites[siteB].componentType)->name;
             bindingStaticRate = staticCompiledParameterRate(direction, model);
-            bindingIsHomodimer = (direction.reactantPatterns[0] == direction.reactantPatterns[1]);
+            bindingIsHomodimer =
+                sameSingleMoleculePatternCanonical(direction.reactantPatterns[0],
+                                                   direction.reactantPatterns[1]) &&
+                bindingComponentNameA == bindingComponentNameB;
             if (direction.rateLaw.has_value()) {
                 auto resolved = model.expandFunctions(
                     direction.rateLaw->resolvedExpression());
@@ -1286,7 +1345,9 @@ struct NetworkRulePlan::Impl {
             unbindingComponentNameA = model.component(*molA.sites[siteA].componentType)->name;
             unbindingComponentNameB = model.component(*molB.sites[siteB].componentType)->name;
             unbindingStaticRate = staticCompiledParameterRate(direction, model);
-            unbindingIsHomodimer = (direction.productPatterns[0] == direction.productPatterns[1]);
+            unbindingIsHomodimer =
+                sameMoleculeCanonicalUnorderedSites(molA, molB) &&
+                unbindingComponentNameA == unbindingComponentNameB;
             if (direction.rateLaw.has_value()) {
                 auto resolved = model.expandFunctions(
                     direction.rateLaw->resolvedExpression());
@@ -1614,8 +1675,10 @@ struct NetworkRulePlan::Impl {
             }
 
             const auto label = name + "|" + std::to_string(speciesIndex) + "->";
+            // Whole-species deletion consumes the entire species once regardless
+            // of duplicate-component automorphisms (matchCount == k!).
             reactions.add(ast::Rxn(label, {speciesIndex}, {},
-                                   directRateLaw, static_cast<double>(matchCount), name,
+                                   directRateLaw, 1.0, name,
                                    directRateExpression));
             ++created;
         }
@@ -1745,7 +1808,7 @@ struct NetworkRulePlan::Impl {
                     : species.addWithExactKey(std::move(product), std::move(exact)).first;
 
                 const auto label = name + "|bind|" + spALabel + "+" + spBLabel + "->" + productLabel;
-                const double factor = (i == j) ? 0.5 : 1.0;
+                const double factor = (bindingIsHomodimer && i == j) ? 0.5 : 1.0;
                 const double rxnFactor = factor * static_cast<double>(matchCountA * matchCountB);
                 reactions.add(ast::Rxn(label, {i, j}, {productIndex},
                                        directRateLaw, rxnFactor, name,

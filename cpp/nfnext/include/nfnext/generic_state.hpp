@@ -39,8 +39,14 @@ public:
     void unbind(ParticleId a, std::uint16_t sa);
 
     std::vector<ParticleId> liveParticles() const;
+    const std::vector<std::uint32_t>& liveSlotsOfType(TypeId type) const;
+    ParticleId particleAtSlot(std::uint32_t slot) const noexcept {
+        return ParticleId{slot, generations_[slot]};
+    }
+    bool anySiteBound(ParticleId id) const noexcept;
     bool sameComplex(ParticleId a, ParticleId b) const;
     std::uint32_t complexId(ParticleId id) const;
+    void complexMembers(ParticleId root, std::vector<ParticleId>& out) const;
     std::string snapshot() const;
     std::string canonicalState() const;
 
@@ -58,6 +64,7 @@ private:
     void require(ParticleId id) const;
     void requireSite(ParticleId id, std::uint16_t site) const;
     std::uint16_t typeSiteCount(TypeId type) const;
+    std::uint32_t nextBfsEpoch() const;
 
     const ModelIR* model_;
     std::uint16_t stride_{0};
@@ -70,6 +77,11 @@ private:
     std::vector<ParticleId> bond_particles_;
     std::vector<std::uint16_t> bond_sites_;
     std::vector<CompartmentId> compartments_;
+    std::vector<std::vector<std::uint32_t>> slots_by_type_;
+    std::vector<std::uint32_t> type_slot_pos_;
+    mutable std::vector<std::uint32_t> bfs_stamp_;
+    mutable std::uint32_t bfs_epoch_{0};
+    mutable std::vector<ParticleId> bfs_queue_;
     std::size_t live_count_{0};
 };
 

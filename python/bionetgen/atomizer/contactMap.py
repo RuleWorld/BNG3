@@ -10,7 +10,7 @@ Created on Thu Nov 28 17:17:12 2013
 import utils.consoleCommands as console
 from .utils import readBNGXML
 import networkx as nx
-import cPickle as pickle
+import json
 from collections import Counter
 from os import listdir
 
@@ -55,18 +55,18 @@ def simpleGraph(graph, species, observableList, prefix="", superNode={}):
 
 
 def main():
-    with open("linkArray.dump", "rb") as f:
-        linkArray = pickle.load(f)
-    with open("xmlAnnotationsExtended.dump", "rb") as f:
-        annotations = pickle.load(f)
+    with open("linkArray.dump", "r", encoding="utf-8") as f:
+        linkArray = json.load(f)
+    with open("xmlAnnotationsExtended.dump", "r", encoding="utf-8") as f:
+        annotations = json.load(f)
 
     speciesEquivalence = {}
     onlyDicts = [x for x in listdir("./complex")]
     onlyDicts = [x for x in onlyDicts if ".bngl.dict" in x]
 
     for x in onlyDicts:
-        with open("complex/{0}".format(x), "rb") as f:
-            speciesEquivalence[int(x.split(".")[0][6:])] = pickle.load(f)
+        with open("complex/{0}".format(x), "r", encoding="utf-8") as f:
+            speciesEquivalence[int(x.split(".")[0][6:])] = json.load(f)
 
     for cidx, cluster in enumerate(linkArray):
         # FIXME:only do the first cluster

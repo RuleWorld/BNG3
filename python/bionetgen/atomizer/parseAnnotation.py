@@ -1,38 +1,26 @@
+import re
 import sys
-import string
-from xml.dom import minidom, Node
+import xml.etree.ElementTree as ET
+
+_UNSAFE_XML_DECL_RE = re.compile(r"<!(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
+_RDF_RESOURCE_ATTR = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource"
 
 
 def walk(parent, outFile, level, database):  # [1]
-    for node in parent.childNodes:
-        if node.nodeType == Node.ELEMENT_NODE:
-            # Write out the element name.
-            printLevel(outFile, level)
-            # outFile.write('Element: %s\n' % node.nodeName)
-            # Write out the attributes.
-            attrs = node.attributes  # [2]
-            for attrName in attrs.keys():
-                attrNode = attrs.get(attrName)
-                attrValue = attrNode.nodeValue
-                printLevel(outFile, level + 2)
-                if attrName == "rdf:resource":
-                    database.append(attrValue)
+    for node in list(parent):
+        printLevel(outFile, level)
+        for attrName, attrValue in node.attrib.items():
+            printLevel(outFile, level + 2)
+            if attrName in ("rdf:resource", _RDF_RESOURCE_ATTR):
+                database.append(attrValue)
 
-            # outFile.write('Attribute -- Name: %s  Value: %s\n' % \
-            #    (attrName, attrValue))
-            # Walk over any text nodes in the current node.
-            content = []  # [3]
-            for child in node.childNodes:
-                if child.nodeType == Node.TEXT_NODE:
-                    content.append(child.nodeValue)
-            if content:
-                strContent = string.join(content)
-                printLevel(outFile, level)
-            # outFile.write('Content: "')
-            # outFile.write(strContent)
-            # outFile.write('"\n')
-            # Walk the child nodes.
-            walk(node, outFile, level + 1, database)
+        content = []  # [3]
+        if node.text:
+            content.append(node.text)
+        if content:
+            _strContent = " ".join(content)
+            printLevel(outFile, level)
+        walk(node, outFile, level + 1, database)
 
 
 def printLevel(outFile, level):
@@ -46,10 +34,17 @@ def parseAnnotation(XMLString):
     outFile = ""
     if XMLString == "":
         return []
-    doc = minidom.parseString(XMLString)
-    rootNode = doc.documentElement
+    if _UNSAFE_XML_DECL_RE.search(XMLString):
+        raise ValueError(
+            "XML DOCTYPE/ENTITY declarations are not allowed in annotations"
+        )
+    rootNode = ET.fromstring(XMLString)
     level = 0
     database = []
+    # Also inspect attributes on rootNode itself if it carries rdf:resource.
+    for attrName, attrValue in rootNode.attrib.items():
+        if attrName in ("rdf:resource", _RDF_RESOURCE_ATTR):
+            database.append(attrValue)
     walk(rootNode, outFile, level, database)
     return database
 

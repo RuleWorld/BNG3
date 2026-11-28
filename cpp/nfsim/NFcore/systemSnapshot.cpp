@@ -109,7 +109,7 @@ void SystemSnapshot::restore(System *s) {
                 for (int ci = 0; ci < (int)cs.molecules[mi].bondPartners.size(); ci++) {
                     int partnerIdx = cs.molecules[mi].bondPartners[ci];
                     int partnerSite = cs.molecules[mi].bondPartnerSites[ci];
-                    if (partnerIdx > mi) {  // Only bind once per pair
+                    if (partnerIdx > mi || (partnerIdx == mi && partnerSite > ci)) {  // Only bind once per pair (including self-bonds)
                         Molecule::bind(newMols[mi], ci,
                                       newMols[partnerIdx], partnerSite);
                     }

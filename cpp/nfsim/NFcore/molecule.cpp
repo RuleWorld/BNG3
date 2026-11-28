@@ -1,5 +1,6 @@
 #include <cstdlib>
 #include <iostream>
+#include <stdexcept>
 #include "NFcore.hh"
 #include "compartment.hh"
 #include <limits>
@@ -95,6 +96,91 @@ Molecule::Molecule(MoleculeType * parentMoleculeType, int listId, Compartment * 
 	isAliveInSim = false;
 }
 
+Molecule::Molecule(ShadowTag, MoleculeType * parentMoleculeType, Compartment * compartment)
+{
+	this->parentMoleculeType = parentMoleculeType;
+	this->compartment = compartment;
+	this->population_count = ( parentMoleculeType->isPopulationType() ? 0 : 1 );
+	this->numOfComponents = parentMoleculeType->getNumOfComponents();
+	{
+		const size_t n = (size_t) numOfComponents;
+		const size_t bondBytes  = ((n * sizeof(Molecule *) + 7) / 8) * 8;
+		const size_t compBytes  = ((n * sizeof(int) + 7) / 8) * 8;
+		const size_t idxBytes   = ((n * sizeof(int) + 7) / 8) * 8;
+		const size_t visitBytes = n * sizeof(bool);
+		this->siteBlock = new char [bondBytes + compBytes + idxBytes + visitBytes];
+		char *blk = this->siteBlock;
+		this->bond           = reinterpret_cast<Molecule **>(blk); blk += bondBytes;
+		this->component      = reinterpret_cast<int *>(blk);       blk += compBytes;
+		this->indexOfBond    = reinterpret_cast<int *>(blk);       blk += idxBytes;
+		this->hasVisitedBond = reinterpret_cast<bool *>(blk);
+	}
+	for(int c=0; c<numOfComponents; c++)
+		component[c] = parentMoleculeType->getDefaultComponentState(c);
+	for(int b=0; b<numOfComponents; b++) {
+		bond[b]=0; indexOfBond[b]=NOBOND;
+		hasVisitedBond[b] = false;
+	}
+	boundComponentMask = 0;
+	hasVisitedMolecule = false;
+	hasEvaluatedMolecule = false;
+	isMatchedTo = 0;
+	nReactions = 0;
+	useComplex = false;
+	isPrepared = false;
+	isObservable = 0;
+	localFunctionValues = 0;
+	ID_complex = -1;
+	ID_type = this->parentMoleculeType->getTypeID();
+	ID_unique = -1;
+	this->listId = -1;
+	isAliveInSim = true;
+}
+
+void Molecule::bindShadow(Molecule *m1, int cIndex1, Molecule *m2, int cIndex2)
+{
+	if (m1 == nullptr || m2 == nullptr ||
+	    cIndex1 < 0 || cIndex1 >= m1->numOfComponents ||
+	    cIndex2 < 0 || cIndex2 >= m2->numOfComponents) return;
+	if (m1->bond[cIndex1] != nullptr || m2->bond[cIndex2] != nullptr) return;
+	m1->bond[cIndex1] = m2;
+	m2->bond[cIndex2] = m1;
+	m1->indexOfBond[cIndex1] = cIndex2;
+	m2->indexOfBond[cIndex2] = cIndex1;
+	if (cIndex1 < 64) m1->boundComponentMask |= (std::uint64_t(1) << cIndex1);
+	if (cIndex2 < 64) m2->boundComponentMask |= (std::uint64_t(1) << cIndex2);
+	m1->bondedComponentIndices.insert(
+		std::lower_bound(m1->bondedComponentIndices.begin(),
+			m1->bondedComponentIndices.end(), cIndex1), cIndex1);
+	m2->bondedComponentIndices.insert(
+		std::lower_bound(m2->bondedComponentIndices.begin(),
+			m2->bondedComponentIndices.end(), cIndex2), cIndex2);
+}
+
+void Molecule::unbindShadow(Molecule *m1, int cIndex)
+{
+	if (m1 == nullptr || cIndex < 0 || cIndex >= m1->numOfComponents) return;
+	Molecule *m2 = m1->bond[cIndex];
+	if (m2 == nullptr) return;
+	const int cIndex2 = m1->indexOfBond[cIndex];
+	m1->bond[cIndex] = nullptr;
+	m1->indexOfBond[cIndex] = NOINDEX;
+	if (cIndex < 64) m1->boundComponentMask &= ~(std::uint64_t(1) << cIndex);
+	auto it1 = std::lower_bound(m1->bondedComponentIndices.begin(),
+		m1->bondedComponentIndices.end(), cIndex);
+	if (it1 != m1->bondedComponentIndices.end() && *it1 == cIndex)
+		m1->bondedComponentIndices.erase(it1);
+	if (cIndex2 >= 0 && cIndex2 < m2->numOfComponents) {
+		m2->bond[cIndex2] = nullptr;
+		m2->indexOfBond[cIndex2] = NOINDEX;
+		if (cIndex2 < 64) m2->boundComponentMask &= ~(std::uint64_t(1) << cIndex2);
+		auto it2 = std::lower_bound(m2->bondedComponentIndices.begin(),
+			m2->bondedComponentIndices.end(), cIndex2);
+		if (it2 != m2->bondedComponentIndices.end() && *it2 == cIndex2)
+			m2->bondedComponentIndices.erase(it2);
+	}
+}
+
 // Molecule Deconstructor
 //
 //
@@ -177,19 +263,9 @@ void Molecule::setUpLocalFunctionList()
 void Molecule::setLocalFunctionValue(double newValue,int localFunctionIndex) {
 	if(localFunctionIndex<0 || localFunctionIndex>=parentMoleculeType->getNumOfTypeIFunctions()) {
 		cout<<"Error in Molecule: trying to set the value of a local function, but the\n";
-		cout<<"index provided was out of bounds!  I shall quit now."<<endl;
-		exit(1);
+		cout<<"index provided was out of bounds!"<<endl;
+		throw std::runtime_error("Molecule::setLocalFunctionValue index out of bounds");
 	}
-	//cout<<"here, mol: "<<this->getMoleculeTypeName()<<"_"<<this->getUniqueID()<<endl;
-	//cout<<"localfunctionIndex given: "<< localFunctionIndex<<endl;
-	//cout<<"n_localfunctionValue given: "<< localFunctionIndex<<endl;
-
-	//cout<<"localFunctionValues="<<endl;
-	//for(int k=0; k<parentMoleculeType->getNumOfTypeIFunctions(); k++) {
-	//	cout<<"  "<<localFunctionValues[k]<<endl;
-	//}
-	//cout<<"done."<<endl;
-
 	localFunctionValues[localFunctionIndex] = newValue;
 }
 
@@ -197,8 +273,8 @@ void Molecule::setLocalFunctionValue(double newValue,int localFunctionIndex) {
 double Molecule::getLocalFunctionValue(int localFunctionIndex) {
 	if(localFunctionIndex<0 || localFunctionIndex>=parentMoleculeType->getNumOfTypeIFunctions()) {
 		cout<<"Error in Molecule: trying to get the value of a local function, but the\n";
-		cout<<"index provided was out of bounds!  I shall quit now."<<endl;
-		exit(1);
+		cout<<"index provided was out of bounds!"<<endl;
+		throw std::runtime_error("Molecule::getLocalFunctionValue index out of bounds");
 	}
 	return localFunctionValues[localFunctionIndex];
 }
@@ -207,8 +283,8 @@ double Molecule::getLocalFunctionValue(int localFunctionIndex) {
 LocalFunction * Molecule::getLocalFunction(int localFunctionIndex) {
 	if(localFunctionIndex<0 || localFunctionIndex>=parentMoleculeType->getNumOfTypeIFunctions()) {
 			cout<<"Error in Molecule: trying to get the local function, but the\n";
-			cout<<"index provided was out of bounds!  I shall quit now."<<endl;
-			exit(1);
+			cout<<"index provided was out of bounds!"<<endl;
+			throw std::runtime_error("Molecule::getLocalFunction index out of bounds");
 		}
 	return parentMoleculeType->getTypeILocalFunction(localFunctionIndex);
 }
@@ -546,7 +622,7 @@ void Molecule::bind(Molecule *m1, int cIndex1, Molecule *m2, int cIndex2)
 		cerr<<"\n";
 		m1->printDetails(cerr);
 		m2->printDetails(cerr);
-		exit(1);
+		throw std::runtime_error("Molecule::bind attempted to bond an already occupied site");
 	}
 
 	m1->bond[cIndex1] = m2;
@@ -615,7 +691,7 @@ vector<int> Molecule::unbind(Molecule *m1, int cIndex)
 		m1->printDetails(cerr);
 		cerr<<endl<<"The site trying to be unbound was: ";
 		cerr<<m1->getMoleculeType()->getComponentName(cIndex)<<endl;
-		exit(3);
+		throw std::runtime_error("Molecule::unbind attempted to unbind an unbound site");
 	}
 
 

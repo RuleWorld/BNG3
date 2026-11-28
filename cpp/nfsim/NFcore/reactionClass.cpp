@@ -251,7 +251,7 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 				cout<<"Make sure that is correct."<<endl;
 
 				cout<<endl;
-				baseRate = baseRate*0.5;  //We have to correct the rate to get the proper factor
+				this->baseRate *= 0.5;  //We have to correct the rate to get the proper factor
 				isDimerStyle=true;
 			}
 		}
@@ -263,7 +263,7 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 				cout<<"Warning! You have an unbinding rxn (" << name << ") that is symmetric."<<endl;
 				cout<<"Make sure that is correct."<<endl;
 				cout<<endl;
-				baseRate = baseRate*0.5;  //We have to correct the rate to get the proper factor
+				this->baseRate *= 0.5;  //We have to correct the rate to get the proper factor
 				isDimerStyle=true;
 			}
 		}
@@ -435,10 +435,47 @@ void ReactionClass::setAllReactantAndProductTemplates(map <string,TemplateMolecu
 }
 
 
+void ReactionClass::setTotalRateFlag(bool totalRate) {
+	if (this->totalRateFlag == totalRate) return;
+	double symFactor = 1.0;
+	if (this->transformationSet != 0 && this->transformationSet->usingSymmetryFactor()) {
+		symFactor = this->transformationSet->getSymmetryFactor();
+	} else if (isDimerStyle) {
+		symFactor = 0.5;
+	}
+	this->totalRateFlag = totalRate;
+	if (symFactor > 0.0 && symFactor != 1.0) {
+		if (totalRate) {
+			this->baseRate /= symFactor;
+			if (zeroOrderVolumeScaling) this->zeroOrderUnscaledBaseRate /= symFactor;
+			if (reactantVolumeScaling) this->reactantUnscaledBaseRate /= symFactor;
+		} else {
+			this->baseRate *= symFactor;
+			if (zeroOrderVolumeScaling) this->zeroOrderUnscaledBaseRate *= symFactor;
+			if (reactantVolumeScaling) this->reactantUnscaledBaseRate *= symFactor;
+		}
+	}
+	if (totalRate && reactantVolumeScaling) {
+		if (appliesVolumeConversionFactor()) {
+			this->volumeConversionFactor = 1.0;
+		} else {
+			this->baseRate = this->reactantUnscaledBaseRate;
+		}
+		this->reactantVolumeCompartments.clear();
+		this->reactantVolumeScaling = false;
+		this->reactantVolumeConversionFactor = 1.0;
+	}
+	if (propensityUpdatesEnabled) {
+		update_a();
+	}
+}
+
 void ReactionClass::setBaseRate(double newBaseRate,string newBaseRateName) {
 	if (!newBaseRateName.empty())
 		newBaseRate *= this->baseRateParameterConversionFactor;
-	if ( this->transformationSet->usingSymmetryFactor() )
+	if (this->totalRateFlag)
+	{	this->baseRate = newBaseRate;   }
+	else if ( this->transformationSet->usingSymmetryFactor() )
 	{	this->baseRate = this->transformationSet->getSymmetryFactor() * newBaseRate;   }
 	else if (isDimerStyle)
 	{	this->baseRate = 0.5 * newBaseRate;   }
@@ -499,11 +536,13 @@ void ReactionClass::resetBaseRateFromSystemParamter() {
         }
         const double parameterRate = rawRate * baseRateParameterConversionFactor;
 		double updatedBaseRate = parameterRate;
-		if ( transformationSet->usingSymmetryFactor() ) {
-			updatedBaseRate = transformationSet->getSymmetryFactor() * parameterRate;
-		}
-		else if (isDimerStyle) {
-			updatedBaseRate = 0.5 * parameterRate;
+		if (!this->totalRateFlag) {
+			if ( transformationSet->usingSymmetryFactor() ) {
+				updatedBaseRate = transformationSet->getSymmetryFactor() * parameterRate;
+			}
+			else if (isDimerStyle) {
+				updatedBaseRate = 0.5 * parameterRate;
+			}
 		}
 		if (zeroOrderVolumeScaling && n_reactants == 0) {
 			// refreshZeroOrderVolumeFactor() runs first in
@@ -537,6 +576,12 @@ void ReactionClass::resetBaseRateFromSystemParamter() {
 }
 
 void ReactionClass::setReactantVolumeCompartments(const vector<Compartment*>& compartments) {
+	if (this->totalRateFlag) {
+		reactantVolumeCompartments.clear();
+		reactantVolumeScaling = false;
+		reactantVolumeConversionFactor = 1.0;
+		return;
+	}
 	reactantVolumeCompartments = compartments;
 	reactantVolumeScaling = !compartments.empty();
 	if (reactantVolumeScaling) reactantUnscaledBaseRate = baseRate;
@@ -775,6 +820,13 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		}
 	}
 
+	// Check product-side filters (include_products / exclude_products) dynamically
+	// against the transformed product complexes without mutating live system state.
+	if (!transformationSet->checkProductFilters(mappingSet)) {
+		++(System::NULL_EVENT_COUNTER);
+		return string("");
+	}
+
 	// BioNetGen counts a reactant the rule deletes as a whole species, or one
 	// marked MatchOnce, once per complex, however many matches the complex
 	// holds (the rule's symmetry factor, in baseRate, still applies).  The
@@ -803,8 +855,8 @@ string ReactionClass::fire(double random_A_number, bool track) {
 					<<"), but a complex"<<endl;
 				cerr<<"  holds "<<matches<<" matches of that pattern.  NFsim counts each match, and the law is"<<endl;
 				cerr<<"  not linear in that count, so it cannot be corrected as the rule fires.  Simulate"<<endl;
-				cerr<<"  the network BioNetGen generates for this model instead.  quitting."<<endl;
-				exit(1);
+				cerr<<"  the network BioNetGen generates for this model instead."<<endl;
+				throw std::runtime_error("Michaelis-Menten rule '" + name + "' cannot thin MatchOnce/whole-species deletion across multi-match complex");
 			}
 			if (system->getRNG().random_int(0, matches) != 0) {
 				++(System::NULL_EVENT_COUNTER);

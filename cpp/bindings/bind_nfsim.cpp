@@ -3,8 +3,10 @@
 #include <pybind11/numpy.h>
 
 #include <algorithm>
-#include <cstdio>
+#include <cerrno>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -14,6 +16,15 @@
 #include <map>
 #include <memory>
 #include <random>
+
+#if defined(_WIN32)
+#include <fcntl.h>
+#include <io.h>
+#include <sys/stat.h>
+#else
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 #include "ast/Model.hpp"
 #include "compile/Capabilities.hpp"
@@ -41,12 +52,71 @@ struct TempFileGuard {
     ~TempFileGuard() { if (!path.empty()) std::remove(path.c_str()); }
 };
 
-std::string make_temp_xml_path() {
-    auto tmp_dir = fs::temp_directory_path();
+void write_temp_xml_file(TempFileGuard& guard, const std::string& xml_content) {
+    const auto tmp_dir = fs::temp_directory_path();
+#if defined(_WIN32)
     std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_int_distribution<> dist(100000, 999999);
-    return (tmp_dir / ("nfsim_" + std::to_string(dist(gen)) + ".xml")).string();
+    std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<std::uint64_t> dist;
+    int fd = -1;
+    std::string candidate;
+    for (int attempt = 0; attempt < 128; ++attempt) {
+        std::ostringstream oss;
+        oss << "bng3_nfsim_" << std::hex << dist(gen) << dist(gen) << ".xml";
+        candidate = (tmp_dir / oss.str()).string();
+        fd = _open(candidate.c_str(),
+                   _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY,
+                   _S_IREAD | _S_IWRITE);
+        if (fd >= 0) break;
+        if (errno != EEXIST) {
+            throw std::runtime_error("Failed to create temp file for NFSim XML");
+        }
+    }
+    if (fd < 0) {
+        throw std::runtime_error("Failed to create unique temp file for NFSim XML");
+    }
+    guard.path = candidate;
+    const char* ptr = xml_content.data();
+    std::size_t remaining = xml_content.size();
+    while (remaining > 0) {
+        const unsigned int chunk = static_cast<unsigned int>(
+            std::min<std::size_t>(remaining, 1u << 20));
+        const int written = _write(fd, ptr, chunk);
+        if (written <= 0) {
+            _close(fd);
+            throw std::runtime_error("Failed to write temp file for NFSim XML");
+        }
+        ptr += written;
+        remaining -= static_cast<std::size_t>(written);
+    }
+    if (_close(fd) != 0) {
+        throw std::runtime_error("Failed to close temp file for NFSim XML");
+    }
+#else
+    const std::string tmpl = (tmp_dir / "bng3_nfsim_XXXXXX").string();
+    std::vector<char> buf(tmpl.begin(), tmpl.end());
+    buf.push_back('\0');
+    const int fd = ::mkstemp(buf.data());
+    if (fd < 0) {
+        throw std::runtime_error("Failed to create temp file for NFSim XML");
+    }
+    guard.path = std::string(buf.data());
+    const char* ptr = xml_content.data();
+    std::size_t remaining = xml_content.size();
+    while (remaining > 0) {
+        const ssize_t written = ::write(fd, ptr, remaining);
+        if (written < 0) {
+            if (errno == EINTR) continue;
+            ::close(fd);
+            throw std::runtime_error("Failed to write temp file for NFSim XML");
+        }
+        ptr += written;
+        remaining -= static_cast<std::size_t>(written);
+    }
+    if (::close(fd) != 0) {
+        throw std::runtime_error("Failed to close temp file for NFSim XML");
+    }
+#endif
 }
 
 } // anonymous namespace
@@ -73,6 +143,9 @@ void bind_nfsim(py::module_& m) {
         if (n_steps < 0 || (n_steps == 0 && sample_times.empty())) {
             throw std::invalid_argument(
                 "n_steps must be positive unless sample_times is set");
+        }
+        if (seed < 0) {
+            throw std::invalid_argument("seed must be non-negative");
         }
         if (!std::isfinite(equilibrate) || equilibrate < 0.0) {
             throw std::invalid_argument(
@@ -205,17 +278,7 @@ void bind_nfsim(py::module_& m) {
                                  "using on-disk XML fallback...\n";
                 }
                 const std::string xml_content = bng::io::XmlWriter::write(model, nullptr, /*retainRateExpressions=*/true);
-                tmp_guard.path = make_temp_xml_path();
-                {
-                    std::ofstream out(tmp_guard.path);
-                    if (!out) {
-                        throw std::runtime_error("Failed to create temp file for NFSim XML");
-                    }
-                    out << xml_content;
-                    if (!out) {
-                        throw std::runtime_error("Failed to write temp file for NFSim XML");
-                    }
-                }
+                write_temp_xml_file(tmp_guard, xml_content);
                 owner.reset(NFinput::initializeFromXML(
                     tmp_guard.path,
                     true,     // strict molecularity

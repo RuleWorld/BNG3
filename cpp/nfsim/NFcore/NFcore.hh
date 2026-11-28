@@ -918,9 +918,12 @@ namespace NFcore
 			void turnOnOutputEventCounter() { outputEventCounter=true; };
 			int getGlobalEventCounter() { return globalEventCounter; };
 
+			using ParameterExpression = std::function<double(const std::map<std::string, double>&)>;
 			void addParameter(const string& name,double value);
+			void addDerivedParameter(const string& name, ParameterExpression expr);
 			double getParameter(const string& name);
 			double* getParameterPtr(const string& name);
+			const std::map<std::string, double>& getParameterMap() const { return paramMap; }
 			void setParameter(const string& name, double value);
 			void updateSystemWithNewParameters();
 			void printAllParameters();
@@ -1254,6 +1257,8 @@ namespace NFcore
 
 
 			map <string,double> paramMap;
+			vector <pair<string, ParameterExpression> > derivedParameters;
+			std::unordered_set<string> explicitlySetParameters;
 
 
 
@@ -1564,14 +1569,17 @@ namespace NFcore
 			void setUpLocalFunctionListForMolecules();
 
 			//Fixed Species methods
-			void setFixed(bool fixed, int count, Compartment *comp = nullptr) {
-				isFixed_ = fixed;
-				fixedCount_ = count;
-				fixedCompartment_ = comp;
-			}
+			struct FixedSpeciesSpec {
+				int targetCount = 0;
+				Compartment *compartment = nullptr;
+				vector<int> componentStates;
+			};
+			void setFixed(bool fixed, int count, Compartment *comp = nullptr);
+			void addFixedSpec(int count, Compartment *comp, const vector<int> &componentStates);
 			bool isFixed() const { return isFixed_; }
 			int getFixedCount() const { return fixedCount_; }
 			Compartment *getFixedCompartment() const { return fixedCompartment_; }
+			const vector<FixedSpeciesSpec>& getFixedSpecs() const { return fixedSpecs_; }
 
 		protected:
 
@@ -1874,6 +1882,7 @@ namespace NFcore
 			bool isFixed_;
 			int fixedCount_;
 			Compartment *fixedCompartment_;
+			vector<FixedSpeciesSpec> fixedSpecs_;
 
 			//set of variables to keep track of equivalent (aka symmetric) components
 			int n_eqComp;
@@ -2073,8 +2082,17 @@ namespace NFcore
 		public:
 
 			/* constructors / deconstuctors */
+			struct ShadowTag {};
 			Molecule(MoleculeType * parentMoleculeType, int listId, Compartment * compartment);
+			Molecule(ShadowTag, MoleculeType * parentMoleculeType, Compartment * compartment);
 			~Molecule();
+
+			static void bindShadow(Molecule *m1, int cIndex1, Molecule *m2, int cIndex2);
+			static void unbindShadow(Molecule *m1, int cIndex);
+			void setShadowComponentState(int cIndex, int stateValue) {
+				if (cIndex >= 0 && cIndex < numOfComponents) component[cIndex] = stateValue;
+			}
+			void setShadowCompartment(Compartment *comp) { compartment = comp; }
 
 			/* basic get functions for name, type, complex, and IDs*/
 			int getMolListId() const { return listId; };
@@ -2811,7 +2829,7 @@ namespace NFcore
 			void turnOff_OnTheFlyObs() { onTheFlyObservables=false; };
 
 
-			void setTotalRateFlag(bool totalRate) { totalRateFlag = totalRate; };
+			void setTotalRateFlag(bool totalRate);
 			/* Whether to use reaction connecitivity for updating molecule
 			 * membership
 			 * Arvind Rasi Subramaniam
@@ -2867,6 +2885,7 @@ namespace NFcore
 				if (system != 0) system->noteObservableDependentReaction();
 			}
 			bool getReadsObservable() const { return readsObservable; }
+			virtual void markGlobalObservableDirty() {}
 			/* Mark this reaction once per firing whose updates are held (issue #115). */
 			bool markDeferredFiringUpdate(unsigned long long generation) {
 				if (deferredFiringUpdateGeneration == generation)

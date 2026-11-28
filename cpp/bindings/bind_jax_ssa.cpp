@@ -11,6 +11,7 @@
 // default import.
 
 #include <cstring>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -49,6 +50,20 @@ BNG_EXPORT void bind_jax_ssa(py::module_& m) {
         [](const bng::ast::Model& model, const GeneratedNetwork& network) {
             FlattenedReactionNetwork flat =
                 FlattenedReactionNetwork::fromModelAndNetwork(model, network);
+
+            if (flat.hasFunctional) {
+                throw std::runtime_error(
+                    "JAX SSA does not yet support functional, saturating, or "
+                    "observable-dependent rate laws");
+            }
+            for (const uint8_t flags : flat.reactionFlags) {
+                if ((flags & bng::engine::kBatchRxnFlagFunctional) != 0 ||
+                    (flags & bng::engine::kBatchRxnFlagAbsoluteFlux) != 0) {
+                    throw std::runtime_error(
+                        "JAX SSA does not yet support functional, saturating, "
+                        "or SBML absolute-flux rate laws");
+                }
+            }
 
             py::dict out;
             out["num_species"] = flat.numSpecies;

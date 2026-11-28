@@ -19,15 +19,96 @@ from typing import BinaryIO, Optional, Union
 
 ArchiveSource = Union[str, Path, bytes, bytearray, BinaryIO]
 
+MAX_ARCHIVE_MEMBERS = 4096
+MAX_MEMBER_BYTES = 64 * 1024 * 1024  # 64 MiB per member
+MAX_TOTAL_UNCOMPRESSED_BYTES = 256 * 1024 * 1024  # 256 MiB total
+MAX_COMPRESSION_RATIO = 200.0
+_RATIO_CHECK_MIN_BYTES = 1024 * 1024  # 1 MiB
+_READ_CHUNK_BYTES = 65536
+
 
 def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
+
+
+def _validate_zip_member_path(name: str, archive_label: str = "COMBINE/OMEX") -> str:
+    """Validate and normalize a ZIP member path, rejecting traversal or absolute paths."""
+
+    raw = urllib.parse.unquote(str(name)).replace("\\", "/")
+    if raw.startswith("/") or (len(raw) >= 2 and raw[1] == ":" and raw[0].isalpha()):
+        raise ValueError(
+            f"{archive_label} archive member {name!r} uses a forbidden absolute path"
+        )
+    parts = raw.split("/")
+    if any(part == ".." for part in parts):
+        raise ValueError(
+            f"{archive_label} archive member {name!r} contains forbidden '..' traversal"
+        )
+    normalised = posixpath.normpath(raw)
+    if normalised in {".", ".."} or normalised.startswith("../"):
+        return ""
+    return normalised
 
 
 def _normalise_member_name(name: str) -> str:
     value = urllib.parse.unquote(str(name).replace("\\", "/"))
     value = posixpath.normpath(value.lstrip("/"))
     return "" if value in {".", ".."} or value.startswith("../") else value
+
+
+def _read_member_bounded(
+    archive: zipfile.ZipFile,
+    info: zipfile.ZipInfo,
+    budget: list[int],
+    archive_label: str = "COMBINE/OMEX",
+) -> bytes:
+    """Read a ZIP member with strict per-member, total, and compression-ratio bounds."""
+
+    if info.file_size > MAX_MEMBER_BYTES:
+        raise ValueError(
+            f"{archive_label} archive member {info.filename!r} exceeds maximum "
+            f"uncompressed size ({info.file_size} > {MAX_MEMBER_BYTES} bytes)"
+        )
+    if (
+        info.file_size >= _RATIO_CHECK_MIN_BYTES
+        and info.compress_size > 0
+        and (info.file_size / info.compress_size) > MAX_COMPRESSION_RATIO
+    ):
+        raise ValueError(
+            f"{archive_label} archive member {info.filename!r} exceeds maximum "
+            f"decompression ratio ({info.file_size / info.compress_size:.1f}x > "
+            f"{MAX_COMPRESSION_RATIO:.0f}x)"
+        )
+    chunks: list[bytes] = []
+    member_bytes = 0
+    with archive.open(info, "r") as handle:
+        while True:
+            chunk = handle.read(_READ_CHUNK_BYTES)
+            if not chunk:
+                break
+            member_bytes += len(chunk)
+            budget[0] += len(chunk)
+            if member_bytes > MAX_MEMBER_BYTES:
+                raise ValueError(
+                    f"{archive_label} archive member {info.filename!r} exceeds maximum "
+                    f"uncompressed size ({MAX_MEMBER_BYTES} bytes)"
+                )
+            if budget[0] > MAX_TOTAL_UNCOMPRESSED_BYTES:
+                raise ValueError(
+                    f"{archive_label} archive exceeds maximum total uncompressed size "
+                    f"({MAX_TOTAL_UNCOMPRESSED_BYTES} bytes)"
+                )
+            if (
+                member_bytes >= _RATIO_CHECK_MIN_BYTES
+                and info.compress_size > 0
+                and (member_bytes / info.compress_size) > MAX_COMPRESSION_RATIO
+            ):
+                raise ValueError(
+                    f"{archive_label} archive member {info.filename!r} exceeds maximum "
+                    f"decompression ratio ({MAX_COMPRESSION_RATIO:.0f}x)"
+                )
+            chunks.append(chunk)
+    return b"".join(chunks)
 
 
 def _archive_bytes(source: ArchiveSource) -> bytes:
@@ -44,7 +125,10 @@ def _archive_bytes(source: ArchiveSource) -> bytes:
 
 
 def _manifest_sbml_locations(
-    archive: zipfile.ZipFile, members: dict[str, str]
+    archive: zipfile.ZipFile,
+    members: dict[str, zipfile.ZipInfo],
+    budget: list[int],
+    archive_label: str = "COMBINE/OMEX",
 ) -> tuple[list[str], Optional[str], list[dict[str, str]]]:
     locations: list[str] = []
     manifest_member: Optional[str] = None
@@ -55,8 +139,11 @@ def _manifest_sbml_locations(
         if name.lower().endswith(("manifest.xml", "omex-manifest.xml"))
     ]
     for manifest_name in manifest_names:
+        raw_manifest = _read_member_bounded(
+            archive, members[manifest_name], budget, archive_label
+        )
         try:
-            root = ET.fromstring(archive.read(members[manifest_name]))
+            root = ET.fromstring(raw_manifest)
         except (ET.ParseError, KeyError, RuntimeError, zipfile.BadZipFile):
             continue
         base = posixpath.dirname(manifest_name)
@@ -104,21 +191,29 @@ def _manifest_sbml_locations(
     return locations, manifest_member, entries
 
 
-def _sbml_members(archive: zipfile.ZipFile, members: dict[str, str]) -> list[str]:
+def _sbml_members(
+    archive: zipfile.ZipFile,
+    members: dict[str, zipfile.ZipInfo],
+    budget: list[int],
+    archive_label: str = "COMBINE/OMEX",
+) -> tuple[list[str], dict[str, bytes]]:
     candidates: list[str] = []
-    for name, member in members.items():
+    cached_bytes: dict[str, bytes] = {}
+    for name, info in members.items():
         lower = name.lower()
         if lower.endswith(("manifest.xml", "omex-manifest.xml", ".sedml", ".rdf")):
             continue
         if not lower.endswith((".xml", ".sbml")):
             continue
+        raw = _read_member_bounded(archive, info, budget, archive_label)
         try:
-            root = ET.fromstring(archive.read(member))
+            root = ET.fromstring(raw)
         except (ET.ParseError, KeyError, RuntimeError, UnicodeError):
             continue
         if _local_name(root.tag) == "sbml":
             candidates.append(name)
-    return candidates
+            cached_bytes[name] = raw
+    return candidates, cached_bytes
 
 
 @dataclass(frozen=True)
@@ -156,17 +251,34 @@ def _extract_sbml_from_zip(
     except zipfile.BadZipFile as exc:
         raise ValueError(f"source is not a valid {archive_label} ZIP archive") from exc
     with archive:
-        members: dict[str, str] = {}
-        for info in archive.infolist():
+        infos = archive.infolist()
+        if len(infos) > MAX_ARCHIVE_MEMBERS:
+            raise ValueError(
+                f"{archive_label} archive contains too many entries "
+                f"({len(infos)} > {MAX_ARCHIVE_MEMBERS})"
+            )
+        declared_total = sum(
+            max(0, int(info.file_size)) for info in infos if not info.is_dir()
+        )
+        if declared_total > MAX_TOTAL_UNCOMPRESSED_BYTES:
+            raise ValueError(
+                f"{archive_label} archive declared uncompressed size exceeds limit "
+                f"({declared_total} > {MAX_TOTAL_UNCOMPRESSED_BYTES} bytes)"
+            )
+        members: dict[str, zipfile.ZipInfo] = {}
+        for info in infos:
             if info.is_dir():
                 continue
-            normalised = _normalise_member_name(info.filename)
+            normalised = _validate_zip_member_path(info.filename, archive_label)
             if normalised:
-                members.setdefault(normalised, info.filename)
+                members.setdefault(normalised, info)
         if not members:
             raise ValueError(f"{archive_label} archive contains no files")
 
-        candidates = _sbml_members(archive, members)
+        budget = [0]
+        candidates, cached_bytes = _sbml_members(
+            archive, members, budget, archive_label
+        )
         if not candidates:
             raise ValueError(f"{archive_label} archive contains no SBML XML document")
 
@@ -175,7 +287,7 @@ def _extract_sbml_from_zip(
         warnings: list[str] = []
         manifest_entries: list[dict[str, str]] = []
         if member is not None:
-            selected = _normalise_member_name(member)
+            selected = _validate_zip_member_path(member, archive_label)
             if selected not in candidates:
                 raise ValueError(
                     f"requested archive member {member!r} is not an SBML document; "
@@ -183,7 +295,7 @@ def _extract_sbml_from_zip(
                 )
         else:
             manifest_locations, manifest_member, manifest_entries = (
-                _manifest_sbml_locations(archive, members)
+                _manifest_sbml_locations(archive, members, budget, archive_label)
             )
             if manifest_locations:
                 selected = manifest_locations[0]
@@ -205,7 +317,12 @@ def _extract_sbml_from_zip(
                 )
 
         assert selected is not None
-        text = archive.read(members[selected]).decode("utf-8-sig")
+        raw_sbml = cached_bytes.get(selected)
+        if raw_sbml is None:
+            raw_sbml = _read_member_bounded(
+                archive, members[selected], budget, archive_label
+            )
+        text = raw_sbml.decode("utf-8-sig")
         return CombineArchiveExtraction(
             sbml=text,
             member=selected,

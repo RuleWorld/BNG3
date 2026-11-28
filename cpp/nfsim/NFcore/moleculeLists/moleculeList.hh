@@ -67,6 +67,12 @@ namespace NFcore
 			void removeLast();
 
 			/*!
+				Resets complexID to -1 on every preallocated Molecule slot so recycled
+				slots never hold stale complex references after clearing all complexes.
+			*/
+			void resetAllComplexIDs();
+
+			/*!
 				Print out some (maybe too much) diagnostic debug information about the list.
 			*/
 			void printDetails();

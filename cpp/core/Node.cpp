@@ -58,7 +58,11 @@ Node::set_state ( const State & new_state )
     //  others.  For example, ChangeStateNodes may have a state of any LabelStateType.
     if ( type->check_state( new_state ) )
     {
-        state = new_state.clone();
+        if ( &new_state == state )
+            return true;
+        State * replacement = new_state.clone();
+        delete state;
+        state = replacement;
         return true;
     }
     else  return false;

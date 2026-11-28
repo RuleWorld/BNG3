@@ -1,7 +1,9 @@
 #include "compile/CompiledModel.hpp"
+#include "compile/TotalRate.hpp"
 #include "MatlabWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
+#include "NetWriter.hpp"
 #include "engine/DelayedSemanticsGuard.hpp"
 
 #include <sstream>
@@ -9,17 +11,439 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <functional>
 #include <map>
+#include <memory>
+#include <optional>
 #include <set>
+#include <unordered_map>
 
-#include "parser/antlr_compat.hpp"
-#include <antlr4-runtime.h>
-#include "generated/BNGLexer.h"
-#include "generated/BNGParser.h"
-#include "parser/PatternGraphBuilder.hpp"
-#include "core/Ullmann.hpp"
+#include "engine/ObservableProjection.hpp"
+#include "parser/BNGAstVisitor.hpp"
 
 namespace bng::io {
+
+namespace {
+
+std::string toLowerAscii(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return s;
+}
+
+std::string sanitizeMatlabComment(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (char c : text) {
+        if (c == '\r' || c == '\n') out += ' ';
+        else out += c;
+    }
+    return out;
+}
+
+std::string escapeMatlabString(const std::string& text) {
+    std::string out;
+    out.reserve(text.size() + 8);
+    for (char c : text) {
+        if (c == '\'') out += "''";
+        else if (c == '\r' || c == '\n') out += ' ';
+        else out += c;
+    }
+    return out;
+}
+
+bool isBalancedOuterParen(const std::string& s) {
+    if (s.size() < 2 || s.front() != '(' || s.back() != ')') return false;
+    int depth = 0;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '(') ++depth;
+        else if (s[i] == ')') --depth;
+        if (depth == 0 && i + 1 < s.size()) return false;
+    }
+    return depth == 0;
+}
+
+bool needsOuterParens(const std::string& s) {
+    if (s.empty() || isBalancedOuterParen(s)) return false;
+    int parenDepth = 0;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        const char c = s[i];
+        if (c == '(') { ++parenDepth; continue; }
+        if (c == ')') { --parenDepth; continue; }
+        if (parenDepth == 0) {
+            if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.')) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::string wrapIfNeeded(const std::string& s) {
+    return needsOuterParens(s) ? ("(" + s + ")") : s;
+}
+
+ast::Expression substituteExprArgs(
+    const ast::Expression& expr,
+    const std::unordered_map<std::string, ast::Expression>& argMap) {
+    using Kind = ast::ExpressionKind;
+    switch (expr.kind()) {
+    case Kind::Number:
+    case Kind::TableFunction:
+        return expr;
+    case Kind::Identifier: {
+        if (auto it = argMap.find(expr.name()); it != argMap.end()) {
+            return it->second;
+        }
+        return expr;
+    }
+    case Kind::Unary:
+        return ast::Expression::unary(
+            expr.name(), substituteExprArgs(expr.args().front(), argMap));
+    case Kind::Binary:
+        return ast::Expression::binary(
+            expr.name(),
+            substituteExprArgs(expr.args()[0], argMap),
+            substituteExprArgs(expr.args()[1], argMap));
+    case Kind::Function:
+    case Kind::ObservableRef: {
+        if (expr.args().empty()) {
+            if (auto it = argMap.find(expr.name()); it != argMap.end()) {
+                return it->second;
+            }
+        }
+        std::vector<ast::Expression> args;
+        args.reserve(expr.args().size());
+        for (const auto& a : expr.args()) {
+            args.push_back(substituteExprArgs(a, argMap));
+        }
+        return expr.kind() == Kind::Function
+            ? ast::Expression::function(expr.name(), std::move(args))
+            : ast::Expression::observableRef(expr.name(), std::move(args));
+    }
+    }
+    return expr;
+}
+
+ast::Expression inlineModelFunctions(
+    const ast::Expression& expr,
+    const std::vector<ast::Function>& functions,
+    const std::unordered_map<std::string, std::size_t>& paramIndex,
+    const std::unordered_map<std::string, std::size_t>& obsIndex,
+    int depth = 0) {
+    if (depth >= 32) return expr;
+    auto findFn = [&](const std::string& name, std::size_t arity) -> const ast::Function* {
+        for (const auto& fn : functions) {
+            if (fn.getName() == name && fn.getArgs().size() == arity) {
+                return &fn;
+            }
+        }
+        return nullptr;
+    };
+    using Kind = ast::ExpressionKind;
+    switch (expr.kind()) {
+    case Kind::Number:
+    case Kind::TableFunction:
+        return expr;
+    case Kind::Identifier: {
+        if (paramIndex.find(expr.name()) == paramIndex.end() &&
+            obsIndex.find(expr.name()) == obsIndex.end()) {
+            if (const auto* fn = findFn(expr.name(), 0)) {
+                return inlineModelFunctions(fn->getExpression(), functions, paramIndex, obsIndex, depth + 1);
+            }
+        }
+        return expr;
+    }
+    case Kind::Unary:
+        return ast::Expression::unary(
+            expr.name(),
+            inlineModelFunctions(expr.args().front(), functions, paramIndex, obsIndex, depth));
+    case Kind::Binary:
+        return ast::Expression::binary(
+            expr.name(),
+            inlineModelFunctions(expr.args()[0], functions, paramIndex, obsIndex, depth),
+            inlineModelFunctions(expr.args()[1], functions, paramIndex, obsIndex, depth));
+    case Kind::Function:
+    case Kind::ObservableRef: {
+        std::vector<ast::Expression> inlinedArgs;
+        inlinedArgs.reserve(expr.args().size());
+        for (const auto& a : expr.args()) {
+            inlinedArgs.push_back(inlineModelFunctions(a, functions, paramIndex, obsIndex, depth));
+        }
+        const bool shadowedBySymbol =
+            inlinedArgs.empty() &&
+            (obsIndex.find(expr.name()) != obsIndex.end() ||
+             paramIndex.find(expr.name()) != paramIndex.end());
+        if (!shadowedBySymbol) {
+            if (const auto* fn = findFn(expr.name(), inlinedArgs.size())) {
+                std::unordered_map<std::string, ast::Expression> argMap;
+                for (std::size_t i = 0; i < fn->getArgs().size(); ++i) {
+                    argMap.emplace(fn->getArgs()[i], inlinedArgs[i]);
+                }
+                const auto body = substituteExprArgs(fn->getExpression(), argMap);
+                return inlineModelFunctions(body, functions, paramIndex, obsIndex, depth + 1);
+            }
+        }
+        return expr.kind() == Kind::Function
+            ? ast::Expression::function(expr.name(), std::move(inlinedArgs))
+            : ast::Expression::observableRef(expr.name(), std::move(inlinedArgs));
+    }
+    }
+    return expr;
+}
+
+std::optional<ast::Expression> parseRateLawExpression(const std::string& rawRate) {
+    auto first = rawRate.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return std::nullopt;
+    auto last = rawRate.find_last_not_of(" \t\r\n");
+    std::string trimmed = rawRate.substr(first, last - first + 1);
+
+    std::string lower = toLowerAscii(trimmed);
+    for (const char* kw : {"sat", "mm", "hill"}) {
+        const std::size_t kwLen = std::char_traits<char>::length(kw);
+        if (lower.rfind(kw, 0) == 0 && trimmed.size() > kwLen &&
+            std::isspace(static_cast<unsigned char>(trimmed[kwLen])) != 0) {
+            std::istringstream iss(trimmed.substr(kwLen));
+            std::string tok;
+            std::vector<std::string> toks;
+            while (iss >> tok) toks.push_back(tok);
+            if (!toks.empty() && toks.front().front() != '(') {
+                std::ostringstream norm;
+                norm << trimmed.substr(0, kwLen) << "(";
+                for (std::size_t i = 0; i < toks.size(); ++i) {
+                    if (i > 0) norm << ", ";
+                    norm << toks[i];
+                }
+                norm << ")";
+                trimmed = norm.str();
+            }
+            break;
+        }
+    }
+
+    try {
+        return bng::parser::parseExpression(trimmed);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+ast::Expression expandTopLevelRateExpression(
+    const ast::Expression& rawExpr,
+    const ast::Rxn& rxn,
+    const std::vector<ast::Function>& functions,
+    const std::unordered_map<std::string, std::size_t>& paramIndex,
+    const std::unordered_map<std::string, std::size_t>& obsIndex,
+    bool& consumedReactants) {
+    consumedReactants = false;
+    if (rawExpr.kind() == ast::ExpressionKind::Function) {
+        const std::string lower = toLowerAscii(rawExpr.name());
+        const auto& reactants = rxn.getReactants();
+        auto spRef = [](std::size_t idx) {
+            return ast::Expression::identifier("__bng_sp_" + std::to_string(idx));
+        };
+        if ((lower == "sat" || lower == "mm" || lower == "hill") && !rawExpr.args().empty()) {
+            std::vector<ast::Expression> args;
+            args.reserve(rawExpr.args().size());
+            for (const auto& a : rawExpr.args()) {
+                args.push_back(inlineModelFunctions(a, functions, paramIndex, obsIndex));
+            }
+            if (lower == "sat") {
+                if (args.size() == 1) {
+                    consumedReactants = true;
+                    return args[0];
+                }
+                if (!reactants.empty()) {
+                    consumedReactants = true;
+                    const std::size_t nDenom = std::min(args.size() - 1, reactants.size());
+                    ast::Expression res = ast::Expression::function("Sat", {args[0], args[1], spRef(reactants[0])});
+                    for (std::size_t ri = 1; ri < nDenom; ++ri) {
+                        auto denom = ast::Expression::binary("+", args[ri + 1], spRef(reactants[ri]));
+                        res = ast::Expression::binary(
+                            "*", std::move(res),
+                            ast::Expression::binary("/", spRef(reactants[ri]), std::move(denom)));
+                    }
+                    for (std::size_t ri = nDenom; ri < reactants.size(); ++ri) {
+                        res = ast::Expression::binary("*", std::move(res), spRef(reactants[ri]));
+                    }
+                    return res;
+                }
+            } else if (lower == "mm" && args.size() >= 2 && !reactants.empty()) {
+                consumedReactants = true;
+                if (args.size() >= 3) {
+                    ast::Expression res = ast::Expression::function("Sat", {args[0], args[1], args[2]});
+                    for (std::size_t ri = 1; ri < reactants.size(); ++ri) {
+                        res = ast::Expression::binary("*", std::move(res), spRef(reactants[ri]));
+                    }
+                    return res;
+                }
+                if (reactants.size() >= 2) {
+                    ast::Expression res = ast::Expression::function(
+                        "MM", {args[0], args[1], spRef(reactants[0]), spRef(reactants[1])});
+                    for (std::size_t ri = 2; ri < reactants.size(); ++ri) {
+                        res = ast::Expression::binary("*", std::move(res), spRef(reactants[ri]));
+                    }
+                    return res;
+                }
+                return ast::Expression::function("Sat", {args[0], args[1], spRef(reactants[0])});
+            } else if (lower == "hill" && args.size() >= 2 && !reactants.empty()) {
+                consumedReactants = true;
+                const auto nExpr = (args.size() >= 3) ? args[2] : ast::Expression::number(1.0);
+                ast::Expression res = ast::Expression::function(
+                    "Hill", {args[0], args[1], nExpr, spRef(reactants[0])});
+                for (std::size_t ri = 1; ri < reactants.size(); ++ri) {
+                    res = ast::Expression::binary("*", std::move(res), spRef(reactants[ri]));
+                }
+                return res;
+            }
+        }
+    }
+    return inlineModelFunctions(rawExpr, functions, paramIndex, obsIndex);
+}
+
+std::string renderExprToMatlab(
+    const ast::Expression& expr,
+    const std::unordered_map<std::string, std::size_t>& paramIndex,
+    const std::unordered_map<std::string, std::size_t>& obsIndex) {
+    using Kind = ast::ExpressionKind;
+    switch (expr.kind()) {
+    case Kind::Number: {
+        std::ostringstream out;
+        out << std::setprecision(17) << expr.numberValue();
+        return out.str();
+    }
+    case Kind::Identifier: {
+        const auto& name = expr.name();
+        if (name.rfind("__bng_sp_", 0) == 0) {
+            const std::size_t idx = std::stoull(name.substr(9));
+            return "species(" + std::to_string(idx + 1) + ")";
+        }
+        if (auto it = paramIndex.find(name); it != paramIndex.end()) {
+            return "expressions(" + std::to_string(it->second + 1) + ")";
+        }
+        if (auto it = obsIndex.find(name); it != obsIndex.end()) {
+            return "observables(" + std::to_string(it->second + 1) + ")";
+        }
+        if (name == "time") return "t";
+        if (name == "_pi" || name == "pi" || name == "_PI") return "pi";
+        if (name == "_e" || name == "e") return "exp(1)";
+        return name;
+    }
+    case Kind::Unary: {
+        const auto arg = renderExprToMatlab(expr.args().front(), paramIndex, obsIndex);
+        if (expr.name() == "-" || expr.name() == "+") {
+            return "(" + expr.name() + "(" + arg + "))";
+        }
+        if (expr.name() == "!" || expr.name() == "~") {
+            return "double((" + arg + ") == 0)";
+        }
+        return arg;
+    }
+    case Kind::Binary: {
+        const auto lhs = renderExprToMatlab(expr.args()[0], paramIndex, obsIndex);
+        const auto rhs = renderExprToMatlab(expr.args()[1], paramIndex, obsIndex);
+        const auto& op = expr.name();
+        if (op == "^" || op == "**") {
+            return "((" + lhs + ") ^ (" + rhs + "))";
+        }
+        if (op == "%") {
+            return "mod(" + lhs + ", " + rhs + ")";
+        }
+        if (op == "!=" || op == "~=") {
+            return "double((" + lhs + ") ~= (" + rhs + "))";
+        }
+        if (op == "&&") {
+            return "double(((" + lhs + ") ~= 0) && ((" + rhs + ") ~= 0))";
+        }
+        if (op == "||") {
+            return "double(((" + lhs + ") ~= 0) || ((" + rhs + ") ~= 0))";
+        }
+        if (op == "^^") {
+            return "double(xor((" + lhs + ") ~= 0, (" + rhs + ") ~= 0))";
+        }
+        if (op == "==" || op == "<" || op == "<=" || op == ">" || op == ">=") {
+            return "double((" + lhs + ") " + op + " (" + rhs + "))";
+        }
+        return "(" + lhs + " " + op + " " + rhs + ")";
+    }
+    case Kind::Function:
+    case Kind::ObservableRef: {
+        const auto& name = expr.name();
+        if (expr.args().empty()) {
+            if (auto it = obsIndex.find(name); it != obsIndex.end()) {
+                return "observables(" + std::to_string(it->second + 1) + ")";
+            }
+            if (auto it = paramIndex.find(name); it != paramIndex.end()) {
+                return "expressions(" + std::to_string(it->second + 1) + ")";
+            }
+            if (name == "time") return "t";
+        }
+        std::vector<std::string> rendered;
+        rendered.reserve(expr.args().size());
+        for (const auto& a : expr.args()) {
+            rendered.push_back(renderExprToMatlab(a, paramIndex, obsIndex));
+        }
+        const std::string lowerName = toLowerAscii(name);
+        if ((lowerName == "sat" || lowerName == "mm") && rendered.size() == 3) {
+            return "((" + rendered[0] + ") * (" + rendered[2] + ") / ((" + rendered[1] + ") + (" + rendered[2] + ")))";
+        }
+        if (lowerName == "mm" && rendered.size() == 4) {
+            const auto& kcat = rendered[0];
+            const auto& km = rendered[1];
+            const auto& st = rendered[2];
+            const auto& et = rendered[3];
+            return "(2.0 * (" + kcat + ") * (" + st + ") * (" + et + ") / (((" + st + ") + (" + km + ") + (" + et +
+                   ")) + sqrt((((" + st + ") - (" + km + ") - (" + et + ")) ^ 2) + 4.0 * (" + st + ") * (" + km + "))))";
+        }
+        if (lowerName == "hill" && rendered.size() == 4) {
+            const auto& vmax = rendered[0];
+            const auto& kh = rendered[1];
+            const auto& n = rendered[2];
+            const auto& s = rendered[3];
+            return "((" + vmax + ") * ((" + s + ") ^ (" + n + ")) / (((" + kh + ") ^ (" + n + ")) + ((" + s + ") ^ (" + n + "))))";
+        }
+        if (name == "if" && rendered.size() == 3) {
+            return "bng_if(" + rendered[0] + ", " + rendered[1] + ", " + rendered[2] + ")";
+        }
+        if (name == "ln" && rendered.size() == 1) return "log(" + rendered[0] + ")";
+        if (name == "ceiling" && rendered.size() == 1) return "ceil(" + rendered[0] + ")";
+        if (name == "fabs" && rendered.size() == 1) return "abs(" + rendered[0] + ")";
+        if (name == "rint" && rendered.size() == 1) return "round(" + rendered[0] + ")";
+        if (name == "sum") {
+            if (rendered.empty()) return "0";
+            std::string acc = "(" + rendered[0];
+            for (std::size_t i = 1; i < rendered.size(); ++i) acc += " + " + rendered[i];
+            return acc + ")";
+        }
+        if (name == "avg" && !rendered.empty()) {
+            std::string acc = "((" + rendered[0];
+            for (std::size_t i = 1; i < rendered.size(); ++i) acc += " + " + rendered[i];
+            return acc + ") / " + std::to_string(rendered.size()) + ")";
+        }
+        if ((name == "min" || name == "max") && rendered.size() > 2) {
+            std::string acc = name + "(" + rendered[0] + ", " + rendered[1] + ")";
+            for (std::size_t i = 2; i < rendered.size(); ++i) {
+                acc = name + "(" + acc + ", " + rendered[i] + ")";
+            }
+            return acc;
+        }
+        std::ostringstream call;
+        call << name << "(";
+        for (std::size_t i = 0; i < rendered.size(); ++i) {
+            if (i > 0) call << ", ";
+            call << rendered[i];
+        }
+        call << ")";
+        return call.str();
+    }
+    case Kind::TableFunction:
+        return expr.toString();
+    }
+    return expr.toString();
+}
+
+} // namespace
 
 std::string MatlabWriter::makeMatlabFunctionName(const std::string& modelName) {
     std::string name = modelName;
@@ -59,6 +483,14 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
     for (const auto& param : model.getParameters().all()) {
         paramNames.push_back(param.getName());
         paramValues.push_back(param.getValue());
+    }
+    std::unordered_map<std::string, std::size_t> paramIndex;
+    for (std::size_t i = 0; i < paramNames.size(); ++i) {
+        paramIndex[paramNames[i]] = i;
+    }
+    std::unordered_map<std::string, std::size_t> obsIndex;
+    for (std::size_t g = 0; g < groups.size(); ++g) {
+        obsIndex[groups[g].name] = g;
     }
 
     // Detect fixed species ($ prefix)
@@ -220,7 +652,7 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
         m << "    legend(";
         for (std::size_t i = 0; i < groups.size(); ++i) {
             if (i > 0) m << ", ";
-            m << "'" << groups[i].name << "'";
+            m << "'" << escapeMatlabString(groups[i].name) << "'";
         }
         m << ", 'Location', 'best');\n";
         m << "    ylabel('Number', 'FontSize', 12);\n";
@@ -229,7 +661,7 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
         m << "    ylabel('Species Count', 'FontSize', 12);\n";
     }
     m << "    xlabel('Time', 'FontSize', 12);\n";
-    m << "    title('" << model.getModelName() << "', 'FontSize', 14);\n";
+    m << "    title('" << escapeMatlabString(model.getModelName()) << "', 'FontSize', 14);\n";
     m << "end\n\n";
 
     m << "err = 0;\n";
@@ -260,10 +692,43 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
     m << "%% Calculate expressions from parameters\n";
     m << "function expressions = calc_expressions(parameters)\n";
     m << "    expressions = zeros(" << paramNames.size() << ", 1);\n";
-    for (std::size_t i = 0; i < paramNames.size(); ++i) {
-        // Simple: map parameter value directly to expressions array
-        m << "    expressions(" << (i + 1) << ") = parameters(" << (i + 1)
-          << "); % " << paramNames[i] << "\n";
+    {
+        const auto& allParams = model.getParameters().all();
+        // Topological order so derived parameters evaluate after their dependencies
+        std::vector<int> state(paramNames.size(), 0);
+        std::vector<std::size_t> order;
+        std::function<void(std::size_t)> visit = [&](std::size_t idx) {
+            if (state[idx] != 0) return;
+            state[idx] = 1;
+            for (const auto& dep : allParams[idx].getExpression().getDependencies()) {
+                auto it = paramIndex.find(dep);
+                if (it != paramIndex.end()) visit(it->second);
+            }
+            state[idx] = 2;
+            order.push_back(idx);
+        };
+        for (std::size_t i = 0; i < paramNames.size(); ++i) visit(i);
+        for (const std::size_t i : order) {
+            const auto& expr = allParams[i].getExpression();
+            const auto deps = expr.getDependencies();
+            bool allKnown = !deps.empty();
+            for (const auto& dep : deps) {
+                if (paramIndex.find(dep) == paramIndex.end()) {
+                    allKnown = false;
+                    break;
+                }
+            }
+            if (allKnown) {
+                const auto expandedParam = inlineModelFunctions(
+                    expr, model.getFunctions(), paramIndex, obsIndex);
+                m << "    expressions(" << (i + 1) << ") = "
+                  << renderExprToMatlab(expandedParam, paramIndex, obsIndex)
+                  << "; % " << sanitizeMatlabComment(paramNames[i]) << "\n";
+            } else {
+                m << "    expressions(" << (i + 1) << ") = parameters(" << (i + 1)
+                  << "); % " << sanitizeMatlabComment(paramNames[i]) << "\n";
+            }
+        }
     }
     m << "end\n\n";
 
@@ -273,7 +738,7 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
     m << "    observables = zeros(" << groups.size() << ", 1);\n";
     for (std::size_t g = 0; g < groups.size(); ++g) {
         if (groups[g].entries.empty()) {
-            m << "    observables(" << (g + 1) << ") = 0; % " << groups[g].name << "\n";
+            m << "    observables(" << (g + 1) << ") = 0; % " << sanitizeMatlabComment(groups[g].name) << "\n";
         } else {
             m << "    observables(" << (g + 1) << ") = ";
             bool first = true;
@@ -285,14 +750,17 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
                 m << "species(" << (specIdx + 1) << ")";
                 first = false;
             }
-            m << "; % " << groups[g].name << "\n";
+            m << "; % " << sanitizeMatlabComment(groups[g].name) << "\n";
         }
     }
     m << "end\n\n";
 
     // ===== Nested function: calc_ratelaws =====
     m << "%% Calculate rate laws\n";
-    m << "function ratelaws = calc_ratelaws(species, expressions, observables)\n";
+    m << "function ratelaws = calc_ratelaws(species, expressions, observables, t)\n";
+    m << "    if (nargin < 4)\n";
+    m << "        t = 0;\n";
+    m << "    end\n";
     m << "    ratelaws = zeros(" << nRxns << ", 1);\n";
     for (std::size_t r = 0; r < nRxns; ++r) {
         const auto& rxn = network.reactions.all()[r];
@@ -306,38 +774,75 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
         if (localPos != std::string::npos) {
             cleanRate = cleanRate.substr(0, localPos);
         }
-        if (rxn.getRateExpression().has_value()) {
-            cleanRate = ast::partialEvaluate(
-                *rxn.getRateExpression(), model.getFunctions()).toString();
-        }
 
-        double statFactor = rxn.getFactor();
-
-        // Try as numeric rate
-        bool isNumeric = false;
-        double rateVal = 0.0;
-        try {
-            std::size_t pos = 0;
-            rateVal = std::stod(cleanRate, &pos);
-            if (pos == cleanRate.size()) isNumeric = true;
-        } catch (...) {}
-
-        if (isNumeric) {
-            double combined = statFactor * rateVal;
-            m << combined;
-        } else {
-            // Parameter reference - find index
-            std::string rateRef = convertRateToMatlab(cleanRate, paramNames);
-            if (std::abs(statFactor - 1.0) > 1e-12) {
-                m << statFactor << "*" << rateRef;
-            } else {
-                m << rateRef;
+        const bool absoluteFlux = compile::isAbsoluteFluxReaction(model, rxn);
+        const bool totalRate =
+            compile::isTotalRateReaction(model, rxn.getOriginRuleName()) ||
+            absoluteFlux;
+        double statFactor = totalRate ? 1.0 : rxn.getFactor();
+        if (!totalRate && !absoluteFlux) {
+            if (const auto unitFactor = NetWriter::computeUnitConversionFactor(rxn, model, network);
+                unitFactor.has_value()) {
+                statFactor *= *unitFactor;
             }
         }
 
-        // Multiply by reactant concentrations
-        for (const auto idx : rxn.getReactants()) {
-            m << "*species(" << (idx + 1) << ")";
+        bool consumedReactants = false;
+        std::optional<ast::Expression> parsedRate = rxn.getRateExpression();
+        if (!parsedRate.has_value()) {
+            parsedRate = parseRateLawExpression(cleanRate);
+        }
+
+        if (parsedRate.has_value()) {
+            const auto expanded = ast::partialEvaluate(
+                expandTopLevelRateExpression(
+                    *parsedRate, rxn, model.getFunctions(), paramIndex, obsIndex, consumedReactants),
+                model.getFunctions());
+            if (expanded.kind() == ast::ExpressionKind::Number) {
+                m << std::setprecision(17) << (statFactor * expanded.numberValue());
+            } else {
+                const std::string rateRef = renderExprToMatlab(expanded, paramIndex, obsIndex);
+                const bool willMultiply =
+                    (std::abs(statFactor - 1.0) > 1e-12) ||
+                    (!absoluteFlux && !consumedReactants && !rxn.getReactants().empty());
+                const std::string safeRef = willMultiply ? wrapIfNeeded(rateRef) : rateRef;
+                if (std::abs(statFactor - 1.0) > 1e-12) {
+                    m << std::setprecision(17) << statFactor << "*" << safeRef;
+                } else {
+                    m << safeRef;
+                }
+            }
+        } else {
+            bool isNumeric = false;
+            double rateVal = 0.0;
+            try {
+                std::size_t pos = 0;
+                rateVal = std::stod(cleanRate, &pos);
+                if (pos == cleanRate.size()) isNumeric = true;
+            } catch (...) {}
+
+            if (isNumeric) {
+                double combined = statFactor * rateVal;
+                m << std::setprecision(17) << combined;
+            } else {
+                std::string rateRef = convertRateToMatlab(cleanRate, paramNames);
+                const bool willMultiply =
+                    (std::abs(statFactor - 1.0) > 1e-12) ||
+                    (!absoluteFlux && !consumedReactants && !rxn.getReactants().empty());
+                const std::string safeRef = willMultiply ? wrapIfNeeded(rateRef) : rateRef;
+                if (std::abs(statFactor - 1.0) > 1e-12) {
+                    m << std::setprecision(17) << statFactor << "*" << safeRef;
+                } else {
+                    m << safeRef;
+                }
+            }
+        }
+
+        // Multiply by reactant concentrations (unless absoluteFlux or special rate law already includes them)
+        if (!absoluteFlux && !consumedReactants) {
+            for (const auto idx : rxn.getReactants()) {
+                m << "*species(" << (idx + 1) << ")";
+            }
         }
 
         m << ";\n";
@@ -368,13 +873,13 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
         m << "function Dspecies = calc_species_deriv_dde(t, species, Z, parameters, t0, lags)\n";
         m << "    expressions = calc_expressions(parameters);\n";
         m << "    observables = calc_observables(species, parameters);\n";
-        m << "    ratelaws = calc_ratelaws(species, expressions, observables);\n";
+        m << "    ratelaws = calc_ratelaws(species, expressions, observables, t);\n";
         m << "    delayed_ratelaws = zeros(" << nRxns << ", " << lagExprs.size() << ");\n";
         m << "    for lag_i = 1:" << lagExprs.size() << "\n";
         m << "        if (t >= t0 + lags(lag_i))\n";
         m << "            y_del = Z(:, lag_i);\n";
         m << "            obs_del = calc_observables(y_del, parameters);\n";
-        m << "            delayed_ratelaws(:, lag_i) = calc_ratelaws(y_del, expressions, obs_del);\n";
+        m << "            delayed_ratelaws(:, lag_i) = calc_ratelaws(y_del, expressions, obs_del, t - lags(lag_i));\n";
         m << "        end\n";
         m << "    end\n\n";
         m << "    Dspecies = zeros(" << nSpecies << ", 1);\n\n";
@@ -425,7 +930,7 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
         m << "function Dspecies = calc_species_deriv(t, species, parameters)\n";
         m << "    expressions = calc_expressions(parameters);\n";
         m << "    observables = calc_observables(species, parameters);\n";
-        m << "    ratelaws = calc_ratelaws(species, expressions, observables);\n\n";
+        m << "    ratelaws = calc_ratelaws(species, expressions, observables, t);\n\n";
         m << "    Dspecies = zeros(" << nSpecies << ", 1);\n\n";
 
         // Use stoichiometry to build derivatives
@@ -467,6 +972,17 @@ std::string MatlabWriter::write(const ast::Model& model, const engine::Generated
         m << "end\n\n";
     }
 
+    if (m.str().find("bng_if(") != std::string::npos) {
+        m << "%% Conditional helper for BNGL if(cond, a, b)\n";
+        m << "function val = bng_if(cond, a, b)\n";
+        m << "    if (cond ~= 0)\n";
+        m << "        val = a;\n";
+        m << "    else\n";
+        m << "        val = b;\n";
+        m << "    end\n";
+        m << "end\n\n";
+    }
+
     m << "end % main function\n";
 
     return m.str();
@@ -489,7 +1005,7 @@ std::string MatlabWriter::convertRateToMatlab(const std::string& rate, const std
         std::string paramRef = "expressions(" + std::to_string(idx + 1) + ")";
         std::size_t pos = 0;
         while ((pos = result.find(name, pos)) != std::string::npos) {
-            bool validStart = (pos == 0 || !std::isalnum(static_cast<unsigned char>(result[pos - 1])) && result[pos - 1] != '_');
+            bool validStart = (pos == 0 || (!std::isalnum(static_cast<unsigned char>(result[pos - 1])) && result[pos - 1] != '_'));
             bool validEnd = (pos + name.length() >= result.length() ||
                            (!std::isalnum(static_cast<unsigned char>(result[pos + name.length()])) && result[pos + name.length()] != '_'));
             if (validStart && validEnd) {
@@ -501,46 +1017,73 @@ std::string MatlabWriter::convertRateToMatlab(const std::string& rate, const std
         }
     }
 
+    // MATLAB uses `log` for natural logarithm and `^` for exponentiation
+    {
+        std::size_t pos = 0;
+        while ((pos = result.find("ln(", pos)) != std::string::npos) {
+            const bool validStart = (pos == 0 || (!std::isalnum(static_cast<unsigned char>(result[pos - 1])) && result[pos - 1] != '_'));
+            if (validStart) {
+                result.replace(pos, 2, "log");
+                pos += 4;
+            } else {
+                pos += 3;
+            }
+        }
+    }
+    {
+        std::size_t pos = 0;
+        while ((pos = result.find("**", pos)) != std::string::npos) {
+            result.replace(pos, 2, "^");
+            pos += 1;
+        }
+    }
+
     return result;
 }
 
 std::vector<MatlabWriter::ObservableGroup> MatlabWriter::computeObservableGroups(
     const ast::Model& model, const engine::GeneratedNetwork& network) {
     std::vector<ObservableGroup> groups;
-    auto& mutableModel = const_cast<ast::Model&>(model);
+    std::unique_ptr<compile::CompiledModel> compiledModel;
+    std::unique_ptr<engine::ObservableProjection> projection;
+    const auto ensureProjection = [&]() {
+        if (!projection) {
+            compiledModel = std::make_unique<compile::CompiledModel>(model);
+            projection = std::make_unique<engine::ObservableProjection>(*compiledModel);
+        }
+    };
 
-    for (const auto& observable : model.getObservables()) {
+    const auto& observables = model.getObservables();
+    groups.reserve(observables.size());
+
+    for (std::size_t observableIndex = 0; observableIndex < observables.size(); ++observableIndex) {
+        const auto& observable = observables[observableIndex];
         ObservableGroup group;
         group.name = observable.getName();
         group.type = observable.getType();
 
-        for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
-            std::size_t weight = 0;
-
-            for (const auto& patternText : observable.getPatterns()) {
-                try {
-                    antlr4::ANTLRInputStream input(patternText);
-                    BNGLexer lexer(&input);
-                    antlr4::CommonTokenStream tokens(&lexer);
-                    BNGParser parser(&tokens);
-                    auto* species = parser.species_def();
-
-                    if (parser.getNumberOfSyntaxErrors() == 0) {
-                        const auto pattern = bng::parser::buildPatternGraph(species, mutableModel);
-                        BNGcore::UllmannSGIso matcher(pattern,
-                            network.species.get(speciesIndex).getSpeciesGraph().getGraph());
-                        BNGcore::List<BNGcore::Map> maps;
-                        weight += matcher.find_maps(maps);
+        if (const auto& indexed = observable.getIndexedSpeciesWeights(); indexed.has_value()) {
+            for (const auto& [speciesIndex, rawWeight] : *indexed) {
+                if (speciesIndex < network.species.size() && rawWeight > 0.0) {
+                    const auto w = static_cast<std::size_t>(std::llround(rawWeight));
+                    if (w > 0) {
+                        group.entries.push_back({speciesIndex, w});
                     }
-                } catch (...) {}
+                }
             }
+            groups.push_back(std::move(group));
+            continue;
+        }
 
-            if (observable.getType() == "Species" && weight > 0) {
-                weight = 1;
-            }
-
+        ensureProjection();
+        for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
+            const auto& species = network.species.get(speciesIndex);
+            const auto weight = projection->weight(
+                observableIndex,
+                species.getSpeciesGraph().getGraph(),
+                species.getCompartment());
             if (weight > 0) {
-                group.entries.push_back({speciesIndex, weight});
+                group.entries.push_back({speciesIndex, static_cast<std::size_t>(weight)});
             }
         }
 
@@ -623,7 +1166,7 @@ std::string MatlabWriter::writeBngModel(
     m << "        species_labels = { ";
     for (std::size_t i = 0; i < network.species.size(); ++i) {
         if (i > 0) m << ", ";
-        m << "'" << network.species.get(i).getSpeciesGraph().toString() << "'";
+        m << "'" << escapeMatlabString(network.species.get(i).getSpeciesGraph().toString()) << "'";
     }
     m << " };\n";
 
@@ -631,7 +1174,7 @@ std::string MatlabWriter::writeBngModel(
     m << "        param_labels = { ";
     for (std::size_t i = 0; i < params.size(); ++i) {
         if (i > 0) m << ", ";
-        m << "'" << params[i].getName() << "'";
+        m << "'" << escapeMatlabString(params[i].getName()) << "'";
     }
     m << " };\n";
 
@@ -646,7 +1189,7 @@ std::string MatlabWriter::writeBngModel(
     m << "        obs_labels = { ";
     for (std::size_t i = 0; i < obs.size(); ++i) {
         if (i > 0) m << ", ";
-        m << "'" << obs[i].getName() << "'";
+        m << "'" << escapeMatlabString(obs[i].getName()) << "'";
     }
     m << " };\n";
 

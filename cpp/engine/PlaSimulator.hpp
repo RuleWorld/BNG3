@@ -1,9 +1,11 @@
 #pragma once
 
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
 
+#include "ast/Expression.hpp"
 #include "ast/Model.hpp"
 #include "NetworkGenerator.hpp"
 #include "OdeIntegrator.hpp"
@@ -70,8 +72,10 @@ private:
     struct CompiledReaction {
         std::vector<std::size_t> reactantIndices;
         std::vector<std::size_t> productIndices;
-        double rateConstant;
-        double statFactor;
+        double rateConstant = 0.0;
+        double statFactor = 1.0;
+        bool usesObservables = false;
+        std::optional<ast::Expression> functionalExpr;
         // Stoichiometry: species_index -> coefficient
         std::vector<std::pair<std::size_t, int>> stoich;
     };
@@ -103,6 +107,9 @@ private:
 
     // Postleap checking
     bool checkNegativePopulations(const std::vector<double>& state) const;
+    bool checkSpeciesEps(const std::vector<double>& savedState,
+                         const std::vector<double>& newState,
+                         double eps, double wFactor) const;
     void clampNegatives(std::vector<double>& state) const;
 
     // Observable computation
@@ -114,6 +121,7 @@ private:
     std::vector<CompiledReaction> compiledRxns_;
     std::vector<CompiledGroup> compiledGroups_;
     std::vector<bool> fixedSpecies_;
+    std::vector<double> speciesG_;
     std::size_t nSpecies_ = 0;
 };
 

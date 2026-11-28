@@ -705,14 +705,14 @@ def _eval_static_value(
             raise ArraysFlatteningError(
                 "Invalid <quotient> operands in static array expression."
             )
-        return Fraction(math.floor(nums[0] / nums[1]))
+        return Fraction(math.trunc(nums[0] / nums[1]))
     if op_local == "rem":
         nums = _require_nums(eval_args)
         if len(nums) != 2 or nums[1] == 0:
             raise ArraysFlatteningError(
                 "Invalid <rem> operands in static array expression."
             )
-        return nums[0] - nums[1] * math.floor(nums[0] / nums[1])
+        return nums[0] - nums[1] * math.trunc(nums[0] / nums[1])
     if op_local == "power":
         nums = _require_nums(eval_args)
         if len(nums) != 2:

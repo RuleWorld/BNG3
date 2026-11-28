@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <stdexcept>
 #include <set>
 #include <unordered_set>
@@ -325,6 +326,54 @@ std::vector<CompiledFilter> reversedFilters(const std::vector<CompiledFilter>& f
     return result;
 }
 
+bool resolvedExpressionHasDynamicRef(const ResolvedExpression& expr) {
+    switch (expr.kind) {
+    case ResolvedExpressionKind::TimeRef:
+    case ResolvedExpressionKind::ObservableRef:
+    case ResolvedExpressionKind::FunctionRef:
+    case ResolvedExpressionKind::LocalRef:
+    case ResolvedExpressionKind::ReactantCountRef:
+    case ResolvedExpressionKind::TableFunction:
+    case ResolvedExpressionKind::Unresolved:
+        return true;
+    case ResolvedExpressionKind::BuiltinCall:
+        if (expr.builtin == BuiltinFunction::Time ||
+            expr.builtin == BuiltinFunction::TableFunction) {
+            return true;
+        }
+        break;
+    default:
+        break;
+    }
+    for (const auto& arg : expr.arguments) {
+        if (resolvedExpressionHasDynamicRef(arg)) return true;
+    }
+    return false;
+}
+
+bool resolvedExpressionUsesLocal(const ResolvedExpression& expr, const std::string& localName) {
+    if (expr.kind == ResolvedExpressionKind::LocalRef && expr.localName == localName) {
+        return true;
+    }
+    for (const auto& arg : expr.arguments) {
+        if (resolvedExpressionUsesLocal(arg, localName)) return true;
+    }
+    return false;
+}
+
+void pruneUnusedProductScopes(CompiledRuleDirection& direction) {
+    if (!direction.rateLaw.has_value()) return;
+    if (direction.rateLaw->kind == RateLawKind::FunctionProduct) return;
+    const auto& resolved = direction.rateLaw->resolvedExpression();
+    direction.localScopes.erase(
+        std::remove_if(direction.localScopes.begin(), direction.localScopes.end(),
+                       [&](const CompiledLocalScope& scope) {
+                           return scope.side == PatternSide::Product &&
+                                  !resolvedExpressionUsesLocal(resolved, scope.name);
+                       }),
+        direction.localScopes.end());
+}
+
 } // namespace
 
 namespace detail {
@@ -361,12 +410,29 @@ public:
         if (rule.hasDrivingWork()) {
             compiled.hasDrivingWork_ = true;
             compiled.drivingWorkExpression_ = rule.drivingWorkExpression().toString();
-            if (model != nullptr) {
+            bool driveIsDynamic = false;
+            if (symbols != nullptr) {
+                const auto resolvedDrive = model != nullptr
+                    ? CompiledRateLaw::compile(
+                          rule.drivingWorkExpression(), *symbols, {}, model->getFunctions())
+                    : CompiledRateLaw::compile(rule.drivingWorkExpression(), *symbols);
+                if (resolvedExpressionHasDynamicRef(resolvedDrive.resolvedExpression())) {
+                    driveIsDynamic = true;
+                }
+            }
+            if (!driveIsDynamic && model != nullptr &&
+                model->getParameters().expressionIsTimeDependent(rule.drivingWorkExpression())) {
+                driveIsDynamic = true;
+            }
+            if (!driveIsDynamic && model != nullptr) {
                 try {
-                    compiled.drivingWorkValue_ = rule.drivingWorkExpression().evaluate(
+                    const double value = rule.drivingWorkExpression().evaluate(
                         [&](const std::string& name) -> double {
                             return model->getParameters().evaluate(name, 0.0);
                         }, 0.0);
+                    if (std::isfinite(value)) {
+                        compiled.drivingWorkValue_ = value;
+                    }
                 } catch (...) {
                     compiled.drivingWorkValue_.reset();
                 }
@@ -441,6 +507,35 @@ public:
             compiled.rateLaws_.push_back(std::move(compiledRate));
         }
         if (!compiled.rateLaws_.empty()) compiled.forward_.rateLaw = compiled.rateLaws_.front();
+        pruneUnusedProductScopes(compiled.forward_);
+
+        const bool anyArrheniusRate = std::any_of(
+            compiled.rateLaws_.begin(), compiled.rateLaws_.end(),
+            [](const CompiledRateLaw& rl) {
+                return rl.kind == RateLawKind::ArrheniusEnergy;
+            });
+        if (compiled.bidirectional_ && compiled.rateLaws_.size() >= 2 && anyArrheniusRate) {
+            const bool identicalArrhenius =
+                compiled.rateLaws_.size() == 2 &&
+                compiled.rateLaws_[0].kind == RateLawKind::ArrheniusEnergy &&
+                compiled.rateLaws_[1].kind == RateLawKind::ArrheniusEnergy &&
+                compiled.rateLaws_[0].sourceExpression == compiled.rateLaws_[1].sourceExpression;
+            if (!identicalArrhenius) {
+                addRuleDiagnostic(
+                    diagnostics, rule.getRuleName(),
+                    "Found second ratelaw, but Arrhenius rate law is sufficient for both directions");
+            }
+        }
+        const bool hasTotalRateModifier = std::any_of(
+            compiled.modifiers_.begin(), compiled.modifiers_.end(),
+            [](const CompiledModifier& mod) {
+                return mod.kind == ModifierKind::TotalRate;
+            });
+        if (anyArrheniusRate && hasTotalRateModifier) {
+            addRuleDiagnostic(
+                diagnostics, rule.getRuleName(),
+                "TotalRate keyword is not compatible with Arrhenius type RateLaw");
+        }
 
         // Preserve resolved product->reactant identity maps. These mappings are
         // part of rule semantics and should not be rediscovered by each backend.
@@ -588,6 +683,7 @@ public:
             } else if (!compiled.rateLaws_.empty()) {
                 reverse.rateLaw = compiled.rateLaws_.front();
             }
+            pruneUnusedProductScopes(reverse);
             reverse.transformationsComplete = true;
 
             auto productSiteForReactant = [&](const PatternSiteRef& reactantRef)

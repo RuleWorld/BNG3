@@ -21,6 +21,7 @@
 #include <antlr4-runtime.h>
 
 #include "core/List.hpp"
+#include "core/PatternMatching.hpp"
 #include "core/Ullmann.hpp"
 #include "generated/BNGLexer.h"
 #include "generated/BNGParser.h"
@@ -73,167 +74,379 @@ bool hasTotalRateModifier(const ast::Model& model, const std::string& origin) {
     return bng::compile::isTotalRateReaction(model, origin);
 }
 
-// Simple recursive evaluator for mathematical expressions
-// Handles: numbers, parameters, +, -, *, /, (), exp(), and nested expressions
-double evaluateExpressionString(const std::string& expr,
-                                const std::function<double(const std::string&)>& resolve);
+// Recursive-descent parser and evaluator for static mathematical expressions.
+// Properly handles scientific notation (1e-5, 1E+5), right-associative ^ / **,
+// unary operators with lower precedence than ^ (-2^2 == -4, 2^-3 == 0.125),
+// function calls followed by trailing arithmetic (ln(10)/RT, ln(2)+1), and
+// parameter lookup via the supplied resolver.
+class StringExpressionParser {
+public:
+    StringExpressionParser(const std::string& input,
+                           const std::function<double(const std::string&)>& resolve)
+        : input_(input), resolve_(resolve) {}
 
-double evaluateExpressionString(const std::string& expr,
-                                const std::function<double(const std::string&)>& resolve) {
-    std::string trimmed = expr;
-    // Trim whitespace
-    trimmed.erase(0, trimmed.find_first_not_of(" \t"));
-    trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
-
-    // Handle function calls: exp(...), ln(...), log(...), sqrt(...), abs(...)
-    auto tryFunctionCall = [&](const std::string& funcName, double(*func)(double)) -> std::optional<double> {
-        if (trimmed.rfind(funcName + "(", 0) == 0) {
-            int depth = 0;
-            size_t start = funcName.size() + 1;
-            size_t end = start;
-            for (size_t i = start - 1; i < trimmed.size(); ++i) {
-                if (trimmed[i] == '(') ++depth;
-                else if (trimmed[i] == ')') {
-                    --depth;
-                    if (depth == 0) {
-                        end = i;
-                        break;
-                    }
-                }
-            }
-            if (end > start) {
-                std::string inner = trimmed.substr(start, end - start);
-                return func(evaluateExpressionString(inner, resolve));
-            }
+    double parse() {
+        skipSpaces();
+        if (pos_ >= input_.size()) {
+            throw std::runtime_error("Empty expression");
         }
-        return std::nullopt;
-    };
-
-    if (auto r = tryFunctionCall("exp", std::exp)) return *r;
-    if (auto r = tryFunctionCall("ln", std::log)) return *r;
-    if (auto r = tryFunctionCall("log", std::log)) return *r;
-    if (auto r = tryFunctionCall("log2", std::log2)) return *r;
-    if (auto r = tryFunctionCall("log10", std::log10)) return *r;
-    if (auto r = tryFunctionCall("sqrt", std::sqrt)) return *r;
-    if (auto r = tryFunctionCall("abs", std::abs)) return *r;
-    if (auto r = tryFunctionCall("sin", std::sin)) return *r;
-    if (auto r = tryFunctionCall("cos", std::cos)) return *r;
-    if (auto r = tryFunctionCall("tan", std::tan)) return *r;
-
-    // Handle parentheses - only strip if they're balanced and outermost
-    if (trimmed.front() == '(' && trimmed.back() == ')') {
-        // Check if these parens match (not just any parens)
-        int depth = 0;
-        bool outermost = true;
-        for (size_t i = 0; i < trimmed.size() - 1; ++i) {
-            if (trimmed[i] == '(') ++depth;
-            else if (trimmed[i] == ')') {
-                --depth;
-                if (depth == 0 && i < trimmed.size() - 1) {
-                    // Closing paren before end - not outermost
-                    outermost = false;
-                    break;
-                }
-            }
+        const double value = parseOr(0);
+        skipSpaces();
+        if (pos_ != input_.size()) {
+            throw std::runtime_error("Unexpected trailing token in expression: " +
+                                     input_.substr(pos_));
         }
-        if (outermost) {
-            std::string inner = trimmed.substr(1, trimmed.size() - 2);
-            return evaluateExpressionString(inner, resolve);
+        return value;
+    }
+
+private:
+    static constexpr int kMaxDepth = 256;
+
+    void checkDepth(int depth) const {
+        if (depth > kMaxDepth) {
+            throw std::runtime_error("Expression nesting depth exceeded");
         }
     }
 
-    // Try as number (must consume entire string)
-    try {
-        std::size_t pos = 0;
-        double val = std::stod(trimmed, &pos);
-        if (pos == trimmed.size()) return val;
-    } catch (...) {}
-
-    // Try as parameter name (no operators)
-    if (trimmed.find_first_of("+-*/()^") == std::string::npos) {
-        return resolve(trimmed);
+    void skipSpaces() {
+        while (pos_ < input_.size() &&
+               std::isspace(static_cast<unsigned char>(input_[pos_])) != 0) {
+            ++pos_;
+        }
     }
 
-    // Check for unary minus at start
-    if (trimmed.front() == '-') {
-        // Count to see if there are any binary operators at depth 0 after position 0
-        int parenDepth = 0;
-        bool hasBinaryOpAtZero = false;
-        for (size_t i = 1; i < trimmed.size(); ++i) {
-            if (trimmed[i] == '(') ++parenDepth;
-            else if (trimmed[i] == ')') --parenDepth;
-            else if (parenDepth == 0 && (trimmed[i] == '+' || trimmed[i] == '-' || trimmed[i] == '*' || trimmed[i] == '/' || trimmed[i] == '^')) {
-                hasBinaryOpAtZero = true;
+    bool match(const char* token) {
+        skipSpaces();
+        const std::size_t len = std::char_traits<char>::length(token);
+        if (pos_ + len <= input_.size() &&
+            input_.compare(pos_, len, token) == 0) {
+            pos_ += len;
+            return true;
+        }
+        return false;
+    }
+
+    double parseOr(int depth) {
+        checkDepth(depth);
+        double lhs = parseXor(depth + 1);
+        while (match("||")) {
+            const double rhs = parseXor(depth + 1);
+            lhs = (lhs != 0.0 || rhs != 0.0) ? 1.0 : 0.0;
+        }
+        return lhs;
+    }
+
+    double parseXor(int depth) {
+        checkDepth(depth);
+        double lhs = parseAnd(depth + 1);
+        while (match("^^")) {
+            const double rhs = parseAnd(depth + 1);
+            lhs = ((lhs != 0.0) != (rhs != 0.0)) ? 1.0 : 0.0;
+        }
+        return lhs;
+    }
+
+    double parseAnd(int depth) {
+        checkDepth(depth);
+        double lhs = parseComparison(depth + 1);
+        while (match("&&")) {
+            const double rhs = parseComparison(depth + 1);
+            lhs = (lhs != 0.0 && rhs != 0.0) ? 1.0 : 0.0;
+        }
+        return lhs;
+    }
+
+    double parseComparison(int depth) {
+        checkDepth(depth);
+        double lhs = parseAdditive(depth + 1);
+        while (true) {
+            if (match("==")) {
+                lhs = (lhs == parseAdditive(depth + 1)) ? 1.0 : 0.0;
+            } else if (match("!=") || match("~=")) {
+                lhs = (lhs != parseAdditive(depth + 1)) ? 1.0 : 0.0;
+            } else if (match("<=")) {
+                lhs = (lhs <= parseAdditive(depth + 1)) ? 1.0 : 0.0;
+            } else if (match(">=")) {
+                lhs = (lhs >= parseAdditive(depth + 1)) ? 1.0 : 0.0;
+            } else if (match("<")) {
+                lhs = (lhs < parseAdditive(depth + 1)) ? 1.0 : 0.0;
+            } else if (match(">")) {
+                lhs = (lhs > parseAdditive(depth + 1)) ? 1.0 : 0.0;
+            } else {
                 break;
             }
         }
-        if (!hasBinaryOpAtZero) {
-            // It's unary minus
-            std::string inner = trimmed.substr(1);
-            return -evaluateExpressionString(inner, resolve);
-        }
+        return lhs;
     }
 
-    // Find operators at lowest precedence level (outside parentheses)
-    // Process +/- (lowest), then */, then ^ (highest), with left-to-right associativity
-    int parenDepth = 0;
-    int lastAddSub = -1;
-    char lastAddSubOp = 0;
-    int lastMulDiv = -1;
-    char lastMulDivOp = 0;
-    int lastPower = -1;
-
-    for (size_t i = 0; i < trimmed.size(); ++i) {
-        if (trimmed[i] == '(') ++parenDepth;
-        else if (trimmed[i] == ')') --parenDepth;
-        else if (parenDepth == 0 && i > 0) {
-            if (trimmed[i] == '+' || trimmed[i] == '-') {
-                lastAddSub = i;
-                lastAddSubOp = trimmed[i];
-            }
-            if (trimmed[i] == '*' || trimmed[i] == '/') {
-                lastMulDiv = i;
-                lastMulDivOp = trimmed[i];
-            }
-            if (trimmed[i] == '^') {
-                lastPower = i;
+    double parseAdditive(int depth) {
+        checkDepth(depth);
+        double lhs = parseMultiplicative(depth + 1);
+        while (true) {
+            skipSpaces();
+            if (pos_ < input_.size() && input_[pos_] == '+') {
+                ++pos_;
+                lhs += parseMultiplicative(depth + 1);
+            } else if (pos_ < input_.size() && input_[pos_] == '-') {
+                ++pos_;
+                lhs -= parseMultiplicative(depth + 1);
+            } else {
+                break;
             }
         }
+        return lhs;
     }
 
-    // Process +/- first (lowest precedence)
-    if (lastAddSub >= 0) {
-        std::string left = trimmed.substr(0, lastAddSub);
-        std::string right = trimmed.substr(lastAddSub + 1);
-        double leftVal = evaluateExpressionString(left, resolve);
-        double rightVal = evaluateExpressionString(right, resolve);
-        return lastAddSubOp == '+' ? leftVal + rightVal : leftVal - rightVal;
-    }
-
-    // Then */ (higher precedence)
-    if (lastMulDiv >= 0) {
-        std::string left = trimmed.substr(0, lastMulDiv);
-        std::string right = trimmed.substr(lastMulDiv + 1);
-        double leftVal = evaluateExpressionString(left, resolve);
-        double rightVal = evaluateExpressionString(right, resolve);
-        if (lastMulDivOp == '*') {
-            return leftVal * rightVal;
-        } else {
-            if (std::abs(rightVal) < 1e-300) throw std::runtime_error("Division by zero");
-            return leftVal / rightVal;
+    double parseMultiplicative(int depth) {
+        checkDepth(depth);
+        double lhs = parseUnary(depth + 1);
+        while (true) {
+            skipSpaces();
+            if (pos_ < input_.size() && input_[pos_] == '*' &&
+                (pos_ + 1 >= input_.size() || input_[pos_ + 1] != '*')) {
+                ++pos_;
+                lhs *= parseUnary(depth + 1);
+            } else if (pos_ < input_.size() && input_[pos_] == '/') {
+                ++pos_;
+                const double rhs = parseUnary(depth + 1);
+                if (std::abs(rhs) < 1e-300) {
+                    throw std::runtime_error("Division by zero");
+                }
+                lhs /= rhs;
+            } else if (pos_ < input_.size() && input_[pos_] == '%') {
+                ++pos_;
+                const double rhs = parseUnary(depth + 1);
+                if (std::abs(rhs) < 1e-300) {
+                    throw std::runtime_error("Modulo by zero");
+                }
+                lhs = std::fmod(lhs, rhs);
+            } else {
+                break;
+            }
         }
+        return lhs;
     }
 
-    // Then ^ (power, highest binary precedence)
-    if (lastPower >= 0) {
-        std::string left = trimmed.substr(0, lastPower);
-        std::string right = trimmed.substr(lastPower + 1);
-        double leftVal = evaluateExpressionString(left, resolve);
-        double rightVal = evaluateExpressionString(right, resolve);
-        return std::pow(leftVal, rightVal);
+    // Unary has lower precedence than power so `-2^2 == -(2^2) == -4`,
+    // while the right-hand side of `^` calls parseUnary so `2^-3 == 0.125`.
+    double parseUnary(int depth) {
+        checkDepth(depth);
+        skipSpaces();
+        if (pos_ < input_.size()) {
+            const char c = input_[pos_];
+            if (c == '+') {
+                ++pos_;
+                return parseUnary(depth + 1);
+            }
+            if (c == '-') {
+                ++pos_;
+                return -parseUnary(depth + 1);
+            }
+            if (c == '!' || c == '~') {
+                ++pos_;
+                return parseUnary(depth + 1) == 0.0 ? 1.0 : 0.0;
+            }
+        }
+        return parsePower(depth + 1);
     }
 
-    throw std::runtime_error("Cannot evaluate expression: " + trimmed);
+    double parsePower(int depth) {
+        checkDepth(depth);
+        const double lhs = parsePrimary(depth + 1);
+        skipSpaces();
+        if (match("**") || match("^")) {
+            const double rhs = parseUnary(depth + 1);
+            return std::pow(lhs, rhs);
+        }
+        return lhs;
+    }
+
+    double parsePrimary(int depth) {
+        checkDepth(depth);
+        skipSpaces();
+        if (pos_ >= input_.size()) {
+            throw std::runtime_error("Unexpected end of expression");
+        }
+        const unsigned char ch = static_cast<unsigned char>(input_[pos_]);
+        if (ch == '(') {
+            ++pos_;
+            const double value = parseOr(depth + 1);
+            skipSpaces();
+            if (pos_ >= input_.size() || input_[pos_] != ')') {
+                throw std::runtime_error("Unmatched '(' in expression: " + input_);
+            }
+            ++pos_;
+            return value;
+        }
+        if (std::isdigit(ch) != 0 || ch == '.') {
+            return parseNumber();
+        }
+        if (std::isalpha(ch) != 0 || ch == '_') {
+            const std::size_t start = pos_;
+            while (pos_ < input_.size()) {
+                const unsigned char c = static_cast<unsigned char>(input_[pos_]);
+                if (std::isalnum(c) != 0 || c == '_') {
+                    ++pos_;
+                } else {
+                    break;
+                }
+            }
+            const std::string ident = input_.substr(start, pos_ - start);
+            skipSpaces();
+            if (pos_ < input_.size() && input_[pos_] == '(') {
+                ++pos_;
+                std::vector<double> args;
+                skipSpaces();
+                if (pos_ < input_.size() && input_[pos_] != ')') {
+                    while (true) {
+                        args.push_back(parseOr(depth + 1));
+                        skipSpaces();
+                        if (pos_ < input_.size() && input_[pos_] == ',') {
+                            ++pos_;
+                            continue;
+                        }
+                        break;
+                    }
+                }
+                if (pos_ >= input_.size() || input_[pos_] != ')') {
+                    throw std::runtime_error("Unmatched '(' in call to '" + ident + "'");
+                }
+                ++pos_;
+                return evaluateFunction(ident, args);
+            }
+            try {
+                return resolve_(ident);
+            } catch (...) {
+                if (ident == "_pi" || ident == "pi" || ident == "_PI") return std::acos(-1.0);
+                if (ident == "_e" || ident == "e") return std::exp(1.0);
+                throw;
+            }
+        }
+        throw std::runtime_error("Cannot evaluate expression at: " + input_.substr(pos_));
+    }
+
+    double parseNumber() {
+        const std::size_t start = pos_;
+        bool seenDigit = false;
+        while (pos_ < input_.size() &&
+               std::isdigit(static_cast<unsigned char>(input_[pos_])) != 0) {
+            seenDigit = true;
+            ++pos_;
+        }
+        if (pos_ < input_.size() && input_[pos_] == '.') {
+            ++pos_;
+            while (pos_ < input_.size() &&
+                   std::isdigit(static_cast<unsigned char>(input_[pos_])) != 0) {
+                seenDigit = true;
+                ++pos_;
+            }
+        }
+        if (!seenDigit) {
+            throw std::runtime_error("Invalid numeric literal in expression: " + input_);
+        }
+        if (pos_ < input_.size() &&
+            (input_[pos_] == 'e' || input_[pos_] == 'E' ||
+             input_[pos_] == 'd' || input_[pos_] == 'D')) {
+            const std::size_t expPos = pos_;
+            ++pos_;
+            if (pos_ < input_.size() && (input_[pos_] == '+' || input_[pos_] == '-')) {
+                ++pos_;
+            }
+            std::size_t expDigits = 0;
+            while (pos_ < input_.size() &&
+                   std::isdigit(static_cast<unsigned char>(input_[pos_])) != 0) {
+                ++expDigits;
+                ++pos_;
+            }
+            if (expDigits == 0) {
+                pos_ = expPos;
+            }
+        }
+        std::string token = input_.substr(start, pos_ - start);
+        for (char& c : token) {
+            if (c == 'd' || c == 'D') c = 'e';
+        }
+        std::size_t consumed = 0;
+        const double value = std::stod(token, &consumed);
+        if (consumed != token.size()) {
+            throw std::runtime_error("Invalid number token: " + token);
+        }
+        return value;
+    }
+
+    double evaluateFunction(const std::string& name, const std::vector<double>& args) const {
+        std::string lower = name;
+        std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        auto requireArity = [&](std::size_t expected) {
+            if (args.size() != expected) {
+                throw std::runtime_error("Function '" + name + "' expects " +
+                                         std::to_string(expected) + " argument(s)");
+            }
+        };
+        if (lower == "_pi" || lower == "pi") { requireArity(0); return std::acos(-1.0); }
+        if (lower == "_e" || lower == "e") { requireArity(0); return std::exp(1.0); }
+        if (lower == "exp") { requireArity(1); return std::exp(args[0]); }
+        if (lower == "ln" || lower == "log") { requireArity(1); return std::log(args[0]); }
+        if (lower == "log2") { requireArity(1); return std::log2(args[0]); }
+        if (lower == "log10") { requireArity(1); return std::log10(args[0]); }
+        if (lower == "sqrt") { requireArity(1); return std::sqrt(args[0]); }
+        if (lower == "abs") { requireArity(1); return std::abs(args[0]); }
+        if (lower == "sin") { requireArity(1); return std::sin(args[0]); }
+        if (lower == "cos") { requireArity(1); return std::cos(args[0]); }
+        if (lower == "tan") { requireArity(1); return std::tan(args[0]); }
+        if (lower == "asin") { requireArity(1); return std::asin(args[0]); }
+        if (lower == "acos") { requireArity(1); return std::acos(args[0]); }
+        if (lower == "atan") { requireArity(1); return std::atan(args[0]); }
+        if (lower == "sinh") { requireArity(1); return std::sinh(args[0]); }
+        if (lower == "cosh") { requireArity(1); return std::cosh(args[0]); }
+        if (lower == "tanh") { requireArity(1); return std::tanh(args[0]); }
+        if (lower == "asinh") { requireArity(1); return std::asinh(args[0]); }
+        if (lower == "acosh") { requireArity(1); return std::acosh(args[0]); }
+        if (lower == "atanh") { requireArity(1); return std::atanh(args[0]); }
+        if (lower == "floor") { requireArity(1); return std::floor(args[0]); }
+        if (lower == "ceil" || lower == "ceiling") { requireArity(1); return std::ceil(args[0]); }
+        if (lower == "rint") { requireArity(1); return std::floor(args[0] + 0.5); }
+        if (lower == "sign") {
+            requireArity(1);
+            return args[0] > 0.0 ? 1.0 : (args[0] < 0.0 ? -1.0 : 0.0);
+        }
+        if (lower == "if") {
+            requireArity(3);
+            return args[0] != 0.0 ? args[1] : args[2];
+        }
+        if (lower == "min") {
+            if (args.empty()) throw std::runtime_error("Function 'min' expects at least 1 argument");
+            return *std::min_element(args.begin(), args.end());
+        }
+        if (lower == "max") {
+            if (args.empty()) throw std::runtime_error("Function 'max' expects at least 1 argument");
+            return *std::max_element(args.begin(), args.end());
+        }
+        if (lower == "sum") {
+            double total = 0.0;
+            for (double v : args) total += v;
+            return total;
+        }
+        if (lower == "avg") {
+            if (args.empty()) throw std::runtime_error("Function 'avg' expects at least 1 argument");
+            double total = 0.0;
+            for (double v : args) total += v;
+            return total / static_cast<double>(args.size());
+        }
+        throw std::runtime_error("Unsupported function '" + name + "' in expression");
+    }
+
+    const std::string& input_;
+    const std::function<double(const std::string&)>& resolve_;
+    std::size_t pos_ = 0;
+};
+
+double evaluateExpressionString(const std::string& expr,
+                                const std::function<double(const std::string&)>& resolve) {
+    StringExpressionParser parser(expr, resolve);
+    return parser.parse();
 }
 
 struct ScopedRateValue {
@@ -287,11 +500,6 @@ double evaluateScopedRateIdentifier(
     }
     return local->second.number;
   }
-  if (isScopedRateClockName(name)) {
-    throw std::runtime_error(
-        "time-dependent local rate is not constant in a finite network");
-  }
-
   const auto &parameters = model.getParameters();
   if (parameters.contains(name)) {
     if (parameters.isTimeDependent(name)) {
@@ -299,6 +507,10 @@ double evaluateScopedRateIdentifier(
                                "' cannot be folded in a local rate");
     }
     return parameters.evaluate(name);
+  }
+  if (isScopedRateClockName(name)) {
+    throw std::runtime_error(
+        "time-dependent local rate is not constant in a finite network");
   }
   if (const auto constant = scopedRateBuiltinConstant(name)) return *constant;
   return parameters.evaluate(name);
@@ -519,7 +731,13 @@ double evaluateScopedRateExpression(
       "unsupported expression in a local finite-network rate");
 }
 
-bool scopedRateExpressionUsesTime(
+bool isModelObservable(const ast::Model &model, const std::string &name) {
+  return std::any_of(model.getObservables().begin(),
+                     model.getObservables().end(),
+                     [&](const auto &obs) { return obs.getName() == name; });
+}
+
+bool scopedRateExpressionIsDynamic(
     const ast::Expression &expression, const ast::Model &model,
     std::unordered_set<std::string> &activeFunctions,
     std::unordered_set<std::string> boundNames = {},
@@ -534,8 +752,8 @@ bool scopedRateExpressionUsesTime(
         if (local != environment->end()) {
           if (local->second.expression.has_value()) {
             std::unordered_set<std::string> expressionFunctions;
-            return scopedRateExpressionUsesTime(*local->second.expression,
-                                                model, expressionFunctions);
+            return scopedRateExpressionIsDynamic(*local->second.expression,
+                                                 model, expressionFunctions);
           }
           return false;
         }
@@ -544,11 +762,19 @@ bool scopedRateExpressionUsesTime(
           model.getParameters().isTimeDependent(expression.name())) {
         return true;
       }
+      if (isModelObservable(model, expression.name())) {
+        return true;
+      }
     }
   }
   if ((expression.kind() == Kind::Function ||
        expression.kind() == Kind::ObservableRef) &&
       (expression.name() == "time" || expression.name() == "t")) {
+    return true;
+  }
+  if (expression.kind() == Kind::ObservableRef && expression.args().empty() &&
+      boundNames.find(expression.name()) == boundNames.end() &&
+      isModelObservable(model, expression.name())) {
     return true;
   }
 
@@ -564,17 +790,17 @@ bool scopedRateExpressionUsesTime(
       auto functionBoundNames = boundNames;
       functionBoundNames.insert(function->getArgs().begin(),
                                 function->getArgs().end());
-      const bool functionUsesTime = scopedRateExpressionUsesTime(
+      const bool functionIsDynamic = scopedRateExpressionIsDynamic(
           function->getExpression(), model, activeFunctions,
           std::move(functionBoundNames), environment);
       activeFunctions.erase(function->getName());
-      if (functionUsesTime)
+      if (functionIsDynamic)
         return true;
     }
   }
   for (const auto &argument : expression.args()) {
-    if (scopedRateExpressionUsesTime(argument, model, activeFunctions,
-                                     boundNames, environment))
+    if (scopedRateExpressionIsDynamic(argument, model, activeFunctions,
+                                      boundNames, environment))
       return true;
   }
   return false;
@@ -587,10 +813,10 @@ ast::Expression lowerScopedTimeRateExpression(
     std::unordered_set<std::string> &activeFunctions,
     bool foldStatic = true,
     bool specializeStaticConditionals = false) {
-  std::unordered_set<std::string> timeFunctions;
+  std::unordered_set<std::string> dynamicFunctions;
   if (foldStatic &&
-      !scopedRateExpressionUsesTime(expression, model, timeFunctions, {},
-                                    &environment)) {
+      !scopedRateExpressionIsDynamic(expression, model, dynamicFunctions, {},
+                                     &environment)) {
     return ast::Expression::number(evaluateScopedRateExpression(
         expression, model, localCounts, environment, activeFunctions));
   }
@@ -610,9 +836,10 @@ ast::Expression lowerScopedTimeRateExpression(
         return *local->second.expression;
       return ast::Expression::number(local->second.number);
     }
-    std::unordered_set<std::string> identifierTimeFunctions;
-    if (scopedRateExpressionUsesTime(expression, model,
-                                     identifierTimeFunctions, {}, &environment)) {
+    std::unordered_set<std::string> identifierDynamicFunctions;
+    if (scopedRateExpressionIsDynamic(expression, model,
+                                      identifierDynamicFunctions, {},
+                                      &environment)) {
       return expression;
     }
     return ast::Expression::number(
@@ -649,6 +876,10 @@ ast::Expression lowerScopedTimeRateExpression(
           ast::Expression::function(expression.name(), expression.args()),
           model, localCounts, environment, activeFunctions, foldStatic,
           specializeStaticConditionals);
+    }
+    if (expression.args().empty() &&
+        isModelObservable(model, expression.name())) {
+      return ast::Expression::identifier(expression.name());
     }
     if (expression.args().size() != 1 ||
         expression.args().front().kind() != Kind::Identifier) {
@@ -741,10 +972,10 @@ ast::Expression lowerScopedTimeRateExpression(
           specializeStaticConditionals, specializeStaticConditionals);
       if (specializeStaticConditionals &&
           loweredCondition.kind() != Kind::Number) {
-        std::unordered_set<std::string> conditionTimeFunctions;
-        if (!scopedRateExpressionUsesTime(loweredCondition, model,
-                                          conditionTimeFunctions, {},
-                                          &environment)) {
+        std::unordered_set<std::string> conditionDynamicFunctions;
+        if (!scopedRateExpressionIsDynamic(loweredCondition, model,
+                                           conditionDynamicFunctions, {},
+                                           &environment)) {
           loweredCondition = ast::Expression::number(
               evaluateScopedRateExpression(loweredCondition, model,
                                             localCounts, environment,
@@ -920,39 +1151,145 @@ std::string formatSpeciesAmount(const ast::Species& species,
     return out.str();
 }
 
-// Check if a mapping respects node states (component states must match).
-// The Ullmann matcher only checks structural compatibility (types), not states.
-// Energy patterns like H(m~T) need state filtering to distinguish H(m~T) from H(m~R).
-bool mapRespectsNodeStates(const BNGcore::PatternGraph& pattern, const BNGcore::Map& map) {
+// Check if a self-mapping of a pattern is an exact automorphism:
+// wildcards ('?') only match wildcards, and bond degrees / compartments match.
+bool mapIsExactAutomorphism(const BNGcore::PatternGraph& pattern, const BNGcore::Map& map) {
     for (auto nodeIter = pattern.begin(); nodeIter != pattern.end(); ++nodeIter) {
         auto* target = map.mapf(*nodeIter);
         if (target == nullptr) {
             return false;
         }
-        // Check type compatibility
         if (!((*nodeIter)->get_type() == target->get_type())) {
             return false;
         }
-        // Check state compatibility (e.g., ~T vs ~R)
-        if (!((*nodeIter)->get_state() == target->get_state())) {
+        if ((*nodeIter)->get_state().get_BNG2_string() != target->get_state().get_BNG2_string()) {
+            return false;
+        }
+        if ((*nodeIter)->in_degree() != target->in_degree()) {
+            return false;
+        }
+        if ((*nodeIter)->get_compartment() != target->get_compartment()) {
             return false;
         }
     }
     return true;
 }
 
-std::size_t countPatternMatches(const ast::SpeciesGraph& pattern, const ast::Species& species) {
-    BNGcore::UllmannSGIso matcher(pattern.getGraph(), species.getSpeciesGraph().getGraph());
+std::size_t countPatternAutomorphisms(const BNGcore::PatternGraph& pattern) {
+    BNGcore::UllmannSGIso matcher(pattern, pattern);
     BNGcore::List<BNGcore::Map> maps;
     matcher.find_maps(maps);
-    // Filter maps by node state compatibility (Ullmann only checks structure)
-    std::size_t count = 0;
+    std::size_t aut = 0;
     for (auto mapIter = maps.begin(); mapIter != maps.end(); ++mapIter) {
-        if (mapRespectsNodeStates(pattern.getGraph(), *mapIter)) {
-            ++count;
+        if (mapIsExactAutomorphism(pattern, *mapIter)) {
+            ++aut;
         }
     }
-    return count;
+    return std::max<std::size_t>(1, aut);
+}
+
+std::size_t countEnergyPatternMatches(const ast::EnergyPattern& energyPattern,
+                                      const ast::Species& species) {
+    const auto& pattern = energyPattern.getGraph();
+    std::string prefixComp;
+    if (!pattern.getCompartment().empty()) {
+        bool patternHasMoleculeComp = false;
+        for (auto it = pattern.getGraph().begin(); it != pattern.getGraph().end(); ++it) {
+            if (!(*it)->get_compartment().empty()) {
+                patternHasMoleculeComp = true;
+                break;
+            }
+        }
+        if (pattern.isCompartmentPrefix() || !patternHasMoleculeComp) {
+            prefixComp = pattern.getCompartment();
+        }
+    }
+    if (prefixComp.empty()) {
+        const std::string& raw = energyPattern.getPattern();
+        std::size_t start = 0;
+        while (start < raw.size() && std::isspace(static_cast<unsigned char>(raw[start])) != 0) {
+            ++start;
+        }
+        if (start < raw.size() && raw[start] == '@') {
+            const auto colon = raw.find(':', start + 1);
+            if (colon != std::string::npos && colon > start + 1) {
+                prefixComp = raw.substr(start + 1, colon - start - 1);
+            }
+        }
+    }
+    if (!prefixComp.empty() && species.getCompartment() != prefixComp) {
+        return 0;
+    }
+    const std::size_t count =
+        bng::core::countPatternMatches(pattern.getGraph(), species.getSpeciesGraph().getGraph());
+    if (count == 0) {
+        return 0;
+    }
+    // Divide by pattern automorphism group size |Aut(P)| so symmetric energy
+    // patterns (e.g., A(b!1).A(b!1), R(s!+,s!+)) are counted once per unique match.
+    const std::size_t aut = countPatternAutomorphisms(pattern.getGraph());
+    return count / aut;
+}
+
+// Render an AST expression for .net output without invalid `--x`, bare `(-k ^ 2)`,
+// or spurious empty `()` on zero-argument observables.
+std::string formatNetExpression(const ast::Expression& expr, const ast::Model& model) {
+    using Kind = ast::ExpressionKind;
+    auto joinArgs = [&](const std::vector<ast::Expression>& args) {
+        std::ostringstream out;
+        for (std::size_t i = 0; i < args.size(); ++i) {
+            if (i > 0) out << ", ";
+            out << formatNetExpression(args[i], model);
+        }
+        return out.str();
+    };
+    switch (expr.kind()) {
+    case Kind::Number: {
+        std::ostringstream out;
+        out << std::setprecision(std::numeric_limits<double>::max_digits10)
+            << expr.numberValue();
+        return out.str();
+    }
+    case Kind::Identifier:
+        return expr.name();
+    case Kind::Unary: {
+        const auto& child = expr.args().front();
+        const std::string rendered = formatNetExpression(child, model);
+        const bool needsParens =
+            child.kind() == Kind::Unary ||
+            ((expr.name() == "-" || expr.name() == "+") &&
+             child.kind() == Kind::Number && child.numberValue() < 0.0);
+        return needsParens ? (expr.name() + "(" + rendered + ")")
+                           : (expr.name() + rendered);
+    }
+    case Kind::Binary: {
+        std::string lhs = formatNetExpression(expr.args()[0], model);
+        const std::string rhs = formatNetExpression(expr.args()[1], model);
+        const auto& op = expr.name();
+        if ((op == "^" || op == "**") &&
+            (expr.args()[0].kind() == Kind::Unary ||
+             (expr.args()[0].kind() == Kind::Number &&
+              expr.args()[0].numberValue() < 0.0))) {
+            lhs = "(" + lhs + ")";
+        }
+        return "(" + lhs + " " + op + " " + rhs + ")";
+    }
+    case Kind::Function: {
+        const auto canonIt = builtinCanonicalName.find(expr.name());
+        const std::string name =
+            canonIt != builtinCanonicalName.end() ? canonIt->second : expr.name();
+        return name + "(" + joinArgs(expr.args()) + ")";
+    }
+    case Kind::ObservableRef: {
+        if (expr.args().empty()) {
+            return expr.name() + "()";
+        }
+        return expr.name() + "(" + joinArgs(expr.args()) + ")";
+    }
+    case Kind::TableFunction:
+        return expr.toBnglString();
+    }
+    return expr.toBnglString();
 }
 
 std::string parenthesize(const std::string& text) {
@@ -967,10 +1304,10 @@ std::string energyDeltaExpression(
     for (const auto& energyPattern : model.getEnergyPatterns()) {
         long long delta = 0;
         for (const auto reactantIndex : reaction.getReactants()) {
-            delta -= static_cast<long long>(countPatternMatches(energyPattern.getGraph(), network.species.get(reactantIndex)));
+            delta -= static_cast<long long>(countEnergyPatternMatches(energyPattern, network.species.get(reactantIndex)));
         }
         for (const auto productIndex : reaction.getProducts()) {
-            delta += static_cast<long long>(countPatternMatches(energyPattern.getGraph(), network.species.get(productIndex)));
+            delta += static_cast<long long>(countEnergyPatternMatches(energyPattern, network.species.get(productIndex)));
         }
         if (delta == 0) {
             continue;
@@ -1024,7 +1361,9 @@ std::optional<ArrheniusInfo> parseArrhenius(const std::string& rateLaw) {
 
     // Check for "arrhenius(" prefix (case-insensitive)
     std::string lower = s;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
     if (lower.rfind("arrhenius(", 0) != 0 && lower.rfind("arrhenius (", 0) != 0)
         return std::nullopt;
 
@@ -1240,11 +1579,19 @@ std::optional<double> unitConversionFactor(const ast::Rxn& reaction, const ast::
         }
         return compile::reactantUnitConversionFactor(reactants);
     } else if (!reaction.getProducts().empty()) {
-        // Zero-order synthesis: multiply by product compartment size
+        // Zero-order synthesis: multiply by product compartment size only when
+        // all products share the same declared compartment (matching BNG2 Rxn.pm:200-217).
         std::string prodComp;
         for (const auto idx : reaction.getProducts()) {
             const auto& comp = network.species.get(idx).getCompartment();
-            if (!comp.empty()) { prodComp = comp; break; }
+            if (comp.empty()) {
+                return std::nullopt;
+            }
+            if (prodComp.empty()) {
+                prodComp = comp;
+            } else if (prodComp != comp) {
+                return std::nullopt;
+            }
         }
         if (prodComp.empty()) return std::nullopt;
         auto sizeIt = compSize.find(prodComp);
@@ -1278,15 +1625,18 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
     int rateLawCounter = 1;
     const compile::CompiledModel compiledModel(model);
 
-    // Helper: Check if expression is simple (just a parameter/constant name)
+    // Helper: Check if expression is a bare identifier (parameter or function name,
+    // NOT a bare numeric literal like 0.01 which BNG2 .net requires wrapped in a rateLaw parameter).
     auto isSimpleExpression = [&](const std::string& expr) -> bool {
-        std::string trimmed = expr;
-        trimmed.erase(0, trimmed.find_first_not_of(" \t"));
-        trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
-
-        // Simple if it's just alphanumeric + underscore (no operators or parens)
+        const auto first = expr.find_first_not_of(" \t");
+        if (first == std::string::npos) return false;
+        const auto last = expr.find_last_not_of(" \t");
+        const std::string trimmed = expr.substr(first, last - first + 1);
+        if (trimmed.empty()) return false;
+        const unsigned char lead = static_cast<unsigned char>(trimmed.front());
+        if (std::isalpha(lead) == 0 && lead != '_') return false;
         return std::all_of(trimmed.begin(), trimmed.end(),
-            [](char c) { return std::isalnum(c) || c == '_' || c == '.'; });
+            [](unsigned char c) { return std::isalnum(c) != 0 || c == '_'; });
     };
 
     // Helper: Check if expression references observables
@@ -1326,7 +1676,10 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             const ast::Expression& current) {
             if ((current.kind() == ast::ExpressionKind::Identifier ||
                  current.kind() == ast::ExpressionKind::Function) &&
-                (current.name() == "time" || current.name() == "t")) {
+                (current.name() == "time" ||
+                 (current.name() == "t" &&
+                  current.kind() == ast::ExpressionKind::Identifier &&
+                  !model.getParameters().contains("t")))) {
                 return true;
             }
             for (const auto& child : current.args()) {
@@ -1510,9 +1863,9 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
 
               const std::string paramName =
                   info.paramName + std::to_string(sequence++);
-              std::unordered_set<std::string> timeFunctions;
-              if (scopedRateExpressionUsesTime(expression, model,
-                                               timeFunctions)) {
+              std::unordered_set<std::string> dynamicFunctions;
+              if (scopedRateExpressionIsDynamic(expression, model,
+                                                dynamicFunctions)) {
                 std::unordered_set<std::string> activeFunctions;
                 auto rateExpression = lowerScopedTimeRateExpression(
                     expression, model, localCounts, {}, activeFunctions);
@@ -1527,9 +1880,9 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                   info.perReactionRuntimeRateConstants[rxnIndex] =
                       runtimeExpression.numberValue();
                 } else {
-                  std::unordered_set<std::string> runtimeTimeFunctions;
-                  if (!scopedRateExpressionUsesTime(
-                          runtimeExpression, model, runtimeTimeFunctions)) {
+                  std::unordered_set<std::string> runtimeDynamicFunctions;
+                  if (!scopedRateExpressionIsDynamic(
+                          runtimeExpression, model, runtimeDynamicFunctions)) {
                     std::unordered_set<std::string> foldFunctions;
                     info.perReactionRuntimeRateConstants[rxnIndex] =
                         evaluateScopedRateExpression(
@@ -1982,23 +2335,49 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             }
         }
 
-        // Skip if rate expression is simple (just a parameter name)
-        if (isSimpleExpression(rateExpr)) {
-            // Check if it's a known parameter or function
-            bool isKnownParam = false;
-            for (const auto& param : model.getParameters().all()) {
-                if (param.getName() == rateExpr) {
-                    isKnownParam = true;
-                    break;
+        auto maybeDeriveReverseRate = [&]() {
+            if (!rule.isBidirectional() || rule.getRates().size() <= 1) return;
+            const std::string reverseRuleName = "_reverse__" + ruleName;
+            if (derived.find(reverseRuleName) != derived.end()) return;
+            const auto reverseRateExprObj = ast::partialEvaluate(
+                rule.getRates()[1], model.getFunctions());
+            if (reverseRateExprObj.kind() == ast::ExpressionKind::Function &&
+                builtinRateLawFunctions.count(reverseRateExprObj.name()) > 0) {
+                return;
+            }
+            bool reverseIsModelFunction = false;
+            if (reverseRateExprObj.kind() == ast::ExpressionKind::Function ||
+                reverseRateExprObj.kind() == ast::ExpressionKind::ObservableRef) {
+                for (const auto& function : model.getFunctions()) {
+                    if (function.getName() == reverseRateExprObj.name()) {
+                        reverseIsModelFunction = true;
+                        break;
+                    }
                 }
             }
-            if (isKnownParam) {
-                continue;  // Use parameter directly
+            const std::string reverseRateExpr = reverseRateExprObj.toBnglString();
+            if (!reverseIsModelFunction && !isSimpleExpression(reverseRateExpr)) {
+                const bool reverseAsFunction = isDynamicRateExpression(
+                    reverseRateExpr, reverseRateExprObj);
+                const std::string reverseParamName =
+                    (reverseAsFunction ? "_rateLaw" : "rateLaw") +
+                    std::to_string(rateLawCounter++);
+                derived.emplace(
+                    reverseRuleName,
+                    DerivedRateInfo {
+                        reverseParamName,
+                        reverseRateExpr,
+                        reverseRateExprObj,
+                        true,  // reverseDirection
+                        reverseAsFunction
+                    });
             }
-            // Check if it's a user-defined function name — if so, it will be
-            // resolved at runtime by the ODE integrator's function resolver.
-            // No derived parameter needed; the function is written to the
-            // functions block and evaluated each timestep.
+        };
+
+        // Skip forward derivation if rate expression is a simple identifier
+        // (parameter or function name), while still deriving complex reverse rates.
+        if (isSimpleExpression(rateExpr)) {
+            maybeDeriveReverseRate();
             continue;
         }
 
@@ -2019,28 +2398,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             });
 
         // Handle bidirectional rules (reverse rate)
-        if (rule.isBidirectional() && rule.getRates().size() > 1) {
-            const std::string reverseRuleName = "_reverse__" + ruleName;
-            const auto reverseRateExprObj = ast::partialEvaluate(
-                rule.getRates()[1], model.getFunctions());
-            const std::string reverseRateExpr = reverseRateExprObj.toString();
-
-            if (!isSimpleExpression(reverseRateExpr)) {
-                bool reverseAsFunction = isDynamicRateExpression(
-                    reverseRateExpr, reverseRateExprObj);
-                std::string reverseParamName = (reverseAsFunction ? "_rateLaw" : "rateLaw") + std::to_string(rateLawCounter++);
-
-                derived.emplace(
-                    reverseRuleName,
-                    DerivedRateInfo {
-                        reverseParamName,
-                        reverseRateExpr,
-                        reverseRateExprObj,
-                        true,  // reverseDirection
-                        reverseAsFunction
-                    });
-            }
-        }
+        maybeDeriveReverseRate();
     }
 
     // Handle Arrhenius expressions with per-reaction energy-dependent rates.
@@ -2180,17 +2538,28 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 for (const auto& energyPattern : model.getEnergyPatterns()) {
                     long long delta = 0;
                     for (const auto reactantIndex : reaction.getReactants()) {
-                        delta -= static_cast<long long>(countPatternMatches(energyPattern.getGraph(), network.species.get(reactantIndex)));
+                        delta -= static_cast<long long>(countEnergyPatternMatches(energyPattern, network.species.get(reactantIndex)));
                     }
                     for (const auto productIndex : reaction.getProducts()) {
-                        delta += static_cast<long long>(countPatternMatches(energyPattern.getGraph(), network.species.get(productIndex)));
+                        delta += static_cast<long long>(countEnergyPatternMatches(energyPattern, network.species.get(productIndex)));
                     }
                     deltaFingerprint += std::to_string(delta) + ",";
                     if (delta != 0) {
+                        const auto epExpr = ast::partialEvaluate(
+                            energyPattern.getExpression(), model.getFunctions());
                         double gf = 0.0;
                         try {
-                            gf = evaluateExpressionString(energyPattern.getExpression().toString(), paramResolver);
-                        } catch (...) {}
+                            gf = evaluateExpressionString(epExpr.toString(), paramResolver);
+                        } catch (const std::exception& e) {
+                            throw std::runtime_error(
+                                "Cannot statically evaluate energy pattern expression '" +
+                                energyPattern.getExpression().toString() + "': " + e.what());
+                        }
+                        if (!std::isfinite(gf)) {
+                            throw std::runtime_error(
+                                "Energy pattern expression '" +
+                                energyPattern.getExpression().toString() + "' evaluated to non-finite value");
+                        }
                         deltaG += delta * gf;
                     }
                 }
@@ -2206,11 +2575,20 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                     double eact0 = 0.0;
                     try {
                         const std::string phiExpr = reverseDirection
-                            ? ("1-" + arrhenius->phiArg)
+                            ? ("1-(" + arrhenius->phiArg + ")")
                             : arrhenius->phiArg;
                         phi = evaluateExpressionString(phiExpr, paramResolver);
                         eact0 = evaluateExpressionString(arrhenius->eaArg, paramResolver);
-                    } catch (...) {}
+                    } catch (const std::exception& e) {
+                        throw std::runtime_error(
+                            "Cannot statically evaluate Arrhenius rate law '" +
+                            reaction.getRateLaw() + "': " + e.what());
+                    }
+                    if (!std::isfinite(phi) || !std::isfinite(eact0)) {
+                        throw std::runtime_error(
+                            "Arrhenius rate law '" + reaction.getRateLaw() +
+                            "' evaluated to non-finite parameters");
+                    }
                     // `phi` is already (1 - phi) for a reverse direction, and
                     // `deltaG` is already negated because that reaction's
                     // reactants and products are swapped. The helper applies
@@ -2382,7 +2760,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
         }
         if (!writerOpts.evaluateExpressions) {
             out << "    " << parameterIndex++ << " " << parameter.getName() << " "
-                << parameter.getExpression().toString()
+                << formatNetExpression(parameter.getExpression(), model)
                 << parameterCommentSuffix(parameter.getName()) << '\n';
         } else {
             std::ostringstream valStr;
@@ -2497,6 +2875,24 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     }
     out << "end parameters\n";
 
+    if (!model.getCompartments().empty()) {
+        out << "begin compartments\n";
+        for (const auto& comp : model.getCompartments()) {
+            out << "    " << comp.getName() << " " << comp.getDimension() << " ";
+            if (!writerOpts.evaluateExpressions && comp.getVolumeExpression().has_value()) {
+                out << formatNetExpression(*comp.getVolumeExpression(), model);
+            } else {
+                out << std::setprecision(std::numeric_limits<double>::max_digits10)
+                    << comp.getVolume();
+            }
+            if (!comp.getParent().empty()) {
+                out << " " << comp.getParent();
+            }
+            out << '\n';
+        }
+        out << "end compartments\n";
+    }
+
     // Write functions section: model-level named functions + derived rate laws
     bool hasDerivedFunctions = false;
     for (const auto& [ruleName, info] : derivedRateParams) {
@@ -2517,14 +2913,15 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 if (i > 0) out << ",";
                 out << args[i];
             }
-            out << ") " << ast::partialEvaluate(
-                func.getExpression(), model.getFunctions()).toBnglString() << '\n';
+            out << ") " << formatNetExpression(
+                ast::partialEvaluate(func.getExpression(), model.getFunctions()), model) << '\n';
         }
         // Write derived rate law functions
         for (const auto& rule : model.getReactionRules()) {
             const auto found = derivedRateParams.find(rule.getRuleName());
             if (found != derivedRateParams.end() && found->second.asFunction) {
-                out << "    " << functionIndex++ << " " << found->second.paramName << "() " << compactExpression(found->second.expression) << '\n';
+                out << "    " << functionIndex++ << " " << found->second.paramName << "() "
+                    << compactExpression(formatNetExpression(found->second.exprTree, model)) << '\n';
             }
             if (found != derivedRateParams.end()) {
                 std::vector<std::pair<std::size_t,
@@ -2537,12 +2934,13 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                           });
                 for (const auto &[rxnIdx, functionPair] : localFunctions) {
                     out << "    " << functionIndex++ << " " << functionPair.first
-                        << "() " << functionPair.second.toBnglString() << '\n';
+                        << "() " << formatNetExpression(functionPair.second, model) << '\n';
                 }
             }
             const auto reverseFound = derivedRateParams.find("_reverse__" + rule.getRuleName());
             if (reverseFound != derivedRateParams.end() && reverseFound->second.asFunction) {
-                out << "    " << functionIndex++ << " " << reverseFound->second.paramName << "() " << compactExpression(reverseFound->second.expression) << '\n';
+                out << "    " << functionIndex++ << " " << reverseFound->second.paramName << "() "
+                    << compactExpression(formatNetExpression(reverseFound->second.exprTree, model)) << '\n';
             }
             if (reverseFound != derivedRateParams.end()) {
                 std::vector<std::pair<std::size_t,
@@ -2556,7 +2954,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                           });
                 for (const auto &[rxnIdx, functionPair] : localFunctions) {
                     out << "    " << functionIndex++ << " " << functionPair.first
-                        << "() " << functionPair.second.toBnglString() << '\n';
+                        << "() " << formatNetExpression(functionPair.second, model) << '\n';
                 }
             }
         }
@@ -2586,9 +2984,10 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             out << " delay=" << expression;
             if (reaction.isNonConsuming()) out << " NonConsuming";
         };
+        const bool absoluteFlux = compile::isAbsoluteFluxReaction(model, reaction);
         const bool totalRate =
             hasTotalRateModifier(model, reaction.getOriginRuleName()) ||
-            compile::isAbsoluteFluxReaction(model, reaction);
+            absoluteFlux;
         // Perl BNG2 (Rxn.pm::stringID) sorts reactant/product indices for
         // Ele and Function rate laws, but preserves match order for the
         // saturating builtins (MM/Sat/Hill/Arrhenius).
@@ -2611,7 +3010,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             // Check if rate law string is a simple identifier (no operators)
             const auto& rl = reaction.getRateLaw();
             return std::all_of(rl.begin(), rl.end(),
-                [](char c) { return std::isalnum(c) || c == '_' || c == '.'; });
+                [](unsigned char c) { return std::isalnum(c) != 0 || c == '_' || c == '.'; });
         }();
 
         auto reactants = reaction.getReactants();
@@ -2660,7 +3059,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
       const auto unitFactor = unitConversionFactor(reaction, model, network);
       const auto unitExpr = unitConversionExpression(reaction, model, network);
       double combinedFactor = totalRate ? 1.0 : reaction.getFactor();
-      if (!totalRate && unitFactor.has_value())
+      if (!totalRate && !absoluteFlux && unitFactor.has_value())
         combinedFactor *= *unitFactor;
       if (std::abs(combinedFactor - 1.0) >= 1e-9) {
         out << formatDoubleScientific(combinedFactor) << "*";
@@ -2675,7 +3074,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                     : reaction.getOriginRuleName();
       writeDelayMetadata();
       out << " #" << ruleComment;
-      if (!totalRate && unitExpr.has_value()) {
+      if (!totalRate && !absoluteFlux && unitExpr.has_value()) {
         out << " unit_conversion=" << *unitExpr;
       }
     } else if (derivedFound != derivedRateParams.end() && derivedFound->second.isPerReactionArrhenius) {
@@ -2688,7 +3087,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             const auto unitFactor = unitConversionFactor(reaction, model, network);
             const auto unitExpr = unitConversionExpression(reaction, model, network);
             double combinedFactor = totalRate ? 1.0 : reaction.getFactor();
-            if (!totalRate && unitFactor.has_value()) combinedFactor *= *unitFactor;
+            if (!totalRate && !absoluteFlux && unitFactor.has_value()) combinedFactor *= *unitFactor;
             if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                 out << formatDoubleScientific(combinedFactor) << "*";
             }
@@ -2700,7 +3099,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 : reaction.getOriginRuleName();
             writeDelayMetadata();
             out << " #" << ruleComment;
-            if (!totalRate && unitExpr.has_value()) {
+            if (!totalRate && !absoluteFlux && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
             }
         } else if (derivedFound != derivedRateParams.end() && derivedFound->second.isLocalFunction) {
@@ -2727,7 +3126,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             const auto unitFactor = unitConversionFactor(reaction, model, network);
             const auto unitExpr = unitConversionExpression(reaction, model, network);
             bool wrotePrefix = false;
-            if (!totalRate && unitFactor.has_value()) {
+            if (!totalRate && !absoluteFlux && unitFactor.has_value()) {
                 out << formatDoubleScientific(*unitFactor) << "*";
                 wrotePrefix = true;
             }
@@ -2747,7 +3146,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             } else {
                 out << (reaction.getOriginRuleName().rfind("_", 0) == 0 ? reaction.getOriginRuleName() : "_" + reaction.getOriginRuleName());
             }
-            if (!totalRate && unitExpr.has_value()) {
+            if (!totalRate && !absoluteFlux && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
             }
         } else {
@@ -2755,9 +3154,11 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             // Bimolecular+: divide by remaining compartment sizes
             // Zero-order synthesis: multiply by product compartment size
             // Pre-multiply with stat factor for cleaner output (Perl convention)
+            // TotalRate takes neither symmetry factor nor compartment 1/V in BNG3
+            // (matching OdeIntegrator, NFnext, NFcore, and Atomizer TotalRate fluxes).
             const auto convFactor = unitConversionFactor(reaction, model, network);
             double combinedFactor = totalRate ? 1.0 : reaction.getFactor();
-            if (!totalRate && convFactor.has_value()) combinedFactor *= *convFactor;
+            if (!totalRate && !absoluteFlux && convFactor.has_value()) combinedFactor *= *convFactor;
             if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                 out << formatFactor(combinedFactor) << "*";
             }
@@ -2802,7 +3203,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 const auto canonIt = builtinCanonicalName.find(rateExpr->name());
                 out << (canonIt != builtinCanonicalName.end() ? canonIt->second : rateExpr->name());
                 for (const auto& arg : rateExpr->args()) {
-                    out << " " << arg.toString();
+                    out << " " << formatNetExpression(arg, model);
                 }
             } else if (rateExpr.has_value() &&
                        (rateExpr->kind() == ast::ExpressionKind::Function ||
@@ -2818,12 +3219,19 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                     }
                 }
                 out << canonName;
-                // Write arguments if any (not empty-arg functions like kPlus())
+                // Write arguments with standard function-call syntax `f(a, b)`
+                // (never space-separated, which is only valid for Sat/MM/Hill).
+                // Zero-argument function rate laws stay bare `kPlus` (Perl .net format).
                 if (!rateExpr->args().empty()) {
-                    for (const auto& arg : rateExpr->args()) {
-                        out << " " << arg.toString();
+                    out << "(";
+                    for (std::size_t i = 0; i < rateExpr->args().size(); ++i) {
+                        if (i != 0) out << ", ";
+                        out << formatNetExpression(rateExpr->args()[i], model);
                     }
+                    out << ")";
                 }
+            } else if (rateExpr.has_value()) {
+                out << formatNetExpression(*rateExpr, model);
             } else {
                 out << reaction.getRateLaw();
             }

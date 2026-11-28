@@ -101,9 +101,7 @@ GlobalFunction::GlobalFunction(string name,
 		System *s)
 {
 	if(varRefNames.size()!=varRefTypes.size()) {
-		cerr<<"Trying to create a global function, but your variable reference vectors don't match up in size!"<<endl;
-		cerr<<"Quitting!"<<endl;
-		exit(1);
+		throw std::runtime_error("GlobalFunction '" + name + "': variable reference vectors do not match in size");
 	}
 
 	this->name = name;
@@ -159,10 +157,7 @@ void GlobalFunction::prepareForSimulation(System *s)
 			if(varRefTypes[vr]=="Observable") {
 				Observable *obs = s->getObservableByName(varRefNames[vr]);
 				if(obs==NULL) {
-					cout<<"When creating global function: "<<this->name<<endl<<" could not find the observable: ";
-					cout<<varRefNames[vr]<<" of type "<<varRefTypes[vr]<<endl;
-					cout<<"Quitting."<<endl;
-					exit(1);
+					throw std::runtime_error("GlobalFunction '" + this->name + "': observable '" + varRefNames[vr] + "' not found");
 				}
 				obs->addReferenceToMyself(p);
 			} else if(varRefTypes[vr]=="Time") {
@@ -171,10 +166,7 @@ void GlobalFunction::prepareForSimulation(System *s)
 				// direct AST construction uses setCounterFromTime().
 				continue;
 			} else {
-				cout<<"Uh oh, an unrecognized argType ("<<varRefTypes[vr]<<") for a function! "<<varRefNames[vr]<<endl;
-				cout<<"Try using the type: \"MoleculeObservable\""<<endl;
-				cout<<"Quitting because this will give unpredicatable results, or just crash."<<endl;
-				exit(1);
+				throw std::runtime_error("GlobalFunction '" + this->name + "': unrecognized argType '" + varRefTypes[vr] + "'");
 			}
 		}
 
@@ -207,10 +199,7 @@ void GlobalFunction::prepareForSimulation(System *s)
 	}
 	catch (mu::Parser::exception_type &e)
 	{
-		cout<<"Error preparing function "<<name<<" in class GlobalFunction!!  This is what happened:"<<endl;
-		cout<< "  "<<e.GetMsg() << endl;
-		cout<<"Quitting."<<endl;
-		exit(1);
+		throw std::runtime_error("Error preparing GlobalFunction '" + name + "': " + e.GetMsg());
 	}
 }
 
@@ -298,10 +287,7 @@ void GlobalFunction::setInterpolationMethod(string method) {
 		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 	if (normalized.empty()) normalized = "linear";
 	if (normalized != "linear" && normalized != "step") {
-		cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
-		cerr<<"Unsupported TFUN interpolation method '"<<method<<"'."<<endl;
-		cerr<<"Quitting."<<endl;
-		exit(1);
+		throw std::runtime_error("Unsupported TFUN interpolation method '" + method + "' in GlobalFunction '" + name + "'");
 	}
 	this->interpolationMethod = normalized;
 }
@@ -361,33 +347,21 @@ double GlobalFunction::getCounterValue() {
 	double ctrVal = 0.0;
 	if (ctrType == "Observable") {
 		if (counter == NULL) {
-			cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
-			cerr<<"Observable TFUN counter pointer is null."<<endl;
-			cerr<<"Quitting."<<endl;
-			exit(1);
+			throw std::runtime_error("Observable TFUN counter pointer is null in GlobalFunction '" + name + "'");
 		}
 		ctrVal = (*counter);
 	} else if (ctrType == "System") {
 		if (this->sysPtr == NULL) {
-			cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
-			cerr<<"System TFUN counter pointer is null."<<endl;
-			cerr<<"Quitting."<<endl;
-			exit(1);
+			throw std::runtime_error("System TFUN counter pointer is null in GlobalFunction '" + name + "'");
 		}
 		ctrVal = this->sysPtr->getCurrentTime();
 	} else if (ctrType == "Parameter") {
 		if (this->sysPtr == NULL || this->counterParamName.empty()) {
-			cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
-			cerr<<"Parameter TFUN counter is not configured."<<endl;
-			cerr<<"Quitting."<<endl;
-			exit(1);
+			throw std::runtime_error("Parameter TFUN counter is not configured in GlobalFunction '" + name + "'");
 		}
 		ctrVal = this->sysPtr->getParameter(counterParamName);
 	} else {
-		cerr<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
-		cerr<<"TFUN counter type '"<<ctrType<<"' is not supported."<<endl;
-		cerr<<"Quitting."<<endl;
-		exit(1);
+		throw std::runtime_error("TFUN counter type '" + ctrType + "' is not supported in GlobalFunction '" + name + "'");
 	}
 	return ctrVal;
 }
@@ -397,10 +371,7 @@ void GlobalFunction::fileUpdate() {
 
 void GlobalFunction::fileUpdate(double ctrVal) {
 	if (data.size() < 2 || data[0].size() == 0) {
-		cerr << "Error in function " << this->name << " in class GlobalFunction!!" << endl;
-		cerr << "Data for file update is empty or malformed." << endl;
-		cerr << "Quitting." << endl;
-		exit(1);
+		throw std::runtime_error("Data for TFUN file update is empty or malformed in GlobalFunction '" + this->name + "'");
 	}
 	double y = tfun_interpolate_value(data[0], data[1], interpolationMethod, ctrVal);
 	p->DefineConst(ctrName, y);
@@ -452,12 +423,7 @@ StateCounter::StateCounter(string name, MoleculeType *mt, string stateName) {
 
 	//Make sure this is a state we can count on!
 	if(!mt->isIntegerComponent(stateName)) {
-		//if it is not an integer component state, we must abort because
-		//we can not evaluate the sum of a non integer component
-		cerr<<"Trying to create a stateCounter: '"<<name<<"' on the state: '"<<stateName<<"'\n";
-		cerr<<"of MoleculeType: '"<<mt->getName()<<"', but the state you have selected cannot\n";
-		cerr<<"have integer values, so summations on this state are undefined.  I am quitting."<<endl;
-		exit(1);
+		throw std::runtime_error("StateCounter '" + name + "' requires integer component '" + stateName + "' on '" + mt->getName() + "'");
 	}
 }
 StateCounter::~StateCounter() {

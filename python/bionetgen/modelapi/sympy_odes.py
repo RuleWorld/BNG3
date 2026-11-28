@@ -201,13 +201,28 @@ def extract_odes_from_mexfile(mex_c_path: str) -> SympyOdes:
     local_dict.update({p.name: p for p in param_symbols})
     local_dict.update(
         {
+            "t": t,
+            "time": t,
             "Pow": sp.Pow,
             "Abs": sp.Abs,
             "Max": sp.Max,
             "Min": sp.Min,
             "exp": sp.exp,
             "log": sp.log,
+            "ln": sp.log,
+            "log10": lambda x: sp.log(x, 10),
             "sqrt": sp.sqrt,
+            "sin": sp.sin,
+            "cos": sp.cos,
+            "tan": sp.tan,
+            "asin": sp.asin,
+            "acos": sp.acos,
+            "atan": sp.atan,
+            "sinh": sp.sinh,
+            "cosh": sp.cosh,
+            "tanh": sp.tanh,
+            "floor": sp.floor,
+            "ceil": sp.ceiling,
             "pi": sp.pi,
         }
     )
@@ -286,13 +301,28 @@ def _extract_odes_from_cvode_mex(text: str, mex_c_path: str) -> SympyOdes:
     local_dict.update({r.name: r for r in rate_syms})
     local_dict.update(
         {
+            "t": t,
+            "time": t,
             "Pow": sp.Pow,
             "Abs": sp.Abs,
             "Max": sp.Max,
             "Min": sp.Min,
             "exp": sp.exp,
             "log": sp.log,
+            "ln": sp.log,
+            "log10": lambda x: sp.log(x, 10),
             "sqrt": sp.sqrt,
+            "sin": sp.sin,
+            "cos": sp.cos,
+            "tan": sp.tan,
+            "asin": sp.asin,
+            "acos": sp.acos,
+            "atan": sp.atan,
+            "sinh": sp.sinh,
+            "cosh": sp.cosh,
+            "tanh": sp.tanh,
+            "floor": sp.floor,
+            "ceil": sp.ceiling,
             "pi": sp.pi,
         }
     )
@@ -407,13 +437,28 @@ def _extract_odes_from_cpp_mex(text: str, mex_c_path: str) -> SympyOdes:
     local_dict.update({r.name: r for r in rate_syms})
     local_dict.update(
         {
+            "t": t,
+            "time": t,
             "Pow": sp.Pow,
             "Abs": sp.Abs,
             "Max": sp.Max,
             "Min": sp.Min,
             "exp": sp.exp,
             "log": sp.log,
+            "ln": sp.log,
+            "log10": lambda x: sp.log(x, 10),
             "sqrt": sp.sqrt,
+            "sin": sp.sin,
+            "cos": sp.cos,
+            "tan": sp.tan,
+            "asin": sp.asin,
+            "acos": sp.acos,
+            "atan": sp.atan,
+            "sinh": sp.sinh,
+            "cosh": sp.cosh,
+            "tanh": sp.tanh,
+            "floor": sp.floor,
+            "ceil": sp.ceiling,
             "pi": sp.pi,
         }
     )

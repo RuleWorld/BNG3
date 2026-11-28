@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
+import math
 from typing import Optional, Sequence
 
 import numpy as np
@@ -12,6 +13,9 @@ from bionetgen.model import BioNetGenModel
 from bionetgen.result import SimResult
 from bionetgen.scan import (
     _coerce_model,
+    _initialize_scan_worker,
+    _scan_runtime_identity,
+    _serialize_model_for_worker,
     _simulation_kwargs,
     _simulate_serial,
     _validate_parameter,
@@ -46,7 +50,13 @@ class SensitivityResult:
         column = self.observable_names.index(observable)
         values = self.matrix[:, column]
         pairs = list(zip(self.parameter_names, values.tolist()))
-        return sorted(pairs, key=lambda item: abs(item[1]), reverse=True)
+        return sorted(
+            pairs,
+            key=lambda item: (
+                math.isnan(item[1]),
+                -abs(item[1]) if not math.isnan(item[1]) else 0.0,
+            ),
+        )
 
     def to_dataframe(self):
         import pandas as pd
@@ -143,20 +153,12 @@ def sensitivity_analysis(
         backend=backend,
     )
 
-    if parallel and parallel > 1:
-        source_path = model.source_path
-        if not source_path:
-            raise ValueError(
-                "parallel sensitivity analysis requires a model loaded from a BNGL file"
-            )
-    else:
-        source_path = None
-
     baseline = model.simulate(**sim_kwargs)
     baseline_values = _final_values(baseline, observable_names)
     matrix = np.zeros((len(parameter_names), len(observable_names)), dtype=float)
 
     if parallel and parallel > 1:
+        model_spec = _serialize_model_for_worker(model)
         payloads = []
         for parameter_name in parameter_names:
             nominal = model.get_parameter(parameter_name).value
@@ -166,10 +168,14 @@ def sensitivity_analysis(
                 )
             plus_value = float(nominal) * (1.0 + delta)
             minus_value = float(nominal) * (1.0 - delta)
-            payloads.append((source_path, {parameter_name: plus_value}, sim_kwargs))
-            payloads.append((source_path, {parameter_name: minus_value}, sim_kwargs))
+            payloads.append((model_spec, {parameter_name: plus_value}, sim_kwargs))
+            payloads.append((model_spec, {parameter_name: minus_value}, sim_kwargs))
 
-        with ProcessPoolExecutor(max_workers=parallel) as executor:
+        with ProcessPoolExecutor(
+            max_workers=parallel,
+            initializer=_initialize_scan_worker,
+            initargs=(_scan_runtime_identity(),),
+        ) as executor:
             perturbed_results = list(executor.map(_worker_sensitivity_single, payloads))
 
         for parameter_index, parameter_name in enumerate(parameter_names):

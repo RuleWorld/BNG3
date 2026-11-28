@@ -116,9 +116,54 @@ def _simulation_kwargs(
     return kwargs
 
 
+def _serialize_model_for_worker(model: BioNetGenModel) -> dict[str, Any]:
+    """Serialize the live in-memory model state for parallel worker processes."""
+    if getattr(model, "_native_bngir_v02_only", False):
+        return {
+            "kind": "bngir_v02",
+            "document": model.to_bngir(version="0.2"),
+            "source_path": model.source_path,
+            "source_metadata": getattr(model, "_source_metadata", ""),
+            "algebraic_rules": list(getattr(model, "_algebraic_rules", [])),
+        }
+    return {
+        "kind": "bngl",
+        "bngl": model.to_bngl(),
+        "source_path": model.source_path,
+        "source_metadata": getattr(model, "_source_metadata", ""),
+        "algebraic_rules": list(getattr(model, "_algebraic_rules", [])),
+    }
+
+
+def _load_model_in_worker(model_spec) -> BioNetGenModel:
+    if isinstance(model_spec, Mapping):
+        kind = model_spec.get("kind")
+        if kind == "bngir_v02":
+            from bionetgen.bngir import from_bngir
+
+            return from_bngir(model_spec["document"], native=True)
+        if kind == "bngl":
+            from bionetgen.model import _cpp
+
+            source_path = model_spec.get("source_path") or ""
+            try:
+                cpp_model = _cpp.parse_string(
+                    model_spec["bngl"], source_path=source_path
+                )
+            except TypeError:
+                cpp_model = _cpp.parse_string(model_spec["bngl"])
+            return BioNetGenModel(
+                cpp_model,
+                source_path=model_spec.get("source_path"),
+                source_metadata=model_spec.get("source_metadata") or "",
+                algebraic_rules=model_spec.get("algebraic_rules") or [],
+            )
+    return load(model_spec)
+
+
 def _worker_scan_single(payload):
-    source_path, updates, sim_kwargs = payload
-    model = load(source_path)
+    model_spec, updates, sim_kwargs = payload
+    model = _load_model_in_worker(model_spec)
     for name, value in updates.items():
         model.set_parameter(name, float(value))
     model._network = None
@@ -222,18 +267,30 @@ def _simulate_serial(
     model: BioNetGenModel, updates: Mapping[str, float], sim_kwargs: dict[str, Any]
 ) -> SimResult:
     original_network = getattr(model, "_network", None)
+    original_overrides = dict(getattr(model, "_parameter_overrides", {}))
+    cpp_model = getattr(model, "_model", None)
+    snapshot = (
+        cpp_model.snapshot_parameters()
+        if cpp_model is not None and hasattr(cpp_model, "snapshot_parameters")
+        else None
+    )
     original_values = {}
-    for name in updates:
-        original_values[name] = model.get_parameter(name).value
+    if snapshot is None:
+        for name in updates:
+            original_values[name] = model.get_parameter(name).value
     try:
         for name, value in updates.items():
             model.set_parameter(name, float(value))
         model._network = None
         return model.simulate(**sim_kwargs)
     finally:
-        for name, original_value in original_values.items():
-            if original_value is not None:
-                model.set_parameter(name, float(original_value))
+        if snapshot is not None:
+            cpp_model.restore_parameters(snapshot)
+        else:
+            for name, original_value in original_values.items():
+                if original_value is not None:
+                    model.set_parameter(name, float(original_value))
+        model._parameter_overrides = original_overrides
         model._network = original_network
 
 
@@ -483,12 +540,9 @@ def parameter_scan(
     )
 
     if parallel and parallel > 1:
-        source_path = model.source_path
-        if not source_path:
-            raise ValueError("parallel scans require a model loaded from a BNGL file")
+        model_spec = _serialize_model_for_worker(model)
         payloads = [
-            (source_path, {parameter: float(value)}, sim_kwargs)
-            for value in scan_values
+            (model_spec, {parameter: float(value)}, sim_kwargs) for value in scan_values
         ]
         with ProcessPoolExecutor(
             max_workers=parallel,
@@ -578,12 +632,10 @@ def parameter_scan_2d(
     )
 
     if parallel and parallel > 1:
-        source_path = model.source_path
-        if not source_path:
-            raise ValueError("parallel scans require a model loaded from a BNGL file")
+        model_spec = _serialize_model_for_worker(model)
         payloads = [
             (
-                source_path,
+                model_spec,
                 {parameter1: float(value1), parameter2: float(value2)},
                 sim_kwargs,
             )

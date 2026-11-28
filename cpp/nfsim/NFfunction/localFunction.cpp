@@ -102,13 +102,11 @@ LocalFunction::LocalFunction(System *s,
 	//Some checks to make sure we are doing things ok
 	if(args.size()>1) {
 		cerr<<"For efficiency, local functions currently support a maximum of 1 argument."<<endl;
-		cerr<<"Quitting now."<<endl;
-		exit(1);
+		throw std::runtime_error("LocalFunction '" + name + "' supports at most 1 argument");
 	}
 	if(args.size()<1) {
 		cerr<<"When creating a local Function, ERROR!! there were no args, so it is a global function."<<endl;
-		cerr<<"Quitting now."<<endl;
-		exit(1);
+		throw std::runtime_error("LocalFunction '" + name + "' requires 1 argument");
 	}
 
 	//Do the basics first...
@@ -288,8 +286,7 @@ void LocalFunction::prepareForSimulation(System *s) {
 	} catch (mu::Parser::exception_type &e) {
 		cout<<"Error creating local function "<<name<<" in class LocalFunction!!  This is what happened:"<<endl;
 		cout<< "  "<<e.GetMsg() << endl;
-		cout<<"Quitting."<<endl;
-		exit(1);
+		throw std::runtime_error("Error creating LocalFunction '" + name + "': " + e.GetMsg());
 	}
 }
 
@@ -309,16 +306,19 @@ double LocalFunction::evaluateWithoutUpdating(Molecule *m, int scope)
 		for (unsigned int i = 0; i < n_varRefs; ++i) {
 			if (varLocalObservables[i] != 0) varLocalObservables[i]->clear();
 		}
-		for (Molecule *speciesMolecule : speciesMolecules) {
-			for (unsigned int i = 0; i < n_varRefs; ++i) {
-				if (varLocalObservables[i] == 0) continue;
-				if (varLocalObservables[i]->getType() != Observable::MOLECULES) {
-					cerr << "Error in LocalFunction::evaluateOn()! cannot handle Species observable when" << endl;
-					cerr << "evaluating on a single molecule." << endl;
-					exit(1);
+		for (unsigned int i = 0; i < n_varRefs; ++i) {
+			if (varLocalObservables[i] == 0) continue;
+			if (varLocalObservables[i]->getType() == Observable::MOLECULES) {
+				for (Molecule *speciesMolecule : speciesMolecules) {
+					varLocalObservables[i]->straightAdd(
+						varLocalObservables[i]->isObservable(speciesMolecule));
 				}
+			} else if (varLocalObservables[i]->getType() == Observable::SPECIES) {
+				auto *specObs = static_cast<SpeciesObservable *>(varLocalObservables[i]);
 				varLocalObservables[i]->straightAdd(
-					varLocalObservables[i]->isObservable(speciesMolecule));
+					specObs->isObservableMembers(speciesMolecules));
+			} else {
+				throw std::runtime_error("Unsupported observable type in LocalFunction::evaluateWithoutUpdating");
 			}
 		}
 		double value = FuncFactory::Eval(p);
@@ -326,23 +326,31 @@ double LocalFunction::evaluateWithoutUpdating(Molecule *m, int scope)
 	}
 
 	if (scope == LocalFunction::MOLECULE) {
+		std::list<Molecule *> speciesMolecules;
+		bool traversed = false;
 		for (unsigned int i = 0; i < n_varRefs; ++i) {
 			if (varLocalObservables[i] == 0) continue;
-			if (varLocalObservables[i]->getType() != Observable::MOLECULES) {
-				cerr << "Error in LocalFunction::evaluateOn()! cannot handle Species observable when" << endl;
-				cerr << "evaluating on a single molecule." << endl;
-				exit(1);
-			}
 			varLocalObservables[i]->clear();
-			const int matches = varLocalObservables[i]->isObservable(m);
-			for (int k = 0; k < matches; ++k) varLocalObservables[i]->straightAdd();
+			if (varLocalObservables[i]->getType() == Observable::MOLECULES) {
+				const int matches = varLocalObservables[i]->isObservable(m);
+				varLocalObservables[i]->straightAdd(matches);
+			} else if (varLocalObservables[i]->getType() == Observable::SPECIES) {
+				if (!traversed) {
+					m->traverseBondedNeighborhood(speciesMolecules, ReactionClass::NO_LIMIT);
+					traversed = true;
+				}
+				auto *specObs = static_cast<SpeciesObservable *>(varLocalObservables[i]);
+				varLocalObservables[i]->straightAdd(
+					specObs->isObservableMembers(speciesMolecules));
+			} else {
+				throw std::runtime_error("Unsupported observable type in LocalFunction::evaluateWithoutUpdating");
+			}
 		}
 		double value = FuncFactory::Eval(p);
 		return value;
 	}
 
-	cerr << "Internal error in LocalFunction::evaluateWithoutUpdating()! unknown scope." << endl;
-	exit(1);
+	throw std::runtime_error("Internal error in LocalFunction::evaluateWithoutUpdating(): unknown scope");
 }
 
 
@@ -374,19 +382,23 @@ double LocalFunction::getValue(Molecule *m, int scope)
 		//cout<<"Molecule scope."<<endl;
 
 		//For each of our variables
-		int matches = 0;
+		std::list<Molecule *> speciesMolecules;
+		bool traversed = false;
 		for(unsigned int i=0; i<n_varRefs; i++) {
 			if(varLocalObservables[i]!=0) {   //If it is local
+				varLocalObservables[i]->clear();  //clear it first
 				if(varLocalObservables[i]->getType()==Observable::MOLECULES) {
-					varLocalObservables[i]->clear();  //clear it first
-					matches = varLocalObservables[i]->isObservable(m);
-					for(int k=0; k<matches; k++) {
-						varLocalObservables[i]->straightAdd();
+					const int matches = varLocalObservables[i]->isObservable(m);
+					varLocalObservables[i]->straightAdd(matches);
+				} else if(varLocalObservables[i]->getType()==Observable::SPECIES) {
+					if (!traversed) {
+						m->traverseBondedNeighborhood(speciesMolecules, ReactionClass::NO_LIMIT);
+						traversed = true;
 					}
+					auto *specObs = static_cast<SpeciesObservable *>(varLocalObservables[i]);
+					varLocalObservables[i]->straightAdd(specObs->isObservableMembers(speciesMolecules));
 				} else {
-					cerr<<"Error in LocalFunction::evaluateOn()! cannot handle Species observable when"<<endl;
-					cerr<<"evaluating on a single molecule."<<endl;
-					exit(1);
+					throw std::runtime_error("Unsupported observable type in LocalFunction::getValue");
 				}
 			}
 		}
@@ -399,9 +411,7 @@ double LocalFunction::getValue(Molecule *m, int scope)
 
 
 	} else {
-		cout<<"Internal error in LocalFunction::evaluateOn()! trying to evaluate a function with unknown scope."<<endl;
-		exit(1);
-
+		throw std::runtime_error("Internal error in LocalFunction::getValue(): unknown scope");
 	}
 
 	cout<<"Internal error in LocalFunction::evaluateOn()! Trying to evaluate a function with unknown scope."<<endl;
@@ -447,27 +457,19 @@ double LocalFunction::evaluateOn(Molecule *m, int scope) {
 		}
 
 		//recompute the observables
-		int matches = 0;
-		for(molIter=molList.begin(); molIter!=molList.end(); molIter++) {
-
-			//Loop over each observable
-			for(unsigned int i=0; i<n_varRefs; i++) {
-				if(varLocalObservables[i]!=0) {   //If it is local
-
-					//If the observable is of type MOLECULES
-					if(varLocalObservables[i]->getType()==Observable::MOLECULES) {
-						matches = varLocalObservables[i]->isObservable((*molIter));
-						varLocalObservables[i]->straightAdd(matches);
-					}
-					//If the observables is of a different type
-					else {
-						cerr<<"Error in LocalFunction::evaluateOn()! cannot handle Species observable when"<<endl;
-						cerr<<"evaluating on a single molecule."<<endl;
-						exit(1);
-					}
+		for(unsigned int i=0; i<n_varRefs; i++) {
+			if(varLocalObservables[i]==0) continue;
+			if(varLocalObservables[i]->getType()==Observable::MOLECULES) {
+				for(molIter=molList.begin(); molIter!=molList.end(); molIter++) {
+					const int matches = varLocalObservables[i]->isObservable((*molIter));
+					varLocalObservables[i]->straightAdd(matches);
 				}
+			} else if(varLocalObservables[i]->getType()==Observable::SPECIES) {
+				auto *specObs = static_cast<SpeciesObservable *>(varLocalObservables[i]);
+				varLocalObservables[i]->straightAdd(specObs->isObservableMembers(molList));
+			} else {
+				throw std::runtime_error("Unsupported observable type in LocalFunction::evaluateOn");
 			}
-
 		}
 
 		//evaluate the function
@@ -492,19 +494,23 @@ double LocalFunction::evaluateOn(Molecule *m, int scope) {
 		//cout<<"evaluating on Molecule scope."<<endl;
 
 
-		int matches = 0;
+		std::list<Molecule *> speciesMolecules;
+		bool traversed = false;
 		for(unsigned int i=0; i<n_varRefs; i++) {
 			if(varLocalObservables[i]!=0) {   //If it is local
+				varLocalObservables[i]->clear();  //clear it first
 				if(varLocalObservables[i]->getType()==Observable::MOLECULES) {
-					varLocalObservables[i]->clear();  //clear it first
-					matches = varLocalObservables[i]->isObservable(m);
-					for(int k=0; k<matches; k++) {
-						varLocalObservables[i]->straightAdd();
+					const int matches = varLocalObservables[i]->isObservable(m);
+					varLocalObservables[i]->straightAdd(matches);
+				} else if(varLocalObservables[i]->getType()==Observable::SPECIES) {
+					if (!traversed) {
+						m->traverseBondedNeighborhood(speciesMolecules, ReactionClass::NO_LIMIT);
+						traversed = true;
 					}
+					auto *specObs = static_cast<SpeciesObservable *>(varLocalObservables[i]);
+					varLocalObservables[i]->straightAdd(specObs->isObservableMembers(speciesMolecules));
 				} else {
-					cerr<<"Error in LocalFunction::evaluateOn()! cannot handle Species observable when"<<endl;
-					cerr<<"evaluating on a single molecule."<<endl;
-					exit(1);
+					throw std::runtime_error("Unsupported observable type in LocalFunction::evaluateOn");
 				}
 			}
 		}
@@ -528,9 +534,7 @@ double LocalFunction::evaluateOn(Molecule *m, int scope) {
 
 
 	} else {
-		cout<<"Internal error in LocalFunction::evaluateOn()! trying to evaluate a function with unknown scope."<<endl;
-		exit(1);
-
+		throw std::runtime_error("Internal error in LocalFunction::evaluateOn(): unknown scope");
 	}
 
 	return -1;
@@ -551,19 +555,19 @@ double LocalFunction::evaluateOn(Molecule *m, const list <Molecule *> &members) 
 		}
 	}
 
-	int matches = 0;
-	for(list<Molecule *>::const_iterator memberIter=members.begin();
-			memberIter!=members.end(); ++memberIter) {
-		for(unsigned int i=0; i<n_varRefs; i++) {
-			if(varLocalObservables[i]==0) continue;
-			if(varLocalObservables[i]->getType()==Observable::MOLECULES) {
-				matches = varLocalObservables[i]->isObservable(*memberIter);
+	for(unsigned int i=0; i<n_varRefs; i++) {
+		if(varLocalObservables[i]==0) continue;
+		if(varLocalObservables[i]->getType()==Observable::MOLECULES) {
+			for(list<Molecule *>::const_iterator memberIter=members.begin();
+					memberIter!=members.end(); ++memberIter) {
+				const int matches = varLocalObservables[i]->isObservable(*memberIter);
 				varLocalObservables[i]->straightAdd(matches);
-			} else {
-				cerr<<"Error in LocalFunction::evaluateOn()! cannot handle this observable type when"<<endl;
-				cerr<<"evaluating on a connected component."<<endl;
-				exit(1);
 			}
+		} else if(varLocalObservables[i]->getType()==Observable::SPECIES) {
+			auto *specObs = static_cast<SpeciesObservable *>(varLocalObservables[i]);
+			varLocalObservables[i]->straightAdd(specObs->isObservableMembers(members));
+		} else {
+			throw std::runtime_error("Unsupported observable type in LocalFunction::evaluateOn");
 		}
 	}
 
@@ -610,25 +614,19 @@ double LocalFunction::evaluateOn(Complex *c) {
 	}
 
 	//recompute the observables
-	int matches = 0;
-	for ( molIter = (c->complexMembers).begin(); molIter!=(c->complexMembers).end(); ++molIter) {
-		//Loop over each observable
-		for(unsigned int i=0; i<n_varRefs; i++) {
-			if(varLocalObservables[i]!=0) {
-				//If the observable is of type MOLECULES
-				if(varLocalObservables[i]->getType()==Observable::MOLECULES) {
-					matches = varLocalObservables[i]->isObservable((*molIter));
-					varLocalObservables[i]->straightAdd(matches);
-				}
-				//If the observables is of a different type
-				else {
-					cerr<<"Error in LocalFunction::evaluateOn()! cannot handle Species observable when"<<endl;
-					cerr<<"evaluating on a single molecule."<<endl;
-					exit(1);
-				}
+	for(unsigned int i=0; i<n_varRefs; i++) {
+		if(varLocalObservables[i]==0) continue;
+		if(varLocalObservables[i]->getType()==Observable::MOLECULES) {
+			for ( molIter = (c->complexMembers).begin(); molIter!=(c->complexMembers).end(); ++molIter) {
+				const int matches = varLocalObservables[i]->isObservable((*molIter));
+				varLocalObservables[i]->straightAdd(matches);
 			}
+		} else if(varLocalObservables[i]->getType()==Observable::SPECIES) {
+			auto *specObs = static_cast<SpeciesObservable *>(varLocalObservables[i]);
+			varLocalObservables[i]->straightAdd(specObs->isObservableMembers(c->complexMembers));
+		} else {
+			throw std::runtime_error("Unsupported observable type in LocalFunction::evaluateOn(Complex*)");
 		}
-
 	}
 
 	//evaluate the function
@@ -711,8 +709,7 @@ void LocalFunction::setInterpolationMethod(string method)
 	if (normalized != "linear" && normalized != "step") {
 		cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
 		cerr << "Unsupported TFUN interpolation method '" << method << "'." << endl;
-		cerr << "Quitting." << endl;
-		exit(1);
+		throw std::runtime_error("Unsupported TFUN interpolation method '" + method + "' in LocalFunction '" + name + "'");
 	}
 	this->interpolationMethod = normalized;
 }
@@ -735,8 +732,7 @@ void LocalFunction::setCounterFromObservable(Observable *observable)
 	if (observable == NULL) {
 		cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
 		cerr << "Observable TFUN counter is null." << endl;
-		cerr << "Quitting." << endl;
-		exit(1);
+		throw std::runtime_error("Observable TFUN counter is null in LocalFunction '" + name + "'");
 	}
 	this->ctrType = "Observable";
 	this->counterObservable = observable;
@@ -787,33 +783,21 @@ double LocalFunction::getCounterValue()
 	double ctrVal = 0.0;
 	if (ctrType == "System") {
 		if (this->sysPtr == NULL) {
-			cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
-			cerr << "System TFUN counter pointer is null." << endl;
-			cerr << "Quitting." << endl;
-			exit(1);
+			throw std::runtime_error("System TFUN counter pointer is null in LocalFunction '" + name + "'");
 		}
 		ctrVal = this->sysPtr->getCurrentTime();
 	} else if (ctrType == "Observable") {
 		if (this->counterObservable == NULL) {
-			cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
-			cerr << "Observable TFUN counter is null." << endl;
-			cerr << "Quitting." << endl;
-			exit(1);
+			throw std::runtime_error("Observable TFUN counter is null in LocalFunction '" + name + "'");
 		}
 		ctrVal = this->counterObservable->getCount();
 	} else if (ctrType == "Parameter") {
 		if (this->sysPtr == NULL || this->counterParamName.empty()) {
-			cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
-			cerr << "Parameter TFUN counter is not configured." << endl;
-			cerr << "Quitting." << endl;
-			exit(1);
+			throw std::runtime_error("Parameter TFUN counter is not configured in LocalFunction '" + name + "'");
 		}
 		ctrVal = this->sysPtr->getParameter(counterParamName);
 	} else {
-		cerr << "Error preparing function " << name << " in class LocalFunction!!" << endl;
-		cerr << "TFUN counter type '" << ctrType << "' is not supported." << endl;
-		cerr << "Quitting." << endl;
-		exit(1);
+		throw std::runtime_error("TFUN counter type '" + ctrType + "' is not supported in LocalFunction '" + name + "'");
 	}
 	return ctrVal;
 }
@@ -848,10 +832,7 @@ void LocalFunction::fileUpdate()
 void LocalFunction::fileUpdate(double ctrVal)
 {
 	if (data.size() < 2 || data[0].empty()) {
-		cerr << "Error in function " << this->name << " in class LocalFunction!!" << endl;
-		cerr << "Data for file update is empty or malformed." << endl;
-		cerr << "Quitting." << endl;
-		exit(1);
+		throw std::runtime_error("Data for TFUN file update is empty or malformed in LocalFunction '" + this->name + "'");
 	}
 	double y = tfun_interpolate_value(data[0], data[1], interpolationMethod, ctrVal);
 	p->DefineConst(ctrName, y);

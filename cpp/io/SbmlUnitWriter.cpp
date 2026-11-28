@@ -33,6 +33,12 @@ std::string validId(const std::string& text) {
     for (const char character : text) {
         if (std::isalnum(static_cast<unsigned char>(character)) || character == '_') {
             result += character;
+        } else if (character == '/') {
+            result += "_per_";
+        } else if (character == '*') {
+            result += "_mul_";
+        } else if (character == '+') {
+            result += "_pos_";
         } else {
             result += '_';
         }
@@ -106,7 +112,7 @@ std::string unitDefinition(const std::string& id, const units::Unit& unit) {
         } else {
             xml << std::setprecision(17)
                 << "          <unit kind=\"dimensionless\" exponent=\"1\" multiplier=\""
-                << relativeFactor << "\"/>\n";
+                << relativeFactor << "\" scale=\"0\"/>\n";
         }
     } else {
         // A multiplier/scale attached to a base term is raised to that term's
@@ -216,9 +222,22 @@ std::string level2ReservedUnitDefinition(
             "' with a non-positive or non-finite unit factor");
     }
 
+    // SBML evaluates <unit kind="k" exponent="e" multiplier="m" scale="s"/> as
+    // (m * 10^s * k)^e = m^e * 10^(s*e) * k^e. Take the e-th root of
+    // relativeFactor so volume (e=3, e.g. cm^3 -> scale=-2) and area (e=2,
+    // e.g. um^2 -> scale=-6) preserve their exact physical scaling.
+    const double perBaseFactor = (exponent != 0 && exponent != 1)
+        ? std::pow(relativeFactor, 1.0 / static_cast<double>(exponent))
+        : relativeFactor;
+    if (!(perBaseFactor > 0.0) || !std::isfinite(perBaseFactor)) {
+        throw std::invalid_argument(
+            "SBML Level 2 cannot represent reserved UnitDefinition id '" + id +
+            "' with a non-positive or non-finite per-base unit factor");
+    }
+
     int scale = 0;
-    const bool useScale = isPowerOfTen(relativeFactor, scale);
-    const double multiplier = useScale ? 1.0 : relativeFactor;
+    const bool useScale = isPowerOfTen(perBaseFactor, scale);
+    const double multiplier = useScale ? 1.0 : perBaseFactor;
 
     std::ostringstream xml;
     xml << "      <unitDefinition id=\"" << escapeXml(id) << "\">\n"

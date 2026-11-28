@@ -126,6 +126,64 @@ def _model_of(model: Any) -> Any:
     return native
 
 
+def _compartment_volume_expressions(native: Any) -> dict[str, str]:
+    """Recover non-literal symbolic compartment volume expressions from native BNGL."""
+    compartments = list(getattr(native, "compartments", []))
+    if not compartments:
+        return {}
+    try:
+        from .model import _cpp
+
+        bngl = _cpp.io.write_bngl_string(native)
+    except Exception:
+        return {}
+    by_name = {c.name: c for c in compartments}
+    result: dict[str, str] = {}
+    in_block = False
+    for raw_line in bngl.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        low = stripped.lower()
+        if low == "begin compartments":
+            in_block = True
+            continue
+        if low == "end compartments":
+            break
+        if not in_block:
+            continue
+        parts = stripped.split(None, 2)
+        if len(parts) < 3:
+            continue
+        name, _, rest = parts
+        comp = by_name.get(name)
+        if comp is None:
+            continue
+        if comp.unit:
+            unit_suffix = f"[{comp.unit}]"
+            if rest.endswith(unit_suffix):
+                rest = rest[: -len(unit_suffix)].rstrip()
+        if comp.parent:
+            parent_suffix = f" {comp.parent}"
+            if rest.endswith(parent_suffix):
+                rest = rest[: -len(parent_suffix)].rstrip()
+        vol_expr = rest.strip()
+        if vol_expr and not re.fullmatch(
+            r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", vol_expr
+        ):
+            result[name] = vol_expr
+    return result
+
+
+def _v01_has_exact_arrhenius_signature(model: Any) -> tuple[tuple[bool, ...], ...]:
+    """Per-rule exact-case Arrhenius signature to distinguish Arrhenius vs arrhenius."""
+    native = _model_of(model)
+    sig = []
+    for rule in getattr(native, "reaction_rules", []):
+        sig.append(tuple(_parse_arrhenius_args(str(r)) is not None for r in rule.rates))
+    return tuple(sig)
+
+
 def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
     native = _model_of(model)
 
@@ -184,6 +242,13 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         from .model import _cpp
 
         snapshot_rules = _cpp._compiled_snapshot(native).get("rules", [])
+    except RuntimeError as exc:
+        msg = str(exc)
+        if "bng3_events" in msg or "native event" in msg.lower():
+            raise RuntimeError(
+                f"BNGIR {VERSION} does not preserve native events: {msg}"
+            ) from exc
+        snapshot_rules = []
     except Exception:
         snapshot_rules = []
 
@@ -198,10 +263,10 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
             if index < len(snapshot_patterns) and not text.startswith("@"):
                 compartment = snapshot_patterns[index].get("compartment", "")
                 if compartment and f"@{compartment}" not in text:
-                    # The suffix spelling keeps the compartment on the molecule,
-                    # which BNGL's network generator honours for transport
-                    # rules; the prefix spelling is silently dropped.
-                    text = f"{text}@{compartment}"
+                    if snapshot_patterns[index].get("compartment_prefix", True):
+                        text = f"@{compartment}:{text}"
+                    else:
+                        text = f"{text}@{compartment}"
             rendered.append(text)
         return rendered
 
@@ -223,6 +288,7 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
                 item["non_consuming"] = True
         rules.append(item)
 
+    comp_vol_exprs = _compartment_volume_expressions(native)
     compartments = []
     for compartment in native.compartments:
         item = {
@@ -231,6 +297,9 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
             "dimension": int(compartment.dimension),
             "parent": compartment.parent,
         }
+        vol_expr = comp_vol_exprs.get(compartment.name)
+        if vol_expr:
+            item["volume_expression"] = vol_expr
         if compartment.unit:
             item["unit"] = compartment.unit
         compartments.append(item)
@@ -456,6 +525,24 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
                 rule["driving_work"] = driving_work
         if getattr(native_rule, "is_non_consuming", False):
             rule["non_consuming"] = True
+    if getattr(native, "compartments", None):
+        comp_vol_exprs = _compartment_volume_expressions(native)
+        preserved = getattr(model, "_compartment_volume_expressions", None)
+        if isinstance(preserved, Mapping):
+            for k, v in preserved.items():
+                comp_vol_exprs.setdefault(str(k), str(v))
+        if comp_vol_exprs:
+            updated_comps = []
+            for comp in model_snapshot.get("compartments", []):
+                if isinstance(comp, Mapping):
+                    comp_dict = dict(comp)
+                    vol_expr = comp_vol_exprs.get(str(comp_dict.get("name", "")))
+                    if vol_expr:
+                        comp_dict["volume_expression"] = vol_expr
+                    updated_comps.append(comp_dict)
+                else:
+                    updated_comps.append(comp)
+            model_snapshot["compartments"] = updated_comps
     result = {
         "format": FORMAT,
         "version": STRUCTURAL_VERSION,
@@ -490,6 +577,8 @@ def to_bngir(
             "native BNGIR v0.2 imports cannot be exported as v0.1 because their "
             "source pattern text is intentionally unavailable"
         )
+    if getattr(model, "_algebraic_rules", None):
+        raise ValueError(f"BNGIR {version} does not preserve SBML algebraic rules")
     effective_provenance: dict[str, Any] | None = (
         dict(provenance) if provenance is not None else None
     )
@@ -576,10 +665,80 @@ def _quote_action_value(value: Any) -> str:
     return f'"{escaped}"'
 
 
+_UNQUOTED_EXPR_FUNCS = frozenset(
+    {
+        "abs",
+        "acos",
+        "asin",
+        "atan",
+        "ceil",
+        "cos",
+        "exp",
+        "floor",
+        "if",
+        "ln",
+        "log",
+        "log10",
+        "log2",
+        "max",
+        "min",
+        "rint",
+        "sin",
+        "sqrt",
+        "tan",
+    }
+)
+
+
+def _is_unquoted_bngl_expr(raw: str) -> bool:
+    """Return True when raw is a syntactically valid unquoted BNGL arithmetic expression."""
+    if not raw or not any(ch in raw for ch in "+-*/^()"):
+        return False
+    try:
+        tree = ast.parse(raw.replace("^", "**"), mode="eval")
+    except SyntaxError:
+        return False
+    allowed_nodes = (
+        ast.Expression,
+        ast.BinOp,
+        ast.UnaryOp,
+        ast.Constant,
+        ast.Name,
+        ast.Load,
+        ast.Add,
+        ast.Sub,
+        ast.Mult,
+        ast.Div,
+        ast.Pow,
+        ast.UAdd,
+        ast.USub,
+        ast.Call,
+    )
+    for node in ast.walk(tree):
+        if not isinstance(node, allowed_nodes):
+            return False
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
+                return False
+        elif isinstance(node, ast.Call):
+            if (
+                not isinstance(node.func, ast.Name)
+                or node.func.id.lower() not in _UNQUOTED_EXPR_FUNCS
+                or node.keywords
+                or not node.args
+            ):
+                return False
+    return True
+
+
 def _action_value(value: Any) -> str:
-    raw = str(value)
-    if (len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"') or re.fullmatch(
-        r"[A-Za-z0-9_+./:-]+", raw
+    raw = str(value).strip()
+    if (
+        (len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"')
+        or (len(raw) >= 2 and raw[0] == "{" and raw[-1] == "}")
+        or (len(raw) >= 2 and raw[0] == "[" and raw[-1] == "]")
+        or re.fullmatch(r"[A-Za-z0-9_+./:-]+", raw)
+        or _is_unquoted_bngl_expr(raw)
     ):
         return raw
     return _quote_action_value(raw)
@@ -590,14 +749,29 @@ def _quote_string(value: Any) -> str:
     return f'"{escaped}"'
 
 
+_POSITIONAL_TWO_ARG_ACTIONS = {
+    "setconcentration": "setConcentration",
+    "addconcentration": "addConcentration",
+    "setparameter": "setParameter",
+}
+
+
 def _action_lines(action: Mapping[str, Any]) -> str:
     arguments = action.get("arguments", {})
+    name = str(action["name"])
     if not arguments:
-        return f"  {action['name']}()"
+        return f"  {name}()"
+    canonical = _POSITIONAL_TWO_ARG_ACTIONS.get(name.lower())
+    if canonical is not None and set(arguments.keys()) == {"target", "value"}:
+        target_raw = str(arguments["target"])
+        if len(target_raw) >= 2 and target_raw[0] == '"' and target_raw[-1] == '"':
+            target_raw = target_raw[1:-1]
+        value_raw = str(arguments["value"])
+        return f"  {canonical}({_quote_string(target_raw)}, {value_raw})"
     pairs = ", ".join(
         f"{key}=>{_action_value(value)}" for key, value in arguments.items()
     )
-    return f"  {action['name']}({{{pairs}}})"
+    return f"  {name}({{{pairs}}})"
 
 
 def _as_bngl_v01(root: Mapping[str, Any]) -> str:
@@ -641,8 +815,9 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
         for item in compartments:
             suffix = f" {item.get('parent', '')}" if item.get("parent") else ""
             unit_suffix = f" [{item['unit']}]" if item.get("unit") else ""
+            vol_text = item.get("volume_expression") or item["volume"]
             lines.append(
-                f"  {item['name']} {int(item['dimension'])} {item['volume']}{suffix}{unit_suffix}"
+                f"  {item['name']} {int(item['dimension'])} {vol_text}{suffix}{unit_suffix}"
             )
         lines += ["end compartments"]
     molecule_types = model.get("molecule_types", [])
@@ -1121,25 +1296,38 @@ def _validate_direction_v02(
         raise ValueError(f"BNGIR {where}.local_scopes must be an array")
     local_names: set[str] = set()
     reactants = direction.get("reactants", [])
+    products = direction.get("products", [])
     for i, raw_scope in enumerate(scopes):
         scope = _require_mapping(raw_scope, f"{where}.local_scopes[{i}]")
         name = scope.get("name")
         kind = scope.get("kind")
-        pi = scope.get("reactant_pattern")
+        scope_side = scope.get("side", "reactant")
         if not isinstance(name, str) or not name or name in local_names:
             raise ValueError(f"BNGIR {where} has invalid/duplicate local scope name")
         local_names.add(name)
         if kind not in {"molecule", "species"}:
             raise ValueError(f"BNGIR {where} has invalid local scope kind")
-        if not _is_json_integer(pi) or pi < 0 or pi >= len(reactants):
-            raise ValueError(
-                f"BNGIR {where} local scope reactant pattern is out of range"
-            )
+        if scope_side == "product":
+            target_patterns = products
+            pi = scope.get("pattern_index")
+            if not _is_json_integer(pi) or pi < 0 or pi >= len(target_patterns):
+                raise ValueError(
+                    f"BNGIR {where} local scope product pattern is out of range"
+                )
+            side_label = "products"
+        else:
+            target_patterns = reactants
+            pi = scope.get("reactant_pattern")
+            if not _is_json_integer(pi) or pi < 0 or pi >= len(target_patterns):
+                raise ValueError(
+                    f"BNGIR {where} local scope reactant pattern is out of range"
+                )
+            side_label = "reactants"
         occurrence = scope.get("molecule_occurrence")
         if kind == "molecule":
-            molecules = _require_mapping(reactants[pi], f"{where}.reactants[{pi}]").get(
-                "molecules", []
-            )
+            molecules = _require_mapping(
+                target_patterns[pi], f"{where}.{side_label}[{pi}]"
+            ).get("molecules", [])
             if (
                 not _is_json_integer(occurrence)
                 or occurrence < 0
@@ -3355,11 +3543,9 @@ def _pattern_v02(
             for raw_bond in bonds:
                 current = _require_mapping(raw_bond, "pattern bond alternative")
                 bond_kind = current.get("kind", "unspecified")
-                if bond_kind == "unspecified":
+                if bond_kind in ("unspecified", "unbound"):
                     continue
-                if bond_kind == "unbound":
-                    text += "."
-                elif bond_kind == "bound":
+                if bond_kind == "bound":
                     text += "!+"
                 elif bond_kind == "any":
                     text += "!?"
@@ -3382,12 +3568,25 @@ def _pattern_v02(
         molecules.append(mol)
     body = ".".join(molecules) if molecules else "0"
     if pattern.get("compartment"):
+        comp = str(pattern["compartment"])
+        raw_mols = [m for m in pattern.get("molecules", []) if isinstance(m, Mapping)]
         # Preserve whether the graph-level compartment came from the prefix
-        # form. Molecule-local compartments are serialized on each molecule.
+        # form. Never append a duplicate @comp suffix onto a molecule that
+        # already carries an explicit @compartment.
         if pattern.get("compartment_prefix", True):
-            body = f"@{pattern['compartment']}:{body}"
+            body = f"@{comp}:{body}"
+        elif len(raw_mols) == 1 and raw_mols[0].get("compartment") == comp:
+            pass
+        elif (
+            len(raw_mols) > 1
+            and all(m.get("compartment") for m in raw_mols)
+            and any(m.get("compartment") == comp for m in raw_mols)
+        ):
+            pass
+        elif raw_mols and (raw_mols[-1].get("compartment") or len(raw_mols) > 1):
+            body = f"@{comp}:{body}"
         else:
-            body = f"{body}@{pattern['compartment']}"
+            body = f"{body}@{comp}"
     if species_scopes:
         for scope in reversed(species_scopes):
             body = f"%{scope}::{body}"
@@ -3411,13 +3610,22 @@ def _direction_pattern_strings_v02(
     direction: Mapping[str, Any], side: str
 ) -> list[str]:
     patterns = direction.get(side, [])
-    if side != "reactants":
-        return [_pattern_v02(pattern) for pattern in patterns]
+    target_side = "reactant" if side == "reactants" else "product"
     molecule_scopes: dict[int, dict[int, list[str]]] = {}
     species_scopes: dict[int, list[str]] = {}
     for raw in direction.get("local_scopes", []):
         scope = _require_mapping(raw, "rule local scope")
-        pi = int(scope["reactant_pattern"])
+        scope_side = scope.get("side", "reactant")
+        if scope_side != target_side:
+            continue
+        raw_pi = (
+            scope.get("reactant_pattern")
+            if target_side == "reactant"
+            else scope.get("pattern_index")
+        )
+        if raw_pi is None:
+            continue
+        pi = int(raw_pi)
         if scope["kind"] == "species":
             species_scopes.setdefault(pi, []).append(str(scope["name"]))
         else:
@@ -3506,8 +3714,9 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
         for item in compartments:
             suffix = f" {item['parent']}" if item.get("parent") else ""
             unit = f" [{item['unit']}]" if item.get("unit") else ""
+            vol_text = item.get("volume_expression") or item["volume"]
             lines.append(
-                f"  {item['name']} {int(item['dimension'])} {item['volume']}"
+                f"  {item['name']} {int(item['dimension'])} {vol_text}"
                 f"{suffix}{unit}"
             )
         lines.append("end compartments")
@@ -3617,7 +3826,16 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
             if item.get("bidirectional"):
                 if not reverse or not reverse.get("rate"):
                     raise ValueError("bidirectional BNGIR rule is missing reverse rate")
-                rates.append(_expression_v02(reverse["rate"]["expression"], model))
+                fwd_expr = (forward.get("rate") or {}).get("expression")
+                rev_expr = reverse["rate"].get("expression")
+                is_single_arrhenius = (
+                    isinstance(fwd_expr, Mapping)
+                    and fwd_expr.get("kind") == "builtin_call"
+                    and fwd_expr.get("builtin") == "arrhenius"
+                    and fwd_expr == rev_expr
+                )
+                if not is_single_arrhenius:
+                    rates.append(_expression_v02(rev_expr, model))
             label = str(item.get("label", "")).rstrip(":")
             prefix = f"{label}: " if label else ""
             line = f"  {prefix}{reactants} {arrow} {products} {', '.join(rates)}"
@@ -3703,8 +3921,23 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
             }
             for observable in model_data["observables"]
         ]
+        preserved_vol_exprs = {
+            str(comp["name"]): str(comp["volume_expression"])
+            for comp in model_data.get("compartments", [])
+            if isinstance(comp, Mapping) and comp.get("volume_expression")
+        }
+        native_data["compartments"] = [
+            (
+                {k: v for k, v in comp.items() if k != "volume_expression"}
+                if isinstance(comp, Mapping)
+                else comp
+            )
+            for comp in model_data.get("compartments", [])
+        ]
         result_cpp = _cpp._model_from_bngir_v02(native_data)
         result = BioNetGenModel(result_cpp)
+        if preserved_vol_exprs:
+            result._compartment_volume_expressions = preserved_vol_exprs
         rebuilt = _parse_document(to_bngir(result, version=STRUCTURAL_VERSION))
         if rebuilt != root:
             raise ValueError(
@@ -4118,6 +4351,7 @@ def _parse_rational_expr(
     allowed_vars: frozenset[str],
     zero_arg_functions: Mapping[str, str] | None = None,
     var_renaming: Mapping[str, str] | None = None,
+    bound_values: Mapping[str, Fraction] | None = None,
     _visiting: frozenset[str] = frozenset(),
 ) -> _RationalExpr | None:
     """Parse an expression into an exact canonical rational function with poles.
@@ -4133,6 +4367,7 @@ def _parse_rational_expr(
 
     fn_map = zero_arg_functions or {}
     rename = var_renaming or {}
+    bound = bound_values or {}
 
     def visit(node: ast.AST) -> _RationalExpr | None:
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
@@ -4152,7 +4387,14 @@ def _parse_rational_expr(
                     allowed_vars=allowed_vars,
                     zero_arg_functions=fn_map,
                     var_renaming=rename,
+                    bound_values=bound,
                     _visiting=_visiting | {node.id},
+                )
+            if node.id in bound:
+                return _RationalExpr(
+                    _poly_const(bound[node.id]),
+                    _poly_const(Fraction(1)),
+                    frozenset(),
                 )
             if node.id in allowed_vars:
                 mapped = rename.get(node.id, node.id)
@@ -4172,6 +4414,7 @@ def _parse_rational_expr(
                     allowed_vars=allowed_vars,
                     zero_arg_functions=fn_map,
                     var_renaming=rename,
+                    bound_values=bound,
                     _visiting=_visiting | {node.func.id},
                 )
             if not node.args and not node.keywords and node.func.id in allowed_vars:
@@ -4465,7 +4708,9 @@ def _parse_graph_pattern(text: str) -> dict[str, Any] | None:
     if raw.startswith("@") and ":" in raw:
         colon = raw.index(":")
         species_comp = raw[1:colon].strip()
-        raw = raw[colon + 1 :].strip()
+        raw = raw[colon + 1 :].lstrip(":").strip()
+    if raw.startswith("$"):
+        raw = raw[1:].strip()
 
     # Split top-level '.' separating molecules (ignoring '.' inside parentheses).
     mol_tokens: list[str] = []
@@ -4607,6 +4852,125 @@ def _site_bond_split(bonds: tuple[str, ...]) -> tuple[tuple[str, ...], tuple[str
     numeric = tuple(b for b in bonds if b.isdigit())
     wild = tuple(sorted(b for b in bonds if not b.isdigit()))
     return numeric, wild
+
+
+def _graph_structural_key(g: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Isomorphism-invariant structural bucket key for parsed BNGL graphs."""
+    mol_invs = []
+    for mol in g["molecules"]:
+        site_invs = []
+        for s in mol["sites"]:
+            num_b, wild_b = _site_bond_split(s["bonds"])
+            site_invs.append((s["comp"], s["state"], s["label"], len(num_b), wild_b))
+        mol_invs.append(
+            (mol["type"], mol["comp"], mol["scope"], tuple(sorted(site_invs)))
+        )
+    return (g["species_comp"], g["quantifier"], tuple(sorted(mol_invs)))
+
+
+def _count_pattern_automorphisms(pattern: Mapping[str, Any]) -> int:
+    """Count exact automorphisms |Aut(P)| of a parsed BNGL pattern graph."""
+    mols = pattern["molecules"]
+    if not mols:
+        return 1
+
+    def mol_inv(mol: Mapping[str, Any]) -> tuple[Any, ...]:
+        site_invs = []
+        for s in mol["sites"]:
+            num_b, wild_b = _site_bond_split(s["bonds"])
+            site_invs.append((s["comp"], s["state"], s["label"], len(num_b), wild_b))
+        return (mol["type"], mol["comp"], mol["scope"], tuple(sorted(site_invs)))
+
+    invs = [mol_inv(m) for m in mols]
+    used_m = [False] * len(mols)
+    count = 0
+
+    def match_sites(
+        sites1: list[dict[str, Any]],
+        sites2: list[dict[str, Any]],
+        idx: int,
+        used_s2: list[bool],
+        b_fwd: dict[str, str],
+        b_rev: dict[str, str],
+        cont,
+    ) -> None:
+        if idx == len(sites1):
+            cont(b_fwd, b_rev)
+            return
+        s1 = sites1[idx]
+        num1, wild1 = _site_bond_split(s1["bonds"])
+        for j, s2 in enumerate(sites2):
+            if used_s2[j]:
+                continue
+            num2, wild2 = _site_bond_split(s2["bonds"])
+            if (
+                s1["comp"] != s2["comp"]
+                or s1["state"] != s2["state"]
+                or s1["label"] != s2["label"]
+                or wild1 != wild2
+                or len(num1) != len(num2)
+            ):
+                continue
+            if not num1:
+                used_s2[j] = True
+                match_sites(sites1, sites2, idx + 1, used_s2, b_fwd, b_rev, cont)
+                used_s2[j] = False
+            elif len(num1) == 1:
+                b1, b2 = num1[0], num2[0]
+                if (b1 in b_fwd and b_fwd[b1] != b2) or (
+                    b2 in b_rev and b_rev[b2] != b1
+                ):
+                    continue
+                nf = dict(b_fwd)
+                nr = dict(b_rev)
+                nf[b1] = b2
+                nr[b2] = b1
+                used_s2[j] = True
+                match_sites(sites1, sites2, idx + 1, used_s2, nf, nr, cont)
+                used_s2[j] = False
+            else:
+                import itertools
+
+                for perm in itertools.permutations(num2):
+                    nf = dict(b_fwd)
+                    nr = dict(b_rev)
+                    ok = True
+                    for b1, b2 in zip(num1, perm):
+                        if (b1 in nf and nf[b1] != b2) or (b2 in nr and nr[b2] != b1):
+                            ok = False
+                            break
+                        nf[b1] = b2
+                        nr[b2] = b1
+                    if ok:
+                        used_s2[j] = True
+                        match_sites(sites1, sites2, idx + 1, used_s2, nf, nr, cont)
+                        used_s2[j] = False
+
+    def match_mol(m_idx: int, b_fwd: dict[str, str], b_rev: dict[str, str]) -> None:
+        nonlocal count
+        if m_idx == len(mols):
+            count += 1
+            return
+        inv = invs[m_idx]
+        m1 = mols[m_idx]
+        for j in range(len(mols)):
+            if used_m[j] or invs[j] != inv:
+                continue
+            used_m[j] = True
+            used_s2 = [False] * len(mols[j]["sites"])
+            match_sites(
+                m1["sites"],
+                mols[j]["sites"],
+                0,
+                used_s2,
+                b_fwd,
+                b_rev,
+                lambda nf, nr: match_mol(m_idx + 1, nf, nr),
+            )
+            used_m[j] = False
+
+    match_mol(0, {}, {})
+    return max(count, 1)
 
 
 def _graphs_isomorphic(g1: Mapping[str, Any], g2: Mapping[str, Any]) -> bool:
@@ -4898,6 +5262,7 @@ def _enumerate_signature_renamings(
         results: list[tuple[dict[str, str], dict[tuple[str, str], dict[str, str]]]] = [
             ({}, {})
         ]
+        truncated_local = False
         for arity in sorted(l_by_arity):
             lc_list = l_by_arity[arity]
             rc_list = r_by_arity[arity]
@@ -4912,10 +5277,17 @@ def _enumerate_signature_renamings(
                     if not l_states:
                         pair_state_options.append([{}])
                     else:
-                        opts = [
-                            dict(zip(l_states, sp))
-                            for sp in itertools.permutations(r_states)
-                        ]
+                        # Slice lazily BEFORE materializing O(K!) permutation dicts
+                        # so large state spaces (K >= 11) never OOM before the budget check.
+                        sliced = list(
+                            itertools.islice(
+                                itertools.permutations(r_states), budget + 1
+                            )
+                        )
+                        if len(sliced) > budget:
+                            truncated_local = True
+                            sliced = sliced[:budget]
+                        opts = [dict(zip(l_states, sp)) for sp in sliced]
                         pair_state_options.append(opts)
                 for state_choice in itertools.product(*pair_state_options):
                     for cur_c, cur_s in results:
@@ -4929,7 +5301,7 @@ def _enumerate_signature_renamings(
                         if len(next_results) > budget:
                             return next_results[:budget], True
             results = next_results
-        return results, False
+        return results, truncated_local
 
     candidates: list[
         tuple[
@@ -5247,9 +5619,9 @@ def _reaction_center_for_jump(
 
 
 def _parse_arrhenius_args(rate_law_str: str) -> tuple[str, str] | None:
-    """Extract (phi_expr, Ea_expr) from an Arrhenius(phi, Ea) rate string."""
+    """Extract (phi_expr, Ea_expr) from an exact-case Arrhenius(phi, Ea) rate string."""
     s = rate_law_str.strip()
-    m = re.fullmatch(r"(?i)arrhenius\s*\((.*)\)", s)
+    m = re.fullmatch(r"Arrhenius\s*\((.*)\)", s)
     if not m:
         return None
     inner = m.group(1)
@@ -5286,8 +5658,9 @@ def _canonical_seed_identity(model: Any, seed: Any) -> str | None:
     if compartments:
         lines.append("begin compartments")
         for compartment in compartments:
+            parent_part = f" {compartment.parent}" if compartment.parent else ""
             lines.append(
-                f"  {compartment.name} {compartment.dimension} {compartment.volume}"
+                f"  {compartment.name} {compartment.dimension} {compartment.volume}{parent_part}"
             )
         lines.append("end compartments")
     lines.append("begin molecule types")
@@ -5307,11 +5680,23 @@ def _canonical_seed_identity(model: Any, seed: Any) -> str | None:
         lines.append(definition)
     lines.append("end molecule types")
 
-    pattern = seed.pattern
-    if seed.compartment and "@" not in pattern:
-        pattern = f"@{seed.compartment}:{pattern}"
+    pattern = seed.pattern.strip()
     if pattern.startswith("$"):
-        pattern = pattern[1:]
+        pattern = pattern[1:].strip()
+    if seed.is_constant:
+        if pattern.startswith("@") and ":" in pattern:
+            colon = pattern.index(":")
+            prefix = pattern[: colon + 1]
+            rest = pattern[colon + 1 :].lstrip()
+            if not rest.startswith("$"):
+                rest = f"${rest}"
+            pattern = f"{prefix}{rest}"
+        elif seed.compartment and "@" not in pattern:
+            pattern = f"@{seed.compartment}:${pattern}"
+        else:
+            pattern = f"${pattern}"
+    elif seed.compartment and "@" not in pattern:
+        pattern = f"@{seed.compartment}:{pattern}"
     lines.append("begin seed species")
     lines.append(f"  {pattern} 1")
     lines.append("end seed species")
@@ -5376,7 +5761,24 @@ def _extract_jump_hazards(
                 pass
             break
     net = model.generate_network(max_iter=equality_max_iter)
-    species_names = list(net.species_names)
+    raw_species_names = list(net.species_names)
+
+    def _strip_fixed_marker(sp_name: str) -> tuple[str, bool]:
+        if sp_name.startswith("$"):
+            return sp_name[1:], True
+        if sp_name.startswith("@") and ":$" in sp_name:
+            return sp_name.replace(":$", ":", 1), True
+        return sp_name, False
+
+    species_names: list[str] = []
+    constant_species: set[str] = set()
+    raw_to_norm: dict[str, str] = {}
+    for raw_sp in raw_species_names:
+        norm_sp, is_const = _strip_fixed_marker(raw_sp)
+        species_names.append(norm_sp)
+        raw_to_norm[raw_sp] = norm_sp
+        if is_const:
+            constant_species.add(norm_sp)
 
     init_counts: dict[str, Fraction] = {sp: Fraction(0) for sp in species_names}
     for seed in model._model.seed_species:
@@ -5384,7 +5786,7 @@ def _extract_jump_hazards(
             seed.amount.to_string(), param_dict, zero_arg_fn_bodies
         )
         identity = _canonical_seed_identity(model, seed)
-        if identity is None or identity not in init_counts:
+        if identity is None or identity not in raw_to_norm:
             raise EqualityUndecided(
                 "A seed species has no canonical identity in the generated network",
                 {
@@ -5393,7 +5795,7 @@ def _extract_jump_hazards(
                     "canonical_identity": identity,
                 },
             )
-        init_counts[identity] += amount_val
+        init_counts[raw_to_norm[identity]] += amount_val
 
     # Map authored rules by rule_name to recover delay, non_consuming,
     # TotalRate, and driving_work metadata per generated reaction.
@@ -5419,7 +5821,8 @@ def _extract_jump_hazards(
             ep_val = _evaluate_model_expression_exact(
                 ep.expression.to_string(), param_dict, zero_arg_fn_bodies
             )
-            parsed_ep.append((ep_graph, ep_val))
+            ep_aut = _count_pattern_automorphisms(ep_graph)
+            parsed_ep.append((ep_graph, ep_val, ep_aut))
         for sp in species_names:
             sp_graph = _parse_graph_pattern(sp)
             if sp_graph is None:
@@ -5428,9 +5831,10 @@ def _extract_jump_hazards(
                     {"species": sp},
                 )
             total_e = Fraction(0)
-            for ep_graph, ep_val in parsed_ep:
+            for ep_graph, ep_val, ep_aut in parsed_ep:
                 total_e += (
-                    Fraction(_count_pattern_embeddings(ep_graph, sp_graph)) * ep_val
+                    Fraction(_count_pattern_embeddings(ep_graph, sp_graph), ep_aut)
+                    * ep_val
                 )
             species_energies[sp] = total_e
 
@@ -5493,8 +5897,28 @@ def _extract_jump_hazards(
                 str(m).strip().lower() == "totalrate" for m in rule_obj.modifiers
             )
 
+        # Constant ($) species keep their population clamped across jumps:
+        # propensities and reaction energies still depend on reactants/products,
+        # while the net state transition leaves constant species unchanged.
+        if constant_species:
+            if delay_spec is not None and any(
+                sp in constant_species for sp in (*reactants, *products)
+            ):
+                raise EqualityUndecided(
+                    "Delayed reactions involving constant species are not certified",
+                    {"reactants": reactants, "products": products},
+                )
+            jump_products = tuple(
+                sorted(
+                    [sp for sp in products if sp not in constant_species]
+                    + [sp for sp in reactants if sp in constant_species]
+                )
+            )
+        else:
+            jump_products = products
+
         # Immediate self-loops leave the molecular state unchanged.
-        if reactants == products and delay_spec is None:
+        if reactants == jump_products and delay_spec is None:
             continue
 
         rate_law_str = rate_laws[idx]
@@ -5509,6 +5933,13 @@ def _extract_jump_hazards(
                 any_volume_scaled = True
 
         arr_args = _parse_arrhenius_args(rate_law_str)
+        if arr_args is not None and rule_obj is not None and rule_obj.rates:
+            authored_rate_idx = 1 if (is_reverse and len(rule_obj.rates) > 1) else 0
+            if _parse_arrhenius_args(str(rule_obj.rates[authored_rate_idx])) is None:
+                # NetworkGenerator may normalize casing in reaction_rate_laws even
+                # when the authored rule used non-Arrhenius lowercase `arrhenius(...)`.
+                arr_args = None
+                rate_law_str = str(rule_obj.rates[authored_rate_idx])
         hazard: tuple[Any, ...] | None = None
         work_key = directed_work
         if arr_args is not None:
@@ -5568,13 +5999,15 @@ def _extract_jump_hazards(
                         else ("poly_exp", ())
                     )
                 except ValueError:
-                    # Try exact rational expression over observables + bound parameters.
+                    # Try exact rational expression over observables, substituting
+                    # bound parameter values so differing parameter values are never conflated.
                     if obs_names:
                         rat = _parse_rational_expr(
                             rate_law_str,
-                            allowed_vars=frozenset(param_dict) | obs_names,
+                            allowed_vars=obs_names,
                             zero_arg_functions=zero_arg_fn_bodies,
                             var_renaming=obs_renaming,
+                            bound_values=param_dict,
                         )
                         if rat is not None:
                             hazard = _hazard_scale(
@@ -5583,7 +6016,14 @@ def _extract_jump_hazards(
                     if hazard is None:
                         raise
 
-        key = (reactants, products, delay_spec, non_consuming, work_key)
+        key = (
+            reactants,
+            jump_products,
+            delay_spec,
+            non_consuming,
+            work_key,
+            is_total_rate,
+        )
         if key in jump_hazards:
             combined = _hazard_add(jump_hazards[key], hazard)
             if combined is None:
@@ -5654,6 +6094,58 @@ def _volume_rhs_counterexample(left_model: Any, right_model: Any) -> dict | None
                 "right_rhs": str(right_value),
             }
     return None
+
+
+def _eval_initial_observables_exact(
+    model: Any,
+    init_counts: Mapping[str, Fraction],
+) -> dict[str, Fraction] | None:
+    """Compute exact initial observable values from init_counts when parseable."""
+    parsed_species: dict[str, dict[str, Any]] = {}
+    for sp, cnt in init_counts.items():
+        if cnt == 0:
+            continue
+        g = _parse_graph_pattern(sp)
+        if g is None:
+            return None
+        parsed_species[sp] = g
+
+    obs_values: dict[str, Fraction] = {}
+    for obs in model._model.observables:
+        if obs.type not in ("Molecules", "Species"):
+            return None
+        total = Fraction(0)
+        for pat_str in obs.patterns:
+            pat_g = _parse_graph_pattern(pat_str)
+            if pat_g is None or pat_g.get("quantifier"):
+                return None
+            for sp, sp_g in parsed_species.items():
+                cnt = init_counts[sp]
+                matches = _count_pattern_embeddings(pat_g, sp_g)
+                if matches <= 0:
+                    continue
+                weight = Fraction(1) if obs.type == "Species" else Fraction(matches)
+                total += cnt * weight
+        obs_values[obs.name] = total
+    return obs_values
+
+
+def _referenced_identifiers(
+    expr_str: str,
+    zero_arg_functions: Mapping[str, str],
+) -> set[str]:
+    """Return identifier tokens referenced directly or via nullary functions."""
+    found: set[str] = set()
+    stack = [expr_str]
+    visited_fns: set[str] = set()
+    while stack:
+        current = stack.pop()
+        for tok in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", current):
+            found.add(tok)
+            if tok in zero_arg_functions and tok not in visited_fns:
+                visited_fns.add(tok)
+                stack.append(zero_arg_functions[tok])
+    return found
 
 
 def _initial_state_counterexample(
@@ -5742,6 +6234,24 @@ def _initial_state_counterexample(
                     "left_rate": str(left_rate),
                     "right_rate": str(right_rate),
                 }
+            if left_rate[0] == "rational" and right_rate[0] == "rational":
+                left_init_obs = _eval_initial_observables_exact(left_model, left_init)
+                right_init_obs = _eval_initial_observables_exact(
+                    right_model, right_init
+                )
+                if (
+                    left_init_obs is not None
+                    and right_init_obs is not None
+                    and left_init_obs == right_init_obs
+                ):
+                    l_val = left_rate[1].eval_at(left_init_obs)
+                    r_val = right_rate[1].eval_at(right_init_obs)
+                    if l_val != r_val:
+                        return {
+                            "jump": [list(key[0]), list(key[1])],
+                            "left_rate": str(l_val),
+                            "right_rate": str(r_val),
+                        }
             if left_rate[0] == "tfun" and right_rate[0] == "tfun":
                 if left_rate[2] == right_rate[2]:
                     w = _tfun_counterexample(left_rate[1], right_rate[1])
@@ -5815,13 +6325,42 @@ def _compare_functions_exact(
         if len(l_args) != len(r_args):
             return None, {"function": name, "left_args": l_args, "right_args": r_args}
 
-        # Exact identical syntax (including same argument names) without renamed obs.
+        # Exact identical syntax (including same argument names) without renamed obs,
+        # ONLY when all referenced bound parameters and nullary helpers match.
         if (
             l_args == r_args
             and l_body == r_body
             and not (obs_renaming and any(k != v for k, v in obs_renaming.items()))
         ):
-            continue
+            l_refs = _referenced_identifiers(l_body, left_zero_bodies) - set(l_args)
+            r_refs = _referenced_identifiers(r_body, right_zero_bodies) - set(r_args)
+            all_refs = l_refs | r_refs
+            params_match = all(
+                left_params.get(tok) == right_params.get(tok)
+                for tok in all_refs
+                if tok in left_params or tok in right_params
+            )
+            helpers_match = all(
+                left_zero_bodies.get(tok) == right_zero_bodies.get(tok)
+                for tok in all_refs
+                if tok in left_zero_bodies or tok in right_zero_bodies
+            )
+            if params_match and helpers_match:
+                continue
+
+        # Parameters with differing (or one-sided) bound values must be
+        # substituted numerically; parameters with matching bound values on
+        # both sides stay symbolic so rational-function identities & pole/value
+        # counterexamples over shared parameter symbols are preserved.
+        shared_equal_params = frozenset(
+            k for k, v in left_params.items() if right_params.get(k) == v
+        )
+        left_diff_bound = {
+            k: v for k, v in left_params.items() if k not in shared_equal_params
+        }
+        right_diff_bound = {
+            k: v for k, v in right_params.items() if k not in shared_equal_params
+        }
 
         # Functions with formal arguments: certify alpha-equivalent rational
         # expressions; leave differing parameterized functions undecided.
@@ -5830,17 +6369,21 @@ def _compare_functions_exact(
             r_rename = {a: f"__arg_{i}" for i, a in enumerate(r_args)}
             if obs_renaming:
                 l_rename.update(obs_renaming)
+            l_bound = {k: v for k, v in left_diff_bound.items() if k not in l_args}
+            r_bound = {k: v for k, v in right_diff_bound.items() if k not in r_args}
             l_rat = _parse_rational_expr(
                 l_body,
-                allowed_vars=frozenset(left_params) | left_obs | frozenset(l_args),
+                allowed_vars=shared_equal_params | left_obs | frozenset(l_args),
                 zero_arg_functions=left_zero_bodies,
                 var_renaming=l_rename,
+                bound_values=l_bound,
             )
             r_rat = _parse_rational_expr(
                 r_body,
-                allowed_vars=frozenset(right_params) | right_obs | frozenset(r_args),
+                allowed_vars=shared_equal_params | right_obs | frozenset(r_args),
                 zero_arg_functions=right_zero_bodies,
                 var_renaming=r_rename,
+                bound_values=r_bound,
             )
             if l_rat is not None and r_rat is not None and l_rat.key() == r_rat.key():
                 continue
@@ -5870,15 +6413,17 @@ def _compare_functions_exact(
         # Nullary exact rational expression comparison with pole checks.
         l_rat = _parse_rational_expr(
             l_body,
-            allowed_vars=frozenset(left_params) | left_obs,
+            allowed_vars=shared_equal_params | left_obs,
             zero_arg_functions=left_zero_bodies,
             var_renaming=obs_renaming,
+            bound_values=left_diff_bound,
         )
         r_rat = _parse_rational_expr(
             r_body,
-            allowed_vars=frozenset(right_params) | right_obs,
+            allowed_vars=shared_equal_params | right_obs,
             zero_arg_functions=right_zero_bodies,
             var_renaming=None,
+            bound_values=right_diff_bound,
         )
         if l_rat is not None and r_rat is not None:
             if l_rat.key() == r_rat.key():
@@ -6261,6 +6806,20 @@ def exact_process_equal(
     right_model = (
         right if isinstance(right, BioNetGenModel) else from_bngir(right_doc or right)
     )
+    if getattr(left_model, "_algebraic_rules", None) or getattr(
+        right_model, "_algebraic_rules", None
+    ):
+        raise EqualityUndecided(
+            "Models with SBML algebraic rules are not certified for exact equality",
+            {
+                "left_algebraic_rules": len(
+                    getattr(left_model, "_algebraic_rules", None) or []
+                ),
+                "right_algebraic_rules": len(
+                    getattr(right_model, "_algebraic_rules", None) or []
+                ),
+            },
+        )
 
     try:
         left_structural = _parse_document(to_bngir(left_model, version="0.2"))["model"]
@@ -6352,6 +6911,8 @@ def exact_process_equal(
     # inequality before structural guards (for identically labelled models).
     # Skip when energy_patterns exist without Arrhenius rules (so EQ-energy
     # unlowered semantics stay conservative) or when protocols differ.
+    apply_comp_volume = bool(left_comps or right_comps)
+
     if (
         left_actions == right_actions
         and left_meta == right_meta
@@ -6364,7 +6925,7 @@ def exact_process_equal(
             right_model,
             left_structural=left_structural,
             right_structural=right_structural,
-            apply_volume_scaling=volume_rescaling_mode,
+            apply_volume_scaling=apply_comp_volume,
         )
         if initial_witness is not None:
             return False
@@ -6425,14 +6986,14 @@ def exact_process_equal(
             _extract_jump_hazards(
                 left_model,
                 structural_doc=left_structural,
-                apply_volume_scaling=volume_rescaling_mode,
+                apply_volume_scaling=apply_comp_volume,
             )
         )
         jumps_r, init_r, species_r, complete_r, pruned_r, vol_scaled_r = (
             _extract_jump_hazards(
                 right_model,
                 structural_doc=right_structural,
-                apply_volume_scaling=volume_rescaling_mode,
+                apply_volume_scaling=apply_comp_volume,
             )
         )
     except EqualityUndecided:
@@ -6557,7 +7118,7 @@ def exact_process_equal(
             eff_jumps_l, _, _, _, _, _ = _extract_jump_hazards(
                 left_model,
                 structural_doc=left_structural,
-                apply_volume_scaling=volume_rescaling_mode,
+                apply_volume_scaling=apply_comp_volume,
                 obs_renaming=obs_map,
             )
 
@@ -6592,6 +7153,15 @@ def exact_process_equal(
                 ):
                     if rate_l[0] == "poly_exp" and rate_r[0] == "poly_exp":
                         return False
+                    if rate_l[0] == "rational" and rate_r[0] == "rational":
+                        init_obs_r = _eval_initial_observables_exact(
+                            right_model, init_r
+                        )
+                        if init_obs_r is not None and obs_ok:
+                            l_val = rate_l[1].eval_at(init_obs_r)
+                            r_val = rate_r[1].eval_at(init_obs_r)
+                            if l_val != r_val:
+                                return False
                     if rate_l[0] == "tfun" and rate_r[0] == "tfun":
                         if (
                             rate_l[2] != rate_r[2]
@@ -6692,6 +7262,12 @@ def exact_process_equal(
             {"left_species": species_l, "right_species": species_r},
         )
 
+    species_r_by_key: dict[tuple[Any, ...], list[str]] = {}
+    for sp_r in species_r:
+        species_r_by_key.setdefault(
+            _graph_structural_key(parsed_species_r[sp_r]), []
+        ).append(sp_r)
+
     comp_map_candidates = comp_renamings if comp_renamings else [{}]
     candidates = []
     for cmap in comp_map_candidates:
@@ -6703,13 +7279,15 @@ def exact_process_equal(
                 renamed_g = _rename_parsed_graph(
                     parsed_species_l[sp_l], mol_map, comp_map, state_map, cmap
                 )
+                bucket = species_r_by_key.get(_graph_structural_key(renamed_g))
                 found_r = None
-                for sp_r in species_r:
-                    if sp_r not in used_r and _graphs_isomorphic(
-                        renamed_g, parsed_species_r[sp_r]
-                    ):
-                        found_r = sp_r
-                        break
+                if bucket:
+                    for sp_r in bucket:
+                        if sp_r not in used_r and _graphs_isomorphic(
+                            renamed_g, parsed_species_r[sp_r]
+                        ):
+                            found_r = sp_r
+                            break
                 if found_r is None:
                     ok = False
                     break
@@ -6728,6 +7306,7 @@ def exact_process_equal(
         )
 
     transition_mapping_with_initial_mismatch = False
+    undecided_candidate_seen = False
     for mol_map, comp_map, state_map, cmap, mapping in candidates:
         obs_ok, obs_map = _match_observables_exact(
             obs_l, obs_r, mol_map, comp_map, state_map, cmap
@@ -6737,6 +7316,7 @@ def exact_process_equal(
             eff_jumps_l, _, _, _, _, _ = _extract_jump_hazards(
                 left_model,
                 structural_doc=left_structural,
+                apply_volume_scaling=apply_comp_volume,
                 obs_renaming=obs_map,
             )
 
@@ -6747,11 +7327,19 @@ def exact_process_equal(
             delay_spec,
             non_consuming,
             work_key,
+            is_total_rate,
         ), rate in eff_jumps_l.items():
             mapped_reactants = tuple(sorted(mapping[sp] for sp in reactants))
             mapped_products = tuple(sorted(mapping[sp] for sp in products))
             mapped_jumps_l[
-                (mapped_reactants, mapped_products, delay_spec, non_consuming, work_key)
+                (
+                    mapped_reactants,
+                    mapped_products,
+                    delay_spec,
+                    non_consuming,
+                    work_key,
+                    is_total_rate,
+                )
             ] = rate
 
         if set(mapped_jumps_l.keys()) == set(jumps_r.keys()):
@@ -6777,6 +7365,9 @@ def exact_process_equal(
                     right_structural,
                     obs_renaming=obs_map,
                 )
+                if fn_status is None:
+                    undecided_candidate_seen = True
+                    continue
                 if fn_status is not True:
                     continue
 
@@ -6799,6 +7390,7 @@ def exact_process_equal(
                             right_model, right_structural, {}, {}, {}, {}
                         )
                         if le is None or re_ is None or not _energy_maps_equal(le, re_):
+                            undecided_candidate_seen = True
                             continue
                     if left_structural.get("barrier_patterns") or right_structural.get(
                         "barrier_patterns"
@@ -6810,11 +7402,16 @@ def exact_process_equal(
                             right_model, right_structural, {}, {}, {}
                         )
                         if lb is None or rb is None or lb != rb:
+                            undecided_candidate_seen = True
                             continue
 
                 return True
 
-    if transition_mapping_with_initial_mismatch and not sig_truncated:
+    if (
+        transition_mapping_with_initial_mismatch
+        and not undecided_candidate_seen
+        and not sig_truncated
+    ):
         return False
 
     raise EqualityUndecided(
@@ -6831,6 +7428,8 @@ def semantic_equal(left: Any, right: Any, *, version: str = DEFAULT_VERSION) -> 
     a verified counterexample witness. Raises :class:`EqualityUndecided` when
     proof search cannot decide equivalence.
     """
+    from .model import BioNetGenModel
+
     try:
         left_doc = _parse_document(to_bngir(left, version=version))
     except Exception as exc:
@@ -6847,7 +7446,12 @@ def semantic_equal(left: Any, right: Any, *, version: str = DEFAULT_VERSION) -> 
         ) from exc
     left_semantic = {k: v for k, v in left_doc.items() if k != "provenance"}
     right_semantic = {k: v for k, v in right_doc.items() if k != "provenance"}
-    if left_semantic == right_semantic:
+    arrhenius_sig_matches = True
+    if isinstance(left, BioNetGenModel) and isinstance(right, BioNetGenModel):
+        arrhenius_sig_matches = _v01_has_exact_arrhenius_signature(
+            left
+        ) == _v01_has_exact_arrhenius_signature(right)
+    if left_semantic == right_semantic and arrhenius_sig_matches:
         return True
     return exact_process_equal(
         left, right, left_doc=left_doc, right_doc=right_doc, version=version

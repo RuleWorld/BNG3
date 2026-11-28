@@ -34,6 +34,7 @@
 #include <tuple>
 #include <cstdint>
 #include <cmath>
+#include <functional>
 
 #include "compile/energy/BarrierTable.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
@@ -53,6 +54,7 @@ namespace NFcore {
     struct EpMolecule {
         std::string typeName;     // e.g. "S"
         std::string xmlId;        // molecule id within the pattern XML
+        std::string compartment;  // optional compartment constraint, e.g. "PM"
 
         // Components mentioned in this molecule within the pattern.
         // Key: component name (e.g. "A"), Value: bond partner xmlId or "" if unbound requirement
@@ -62,6 +64,8 @@ namespace NFcore {
             std::string bondPartnerId;  // xmlId of partner comp, or "" if free/wildcard
             bool        isBound;        // true if pattern requires this comp bound
             std::string stateConstraint;// internal state constraint, or "" if none
+            bool        isWildcardBound = false; // true if pattern specifies !+ wildcard bond
+            bool        isUnbound = false;       // true if pattern explicitly requires unbound site
         };
         std::vector<CompInfo> components;
     };
@@ -81,6 +85,9 @@ namespace NFcore {
             int mol1, comp1, mol2, comp2;
         };
         std::vector<Bond> bonds;
+
+        // Optional live parameter evaluator for RNF set/update refresh
+        std::function<double(const std::map<std::string, double>&)> energyEvaluator;
     };
 
     /*
@@ -92,14 +99,19 @@ namespace NFcore {
      * is: "S.B must be bound to B.s".
      */
     struct ContextCondition {
+        enum class Kind { Bond, State, Unbound, Compartment };
         std::string molType;      // molecule type name (e.g. "S")
-        int         reactantIdx;  // which reactant (0 or 1) this is on
+        int         reactantIdx = 0;  // which reactant (0 or 1) this is on
         std::string compName;     // component name (e.g. "B")
         // The partner type and site, if the condition requires a specific bond
-        std::string partnerType;  // e.g. "B"
+        std::string partnerType;  // e.g. "B" (empty for wildcard !+)
         std::string partnerComp;  // e.g. "s"
         // Which energy pattern(s) this condition gates
         std::vector<int> gatedPatternIndices;
+        Kind        kind = Kind::Bond;
+        std::string stateValue;   // for Kind::State: required internal state; for Kind::Compartment: required compartment
+        std::vector<std::pair<std::string, std::string>> partnerStates; // for Kind::Bond: partner (comp, state)
+        std::string partnerCompartment; // for Kind::Bond: optional partner compartment constraint
     };
 
     /*
@@ -112,13 +124,21 @@ namespace NFcore {
         bool        isForward;  // true = binding, false = unbinding (for reversible rules)
 
         // Context constraints to add to reactant templates.
-        // Key: (reactantIdx, compName), Value: true=must be bound, false=must be empty
         struct ContextConstraint {
-            int         reactantIdx;
+            int         reactantIdx = 0;
             std::string compName;
-            bool        mustBeBound;
+            bool        mustBeBound = false;
+            ContextCondition::Kind kind = ContextCondition::Kind::Bond;
+            std::string stateValue;   // for Kind::State: required/excluded state; for Kind::Compartment: required/excluded compartment
+            std::string partnerType;  // for Kind::Bond: specific partner molecule type (empty for wildcard !+)
+            std::string partnerComp;  // for Kind::Bond: specific partner component
+            std::vector<std::pair<std::string, std::string>> partnerStates; // for Kind::Bond: partner state constraints
+            std::string partnerCompartment; // for Kind::Bond: optional partner compartment constraint
         };
         std::vector<ContextConstraint> constraints;
+        // Signed pattern contributions (patternIndex, +1.0 / -1.0) active in this variant,
+        // used to recompute deltaG live under RNF set/update.
+        std::vector<std::pair<int, double>> activePatternContributions;
     };
 
     /*
@@ -131,12 +151,14 @@ namespace NFcore {
     struct EnergyPatternTerm {
         double energyValue;
         std::uint64_t conditionMask;
+        int sourcePatternIndex = -1;
     };
 
     struct EnergyBindingContext {
         double baseEnergy;
         std::vector<ContextCondition> conditions;
         std::vector<EnergyPatternTerm> conditionalTerms;
+        std::vector<int> basePatternIndices;
     };
 
     /*
@@ -152,6 +174,7 @@ namespace NFcore {
         double getRT()  const { return RT; }
 
         void addEnergyPattern(const EnergyPatternInfo &ep);
+        void updateEnergiesFromSystem(const System *s);
         int  getNumPatterns() const { return (int)patterns.size(); }
         const EnergyPatternInfo& getPattern(int i) const { return patterns[i]; }
 
@@ -255,6 +278,7 @@ namespace NFcore {
         std::vector<EnergyPatternInfo> patterns;
         bng::compile::energy::BarrierTable barrierTable;
         std::map<BindingPatternKey, std::vector<int>> bindingPatternIndex;
+        std::map<StatePatternKey, std::vector<int>> siteBondPatternIndex;
         std::map<StatePatternKey, std::vector<int>> statePatternIndex;
 
         /*

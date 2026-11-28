@@ -25,6 +25,7 @@ std::string LatexWriter::escapeLatex(const std::string& text) {
     result.reserve(text.size() * 2);
     for (char c : text) {
         switch (c) {
+            case '\\': result += "\\textbackslash{}"; break;
             case '_': result += "\\_"; break;
             case '&': result += "\\&"; break;
             case '%': result += "\\%"; break;
@@ -34,6 +35,8 @@ std::string LatexWriter::escapeLatex(const std::string& text) {
             case '}': result += "\\}"; break;
             case '~': result += "\\textasciitilde{}"; break;
             case '^': result += "\\textasciicircum{}"; break;
+            case '\r':
+            case '\n': result += ' '; break;
             default: result += c; break;
         }
     }

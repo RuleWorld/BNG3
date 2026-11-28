@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <string>
 
@@ -72,5 +73,19 @@ bool configureTableFunctionFromCompiled(
     NFcore::CompositeFunction* composite,
     NFcore::LocalFunction* local,
     std::string& diagnostic);
+
+// Build a live parameter-map evaluator for a parameter-only compiled expression
+// (returns empty std::function if the expression has no parameter references or
+// depends on non-parameter runtime symbols).
+std::function<double(const std::map<std::string, double>&)>
+makeLiveCompiledParamEvaluator(
+    const bng::compile::CompiledModel& model,
+    const bng::compile::ResolvedExpression& expression);
+
+std::function<double()>
+makeLiveCompiledSystemEvaluator(
+    const bng::compile::CompiledModel& model,
+    const bng::compile::ResolvedExpression& expression,
+    NFcore::System* system);
 
 } // namespace NFinput

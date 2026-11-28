@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import sys
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 # Development builds: the native extension may live in build/cpp (the CMake
 # binary directory for this checkout) rather than inside the installed
@@ -48,12 +48,24 @@ except ModuleNotFoundError as exc:
 from bionetgen.result import GpuBatchSimResult, SimResult
 
 
+def _is_constant_species_name(name: str) -> bool:
+    """Return True if a BNG2-canonical species name carries the constant `$` marker."""
+    if name.startswith("$"):
+        return True
+    if "::" in name:
+        return name.split("::", 1)[1].startswith("$")
+    if name.startswith("@") and ":" in name:
+        return name.split(":", 1)[1].startswith("$")
+    return False
+
+
 @dataclass(frozen=True)
 class CRNSpecies:
     """One species in a generated reaction network."""
 
     index: int
     name: str
+    is_constant: bool = False
 
 
 @dataclass(frozen=True)
@@ -140,7 +152,12 @@ class BioNetGenModel:
         """Generated network species in native network order."""
         network = self._get_crn_network()
         return tuple(
-            CRNSpecies(index, name) for index, name in enumerate(network.species_names)
+            CRNSpecies(
+                index,
+                name,
+                is_constant=_is_constant_species_name(name),
+            )
+            for index, name in enumerate(network.species_names)
         )
 
     @property
@@ -171,22 +188,46 @@ class BioNetGenModel:
         model_params = {p.name: p for p in self.parameters}
         model_functions = {f.name: f for f in self.functions}
         model_observables = {o.name for o in self.observables}
-        rule_labels = {
-            f"R{index}": (rule.label.rstrip(":") or f"R{index}")
-            for index, rule in enumerate(self.reaction_rules, start=1)
+        rule_labels: dict[str, str] = {}
+        rules_by_key: dict[str, Any] = {}
+        for index, rule in enumerate(self.reaction_rules, start=1):
+            default_key = f"R{index}"
+            display_label = rule.label.rstrip(":") or default_key
+            rule_labels[default_key] = display_label
+            rules_by_key[default_key] = rule
+            if rule.rule_name:
+                rule_labels.setdefault(rule.rule_name, display_label)
+                rules_by_key.setdefault(rule.rule_name, rule)
+        abs_flux_rules = {
+            tok.strip()
+            for tok in str(
+                getattr(self._model, "options", {}).get("BNG3AbsoluteFluxRules", "")
+            ).split(",")
+            if tok.strip()
         }
 
         def dependencies(expression: str):
-            """Resolve parameter, function, and observable references in a rate law."""
+            """Resolve parameter, function, observable, and time references in a rate law."""
             parameter_names: set[str] = set()
             function_names: set[str] = set()
             observable_names: set[str] = set()
             visited_functions: set[str] = set()
+            uses_time = False
 
             def visit(text: str, bound: Optional[set[str]] = None) -> None:
+                nonlocal uses_time
                 identifiers = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text))
                 if bound:
                     identifiers.difference_update(bound)
+                if "tfun" in identifiers:
+                    uses_time = True
+                if (
+                    "time" in identifiers
+                    and "time" not in model_params
+                    and "time" not in model_observables
+                    and "time" not in model_functions
+                ):
+                    uses_time = True
                 parameter_names.update(identifiers & model_params.keys())
                 observable_names.update(identifiers & model_observables)
                 for name in sorted(identifiers & model_functions.keys()):
@@ -205,7 +246,49 @@ class BioNetGenModel:
                 tuple(sorted(parameter_names)),
                 tuple(sorted(function_names)),
                 tuple(sorted(observable_names)),
+                uses_time,
             )
+
+        def classify_rate_law(
+            expression: str,
+            raw_rname: str,
+            referenced_functions: tuple[str, ...],
+            referenced_observables: tuple[str, ...],
+            uses_time: bool,
+        ) -> str:
+            stripped = expression.strip()
+            if re.match(r"^Arrhenius\s*\(", stripped):
+                return "arrhenius"
+            if re.match(r"^Sat\s*\(", stripped):
+                return "sat"
+            if re.match(r"^MM\s*\(", stripped):
+                return "mm"
+            if re.match(r"^Hill\s*\(", stripped):
+                return "hill"
+            if uses_time:
+                return "time_dependent"
+            base_key = (
+                raw_rname[len("_reverse__") :]
+                if raw_rname.startswith("_reverse__")
+                else raw_rname
+            )
+            origin_rule = rules_by_key.get(base_key)
+            is_total_rate = base_key in abs_flux_rules or (
+                origin_rule is not None
+                and any(
+                    str(mod).strip().lower() == "totalrate"
+                    for mod in origin_rule.modifiers
+                )
+            )
+            if is_total_rate:
+                return "total_rate"
+            if (
+                referenced_observables
+                or referenced_functions
+                or re.search(r"\bFunctionProduct\s*\(", stripped)
+            ):
+                return "functional"
+            return "mass_action"
 
         result = []
         for index, (label, (reactants, products)) in enumerate(
@@ -221,17 +304,30 @@ class BioNetGenModel:
             factor = (
                 factors[index] if factors is not None and index < len(factors) else 1.0
             )
-            rname = (
+            raw_rname = (
                 rule_names[index]
                 if rule_names is not None and index < len(rule_names)
                 else ""
             )
-            rname = rule_labels.get(rname, rname)
+            if raw_rname.startswith("_reverse__"):
+                base_rname = raw_rname[len("_reverse__") :]
+                rname = f"_reverse__{rule_labels.get(base_rname, base_rname)}"
+            else:
+                rname = rule_labels.get(raw_rname, raw_rname)
 
-            referenced_params, referenced_functions, referenced_observables = (
-                dependencies(expr)
+            (
+                referenced_params,
+                referenced_functions,
+                referenced_observables,
+                uses_time,
+            ) = dependencies(expr)
+            rl_type = classify_rate_law(
+                expr,
+                raw_rname,
+                referenced_functions,
+                referenced_observables,
+                uses_time,
             )
-            rl_type = "mass_action"
             rate_law = CRNRateLaw(
                 type=rl_type,
                 expression=expr,
@@ -261,8 +357,18 @@ class BioNetGenModel:
 
     @property
     def stoichiometric_matrix(self):
-        """Dense integer N[species, reaction] matrix from the native network."""
-        return self._get_crn_network().stoichiometric_matrix
+        """Dense integer N[species, reaction] matrix from the native network.
+
+        Boundary/constant species (`$X`) have zero net stoichiometry in every reaction.
+        """
+        matrix = self._get_crn_network().stoichiometric_matrix
+        species = self.species
+        if any(s.is_constant for s in species):
+            matrix = matrix.copy()
+            for s in species:
+                if s.is_constant:
+                    matrix[s.index, :] = 0
+        return matrix
 
     def to_crn(self) -> dict:
         """Export the chemical reaction network as a portable dictionary."""
@@ -283,7 +389,10 @@ class BioNetGenModel:
                 }
                 for p in self.parameters
             ],
-            "species": [{"index": s.index, "name": s.name} for s in self.species],
+            "species": [
+                {"index": s.index, "name": s.name, "is_constant": s.is_constant}
+                for s in self.species
+            ],
             "complexes": [
                 {"index": c.index, "species": list(c.species)} for c in self.complexes
             ],
@@ -696,7 +805,13 @@ class BioNetGenModel:
                     matches.append(index)
         return span, matches
 
-    def _edit_topology(self, operation: str, edit) -> None:
+    def _edit_topology(
+        self,
+        operation: str,
+        edit,
+        *,
+        drop_parameter_override: Optional[str] = None,
+    ) -> None:
         self._require_export_supported(operation)
         if _cpp is None:
             raise RuntimeError("the BNG3 native extension is not available")
@@ -708,13 +823,18 @@ class BioNetGenModel:
             model = _cpp.parse_string(edited)
         except Exception as exc:
             raise ValueError(f"{operation} produced an invalid model: {exc}") from exc
-        for name, value in self.__dict__.get("_parameter_overrides", {}).items():
+        overrides = self.__dict__.get("_parameter_overrides", {})
+        for name, value in overrides.items():
+            if name == drop_parameter_override:
+                continue
             model.set_parameter(name, value)
         try:
             _cpp.generate_network(model, max_iter=0)
         except Exception as exc:
             raise ValueError(f"{operation} produced an invalid model: {exc}") from exc
         self._model = model
+        if drop_parameter_override is not None:
+            overrides.pop(drop_parameter_override, None)
         self._network = None
         self._continuation_network = None
         self._network_from_continuation = False
@@ -752,7 +872,7 @@ class BioNetGenModel:
             del lines[matches[0]]
             return text[: span[0]] + "\n".join(lines) + text[span[1] :]
 
-        self._edit_topology("remove_parameter", edit)
+        self._edit_topology("remove_parameter", edit, drop_parameter_override=target)
 
     def add_compartment(
         self,
@@ -1173,6 +1293,10 @@ class BioNetGenModel:
         """
         if _cpp is None:
             raise RuntimeError("this installation does not include the C++ engine")
+        if self._algebraic_rules:
+            raise ValueError(
+                "SBML algebraic rules require method='ode' and are not supported by simulate_batch_ssa"
+            )
         if not isinstance(backend, str):
             raise TypeError("backend must be a string")
         for name, value, minimum in (
@@ -1266,7 +1390,7 @@ class BioNetGenModel:
         max_sim_steps: int = 0,
         output_step_interval: int = 0,
         sparse: bool = False,
-        check_product_scale: float = 0.0,
+        check_product_scale: Optional[float] = None,
         equilibrate: float = 0.0,
         traversal_limit: int = -1,
         backend: Optional[str] = None,
@@ -1411,8 +1535,15 @@ class BioNetGenModel:
             raise ValueError("steady_state_tol must be finite and positive")
         if not isinstance(stop_if, str):
             raise TypeError("stop_if must be a string")
-        if not math.isfinite(float(check_product_scale)) or check_product_scale < 0.0:
-            raise ValueError("check_product_scale must be finite and non-negative")
+        if check_product_scale is not None:
+            if (
+                not math.isfinite(float(check_product_scale))
+                or float(check_product_scale) < 0.0
+            ):
+                raise ValueError("check_product_scale must be finite and non-negative")
+        ode_check_product_scale = (
+            float(check_product_scale) if check_product_scale is not None else 0.0
+        )
         if not math.isfinite(float(equilibrate)) or equilibrate < 0.0:
             raise ValueError("equilibrate must be finite and non-negative")
         if isinstance(traversal_limit, bool):
@@ -1489,14 +1620,17 @@ class BioNetGenModel:
         if n_steps == 0 and not normalized_sample_times:
             raise ValueError("n_steps must be positive unless sample_times is set")
 
-        ode_only_options = (
-            max_step > 0.0 or steady_state or sparse or check_product_scale > 0.0
-        )
+        ode_only_options = max_step > 0.0 or steady_state or sparse
         if method != "ode" and ode_only_options:
             raise ValueError(
-                "max_step, steady-state, sparse, and check_product_scale are "
+                "max_step, steady-state, and sparse are "
                 "supported only for method='ode'"
             )
+        if check_product_scale is not None and float(check_product_scale) > 0.0:
+            if method not in {"ode", "psa"}:
+                raise ValueError(
+                    "check_product_scale is supported only for method='ode' or method='psa'"
+                )
         if method == "ode" and (max_sim_steps or output_step_interval):
             raise ValueError(
                 "max_sim_steps and output_step_interval are supported only "
@@ -1708,7 +1842,7 @@ class BioNetGenModel:
                             max_sim_steps=max_sim_steps,
                             output_step_interval=output_step_interval,
                             sparse=sparse,
-                            check_product_scale=check_product_scale,
+                            check_product_scale=ode_check_product_scale,
                         )
                     else:
                         raw = _simulate_via_python_bngsim(
@@ -1729,7 +1863,7 @@ class BioNetGenModel:
                             max_sim_steps=max_sim_steps,
                             output_step_interval=output_step_interval,
                             sparse=sparse,
-                            check_product_scale=check_product_scale,
+                            check_product_scale=ode_check_product_scale,
                             batch_size=batch_size,
                         )
                     if isinstance(raw, dict) and "backend" not in raw:
@@ -1756,7 +1890,7 @@ class BioNetGenModel:
                             continue_simulation=continue_simulation,
                             fresh_from_initial_state=native_fresh_run,
                             sparse=sparse,
-                            check_product_scale=check_product_scale,
+                            check_product_scale=ode_check_product_scale,
                             algebraic_rules=self._algebraic_rules,
                         )
                     except Exception:
@@ -1798,7 +1932,7 @@ class BioNetGenModel:
                             max_sim_steps=max_sim_steps,
                             output_step_interval=output_step_interval,
                             sparse=sparse,
-                            check_product_scale=check_product_scale,
+                            check_product_scale=ode_check_product_scale,
                             batch_size=batch_size,
                         )
                     if isinstance(raw, dict) and "backend" not in raw:
@@ -1841,6 +1975,8 @@ class BioNetGenModel:
                     n_steps=n_steps,
                     config_str=pla_config,
                     t_start=t_start,
+                    seed=seed,
+                    sample_times=normalized_sample_times,
                 )
                 if isinstance(raw, dict) and "backend" not in raw:
                     raw["backend"] = "native"
@@ -1879,7 +2015,7 @@ class BioNetGenModel:
                             max_sim_steps=max_sim_steps,
                             output_step_interval=output_step_interval,
                             sparse=sparse,
-                            check_product_scale=check_product_scale,
+                            check_product_scale=ode_check_product_scale,
                             batch_size=batch_size,
                             psa_poplevel=psa_poplevel,
                         )
@@ -1893,6 +2029,9 @@ class BioNetGenModel:
                         n_steps=n_steps,
                         poplevel=psa_poplevel,
                         t_start=t_start,
+                        seed=seed,
+                        sample_times=normalized_sample_times,
+                        check_product_scale=check_product_scale,
                     )
                     if isinstance(raw, dict) and "backend" not in raw:
                         raw["backend"] = "native"

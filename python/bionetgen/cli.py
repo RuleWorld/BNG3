@@ -88,7 +88,10 @@ def main(require):
     "--method",
     "-m",
     default=None,
-    type=click.Choice(["ode", "ssa", "nf", "pla", "psa", "cvode", "rm"]),
+    type=click.Choice(
+        ["ode", "ssa", "nf", "nfcore", "nfnext", "pla", "psa"],
+        case_sensitive=False,
+    ),
     help="Simulation method.",
 )
 @click.option(
@@ -284,15 +287,65 @@ def execute(model, verbose):
     click.echo("Done.")
 
 
+def _find_undeclared_molecule_types(source_text: str, cpp_model) -> list[str]:
+    """Return molecule type names used in the model but absent from an explicit molecule types block."""
+    import re
+
+    mt_blocks = re.findall(
+        r"begin\s+molecule\s+types\b(.*?)end\s+molecule\s+types\b",
+        source_text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    if not mt_blocks:
+        return []
+    declared: set[str] = set()
+    for block in mt_blocks:
+        for raw_line in block.splitlines():
+            line = raw_line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            match = re.match(
+                r"(?:\d+\s+)?([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(|\s+population\b|\s*$)",
+                line,
+            )
+            if match:
+                declared.add(match.group(1))
+    for pop_block in re.findall(
+        r"begin\s+population\s+types\b(.*?)end\s+population\s+types\b",
+        source_text,
+        flags=re.DOTALL | re.IGNORECASE,
+    ):
+        for raw_line in pop_block.splitlines():
+            line = raw_line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            match = re.match(
+                r"(?:\d+\s+)?([A-Za-z_][A-Za-z0-9_]*)(?:\s*\(|\s+population\b|\s*$)",
+                line,
+            )
+            if match:
+                declared.add(match.group(1))
+    for pm in getattr(cpp_model, "population_maps", []):
+        fn_name = getattr(pm, "function", "")
+        if fn_name:
+            declared.add(fn_name)
+    return [mt.name for mt in cpp_model.molecule_types if mt.name not in declared]
+
+
 @main.command()
 @click.argument("model", type=click.Path(exists=True))
 def check(model):
-    """Parse a BNGL file and report any syntax errors."""
+    """Parse and semantically validate a BNGL file."""
     from bionetgen import _bionetgen_cpp as _cpp
 
     path = str(Path(model).resolve())
     try:
         cpp_model = _cpp.parse_file(path)
+        source_text = Path(path).read_text(encoding="utf-8", errors="replace")
+        undeclared = _find_undeclared_molecule_types(source_text, cpp_model)
+        if undeclared:
+            raise ValueError("Undeclared molecule type(s): " + ", ".join(undeclared))
+        _cpp.generate_network(cpp_model, max_iter=0)
         click.echo(f"OK: {path}")
         click.echo(f"  Parameters:      {len(cpp_model.parameters)}")
         click.echo(f"  Molecule types:  {len(cpp_model.molecule_types)}")
@@ -300,7 +353,7 @@ def check(model):
         click.echo(f"  Reaction rules:  {len(cpp_model.reaction_rules)}")
         click.echo(f"  Observables:     {len(cpp_model.observables)}")
         click.echo(f"  Actions:         {len(cpp_model.actions)}")
-    except _cpp.ParseError as e:
+    except Exception as e:
         click.echo(f"ERROR: {e}", err=True)
         sys.exit(1)
 

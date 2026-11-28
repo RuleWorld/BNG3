@@ -2,6 +2,7 @@
 
 #include <sstream>
 #include <iomanip>
+#include <cctype>
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
@@ -10,6 +11,129 @@
 #include "compile/TotalRate.hpp"
 
 namespace bng::io {
+
+namespace {
+
+std::string escapeBnglString(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        if (c == '\\' || c == '"') out.push_back('\\');
+        out.push_back(c);
+    }
+    return out;
+}
+
+std::string stripOuterQuotes(const std::string& text) {
+    if (text.size() >= 2 &&
+        ((text.front() == '"' && text.back() == '"') ||
+         (text.front() == '\'' && text.back() == '\''))) {
+        return text.substr(1, text.size() - 2);
+    }
+    return text;
+}
+
+bool isNumericOrStructuredActionValue(const std::string& value) {
+    if (value.empty()) return false;
+    const char first = value.front();
+    const char last = value.back();
+    if ((first == '"' && last == '"') || (first == '\'' && last == '\'') ||
+        (first == '[' && last == ']') || (first == '{' && last == '}')) {
+        return true;
+    }
+    try {
+        std::size_t consumed = 0;
+        (void)std::stod(value, &consumed);
+        return consumed == value.size();
+    } catch (...) {
+        return false;
+    }
+}
+
+std::string canonicalActionName(const std::string& name) {
+    if (name == "setparameter") return "setParameter";
+    if (name == "setconcentration") return "setConcentration";
+    if (name == "addconcentration") return "addConcentration";
+    if (name == "saveconcentrations") return "saveConcentrations";
+    if (name == "resetconcentrations") return "resetConcentrations";
+    if (name == "saveparameters") return "saveParameters";
+    if (name == "resetparameters") return "resetParameters";
+    if (name == "setvolume") return "setVolume";
+    if (name == "writexml") return "writeXML";
+    if (name == "writesbml") return "writeSBML";
+    if (name == "writesbmlmulti") return "writeSBMLMulti";
+    if (name == "writemodel") return "writeModel";
+    if (name == "writenetwork") return "writeNetwork";
+    if (name == "writefile") return "writeFile";
+    if (name == "writemfile") return "writeMfile";
+    if (name == "writemexfile") return "writeMexfile";
+    if (name == "writecppfile") return "writeCPPfile";
+    if (name == "writecpyfile") return "writeCPYfile";
+    if (name == "writelatex") return "writeLatex";
+    if (name == "writemdl") return "writeMDL";
+    if (name == "writessc") return "writeSSC";
+    if (name == "writessccfg") return "writeSSCcfg";
+    if (name == "readfile") return "readFile";
+    if (name == "linearparametersensitivity") return "LinearParameterSensitivity";
+    return name;
+}
+
+std::string sanitizeSingleLineComment(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (const char c : text) {
+        if (c == '\r' || c == '\n') {
+            out.push_back(' ');
+        } else {
+            out.push_back(c);
+        }
+    }
+    return out;
+}
+
+std::string writeObservablesWithNetwork(const ast::Model& model,
+                                        const engine::GeneratedNetwork* network) {
+    std::ostringstream bngl;
+    bngl << "begin observables\n";
+
+    for (const auto& obs : model.getObservables()) {
+        std::vector<std::string> patterns = obs.getPatterns();
+        if (patterns.empty() && obs.getIndexedSpeciesWeights().has_value() && network != nullptr) {
+            if (const auto& indexed = obs.getIndexedSpeciesWeights(); indexed.has_value()) {
+                for (const auto& [speciesIndex, weight] : *indexed) {
+                    if (speciesIndex >= network->species.size() || weight <= 0.0) continue;
+                    const auto& sp = network->species.get(speciesIndex);
+                    std::string pat = sp.getSpeciesGraph().toString();
+                    if (!pat.empty() && pat.front() == '$') {
+                        pat.erase(pat.begin());
+                    }
+                    if (!sp.getCompartment().empty() && pat.find('@') == std::string::npos) {
+                        pat = "@" + sp.getCompartment() + ":" + pat;
+                    }
+                    if (!pat.empty()) {
+                        patterns.push_back(std::move(pat));
+                    }
+                }
+            }
+        }
+        if (patterns.empty()) {
+            bngl << "  # " << obs.getType() << " " << obs.getName() << " (no patterns)\n";
+            continue;
+        }
+        bngl << "  " << obs.getType()
+             << " " << obs.getName() << " ";
+        for (std::size_t i = 0; i < patterns.size(); ++i) {
+            if (i > 0) bngl << ",";
+            bngl << patterns[i];
+        }
+        bngl << "\n";
+    }
+
+    bngl << "end observables\n\n";
+    return bngl.str();
+}
+
+} // namespace
 
 std::string BnglWriter::formatNumber(double value) {
     if (!std::isfinite(value)) return "0";
@@ -46,15 +170,33 @@ std::string BnglWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     if (options.includeComments) {
         bngl << "# Generated by BioNetGen C++\n";
-        bngl << "# Model: " << model.getModelName() << "\n\n";
+        bngl << "# Model: " << sanitizeSingleLineComment(model.getModelName()) << "\n\n";
     }
 
+    bool emittedHeaderDirective = false;
+    if (!model.getVersion().empty()) {
+        bngl << "version(\"" << escapeBnglString(model.getVersion()) << "\")\n";
+        emittedHeaderDirective = true;
+    }
+    if (!model.getSubstanceUnits().empty()) {
+        bngl << "substanceUnits(\"" << escapeBnglString(model.getSubstanceUnits()) << "\")\n";
+        emittedHeaderDirective = true;
+    }
+    for (const auto& [key, value] : model.getOptions()) {
+        if (key == "BNG3AbsoluteFluxRules") continue;
+        bngl << "setOption(\"" << escapeBnglString(key) << "\",\""
+             << escapeBnglString(value) << "\")\n";
+        emittedHeaderDirective = true;
+    }
     // Preserve source-law provenance across BNGL export/reparse. BNG2 stores
     // the unknown option without changing authored TotalRate semantics.
     const auto absoluteFluxRules = compile::absoluteFluxRuleNames(model);
     if (!absoluteFluxRules.empty()) {
         bngl << "setOption(\"BNG3AbsoluteFluxRules\",\""
              << absoluteFluxRules << "\")\n";
+        emittedHeaderDirective = true;
+    }
+    if (emittedHeaderDirective) {
         bngl << "\n";
     }
 
@@ -104,7 +246,7 @@ std::string BnglWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     // Observables
     if (!model.getObservables().empty()) {
-        bngl << writeObservables(model);
+        bngl << writeObservablesWithNetwork(model, network);
     }
 
     // Functions
@@ -125,6 +267,37 @@ std::string BnglWriter::write(const ast::Model& model, const engine::GeneratedNe
     // Reaction rules
     if (!model.getReactionRules().empty()) {
         bngl << writeReactionRules(model);
+    }
+    if (!model.getPopulationMaps().empty()) {
+        bngl << "begin population maps\n";
+        for (const auto& pm : model.getPopulationMaps()) {
+            bngl << "  ";
+            if (!pm.label.empty()) {
+                bngl << pm.label;
+                if (pm.label.back() != ':') bngl << ":";
+                bngl << " ";
+            }
+            const auto& popName = !pm.populationName.empty() ? pm.populationName : pm.populationFunction;
+            const auto& popArgs = !pm.populationArgs.empty() ? pm.populationArgs : pm.functionArgs;
+            bngl << pm.patternText << " -> " << popName << "(";
+            for (std::size_t i = 0; i < popArgs.size(); ++i) {
+                if (i > 0) bngl << ",";
+                bngl << popArgs[i];
+            }
+            bngl << ")";
+            if (pm.hasExplicitRate) {
+                if (!pm.rateText.empty()) {
+                    bngl << " " << pm.rateText;
+                } else {
+                    bngl << " " << pm.rateExpression.toBnglString();
+                }
+            }
+            if (pm.totalRate) {
+                bngl << " TotalRate";
+            }
+            bngl << "\n";
+        }
+        bngl << "end population maps\n\n";
     }
     if (model.getEventFormatVersion().has_value()) {
         bngl << writeEvents(model);
@@ -241,14 +414,30 @@ std::string BnglWriter::writeSeedSpecies(const ast::Model& model) {
 
     for (const auto& seed : model.getSeedSpecies()) {
         // Prefix compartments are stored separately from the seed pattern.
-        // Preserve the expression and fixed-species flag for later overrides.
+        // Emit compartment prefix before '$' (canonical BNGL: @EC:$L(r)).
         bngl << "  ";
-        if (seed.isConstant()) bngl << "$";
-        if (!seed.getCompartment().empty() && seed.getPattern().find('@') == std::string::npos) {
+        const std::string& pattern = seed.getPattern();
+        const bool hasAt = pattern.find('@') != std::string::npos;
+        if (!seed.getCompartment().empty() && !hasAt) {
             bngl << "@" << seed.getCompartment() << ":";
+            if (seed.isConstant()) bngl << "$";
+            bngl << pattern;
+        } else if (seed.isConstant() && !pattern.empty() && pattern.front() == '@') {
+            const auto colon = pattern.find(':');
+            if (colon != std::string::npos) {
+                std::size_t insertPos = colon + 1;
+                if (insertPos < pattern.size() && pattern[insertPos] == ':') {
+                    ++insertPos;
+                }
+                bngl << pattern.substr(0, insertPos) << "$" << pattern.substr(insertPos);
+            } else {
+                bngl << "$" << pattern;
+            }
+        } else {
+            if (seed.isConstant()) bngl << "$";
+            bngl << pattern;
         }
-        bngl << seed.getPattern()
-             << " " << seed.getAmount().toString()
+        bngl << " " << seed.getAmount().toString()
              << (seed.hasUnit() ? " [" + seed.getUnitName() + "]" : "")
              << "\n";
     }
@@ -258,25 +447,7 @@ std::string BnglWriter::writeSeedSpecies(const ast::Model& model) {
 }
 
 std::string BnglWriter::writeObservables(const ast::Model& model) {
-    std::ostringstream bngl;
-    bngl << "begin observables\n";
-
-    for (const auto& obs : model.getObservables()) {
-        bngl << "  " << obs.getType()
-             << " " << obs.getName() << " ";
-
-        // Join patterns with commas
-        const auto& patterns = obs.getPatterns();
-        for (std::size_t i = 0; i < patterns.size(); ++i) {
-            if (i > 0) bngl << ",";
-            bngl << patterns[i];
-        }
-
-        bngl << "\n";
-    }
-
-    bngl << "end observables\n\n";
-    return bngl.str();
+    return writeObservablesWithNetwork(model, nullptr);
 }
 
 std::string BnglWriter::writeFunctions(const ast::Model& model) {
@@ -284,8 +455,13 @@ std::string BnglWriter::writeFunctions(const ast::Model& model) {
     bngl << "begin functions\n";
 
     for (const auto& func : model.getFunctions()) {
-        bngl << "  " << func.getName() << "()";
-        bngl << " = " << func.getExpression().toBnglString();
+        bngl << "  " << func.getName() << "(";
+        const auto& args = func.getArgs();
+        for (std::size_t i = 0; i < args.size(); ++i) {
+            if (i > 0) bngl << ", ";
+            bngl << args[i];
+        }
+        bngl << ") = " << func.getExpression().toBnglString();
         bngl << "\n";
     }
 
@@ -417,17 +593,35 @@ std::string BnglWriter::writeActions(const ast::Model& model) {
     bngl << "begin actions\n";
 
     for (const auto& action : model.getActions()) {
-        bngl << "  " << action.name << "(";
-
-        // Write arguments
+        const std::string actionName = canonicalActionName(action.name);
+        if (action.name == "setparameter" || action.name == "setconcentration" ||
+            action.name == "addconcentration" || action.name == "setvolume") {
+            const auto target = action.arguments.find("target");
+            const auto value = action.arguments.find("value");
+            if (target != action.arguments.end() && value != action.arguments.end()) {
+                bngl << "  " << actionName << "(\""
+                     << escapeBnglString(stripOuterQuotes(target->second))
+                     << "\", " << value->second << ")\n";
+                continue;
+            }
+        }
+        if (action.arguments.empty()) {
+            bngl << "  " << actionName << "()\n";
+            continue;
+        }
+        bngl << "  " << actionName << "({";
         bool first = true;
         for (const auto& [key, value] : action.arguments) {
             if (!first) bngl << ", ";
             first = false;
-            bngl << key << "=>\"" << value << "\"";
+            bngl << key << "=>";
+            if (isNumericOrStructuredActionValue(value)) {
+                bngl << value;
+            } else {
+                bngl << "\"" << escapeBnglString(value) << "\"";
+            }
         }
-
-        bngl << ")\n";
+        bngl << "})\n";
     }
 
     bngl << "end actions\n";

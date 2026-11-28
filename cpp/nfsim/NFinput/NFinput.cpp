@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <type_traits>
 #include <cmath>
 
@@ -1529,6 +1530,21 @@ bool NFinput::initParameters(TiXmlElement *pListOfParameters, System *s, map <st
 			//Save the parameter into our parameter map
 			parameter[paramName]=d;
 			s->addParameter(paramName,d);
+			if (pParamElement->Attribute("expr")) {
+				const string exprText = pParamElement->Attribute("expr");
+				bool isPlainNumber = false;
+				try {
+					(void)NFutil::convertToDouble(exprText);
+					isPlainNumber = true;
+				} catch (...) {}
+				if (!isPlainNumber && !exprText.empty()) {
+					s->addDerivedParameter(paramName, [exprText](const map<string, double>& params) -> double {
+						map<string, double> mutableParams = params;
+						try { return NFinput::evaluateEnergyExpression(exprText, mutableParams); }
+						catch (...) { return std::numeric_limits<double>::quiet_NaN(); }
+					});
+				}
+			}
 			if(verbose) cout<<"\t\t Identified parameter:\t"<<paramName<<"\tValue:"<<d<<endl;
 		}
 		return true;
@@ -2406,7 +2422,28 @@ static string initStartSpeciesBody(
 						string moleculeTypeName = pFirstMol->Attribute("name");
 						MoleculeType *mt = s->getMoleculeTypeByName(moleculeTypeName);
 						if (mt != nullptr) {
-							mt->setFixed(true, specCountInteger, fixedCompartment);
+							vector<int> fixedStates(static_cast<size_t>(mt->getNumOfComponents()));
+							for (int c = 0; c < mt->getNumOfComponents(); ++c) {
+								fixedStates[static_cast<size_t>(c)] = mt->getDefaultComponentState(c);
+							}
+							if (!molecules.empty() && !molecules.at(0).empty()) {
+								for (int c = 0; c < mt->getNumOfComponents(); ++c) {
+									fixedStates[static_cast<size_t>(c)] = molecules.at(0).at(0)->getComponentState(c);
+								}
+							} else {
+								Element *pListOfComp = pFirstMol->FirstChildElement("ListOfComponents");
+								if (pListOfComp) {
+									for (Element *pComp = pListOfComp->FirstChildElement("Component");
+									     pComp != nullptr; pComp = pComp->NextSiblingElement("Component")) {
+										if (pComp->Attribute("name") && pComp->Attribute("state")) {
+											const int compIdx = mt->getCompIndexFromName(pComp->Attribute("name"));
+											fixedStates[static_cast<size_t>(compIdx)] =
+												mt->getStateValueFromName(compIdx, pComp->Attribute("state"));
+										}
+									}
+								}
+							}
+							mt->addFixedSpec(specCountInteger, fixedCompartment, fixedStates);
 							if (verbose) {
 								cout << "\t\tSpecies '" << moleculeTypeName
 									 << "' marked as FIXED with count " << specCountInteger << endl;
@@ -2687,8 +2724,15 @@ bool validateXmlProductFilters(
 				}
 				const bool contains = productPatternContainsMolecule(
 						pProductPattern, moleculeName);
-				if ((include && !contains) || (!include && contains)) {
-					passes = false;
+				if (contains) {
+					if (!include) {
+						passes = false;
+					}
+				} else {
+					diagnostic =
+						"product filter requires dynamic product-complex evaluation "
+						"not available on legacy XML fallback";
+					return false;
 				}
 			}
 		}
@@ -3926,17 +3970,13 @@ static bool initReactionRulesBody(
 								return false;
 							}
 							const string workText = pRateLaw->Attribute("drivingWork");
-							if (parameter.find(workText) != parameter.end()) {
-								rule_drivingWork = parameter.find(workText)->second;
-							} else {
-								try {
-									rule_drivingWork = NFutil::convertToDouble(workText);
-								} catch (...) {
-									cerr << "Error!! cannot resolve drivingWork '"
-									     << workText << "' for ReactionRule "
-									     << rxnName << ". Quitting." << endl;
-									return false;
-								}
+							try {
+								rule_drivingWork = NFinput::evaluateEnergyExpression(workText, parameter);
+							} catch (...) {
+								cerr << "Error!! cannot resolve drivingWork '"
+								     << workText << "' for ReactionRule "
+								     << rxnName << ". Quitting." << endl;
+								return false;
 							}
 							if (!std::isfinite(rule_drivingWork)) {
 								cerr << "Error!! drivingWork for ReactionRule " << rxnName
@@ -3976,15 +4016,11 @@ static bool initReactionRulesBody(
 						// BNG2 Arrhenius format: [0]=phi (prefactor), [1]=Ea0 (activation energy)
 						string phi_v_str = pRateConstant->Attribute("value");
 						double rule_phi = 1.0;
-						try { rule_phi = NFutil::convertToDouble(phi_v_str); }
+						try { rule_phi = NFinput::evaluateEnergyExpression(phi_v_str, parameter); }
 						catch (...) {
-							if(parameter.find(phi_v_str) != parameter.end())
-								rule_phi = parameter.find(phi_v_str)->second;
-							else {
-								cerr << "Cannot resolve phi parameter '" << phi_v_str
-								     << "' for Arrhenius rule " << rxnName << endl;
-								return false;
-							}
+							cerr << "Cannot resolve phi parameter '" << phi_v_str
+							     << "' for Arrhenius rule " << rxnName << endl;
+							return false;
 						}
 
 						Element *pRateConstant2 = pRateConstant->NextSiblingElement("RateConstant");
@@ -3994,15 +4030,11 @@ static bool initReactionRulesBody(
 						}
 						string rateValue = pRateConstant2->Attribute("value");
 						double Ea0 = 0;
-						try { Ea0 = NFutil::convertToDouble(rateValue); }
+						try { Ea0 = NFinput::evaluateEnergyExpression(rateValue, parameter); }
 						catch (...) {
-							if(parameter.find(rateValue) != parameter.end())
-								Ea0 = parameter.find(rateValue)->second;
-							else {
-								cerr << "Cannot resolve Ea0 parameter '" << rateValue
-								     << "' for Arrhenius rule " << rxnName << endl;
-								return false;
-							}
+							cerr << "Cannot resolve Ea0 parameter '" << rateValue
+							     << "' for Arrhenius rule " << rxnName << endl;
+							return false;
 						}
 
 						Element *operation = pListOfOperations->FirstChildElement();
@@ -4015,35 +4047,74 @@ static bool initReactionRulesBody(
 						const bool bng3EnergyRule = pRxnRule->Attribute("energyIncludeReverse");
 						const bool includeReverse = bng3EnergyRule && includeArrheniusReverse;
 						const std::size_t firstNewReaction = s->getAllReactionsRef().size();
+						ArrheniusRuleContext xmlRuleCtx;
+						xmlRuleCtx.phiExpr = [s, phi_v_str]() -> double {
+							map<string, double> params = s->getParameterMap();
+							return NFinput::evaluateEnergyExpression(phi_v_str, params);
+						};
+						xmlRuleCtx.ea0Expr = [s, rateValue]() -> double {
+							map<string, double> params = s->getParameterMap();
+							return NFinput::evaluateEnergyExpression(rateValue, params);
+						};
+						if (reactantCompartments.size() >= 1) xmlRuleCtx.reactantCompartments[0] = reactantCompartments[0];
+						if (reactantCompartments.size() >= 2) xmlRuleCtx.reactantCompartments[1] = reactantCompartments[1];
+						if (addBondCount == 1 && ts->getNreactants() == 2 && s->getNumCompartments() > 0) {
+							const bool hasWildcardComp =
+								reactantCompartments.size() != 2 ||
+								reactantCompartments[0] == NULL || reactantCompartments[1] == NULL;
+							if (hasWildcardComp) {
+								double uSize = 0.0; int uDim = 0;
+								if (s->hasPlacementIndependentCompartmentSizes(uSize, uDim)) {
+									xmlRuleCtx.volumeCompartments.push_back(s->getCompartments().begin()->second);
+								}
+							} else {
+								if (reactantCompartments[0]->getSpatialDimensions() == 2 &&
+								    reactantCompartments[1]->getSpatialDimensions() != 2) {
+									xmlRuleCtx.volumeCompartments.push_back(reactantCompartments[1]);
+								} else if (reactantCompartments[1]->getSpatialDimensions() == 2 &&
+								           reactantCompartments[0]->getSpatialDimensions() != 2) {
+									xmlRuleCtx.volumeCompartments.push_back(reactantCompartments[0]);
+								} else {
+									xmlRuleCtx.volumeCompartments.push_back(reactantCompartments[1]);
+								}
+							}
+						}
 						bool expanded = false;
 						if (addBondCount == 1 && ts->getNreactants() == 2) {
 							expanded = NFinput::createExpandedBindingReactions(
 								rxnName, rule_phi, Ea0, ts->getTemplateMolecule(0)->getMoleculeType(),
 								addBondSite1, ts->getTemplateMolecule(1)->getMoleculeType(), addBondSite2,
 								s, parameter, allowedStates, blockSameComplexBinding, verbose,
-								reaction_count, includeReverse, "", "", rule_drivingWork);
+								reaction_count, includeReverse, "", "", rule_drivingWork, true, xmlRuleCtx);
 						} else if (deleteBondCount == 1) {
 							bool paired = false;
 							if constexpr (std::is_same_v<Element, TiXmlElement>)
 								paired = isPairedArrheniusUnbindingDirection(pRxnRule);
-							if (!paired) rule_phi = 1.0 - rule_phi;
+							if (!paired) {
+								rule_phi = 1.0 - rule_phi;
+								auto origPhi = xmlRuleCtx.phiExpr;
+								xmlRuleCtx.phiExpr = [origPhi]() -> double { return 1.0 - origPhi(); };
+							}
 							expanded = NFinput::createExpandedBindingReactions(
 								rxnName, rule_phi, Ea0, deleteBondType1, deleteBondSite1,
 								deleteBondType2, deleteBondSite2, s, parameter, allowedStates,
 								blockSameComplexBinding, verbose, reaction_count,
-								true, "", "", rule_drivingWork, false);
+								true, "", "", rule_drivingWork, false, xmlRuleCtx);
 						} else if (arrheniusStateChangeCount == 1 && arrheniusStateMoleculeType &&
 								!arrheniusStateFrom.empty() && !arrheniusStateTo.empty() &&
 								arrheniusStateTo != "PLUS" && arrheniusStateTo != "MINUS") {
 							if constexpr (std::is_same_v<Element, TiXmlElement>) {
-								if (!bng3EnergyRule && isReverseArrheniusStateDirection(pRxnRule))
+								if (!bng3EnergyRule && isReverseArrheniusStateDirection(pRxnRule)) {
 									rule_phi = 1.0 - rule_phi;
+									auto origPhi = xmlRuleCtx.phiExpr;
+									xmlRuleCtx.phiExpr = [origPhi]() -> double { return 1.0 - origPhi(); };
+								}
 							}
 							expanded = NFinput::createExpandedStateChangeReactions(
 								rxnName, rule_phi, Ea0, arrheniusStateMoleculeType,
 								arrheniusStateComponent, arrheniusStateFrom, arrheniusStateTo,
 								s, blockSameComplexBinding, verbose, reaction_count,
-								includeReverse, "", rule_drivingWork);
+								includeReverse, "", rule_drivingWork, xmlRuleCtx);
 						}
 						delete ts;
 						if (!expanded) {
@@ -4716,7 +4787,7 @@ static bool initReactionRulesBody(
 								}
 							}
 						}
-						else if (ts->getNreactants() > 1 && s->getNumCompartments() > 0) {
+						else if (!totalRateFlag && ts->getNreactants() > 1 && s->getNumCompartments() > 0) {
 							// BNG2 applies the Rxn.pm 1/product(remaining sizes)
 							// unit_conversion to every rate law type, not just
 							// elementary ones, so functional/DOR/Sat/Hill/MM

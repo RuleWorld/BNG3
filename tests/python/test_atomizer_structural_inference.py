@@ -970,8 +970,17 @@ def test_atomized_multi_molecule_species_carries_identity_marker():
 
 
 def test_without_species_identity_marker_reproduces_overinstantiation(monkeypatch):
-    """Negative control: the legacy disambiguation path restores the defect."""
+    """Negative control: legacy disambiguation omits the ``__sp`` identity marker.
 
+    With canonical BNG2/BNG3 exact bond-cardinality matching, ``b1!1`` in ``IX``
+    no longer spuriously matches ``b1!1!2`` in ``IXa`` (matching ``BNG2.pl``
+    which generates 1 reaction for both).  Legacy disambiguation still omits the
+    ``__sp`` marker on multi-molecule complexes, whereas any rule pattern with
+    an omitted site (e.g. ``A(b!1).B(a!1)`` against ``A(b!1).B(a!1,c!2).C(b!2)``)
+    still matches the larger complex unless ``__sp`` disambiguates them.
+    """
+
+    import bionetgen._bionetgen_cpp as cpp
     import bionetgen.atomizer.modern as modern_atomizer
     from bionetgen.atomizer.modern.core import disambiguate_colliding_species
 
@@ -981,12 +990,38 @@ def test_without_species_identity_marker_reproduces_overinstantiation(monkeypatc
     monkeypatch.setattr(
         modern_atomizer, "disambiguate_colliding_species", legacy_disambiguation
     )
-    report = compare_flat_and_atomized(_substructure_overinstantiation_model())
+    result = _atomize(_substructure_overinstantiation_model())
+    assert result.success, result.error
+    assert "__sp~IX" not in result.bngl
+    assert "__sp~IXa" not in result.bngl
 
+    # Exact bond cardinality prevents b1!1 from matching b1!1!2 (BNG2 parity).
+    report = compare_flat_and_atomized(_substructure_overinstantiation_model())
     assert report["flat_reactions"] == 1
-    assert report["atomized_reactions"] == 2
-    assert not report["equivalent"]
-    assert any("reaction count differs" in problem for problem in report["problems"])
+    assert report["atomized_reactions"] == 1
+
+    # Genuine BNGL substructure over-instantiation occurs when a pattern omits
+    # an extra site present in a larger complex unless __sp disambiguates it.
+    omitted_site_bngl = """begin model
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A(b)
+  B(a,c)
+  C(b)
+end molecule types
+begin seed species
+  A(b!1).B(a!1,c) 1
+  A(b!1).B(a!1,c!2).C(b!2) 1
+end seed species
+begin reaction rules
+  consume: A(b!1).B(a!1) -> A(b) + B(a) k
+end reaction rules
+end model
+"""
+    net = cpp.generate_network(cpp.parse_string(omitted_site_bngl))
+    assert net.num_reactions == 2
 
 
 def _reaction(
