@@ -104,6 +104,9 @@ namespace NFcore
 
 			void getTemplateMoleculeList(int &n_templates, TemplateMolecule **&tmList);
 
+			void setTermGroupIds(const vector<int> &groups) { termGroupIds = groups; }
+			const vector<int>& getTermGroupIds() const { return termGroupIds; }
+
 			void addReferenceToMyself(mu::Parser *p);
 			void addReferenceToMyself(string referenceName, mu::Parser *p);
 			void addDependentRxn(ReactionClass *r);
@@ -156,6 +159,7 @@ namespace NFcore
 			ReactionClass ** dependentRxns;
 
 			vector <LocalFunction *> localFunctionReferences;
+			vector <int> termGroupIds;
 
 			void notifyLocalFunctions();
 			void updateDependentReactions();
@@ -202,6 +206,7 @@ namespace NFcore
 
 			virtual int isObservable(Molecule *m) const;
 			virtual int isObservable(Complex *c) const;
+			int isObservableMembers(const list<Molecule *> &members) const;
 
 		protected:
 

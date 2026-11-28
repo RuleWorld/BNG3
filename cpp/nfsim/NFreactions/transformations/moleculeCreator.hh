@@ -55,6 +55,9 @@ namespace NFcore
 			// the reaction compartment at transformation time
 			Compartment * getCompartment() const { return compartment; };
 
+			// non-default component index / state index pairs
+			const vector < pair<int,int> > & getComponentStates() const { return component_states; };
+
 		protected:
 
 			// for population types:

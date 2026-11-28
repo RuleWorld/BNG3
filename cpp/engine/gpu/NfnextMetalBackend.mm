@@ -759,6 +759,65 @@ bool matchObsTermFromRoot(
     return true;
 }
 
+bool areInSameComplex(
+    uint pBase,
+    uint maxSites,
+    int mA,
+    int mB,
+    int ignoreMolA,
+    int ignoreSiteA,
+    int ignoreMolB,
+    int ignoreSiteB,
+    constant uint* typeSiteCounts,
+    device const char* alive,
+    device const int* molType,
+    device const int* siteBondMol,
+    thread bool& overflow)
+{
+    if (mA == mB) return true;
+    if (mA < 0 || mB < 0) return false;
+    const uint scA = typeSiteCounts[(uint)molType[pBase + (uint)mA]];
+    bool hasAnyBond = false;
+    for (uint s = 0u; s < scA; ++s) {
+        if ((mA == ignoreMolA && (int)s == ignoreSiteA) ||
+            (mA == ignoreMolB && (int)s == ignoreSiteB)) {
+            continue;
+        }
+        const int p = siteBondMol[(pBase + (uint)mA) * maxSites + s];
+        if (p == mB) return true;
+        if (p >= 0 && alive[pBase + (uint)p] != 0) hasAnyBond = true;
+    }
+    if (!hasAnyBond) return false;
+    int q[64];
+    uint head = 0u, tail = 0u;
+    q[tail++] = mA;
+    while (head < tail) {
+        const int cur = q[head++];
+        const uint sc = typeSiteCounts[(uint)molType[pBase + (uint)cur]];
+        for (uint s = 0u; s < sc; ++s) {
+            if ((cur == ignoreMolA && (int)s == ignoreSiteA) ||
+                (cur == ignoreMolB && (int)s == ignoreSiteB)) {
+                continue;
+            }
+            const int p = siteBondMol[(pBase + (uint)cur) * maxSites + s];
+            if (p < 0 || alive[pBase + (uint)p] == 0) continue;
+            if (p == mB) return true;
+            bool seen = false;
+            for (uint k = 0u; k < tail; ++k) {
+                if (q[k] == p) { seen = true; break; }
+            }
+            if (!seen) {
+                if (tail >= 64u) {
+                    overflow = true;
+                    return false;
+                }
+                q[tail++] = p;
+            }
+        }
+    }
+    return false;
+}
+
 float evalObservable(
     uint pBase,
     uint obsIdx,
@@ -775,7 +834,8 @@ float evalObservable(
     device const int* molType,
     device const int* siteState,
     device const int* siteBondMol,
-    device const int* siteBondSite)
+    device const int* siteBondSite,
+    thread bool& bfsOverflow)
 {
     const GpuObsDef obs = observables[obsIdx];
     uint total = 0u;
@@ -796,26 +856,60 @@ float evalObservable(
             }
             total += matches * term.weight;
         }
-    } else {
-        // Species observable: count each distinct complex matching at least one term.
-        if (obs.termCount > 0u) {
-            const uint t0 = (uint)obsNodes[obsTerms[obs.termOffset].nodeOffset].molType;
-            const uint start = typeOffsets[t0];
-            const uint end = start + typeCaps[t0];
-            for (uint m = start; m < end; ++m) {
-                if (alive[pBase + m] == 0) continue;
-                bool matchedAny = false;
-                for (uint ti = 0; ti < obs.termCount; ++ti) {
-                    if (matchObsTermFromRoot(pBase, params.maxSites, (int)m,
-                                             obsTerms[obs.termOffset + ti],
-                                             obsNodes, obsBonds, constraints, typeSiteCounts,
-                                             alive, molType, siteState, siteBondMol, siteBondSite,
-                                             true)) {
-                        matchedAny = true;
+    } else if (obs.termCount > 0u) {
+        // Species observable: visit each live connected complex once via its
+        // smallest live particle ID and count each original BNGL term group
+        // that has at least one substructure match in the complex.
+        for (uint m = 0u; m < params.totalCapacity; ++m) {
+            if (alive[pBase + m] == 0) continue;
+            int comp[64];
+            uint head = 0u, tail = 0u;
+            comp[tail++] = (int)m;
+            bool isRoot = true;
+            while (head < tail && isRoot) {
+                const int cur = comp[head++];
+                const uint sc = typeSiteCounts[(uint)molType[pBase + (uint)cur]];
+                for (uint s = 0u; s < sc; ++s) {
+                    const int p = siteBondMol[(pBase + (uint)cur) * params.maxSites + s];
+                    if (p < 0 || alive[pBase + (uint)p] == 0) continue;
+                    if (p < (int)m) {
+                        isRoot = false;
                         break;
                     }
+                    bool seen = false;
+                    for (uint k = 0u; k < tail; ++k) {
+                        if (comp[k] == p) { seen = true; break; }
+                    }
+                    if (!seen) {
+                        if (tail >= 64u) {
+                            bfsOverflow = true;
+                            return 0.0f;
+                        }
+                        comp[tail++] = p;
+                    }
                 }
-                if (matchedAny) ++total;
+            }
+            if (!isRoot) continue;
+            uint ti = 0u;
+            while (ti < obs.termCount) {
+                const uint groupId = obsTerms[obs.termOffset + ti].pad;
+                bool groupMatched = false;
+                while (ti < obs.termCount && obsTerms[obs.termOffset + ti].pad == groupId) {
+                    if (!groupMatched) {
+                        const GpuObsTermDef term = obsTerms[obs.termOffset + ti];
+                        for (uint ci = 0u; ci < tail; ++ci) {
+                            if (matchObsTermFromRoot(pBase, params.maxSites, comp[ci], term,
+                                                     obsNodes, obsBonds, constraints, typeSiteCounts,
+                                                     alive, molType, siteState, siteBondMol, siteBondSite,
+                                                     false)) {
+                                groupMatched = true;
+                                break;
+                            }
+                        }
+                    }
+                    ++ti;
+                }
+                if (groupMatched) ++total;
             }
         }
     }
@@ -836,54 +930,78 @@ float evalVm(
         const GpuVmInstr ins = vmCode[vmOffset + pc++];
         const uchar op = ins.op;
         if (op == 0u) {
+            if (top >= 32u) { ok = false; return 0.0f; }
             stack[top++] = ins.value;
         } else if (op == 1u) {
+            if (top >= 32u || ins.index >= 64u) { ok = false; return 0.0f; }
             stack[top++] = obsValues[ins.index];
         } else if (op == 2u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] += b;
         } else if (op == 3u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] -= b;
         } else if (op == 4u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] *= b;
         } else if (op == 5u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top];
             if (b == 0.0f) { ok = false; return 0.0f; }
             stack[top - 1u] /= b;
         } else if (op == 6u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = pow(stack[top - 1u], b);
         } else if (op == 7u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = -stack[top - 1u];
         } else if (op == 8u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = exp(stack[top - 1u]);
         } else if (op == 9u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = log(stack[top - 1u]);
         } else if (op == 10u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = sqrt(stack[top - 1u]);
         } else if (op == 11u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = sin(stack[top - 1u]);
         } else if (op == 12u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = cos(stack[top - 1u]);
         } else if (op == 13u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = tan(stack[top - 1u]);
         } else if (op == 14u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = fabs(stack[top - 1u]);
         } else if (op == 15u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = min(stack[top - 1u], b);
         } else if (op == 16u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = max(stack[top - 1u], b);
         } else if (op == 17u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] < b) ? 1.0f : 0.0f;
         } else if (op == 18u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] <= b) ? 1.0f : 0.0f;
         } else if (op == 19u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] > b) ? 1.0f : 0.0f;
         } else if (op == 20u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] >= b) ? 1.0f : 0.0f;
         } else if (op == 21u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] == b) ? 1.0f : 0.0f;
         } else if (op == 22u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] != b) ? 1.0f : 0.0f;
         } else if (op == 23u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             if (stack[--top] == 0.0f) pc = ins.index;
         } else if (op == 24u) {
             pc = ins.index;
@@ -896,12 +1014,16 @@ float evalVm(
     return stack[0];
 }
 
-void addTouched(thread int* touched, thread uint& touchedCount, int mol) {
+void addTouched(thread int* touched, thread uint& touchedCount, int mol, thread bool& overflow) {
     if (mol < 0) return;
     for (uint i = 0; i < touchedCount; ++i) {
         if (touched[i] == mol) return;
     }
-    if (touchedCount < 32u) touched[touchedCount++] = mol;
+    if (touchedCount < 64u) {
+        touched[touchedCount++] = mol;
+    } else {
+        overflow = true;
+    }
 }
 
 kernel void nfnext_graph_batch(
@@ -977,7 +1099,7 @@ kernel void nfnext_graph_batch(
     }
 
     float ruleProps[256];
-    float obsValues[32];
+    float obsValues[64];
     ulong events = 0ULL;
     float time = 0.0f;
 
@@ -985,11 +1107,18 @@ kernel void nfnext_graph_batch(
         const float targetTime = sampleTimes[outIdx];
         for (;;) {
             if (hasDynamicRules) {
-                for (uint oi = 0; oi < params.numObservables && oi < 32u; ++oi) {
+                for (uint oi = 0; oi < params.numObservables && oi < 64u; ++oi) {
+                    bool bfsOverflow = false;
                     obsValues[oi] = evalObservable(
                         pBase, oi, params, typeOffsets, typeCaps, typeSiteCounts,
                         constraints, obsNodes, obsBonds, obsTerms, observables,
-                        alive, molType, siteState, siteBondMol, siteBondSite);
+                        alive, molType, siteState, siteBondMol, siteBondSite,
+                        bfsOverflow);
+                    if (bfsOverflow) {
+                        errorFlags[trajectory] = 4u;
+                        eventCounts[trajectory] = events;
+                        return;
+                    }
                 }
             }
             float total = 0.0f;
@@ -1014,6 +1143,9 @@ kernel void nfnext_graph_batch(
                 } else {
                     const uint c1 = mlCounts[trajectory * params.numMatchLists + rule.matchList1];
                     countF = (float)c0 * (float)c1;
+                }
+                if ((rule.pad0 & 0x04u) != 0u) {
+                    countF *= 0.5f;
                 }
                 const float prop = (rule.isTotalRate != 0u)
                     ? ((countF > 0.0f) ? rate : 0.0f)
@@ -1075,6 +1207,35 @@ kernel void nfnext_graph_batch(
                 nodes[1] = siteBondMol[(pBase + (uint)m0) * params.maxSites + (uint)ml0.bondSite0];
             }
 
+            // Enforce reactant DifferentComplex ('+') molecularity via exact Gillespie thinning.
+            if ((rule.pad0 & 0x01u) != 0u && rule.isTwoComponent != 0u) {
+                bool bfsOverflow = false;
+                const bool same = areInSameComplex(
+                    pBase, params.maxSites, nodes[0], nodes[1],
+                    -1, -1, -1, -1,
+                    typeSiteCounts, alive, molType, siteBondMol, bfsOverflow);
+                if (bfsOverflow) {
+                    errorFlags[trajectory] = 4u;
+                    eventCounts[trajectory] = events;
+                    return;
+                }
+                if (same) continue;
+            }
+            // Enforce product DifferentComplex ('+') molecularity on unbind (forbids ring opening).
+            if ((rule.pad0 & 0x02u) != 0u && ml0.partnerType >= 0) {
+                bool bfsOverflow = false;
+                const bool stillSame = areInSameComplex(
+                    pBase, params.maxSites, nodes[0], nodes[1],
+                    nodes[0], (int)ml0.bondSite0, nodes[1], (int)ml0.bondSite1,
+                    typeSiteCounts, alive, molType, siteBondMol, bfsOverflow);
+                if (bfsOverflow) {
+                    errorFlags[trajectory] = 4u;
+                    eventCounts[trajectory] = events;
+                    return;
+                }
+                if (stillSame) continue;
+            }
+
             if (rule.filterCount > 0u) {
                 bool filterPassed = true;
                 for (uint fi = 0u; fi < (uint)rule.filterCount; ++fi) {
@@ -1126,16 +1287,18 @@ kernel void nfnext_graph_batch(
                 if (!filterPassed) continue;
             }
 
-            int touched[32];
+            int touched[64];
             uint touchedCount = 0u;
+            bool touchedOverflow = false;
             // Record reactants and their pre-reaction direct bond partners.
             for (uint ni = 0; ni < 2u; ++ni) {
                 if (nodes[ni] < 0) continue;
-                addTouched(touched, touchedCount, nodes[ni]);
+                addTouched(touched, touchedCount, nodes[ni], touchedOverflow);
                 const uint sc = typeSiteCounts[(uint)molType[pBase + (uint)nodes[ni]]];
                 for (uint s = 0; s < sc; ++s) {
                     addTouched(touched, touchedCount,
-                               siteBondMol[(pBase + (uint)nodes[ni]) * params.maxSites + s]);
+                               siteBondMol[(pBase + (uint)nodes[ni]) * params.maxSites + s],
+                               touchedOverflow);
                 }
             }
 
@@ -1165,7 +1328,7 @@ kernel void nfnext_graph_batch(
                         siteBondSite[sIdx] = -1;
                     }
                     nodes[act.targetNode] = slot;
-                    addTouched(touched, touchedCount, slot);
+                    addTouched(touched, touchedCount, slot, touchedOverflow);
                 }
             }
             for (uint ai = 0; ai < rule.actionCount; ++ai) {
@@ -1202,7 +1365,15 @@ kernel void nfnext_graph_batch(
                             const uint iP = (pBase + (uint)p) * params.maxSites + (uint)ps;
                             siteBondMol[iP] = -1;
                             siteBondSite[iP] = -1;
-                            addTouched(touched, touchedCount, p);
+                            addTouched(touched, touchedCount, p, touchedOverflow);
+                            // Also refresh 2-hop bond partners of freed partner p.
+                            const uint pSc = typeSiteCounts[(uint)molType[pBase + (uint)p]];
+                            for (uint ps2 = 0u; ps2 < pSc; ++ps2) {
+                                const int p2 = siteBondMol[(pBase + (uint)p) * params.maxSites + ps2];
+                                if (p2 >= 0 && p2 != m) {
+                                    addTouched(touched, touchedCount, p2, touchedOverflow);
+                                }
+                            }
                         }
                         siteBondMol[iM] = -1;
                         siteBondSite[iM] = -1;
@@ -1215,7 +1386,7 @@ kernel void nfnext_graph_batch(
                     if (root >= 0 && alive[pBase + (uint)root] != 0) {
                         dq[dqt++] = root;
                         alive[pBase + (uint)root] = 0;
-                        addTouched(touched, touchedCount, root);
+                        addTouched(touched, touchedCount, root, touchedOverflow);
                         while (dqh < dqt) {
                             const int cur = dq[dqh++];
                             const uint sc = typeSiteCounts[(uint)molType[pBase + (uint)cur]];
@@ -1237,13 +1408,18 @@ kernel void nfnext_graph_batch(
                                         }
                                         alive[pBase + (uint)p] = 0;
                                         dq[dqt++] = p;
-                                        addTouched(touched, touchedCount, p);
+                                        addTouched(touched, touchedCount, p, touchedOverflow);
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+            if (touchedOverflow) {
+                errorFlags[trajectory] = 4u;
+                eventCounts[trajectory] = events;
+                return;
             }
 
             for (uint ti = 0; ti < touchedCount; ++ti) {
@@ -1259,10 +1435,17 @@ kernel void nfnext_graph_batch(
         }
 
         for (uint oi = 0; oi < params.numObservables; ++oi) {
+            bool bfsOverflow = false;
             const float val = evalObservable(
                 pBase, oi, params, typeOffsets, typeCaps, typeSiteCounts,
                 constraints, obsNodes, obsBonds, obsTerms, observables,
-                alive, molType, siteState, siteBondMol, siteBondSite);
+                alive, molType, siteState, siteBondMol, siteBondSite,
+                bfsOverflow);
+            if (bfsOverflow) {
+                errorFlags[trajectory] = 4u;
+                eventCounts[trajectory] = events;
+                return;
+            }
             outputs[(trajectory * params.numOutputs + outIdx) * params.numObservables + oi] = val;
         }
     }

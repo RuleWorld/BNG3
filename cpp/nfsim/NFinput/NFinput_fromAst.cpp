@@ -2402,9 +2402,15 @@ bool validateProductFiltersFromAst(const bng::ast::ReactionRule& rule,
                 [&](const auto& molecule) {
                     return molecule.name == filterMolecules.front().name;
                 });
-            if ((parsedModifier.include && !contains) ||
-                (!parsedModifier.include && contains)) {
-                passes = false;
+            if (contains) {
+                if (!parsedModifier.include) {
+                    passes = false;
+                }
+            } else {
+                diagnostic =
+                    "product filter requires dynamic product-complex evaluation "
+                    "not available on legacy AST fallback";
+                return false;
             }
         }
     }

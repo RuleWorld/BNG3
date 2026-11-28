@@ -66,6 +66,31 @@ std::size_t checkedCudaBytes(std::size_t count, std::size_t itemSize) {
     return count * itemSize;
 }
 
+// Centered Welford online moments prevent catastrophic variance cancellation
+// when ensemble means are large relative to standard deviations (e.g. > 1e7).
+struct RunningMoments {
+    std::size_t count = 0;
+    double mean = 0.0;
+    double m2 = 0.0;
+
+    void add(double value) {
+        ++count;
+        const double delta = value - mean;
+        mean += delta / static_cast<double>(count);
+        m2 += delta * (value - mean);
+    }
+
+    double average() const {
+        return count > 0 ? mean : 0.0;
+    }
+
+    double standardDeviation() const {
+        return count > 0
+            ? std::sqrt(std::max(0.0, m2 / static_cast<double>(count)))
+            : 0.0;
+    }
+};
+
 const char* cudaErrorText(cudaError_t status) {
     const char* text = cudaGetErrorString(status);
     return text != nullptr ? text : "unknown CUDA error";
@@ -604,8 +629,20 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     }
 
     // Host pre-check: guard against extreme initial propensity dynamic range
-    // exceeding float32 / 24-bit RNG selection resolution (> 1e5).
+    // exceeding float32 / 24-bit RNG selection resolution (> 1e5), and fail
+    // closed to CPU when functional VM rates operate on populations > 2^24.
     {
+        if (net.hasFunctional) {
+            constexpr int32_t kMaxExactFloat32Int = 16777216;
+            for (uint32_t s = 0; s < net.numSpecies; ++s) {
+                if (net.initialSpecies[s] > kMaxExactFloat32Int ||
+                    net.initialSpecies[s] < -kMaxExactFloat32Int) {
+                    throw std::runtime_error(
+                        "CUDA backend: functional rate with species count exceeding float32 "
+                        "exact integer range (2^24); falling back to CPU");
+                }
+            }
+        }
         double initSumProp = 0.0;
         double initMinPosProp = std::numeric_limits<double>::infinity();
         for (uint32_t r = 0; r < net.numReactions; ++r) {
@@ -872,51 +909,79 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
 
     metrics.observableMeans.resize(numPoints, std::vector<float>(numObs, 0.0f));
     metrics.observableStdDevs.resize(numPoints, std::vector<float>(numObs, 0.0f));
-    if (numObs > 0) {
-        const double N = static_cast<double>(batchSize);
-        for (std::size_t step = 0; step < numPoints; ++step) {
-            for (std::size_t g = 0; g < numObs; ++g) {
-                double sum = 0.0;
-                double sumSq = 0.0;
-                for (std::size_t b = 0; b < batchSize; ++b) {
-                    const double val = allObs[b * numPoints * numObs + step * numObs + g];
-                    sum += val;
-                    sumSq += val * val;
-                }
-                const double mean = sum / N;
-                const double variance = std::max(0.0, (sumSq / N) - (mean * mean));
-                metrics.observableMeans[step][g] = static_cast<float>(mean);
-                metrics.observableStdDevs[step][g] = static_cast<float>(std::sqrt(variance));
-            }
-        }
-    }
-    // Full [time][species] grid required by the common OdeResult contract.
-    // Host-side aggregation does not alter device RNG state or draw order.
+
+    // Read back the exact int32 device-side species history once and compute
+    // both species and observable moments on the host in double precision with
+    // centered Welford accumulation. This avoids float32 truncation of integer
+    // species counts above 2^24 and eliminates catastrophic sumSq/N - mean^2
+    // variance cancellation without altering device RNG state or draw order.
+    std::vector<int32_t> allSpecies;
     if (speciesBytes > 0) {
-        std::vector<int32_t> allSpecies;
         allSpecies.resize(speciesBytes / sizeof(int32_t));
         dSpeciesHistory.download(allSpecies.data(), speciesBytes);
         metrics.meanSpecies.assign(numPoints, std::vector<double>(numSpecies, 0.0));
         metrics.stdSpecies.assign(numPoints, std::vector<double>(numSpecies, 0.0));
-        const double N = static_cast<double>(batchSize);
         for (std::size_t step = 0; step < numPoints; ++step) {
             for (std::size_t s = 0; s < numSpecies; ++s) {
-                double sum = 0.0;
-                double sumSq = 0.0;
+                RunningMoments moments;
                 for (std::size_t b = 0; b < batchSize; ++b) {
                     const double value = static_cast<double>(
                         allSpecies[(b * numPoints + step) * numSpecies + s]);
-                    sum += value;
-                    sumSq += value * value;
+                    moments.add(value);
                 }
-                const double mean = sum / N;
-                metrics.meanSpecies[step][s] = mean;
-                metrics.stdSpecies[step][s] =
-                    std::sqrt(std::max(0.0, sumSq / N - mean * mean));
+                metrics.meanSpecies[step][s] = moments.average();
+                metrics.stdSpecies[step][s] = moments.standardDeviation();
+            }
+        }
+    }
+
+    std::vector<std::vector<double>> exactObsMeans(numPoints, std::vector<double>(numObs, 0.0));
+    std::vector<std::vector<double>> exactObsStds(numPoints, std::vector<double>(numObs, 0.0));
+    if (numObs > 0) {
+        for (std::size_t step = 0; step < numPoints; ++step) {
+            for (std::size_t g = 0; g < numObs; ++g) {
+                RunningMoments moments;
+                const uint32_t oStart = net.obsOffsets[g];
+                const uint32_t oEnd = net.obsOffsets[g + 1];
+                for (std::size_t b = 0; b < batchSize; ++b) {
+                    double val = 0.0;
+                    if (speciesBytes > 0) {
+                        const std::size_t rowBase = (b * numPoints + step) * numSpecies;
+                        for (uint32_t i = oStart; i < oEnd; ++i) {
+                            val += static_cast<double>(net.obsWeights[i]) *
+                                   static_cast<double>(allSpecies[rowBase + net.obsSpecies[i]]);
+                        }
+                    }
+                    moments.add(val);
+                }
+                const double mean = moments.average();
+                const double stdDev = moments.standardDeviation();
+                exactObsMeans[step][g] = mean;
+                exactObsStds[step][g] = stdDev;
+                metrics.observableMeans[step][g] = static_cast<float>(mean);
+                metrics.observableStdDevs[step][g] = static_cast<float>(stdDev);
+            }
+        }
+        if (speciesBytes > 0 && !metrics.finalSpecies.empty()) {
+            metrics.finalObservables.resize(batchSize * numObs, 0.0f);
+            for (std::size_t b = 0; b < batchSize; ++b) {
+                const std::size_t spBase = b * numSpecies;
+                for (std::size_t g = 0; g < numObs; ++g) {
+                    double val = 0.0;
+                    for (uint32_t i = net.obsOffsets[g]; i < net.obsOffsets[g + 1]; ++i) {
+                        val += static_cast<double>(net.obsWeights[i]) *
+                               static_cast<double>(metrics.finalSpecies[spBase + net.obsSpecies[i]]);
+                    }
+                    metrics.finalObservables[b * numObs + g] = static_cast<float>(val);
+                }
             }
         }
     }
     detail::fillDoubleFields(metrics);
+    if (numObs > 0) {
+        metrics.meanObservables = std::move(exactObsMeans);
+        metrics.stdObservables = std::move(exactObsStds);
+    }
     return metrics;
 }
 

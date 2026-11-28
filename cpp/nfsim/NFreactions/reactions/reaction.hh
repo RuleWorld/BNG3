@@ -227,6 +227,7 @@ namespace NFcore
 			virtual int checkForCollision(Molecule *m, MappingSet* ms,int rxnIndex);
 
 			virtual void notifyRateFactorChange(Molecule * m, int reactantIndex, int rxnListIndex);
+			virtual void markGlobalObservableDirty() override { globalObsDirty = true; }
 			virtual int getReactantCount(unsigned int reactantIndex) const;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
 			virtual ReactantContainer *getReactantContainer(unsigned int r) const {
@@ -267,6 +268,7 @@ namespace NFcore
 			CompositeFunction *cf;
 			bool hasRefreshedTimeDependentLocalFunctions;
 			double lastTimeDependentLocalFunctionRefresh;
+			bool globalObsDirty = false;
 
 			//Parameters to keep track of local functions
 			int DORreactantIndex;
@@ -460,6 +462,7 @@ namespace NFcore
 			CompositeFunction *getCompositeFunction2() const { return cf2; };
 
 			virtual void notifyRateFactorChange(Molecule * m, int reactantIndex, int rxnListIndex);
+			virtual void markGlobalObservableDirty() override { globalObsDirty = true; }
 			virtual int getReactantCount(unsigned int reactantIndex) const;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
 			virtual ReactantContainer *getReactantContainer(unsigned int r) const {
@@ -500,6 +503,7 @@ namespace NFcore
 			CompositeFunction *cf2;
 			bool hasRefreshedTimeDependentLocalFunctions;
 			double lastTimeDependentLocalFunctionRefresh;
+			bool globalObsDirty = false;
 
 			//Parameters to keep track of local functions
 			int DORreactantIndex1;

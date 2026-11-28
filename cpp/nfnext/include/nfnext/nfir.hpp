@@ -231,6 +231,11 @@ struct ExpandedRuleIR {
     // involve partner identity/state, multi-molecule cooperativity, or homotypic
     // neighbor couplings.
     RuntimeArrheniusInfo runtime_arrhenius;
+    // Per-reactant-pattern MatchOnce flags (empty => fall back to rule-wide match_once).
+    std::vector<bool> reactant_match_once;
+    // True when a compartment transport rule uses species-level prefix compartments
+    // (@SRC:pattern -> @DST:pattern) so bound cargo moves with the species.
+    bool species_level_transport{false};
 };
 
 struct RuleFamilyIR {

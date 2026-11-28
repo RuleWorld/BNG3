@@ -1,11 +1,14 @@
 #include "PsaSimulator.hpp"
 #include "DelayedSemanticsGuard.hpp"
+#include "ObservableProjection.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <random>
 #include <set>
@@ -14,18 +17,14 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "parser/antlr_compat.hpp"
-#include "antlr4-runtime.h"
-#include "BNGLexer.h"
-#include "BNGParser.h"
 #include "parser/BNGAstVisitor.hpp"
-#include "parser/PatternGraphBuilder.hpp"
-#include "core/PatternMatching.hpp"
-#include "core/Ullmann.hpp"
+#include "compile/CompiledModel.hpp"
 #include "compile/CompiledRateLaw.hpp"
-#include "io/NetWriter.hpp"
-#include "ast/ReactionRule.hpp"
+#include "compile/Document.hpp"
 #include "compile/TotalRate.hpp"
+#include "io/NetWriter.hpp"
+#include "io/TfunReader.hpp"
+#include "ast/ReactionRule.hpp"
 
 namespace bng::engine {
 
@@ -89,11 +88,16 @@ bool expressionDependsOnTimeImpl(const ast::Expression& expression,
             }
             return name == "time" || name == "t";
         }
-        case ast::ExpressionKind::Function:
-            if (expression.name() == "time" && expression.args().empty()) {
+        case ast::ExpressionKind::Function: {
+            const auto& name = expression.name();
+            if ((name == "time" || name == "t") && expression.args().empty()) {
+                return true;
+            }
+            if ((name == "TFUN" || name == "tfun") && expression.args().size() == 1) {
                 return true;
             }
             [[fallthrough]];
+        }
         case ast::ExpressionKind::Unary:
         case ast::ExpressionKind::Binary:
         case ast::ExpressionKind::ObservableRef:
@@ -151,40 +155,147 @@ bool expressionUsesObservableImpl(const ast::Expression& expression,
     return false;
 }
 
-bool expressionUsesObservable(const ast::Expression& expression,
-                              const ast::ModelFunctionEvaluator& fnEval,
-                              const std::unordered_set<std::string>& obsNames) {
-    if (obsNames.empty()) return false;
-    try {
-        const auto expanded = fnEval.expandFunctions(expression);
-        return expressionUsesObservableImpl(expanded, obsNames);
-    } catch (const std::exception&) {
-        return expressionUsesObservableImpl(expression, obsNames);
+ast::Expression materializeTfunExpression(const ast::Expression& expr) {
+    switch (expr.kind()) {
+        case ast::ExpressionKind::Number:
+        case ast::ExpressionKind::Identifier:
+            return expr;
+        case ast::ExpressionKind::Unary:
+            return ast::Expression::unary(
+                expr.name(), materializeTfunExpression(expr.args().front()));
+        case ast::ExpressionKind::Binary:
+            return ast::Expression::binary(
+                expr.name(),
+                materializeTfunExpression(expr.args()[0]),
+                materializeTfunExpression(expr.args()[1]));
+        case ast::ExpressionKind::Function: {
+            std::vector<ast::Expression> args;
+            args.reserve(expr.args().size());
+            for (const auto& arg : expr.args()) {
+                args.push_back(materializeTfunExpression(arg));
+            }
+            return ast::Expression::function(expr.name(), std::move(args));
+        }
+        case ast::ExpressionKind::ObservableRef: {
+            std::vector<ast::Expression> args;
+            args.reserve(expr.args().size());
+            for (const auto& arg : expr.args()) {
+                args.push_back(materializeTfunExpression(arg));
+            }
+            return ast::Expression::observableRef(expr.name(), std::move(args));
+        }
+        case ast::ExpressionKind::TableFunction: {
+            if (expr.args().size() != 1) {
+                throw std::runtime_error("TFUN expression must have one counter expression");
+            }
+            auto counter = materializeTfunExpression(expr.args().front());
+            if (!expr.tableFilePath().empty()) {
+                auto table = bng::io::TfunReader::read(expr.tableFilePath());
+                return ast::Expression::tableFunction(
+                    std::move(table.times),
+                    std::move(table.values),
+                    std::string(),
+                    std::move(counter),
+                    expr.tableMethod());
+            }
+            return ast::Expression::tableFunction(
+                expr.tableXValues(),
+                expr.tableYValues(),
+                std::string(),
+                std::move(counter),
+                expr.tableMethod());
+        }
     }
+    return expr;
 }
 
-std::string resolveBaseRateString(
+std::vector<ast::Expression> extractTypedRateLawArgs(
     const ast::Rxn& rxn,
-    const std::function<double(const std::string&)>& paramResolver) {
-    const auto& originRuleName = rxn.getOriginRuleName();
-    if (!originRuleName.empty()) {
-        const bool isReverse = originRuleName.rfind("_reverse__", 0) == 0;
-        std::string ruleBase = isReverse
-            ? originRuleName.substr(std::string("_reverse__").size())
-            : originRuleName;
-        if (!ruleBase.empty() && ruleBase[0] == '_' && ruleBase != "_reverse") {
-            ruleBase = ruleBase.substr(1);
+    const std::string& rawRateLaw,
+    const std::string& keywordLower,
+    std::size_t kwLen) {
+    auto matchesKeyword = [&](const std::string& fnName) {
+        std::string lo = fnName;
+        std::transform(lo.begin(), lo.end(), lo.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return lo == keywordLower;
+    };
+
+    if (rxn.getRateExpression().has_value() &&
+        rxn.getRateExpression()->kind() == ast::ExpressionKind::Function &&
+        matchesKeyword(rxn.getRateExpression()->name())) {
+        return rxn.getRateExpression()->args();
+    }
+
+    try {
+        const auto parsed = parser::parseExpression(rawRateLaw);
+        if (parsed.kind() == ast::ExpressionKind::Function &&
+            matchesKeyword(parsed.name())) {
+            return parsed.args();
         }
-        const std::string derivedParamName = isReverse
-            ? ("__reverse__" + ruleBase + "_local1")
-            : ("__" + ruleBase + "_local1");
+    } catch (...) {
+    }
+
+    auto parseArgToken = [](const std::string& text) -> ast::Expression {
         try {
-            (void)paramResolver(derivedParamName);
-            return derivedParamName;
-        } catch (const std::exception&) {
+            return parser::parseExpression(text);
+        } catch (...) {
+            char* end = nullptr;
+            const double value = std::strtod(text.c_str(), &end);
+            if (end != text.c_str() && end != nullptr && *end == '\0') {
+                return ast::Expression::number(value);
+            }
+            return ast::Expression::identifier(text);
+        }
+    };
+
+    std::vector<ast::Expression> argExprs;
+    std::string cleaned = rawRateLaw;
+    auto startP = cleaned.find_first_not_of(" \t\r\n");
+    if (startP != std::string::npos) cleaned = cleaned.substr(startP);
+    else cleaned.clear();
+    auto endP = cleaned.find_last_not_of(" \t\r\n");
+    if (endP != std::string::npos) cleaned = cleaned.substr(0, endP + 1);
+
+    if (cleaned.size() >= kwLen) {
+        cleaned = cleaned.substr(kwLen);
+    } else {
+        cleaned.clear();
+    }
+
+    startP = cleaned.find_first_not_of(" \t\r\n");
+    if (startP != std::string::npos) cleaned = cleaned.substr(startP);
+    else cleaned.clear();
+
+    if (!cleaned.empty() && cleaned.front() == '(' && cleaned.back() == ')') {
+        cleaned = cleaned.substr(1, cleaned.size() - 2);
+        int depth = 0;
+        std::size_t segStart = 0;
+        for (std::size_t ci = 0; ci <= cleaned.size(); ++ci) {
+            if (ci < cleaned.size()) {
+                if (cleaned[ci] == '(') ++depth;
+                else if (cleaned[ci] == ')' && depth > 0) --depth;
+            }
+            if (ci == cleaned.size() || (cleaned[ci] == ',' && depth == 0)) {
+                std::string tok = cleaned.substr(segStart, ci - segStart);
+                auto f = tok.find_first_not_of(" \t\r\n");
+                if (f != std::string::npos) {
+                    tok.erase(0, f);
+                    tok.erase(tok.find_last_not_of(" \t\r\n") + 1);
+                    argExprs.push_back(parseArgToken(tok));
+                }
+                segStart = ci + 1;
+            }
+        }
+    } else {
+        std::istringstream rlStream(cleaned);
+        std::string tok;
+        while (rlStream >> tok) {
+            argExprs.push_back(parseArgToken(tok));
         }
     }
-    return stripLocalRateTag(rxn.getRateLaw());
+    return argExprs;
 }
 
 std::vector<double> psaOutputTimes(const OdeOptions& opts) {
@@ -291,15 +402,95 @@ void PsaSimulator::compile() {
         obsNames.insert(obs.getName());
     }
 
+    // Build per-reaction derived rate maps from NetWriter (scoped rates,
+    // FunctionProduct, and Energy BNGL Arrhenius rates + barriers + reservoirs).
+    std::unordered_map<std::size_t, std::pair<std::string, double>> perRxnDerivedRates;
+    std::unordered_map<std::size_t, ast::Expression> perRxnDerivedRateFunctions;
+    std::unordered_map<std::size_t, double> perRxnDerivedRuntimeRateConstants;
+    {
+        auto derived = bng::io::NetWriter::buildDerivedRateParams(model_, network_);
+        for (const auto& [ruleName, info] : derived) {
+            if (info.isPerReactionArrhenius || info.isPerReactionLocalFunction || info.isLocalFunction) {
+                for (const auto& [rxnIdx, functionPair] : info.perReactionRateFunctions) {
+                    perRxnDerivedRateFunctions[rxnIdx] = functionPair.second;
+                }
+                for (const auto& [rxnIdx, rate] : info.perReactionRuntimeRateConstants) {
+                    perRxnDerivedRuntimeRateConstants[rxnIdx] = rate;
+                }
+                for (const auto& [rxnIdx, paramPair] : info.perReactionRates) {
+                    perRxnDerivedRates[rxnIdx] = paramPair;
+                }
+                if (!info.perReactionRates.empty() ||
+                    !info.perReactionRateFunctions.empty() ||
+                    !info.perReactionRuntimeRateConstants.empty()) {
+                    continue;
+                }
+                std::size_t rxnIdx = 0;
+                for (const auto& rxn2 : network_.reactions.all()) {
+                    if (rxn2.getOriginRuleName() == ruleName && !rxn2.getReactants().empty()) {
+                        const auto specIdx = rxn2.getReactants()[0];
+                        const auto it = info.perSpeciesRates.find(specIdx);
+                        if (it != info.perSpeciesRates.end()) {
+                            perRxnDerivedRates[rxnIdx] = it->second;
+                        }
+                    }
+                    ++rxnIdx;
+                }
+            }
+        }
+    }
+
+    struct RuleRateKinds {
+        bng::compile::RateLawKind forward = bng::compile::RateLawKind::Expression;
+        std::optional<bng::compile::RateLawKind> reverse;
+    };
+    std::unordered_map<std::string, RuleRateKinds> typedRateKinds;
+    for (const auto& rule : model_.getReactionRules()) {
+        if (!rule.getRates().empty()) {
+            RuleRateKinds kinds;
+            kinds.forward = bng::compile::CompiledRateLaw::compile(rule.getRates().front()).kind;
+            if (rule.getRates().size() >= 2) {
+                kinds.reverse = bng::compile::CompiledRateLaw::compile(rule.getRates()[1]).kind;
+            }
+            typedRateKinds.emplace(rule.getRuleName(), kinds);
+        }
+    }
+    const auto typedRateKindForOrigin = [&](std::string origin)
+        -> std::optional<bng::compile::RateLawKind> {
+        if (const auto exact = typedRateKinds.find(origin); exact != typedRateKinds.end()) {
+            return exact->second.forward;
+        }
+        bool isReverse = false;
+        if (origin.rfind("_reverse__", 0) == 0) {
+            isReverse = true;
+            origin = origin.substr(std::string("_reverse__").size());
+        } else if (origin.rfind("__reverse__", 0) == 0) {
+            isReverse = true;
+            origin = origin.substr(std::string("__reverse__").size());
+        } else if (!origin.empty() && origin.front() == '_') {
+            origin.erase(origin.begin());
+        }
+        if (origin.size() > std::string("_reverse").size() &&
+            origin.rfind("_reverse") == origin.size() - std::string("_reverse").size()) {
+            isReverse = true;
+            origin.erase(origin.size() - std::string("_reverse").size());
+        }
+        const auto it = typedRateKinds.find(origin);
+        if (it == typedRateKinds.end()) return std::nullopt;
+        return isReverse ? it->second.reverse : std::optional<bng::compile::RateLawKind>(it->second.forward);
+    };
+
+    compiledRxns_.clear();
+    std::size_t rxnIndex = 0;
     for (const auto& rxn : network_.reactions.all()) {
         CompiledReaction crxn;
         crxn.reactantIndices = rxn.getReactants();
         crxn.productIndices = rxn.getProducts();
 
         const auto& originRuleName = rxn.getOriginRuleName();
+        const bool ruleIsTotalRate = bng::compile::isTotalRateReaction(model_, originRuleName);
         crxn.isAbsoluteFlux = bng::compile::isAbsoluteFluxReaction(model_, rxn);
-        crxn.isTotalRate = bng::compile::isTotalRateReaction(model_, originRuleName) ||
-                           crxn.isAbsoluteFlux;
+        crxn.isTotalRate = ruleIsTotalRate || crxn.isAbsoluteFlux;
 
         if (crxn.isAbsoluteFlux) {
             std::optional<ast::Expression> expression = rxn.getRateExpression();
@@ -321,26 +512,194 @@ void PsaSimulator::compile() {
             }
         }
 
-        // Compute scalar prefactor (unit_conversion * stat_factor) once in double
-        // precision so it is never squared or corrupted by string precedence.
+        // Canonical BNG2 semantics: TotalRate omits statFactor only, while
+        // compartment unit conversion (1/V) still applies for authored BNGL
+        // rules and is omitted only for SBML absolute-flux reactions.
         double prefactor = 1.0;
-        if (!crxn.isTotalRate) {
+        if (!crxn.isAbsoluteFlux) {
             const auto unitFactor =
                 bng::io::NetWriter::computeUnitConversionFactor(
                     rxn, model_, network_);
             if (unitFactor.has_value()) {
                 prefactor *= *unitFactor;
             }
+        }
+        if (!crxn.isTotalRate) {
             prefactor *= rxn.getFactor();
         }
-        // statFactor stores the full prefactor (unit_conversion * rxn.getFactor(),
-        // or 1.0 for TotalRate/absolute-flux) for dynamic functional-rate evaluation.
         crxn.statFactor = prefactor;
 
-        const std::string baseRateStr = resolveBaseRateString(rxn, paramResolver);
+        // Fast path: per-reaction derived rates (Arrhenius, scoped rates, FunctionProduct)
+        bool resolvedDerived = false;
+        if (const auto rtIt = perRxnDerivedRuntimeRateConstants.find(rxnIndex);
+            rtIt != perRxnDerivedRuntimeRateConstants.end()) {
+            const double baseValue = rtIt->second;
+            if (!std::isfinite(baseValue)) {
+                throw std::runtime_error("PSA encountered a non-finite derived reaction rate");
+            }
+            crxn.rateConstant = prefactor * baseValue;
+            resolvedDerived = true;
+        } else if (const auto fnIt = perRxnDerivedRateFunctions.find(rxnIndex);
+                   fnIt != perRxnDerivedRateFunctions.end()) {
+            if (expressionDependsOnTime(fnIt->second, model_, functionEvaluator_)) {
+                throw std::runtime_error(
+                    "PSA does not support explicitly time-dependent rate laws");
+            }
+            const auto expanded = materializeTfunExpression(
+                functionEvaluator_.expandFunctions(fnIt->second));
+            if (expressionUsesObservableImpl(expanded, obsNames)) {
+                crxn.usesObservables = true;
+                crxn.functionalExpr = expanded;
+                crxn.rateConstant = std::numeric_limits<double>::quiet_NaN();
+            } else {
+                const double baseValue = functionEvaluator_.evaluate(expanded, paramResolver);
+                if (!std::isfinite(baseValue)) {
+                    throw std::runtime_error("PSA encountered a non-finite derived reaction rate");
+                }
+                crxn.rateConstant = prefactor * baseValue;
+            }
+            resolvedDerived = true;
+        } else if (const auto drIt = perRxnDerivedRates.find(rxnIndex);
+                   drIt != perRxnDerivedRates.end()) {
+            const double baseValue = drIt->second.second;
+            if (!std::isfinite(baseValue)) {
+                throw std::runtime_error("PSA encountered a non-finite derived reaction rate");
+            }
+            crxn.rateConstant = prefactor * baseValue;
+            resolvedDerived = true;
+        }
+
+        if (resolvedDerived) {
+            compiledRxns_.push_back(std::move(crxn));
+            ++rxnIndex;
+            continue;
+        }
+
+        const std::string rawRateLaw = stripLocalRateTag(rxn.getRateLaw());
+
+        // Detect Sat / MM / Hill built-in rate laws (matching OdeIntegrator).
+        std::optional<bng::compile::RateLawKind> typedKind;
+        if (rxn.getRateExpression().has_value()) {
+            typedKind = bng::compile::CompiledRateLaw::compile(*rxn.getRateExpression()).kind;
+        } else {
+            typedKind = typedRateKindForOrigin(originRuleName);
+        }
+        PsaRateLawKind detectedKind = PsaRateLawKind::Elementary;
+        std::string kwLower;
+        std::size_t kwLen = 0;
+        if (typedKind.has_value()) {
+            switch (*typedKind) {
+                case bng::compile::RateLawKind::Saturation:
+                    detectedKind = PsaRateLawKind::Saturation;
+                    kwLower = "sat";
+                    kwLen = 3;
+                    break;
+                case bng::compile::RateLawKind::MichaelisMenten:
+                    detectedKind = PsaRateLawKind::MichaelisMenten;
+                    kwLower = "mm";
+                    kwLen = 2;
+                    break;
+                case bng::compile::RateLawKind::Hill:
+                    detectedKind = PsaRateLawKind::Hill;
+                    kwLower = "hill";
+                    kwLen = 4;
+                    break;
+                default:
+                    break;
+            }
+        } else {
+            std::string rlLower = rawRateLaw;
+            const auto first = rlLower.find_first_not_of(" \t\r\n");
+            if (first != std::string::npos) rlLower = rlLower.substr(first);
+            std::transform(rlLower.begin(), rlLower.end(), rlLower.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+            auto isWordPrefix = [&](const std::string& kw) {
+                if (rlLower.rfind(kw, 0) != 0) return false;
+                if (rlLower.size() == kw.size()) return true;
+                const char nextC = rlLower[kw.size()];
+                return nextC == ' ' || nextC == '\t' || nextC == '\r' || nextC == '\n' || nextC == '(';
+            };
+            if (isWordPrefix("sat")) {
+                detectedKind = PsaRateLawKind::Saturation;
+                kwLower = "sat";
+                kwLen = 3;
+            } else if (isWordPrefix("mm")) {
+                detectedKind = PsaRateLawKind::MichaelisMenten;
+                kwLower = "mm";
+                kwLen = 2;
+            } else if (isWordPrefix("hill")) {
+                detectedKind = PsaRateLawKind::Hill;
+                kwLower = "hill";
+                kwLen = 4;
+            }
+        }
+
+        if (detectedKind != PsaRateLawKind::Elementary) {
+            auto argExprs = extractTypedRateLawArgs(rxn, rawRateLaw, kwLower, kwLen);
+            const bool isMM = (detectedKind == PsaRateLawKind::MichaelisMenten);
+            const bool isHill = (detectedKind == PsaRateLawKind::Hill);
+            if (argExprs.empty()) {
+                throw std::runtime_error(
+                    "PSA encountered a " + kwLower + " rate law with no arguments");
+            }
+            if ((isMM || isHill) && crxn.reactantIndices.empty()) {
+                throw std::runtime_error(
+                    "PSA encountered a " + kwLower + " rate law without reactants");
+            }
+            if (isMM && argExprs.size() == 2 && crxn.reactantIndices.size() >= 2 &&
+                crxn.reactantIndices[0] == crxn.reactantIndices[1]) {
+                throw std::runtime_error(
+                    "MM(kcat,Km) with identical substrate and enzyme reactants is unsupported; "
+                    "canonical BioNetGen rejects this rate-law configuration");
+            }
+            if (isHill && argExprs.size() < 2) {
+                throw std::runtime_error("PSA Hill rate law requires at least 2 arguments");
+            }
+            if (isMM && argExprs.size() < 2) {
+                throw std::runtime_error("PSA MM rate law requires at least 2 arguments");
+            }
+
+            bool anyUsesObs = false;
+            std::vector<ast::Expression> expandedArgs;
+            expandedArgs.reserve(argExprs.size());
+            for (const auto& argExpr : argExprs) {
+                if (expressionDependsOnTime(argExpr, model_, functionEvaluator_)) {
+                    throw std::runtime_error(
+                        "PSA does not support explicitly time-dependent rate laws");
+                }
+                auto expanded = materializeTfunExpression(
+                    functionEvaluator_.expandFunctions(argExpr));
+                if (expressionUsesObservableImpl(expanded, obsNames)) {
+                    anyUsesObs = true;
+                }
+                expandedArgs.push_back(std::move(expanded));
+            }
+
+            crxn.rateLawKind = detectedKind;
+            crxn.usesObservables = anyUsesObs;
+            if (anyUsesObs) {
+                crxn.rateLawArgExprs = std::move(expandedArgs);
+                crxn.rateConstant = std::numeric_limits<double>::quiet_NaN();
+            } else {
+                crxn.staticRateLawArgs.reserve(expandedArgs.size());
+                for (const auto& expanded : expandedArgs) {
+                    const double val = functionEvaluator_.evaluate(expanded, paramResolver);
+                    if (!std::isfinite(val)) {
+                        throw std::runtime_error(
+                            "PSA encountered a non-finite argument in " + kwLower + " rate law");
+                    }
+                    crxn.staticRateLawArgs.push_back(val);
+                }
+            }
+            compiledRxns_.push_back(std::move(crxn));
+            ++rxnIndex;
+            continue;
+        }
+
         std::optional<ast::Expression> parsedRate;
         try {
-            parsedRate = parser::parseExpression(baseRateStr);
+            parsedRate = parser::parseExpression(rawRateLaw);
         } catch (const std::exception&) {
             // Keep the narrow legacy parser for old rate spellings that the
             // shared BNGL expression parser does not accept.
@@ -350,23 +709,30 @@ void PsaSimulator::compile() {
                 throw std::runtime_error(
                     "PSA does not support explicitly time-dependent rate laws");
             }
-            if (expressionUsesObservable(*parsedRate, functionEvaluator_, obsNames)) {
-                // Sentinel: dynamically evaluated from current observables in simulate().
+            const auto expanded = materializeTfunExpression(
+                functionEvaluator_.expandFunctions(*parsedRate));
+            if (expressionUsesObservableImpl(expanded, obsNames)) {
+                crxn.usesObservables = true;
+                crxn.functionalExpr = expanded;
                 crxn.rateConstant = std::numeric_limits<double>::quiet_NaN();
             } else {
                 const double baseValue =
-                    functionEvaluator_.evaluate(*parsedRate, paramResolver);
+                    functionEvaluator_.evaluate(expanded, paramResolver);
+                if (!std::isfinite(baseValue)) {
+                    throw std::runtime_error("PSA encountered a non-finite reaction rate constant");
+                }
                 crxn.rateConstant = prefactor * baseValue;
             }
         } else {
             try {
-                crxn.rateConstant = prefactor * evaluateRateString(baseRateStr, paramResolver);
+                crxn.rateConstant = prefactor * evaluateRateString(rawRateLaw, paramResolver);
             } catch (const std::exception&) {
                 crxn.rateConstant = 0.0;
             }
         }
 
-        compiledRxns_.push_back(crxn);
+        compiledRxns_.push_back(std::move(crxn));
+        ++rxnIndex;
     }
 
     nReactions_ = compiledRxns_.size();
@@ -377,22 +743,19 @@ void PsaSimulator::compile() {
 void PsaSimulator::compileGroups() {
     compiledGroups_.clear();
 
-    auto& mutableModel = const_cast<ast::Model&>(model_);
-
-    struct CachedObservablePattern {
-        BNGcore::PatternGraph graph;
-        std::string compartment;
+    std::unique_ptr<compile::CompiledModel> compiledModel;
+    std::unique_ptr<ObservableProjection> projection;
+    const auto ensureProjection = [&]() {
+        if (!projection) {
+            compiledModel = std::make_unique<compile::CompiledModel>(model_);
+            projection = std::make_unique<ObservableProjection>(*compiledModel);
+        }
     };
-    struct ParsedPatternInfo {
-        const BNGcore::PatternGraph* graph = nullptr;
-        std::string compartment;
-        std::string quantifier;
-        int quantifierThreshold = 0;
-        bool hasQuantifier = false;
-    };
-    std::unordered_map<std::string, CachedObservablePattern> parsedObservableCache;
 
-    for (const auto& observable : model_.getObservables()) {
+    const auto& observables = model_.getObservables();
+    compiledGroups_.reserve(observables.size());
+    for (std::size_t observableIndex = 0; observableIndex < observables.size(); ++observableIndex) {
+        const auto& observable = observables[observableIndex];
         CompiledGroup group;
         group.name = observable.getName();
 
@@ -431,127 +794,13 @@ void PsaSimulator::compileGroups() {
             continue;
         }
 
-        // Parse and cache each observable pattern ONCE outside the species loop
-        // with treatUnspecifiedBondAsWildcard = false (matching OdeIntegrator).
-        std::vector<ParsedPatternInfo> parsedPatterns;
-        parsedPatterns.reserve(observable.getPatterns().size());
-        for (const auto& patternText : observable.getPatterns()) {
-            try {
-                std::string cleanPattern = patternText;
-                std::string quantifier;
-                int quantifierThreshold = 0;
-                bool hasQuantifier = false;
-
-                static const std::vector<std::string> ops = {">=", "<=", "==", "!=", ">", "<"};
-                for (const auto& op : ops) {
-                    const auto pos = cleanPattern.rfind(op);
-                    if (pos == std::string::npos || pos == 0) {
-                        continue;
-                    }
-                    std::string after = cleanPattern.substr(pos + op.size());
-                    const auto firstNonWs = after.find_first_not_of(" \t");
-                    if (firstNonWs == std::string::npos) continue;
-                    after.erase(0, firstNonWs);
-                    after.erase(after.find_last_not_of(" \t") + 1);
-                    bool isInteger = !after.empty();
-                    for (const char c : after) {
-                        if (!std::isdigit(static_cast<unsigned char>(c))) {
-                            isInteger = false;
-                            break;
-                        }
-                    }
-                    if (!isInteger) continue;
-
-                    std::string before = cleanPattern.substr(0, pos);
-                    const auto lastNonWs = before.find_last_not_of(" \t");
-                    if (lastNonWs == std::string::npos) continue;
-                    before.erase(lastNonWs + 1);
-                    if (before.empty() ||
-                        (before.back() != ')' &&
-                         !std::isalnum(static_cast<unsigned char>(before.back())) &&
-                         before.back() != '_')) {
-                        continue;
-                    }
-
-                    quantifier = op;
-                    quantifierThreshold = std::stoi(after);
-                    hasQuantifier = true;
-                    cleanPattern = std::move(before);
-                    break;
-                }
-
-                auto cacheIt = parsedObservableCache.find(cleanPattern);
-                if (cacheIt == parsedObservableCache.end()) {
-                    antlr4::ANTLRInputStream input(cleanPattern);
-                    BNGLexer lexer(&input);
-                    antlr4::CommonTokenStream tokens(&lexer);
-                    BNGParser parser(&tokens);
-                    auto* species = parser.species_def();
-                    if (parser.getNumberOfSyntaxErrors() != 0) {
-                        continue;
-                    }
-                    auto graph = bng::parser::buildPatternGraph(species, mutableModel, false);
-                    auto compartment = bng::parser::extractSpeciesCompartment(species);
-                    cacheIt = parsedObservableCache.emplace(
-                        cleanPattern,
-                        CachedObservablePattern{std::move(graph), std::move(compartment)}).first;
-                }
-                parsedPatterns.push_back({&cacheIt->second.graph,
-                                          cacheIt->second.compartment,
-                                          std::move(quantifier),
-                                          quantifierThreshold,
-                                          hasQuantifier});
-            } catch (...) {
-                // Skip patterns that fail to parse
-            }
-        }
-
+        ensureProjection();
         for (std::size_t speciesIndex = 0; speciesIndex < network_.species.size(); ++speciesIndex) {
-            std::size_t weight = 0;
             const auto& speciesObj = network_.species.get(speciesIndex);
-            const auto& targetGraph = speciesObj.getSpeciesGraph().getGraph();
-            const auto& speciesCompartment = speciesObj.getCompartment();
-
-            for (const auto& parsedPattern : parsedPatterns) {
-                const auto& pattern = *parsedPattern.graph;
-                const auto& patternCompartment = parsedPattern.compartment;
-                bool compartmentMatches = true;
-                if (!patternCompartment.empty()) {
-                    bool patternHasMoleculeCompartment = false;
-                    for (auto it = pattern.begin(); it != pattern.end(); ++it) {
-                        if (!(*it)->get_compartment().empty()) {
-                            patternHasMoleculeCompartment = true;
-                            break;
-                        }
-                    }
-                    if (!patternHasMoleculeCompartment &&
-                        speciesCompartment != patternCompartment) {
-                        compartmentMatches = false;
-                    }
-                }
-
-                std::size_t matchCount = 0;
-                if (compartmentMatches) {
-                    matchCount = bng::core::countPatternMatches(pattern, targetGraph);
-                }
-
-                if (parsedPattern.hasQuantifier && observable.getType() == "Species") {
-                    bool passes = false;
-                    const int matchCountInt = static_cast<int>(matchCount);
-                    if (parsedPattern.quantifier == ">") passes = matchCountInt > parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == "<") passes = matchCountInt < parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == ">=") passes = matchCountInt >= parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == "<=") passes = matchCountInt <= parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == "==") passes = matchCountInt == parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == "!=") passes = matchCountInt != parsedPattern.quantifierThreshold;
-                    matchCount = passes ? 1 : 0;
-                } else if (observable.getType() == "Species" && matchCount > 0) {
-                    matchCount = 1;
-                }
-
-                weight += matchCount;
-            }
-
+            const int weight = projection->weight(
+                observableIndex,
+                speciesObj.getSpeciesGraph().getGraph(),
+                speciesObj.getCompartment());
             if (weight > 0) {
                 group.entries.emplace_back(speciesIndex, static_cast<double>(weight));
             }
@@ -580,7 +829,7 @@ void PsaSimulator::createUpdateLists() {
         for (const auto idx : compiledRxns_[r].productIndices) {
             asProduct[idx].insert(r);
         }
-        if (std::isnan(compiledRxns_[r].rateConstant)) {
+        if (compiledRxns_[r].usesObservables) {
             functionalRxns.push_back(r);
         }
     }
@@ -706,23 +955,145 @@ double computeScaledElementaryPropensity(double baseRate,
     return rate < 0.0 ? 0.0 : rate;
 }
 
+double computeScaledTypedPropensity(
+    double statFactor,
+    const std::vector<std::size_t>& reactants,
+    const std::vector<std::size_t>& products,
+    const std::vector<bool>& fixedSpecies,
+    const std::vector<double>& state,
+    const std::vector<double>& args,
+    int rateLawKindInt,
+    double poplevel,
+    bool pScaleChecker,
+    double& scaling) {
+    scaling = (poplevel <= 0.0)
+        ? 1.0
+        : psaScaling(reactants, products, state, poplevel, pScaleChecker);
+
+    const std::size_t nReactants = reactants.size();
+    auto repeatedOffset = [&](std::size_t idxPos) -> double {
+        return static_cast<double>(
+            std::count(reactants.begin(),
+                       reactants.begin() + static_cast<std::ptrdiff_t>(idxPos),
+                       reactants[idxPos]));
+    };
+
+    double unscaled = 0.0;
+    if (rateLawKindInt == 1) {
+        // Saturation: Sat(k) or Sat(k, K1, ..., KN)
+        if (args.size() == 1) {
+            for (std::size_t i = 0; i < nReactants; ++i) {
+                if (reactants[i] < fixedSpecies.size() && fixedSpecies[reactants[i]]) continue;
+                const double required = repeatedOffset(i) + 1.0;
+                if (state[reactants[i]] < required) return 0.0;
+            }
+            unscaled = statFactor * args[0];
+        } else {
+            const std::size_t nDenom = std::min(args.size() - 1, nReactants);
+            double rate = statFactor * args[0];
+            for (std::size_t i = 0; i < nDenom; ++i) {
+                const double x = state[reactants[i]];
+                const double n = repeatedOffset(i);
+                const double eff = std::max(0.0, x - scaling * n);
+                const double denom = args[i + 1] + x;
+                if (denom == 0.0 || eff <= 0.0) return 0.0;
+                rate *= eff / denom;
+            }
+            for (std::size_t i = nDenom; i < nReactants; ++i) {
+                const double x = state[reactants[i]];
+                const double n = repeatedOffset(i);
+                rate *= std::max(0.0, x - scaling * n);
+            }
+            unscaled = rate;
+        }
+    } else if (rateLawKindInt == 2) {
+        // Michaelis-Menten: MM(kcat, Km) or MM(Vmax, Km, S)
+        if (args.size() >= 3) {
+            const double vmax = args[0];
+            const double km = args[1];
+            const double sVal = args[2];
+            const double denom = km + sVal;
+            if (denom == 0.0 || sVal <= 0.0) return 0.0;
+            double rate = statFactor * vmax * sVal / denom;
+            for (std::size_t i = 1; i < nReactants; ++i) {
+                const double n = repeatedOffset(i);
+                rate *= std::max(0.0, state[reactants[i]] - scaling * n);
+            }
+            unscaled = rate;
+        } else if (nReactants >= 2) {
+            const double kcat = args[0];
+            const double km = args[1];
+            const double st = state[reactants[0]];
+            const double et = state[reactants[1]];
+            if (st <= 0.0 || et <= 0.0) return 0.0;
+            const double b = st - km - et;
+            const double disc = b * b + 4.0 * st * km;
+            if (disc < 0.0) return 0.0;
+            const double q = std::sqrt(disc);
+            const double sFree = (b >= 0.0)
+                ? (0.5 * (b + q))
+                : ((q - b) > 0.0 ? (2.0 * st * km / (q - b)) : 0.0);
+            const double denom = km + sFree;
+            if (denom <= 0.0) return 0.0;
+            double rate = statFactor * kcat * et * sFree / denom;
+            for (std::size_t i = 2; i < nReactants; ++i) {
+                const double n = repeatedOffset(i);
+                rate *= std::max(0.0, state[reactants[i]] - scaling * n);
+            }
+            unscaled = rate;
+        } else if (nReactants == 1) {
+            const double kcat = args[0];
+            const double km = args[1];
+            const double st = state[reactants[0]];
+            const double denom = km + st;
+            if (denom <= 0.0 || st <= 0.0) return 0.0;
+            unscaled = statFactor * kcat * st / denom;
+        }
+    } else if (rateLawKindInt == 3) {
+        // Hill: Hill(Vmax, Kh, n)
+        if (nReactants == 0) return 0.0;
+        const double vmax = args[0];
+        const double kh = args[1];
+        const double nExp = (args.size() >= 3) ? args[2] : 1.0;
+        const double sVal = state[reactants[0]];
+        if (sVal <= 0.0) return 0.0;
+        const double sn = std::pow(sVal, nExp);
+        const double kn = std::pow(kh, nExp);
+        const double denom = kn + sn;
+        if (!std::isfinite(denom) || denom <= 0.0) return 0.0;
+        double rate = statFactor * vmax * sn / denom;
+        for (std::size_t i = 1; i < nReactants; ++i) {
+            const double n = repeatedOffset(i);
+            rate *= std::max(0.0, state[reactants[i]] - scaling * n);
+        }
+        unscaled = rate;
+    }
+
+    const double scaled = unscaled / scaling;
+    return (std::isfinite(scaled) && scaled > 0.0) ? scaled : 0.0;
+}
+
 } // anonymous namespace
 
 double PsaSimulator::rxnRateScaled(std::size_t rxnIdx,
                                      const std::vector<double>& state,
                                      double poplevel, bool pScaleChecker,
                                      double& scaling) const {
-    // Faithful port of rxn_rate_scaled() from network.cpp (ELEMENTARY case).
     const auto& rxn = compiledRxns_[rxnIdx];
     const auto& reactants = rxn.reactantIndices;
     const auto& products = rxn.productIndices;
     const std::size_t nReactants = reactants.size();
 
-    // Absolute SBML fluxes already include reactant dependence.  Authored
+    if (rxn.rateLawKind != PsaRateLawKind::Elementary) {
+        return computeScaledTypedPropensity(
+            rxn.statFactor, reactants, products, fixedSpecies_, state,
+            rxn.staticRateLawArgs, static_cast<int>(rxn.rateLawKind),
+            poplevel, pScaleChecker, scaling);
+    }
+
+    // Absolute SBML fluxes already include reactant dependence. Authored
     // TotalRate rules still use finite-network reactant counts, with their
     // symmetry factor set to one during compilation.
-    // A constant reactant is never consumed, so it does not limit an absolute
-    // flux (see OdeIntegrator::computePropensity).
     if (rxn.isAbsoluteFlux) {
         scaling = 1.0;
         for (std::size_t i = 0; i < nReactants; ++i) {
@@ -736,8 +1107,6 @@ double PsaSimulator::rxnRateScaled(std::size_t rxnIdx,
         return rxn.rateConstant < 0.0 ? 0.0 : rxn.rateConstant;
     }
 
-    // rxn.rateConstant already includes unit_conversion * statFactor (computed
-    // once in compile()); do NOT multiply by rxn.statFactor a second time.
     return computeScaledElementaryPropensity(
         rxn.rateConstant, reactants, products, state, poplevel, pScaleChecker, scaling);
 }
@@ -839,10 +1208,26 @@ void PsaSimulator::updateObservables(const std::vector<double>& state,
 OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
                                   bool pScaleChecker) {
     // Faithful port of init_adaptive_scaling_network() + adaptive_scaling_network()
-    // from network.cpp, with exact periodic Fenwick/aTot rebuild (Hlavacek #123)
-    // and observable-dependent functional rate evaluation.
+    // from network.cpp, with exact periodic Fenwick/aTot rebuild (Hlavacek #123),
+    // Sat/MM/Hill scaling, stop_if support, and observable-dependent functional rates.
+
+    if (const auto decision = bng::compile::poplevelDecisionError(poplevel)) {
+        throw std::runtime_error(*decision);
+    }
 
     const std::vector<double> targetTimes = psaOutputTimes(opts);
+
+    // Parse optional stop_if condition
+    std::optional<ast::Expression> stopIfExpr;
+    if (!opts.stopIf.empty()) {
+        try {
+            stopIfExpr = materializeTfunExpression(
+                functionEvaluator_.expandFunctions(parser::parseExpression(opts.stopIf)));
+        } catch (const std::exception& error) {
+            throw std::runtime_error(
+                "Failed to parse stop_if expression: " + std::string(error.what()));
+        }
+    }
 
     // Seed RNG
     std::mt19937_64 rng;
@@ -854,37 +1239,28 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
     }
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
-    // Build dynamic functional-rate expressions only when needed
     bool hasFunctional = false;
     for (const auto& crxn : compiledRxns_) {
-        if (std::isnan(crxn.rateConstant)) {
+        if (crxn.usesObservables) {
             hasFunctional = true;
             break;
         }
     }
 
-    std::vector<std::optional<ast::Expression>> functionalExprs;
     std::unordered_map<std::string, std::size_t> obsNameToIndex;
     std::vector<double> currentObs(compiledGroups_.size(), 0.0);
-    if (hasFunctional) {
+    if (hasFunctional || stopIfExpr.has_value()) {
         obsNameToIndex.reserve(compiledGroups_.size());
         for (std::size_t g = 0; g < compiledGroups_.size(); ++g) {
             obsNameToIndex.emplace(compiledGroups_[g].name, g);
         }
-        auto paramResolver = [&](const std::string& name) -> double {
-            return model_.getParameters().evaluate(name);
-        };
-        functionalExprs.resize(nReactions_);
-        const auto& rawRxns = network_.reactions.all();
-        for (std::size_t r = 0; r < nReactions_; ++r) {
-            if (!std::isnan(compiledRxns_[r].rateConstant)) continue;
-            const std::string baseRateStr = resolveBaseRateString(rawRxns[r], paramResolver);
-            functionalExprs[r] = functionEvaluator_.expandFunctions(
-                parser::parseExpression(baseRateStr));
-        }
     }
 
+    double evalTime = opts.tStart;
     const auto dynResolver = [&](const std::string& name) -> double {
+        if (name == "time" || name == "t") {
+            return evalTime;
+        }
         const auto obsIt = obsNameToIndex.find(name);
         if (obsIt != obsNameToIndex.end()) {
             return currentObs[obsIt->second];
@@ -897,16 +1273,48 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         c[i] = std::round(network_.species.get(i).getAmount());
     }
-    if (hasFunctional) {
+    if (hasFunctional || stopIfExpr.has_value()) {
         updateObservables(c, currentObs);
     }
 
+    auto stopConditionMet = [&](double checkTime, bool refreshObs) -> bool {
+        if (!stopIfExpr.has_value()) return false;
+        if (refreshObs) {
+            updateObservables(c, currentObs);
+        }
+        evalTime = checkTime;
+        try {
+            return functionEvaluator_.evaluate(*stopIfExpr, dynResolver, checkTime) != 0.0;
+        } catch (const std::exception& error) {
+            throw std::runtime_error(
+                "Failed to evaluate stop_if expression '" +
+                opts.stopIf + "': " + error.what());
+        }
+    };
+
     auto evalPropensity = [&](std::size_t rxnIdx, double& rxnScaling) -> double {
-        if (!hasFunctional || !functionalExprs[rxnIdx].has_value()) {
+        const auto& rxn = compiledRxns_[rxnIdx];
+        if (!rxn.usesObservables) {
             return rxnRateScaled(rxnIdx, c, poplevel, pScaleChecker, rxnScaling);
         }
-        const auto& rxn = compiledRxns_[rxnIdx];
-        const double baseVal = functionEvaluator_.evaluate(*functionalExprs[rxnIdx], dynResolver);
+        if (rxn.rateLawKind != PsaRateLawKind::Elementary) {
+            std::vector<double> evalArgs;
+            evalArgs.reserve(rxn.rateLawArgExprs.size());
+            for (const auto& argExpr : rxn.rateLawArgExprs) {
+                const double v = functionEvaluator_.evaluate(argExpr, dynResolver);
+                if (!std::isfinite(v)) {
+                    throw std::runtime_error(
+                        "PSA produced a non-finite functional rate argument for reaction " +
+                        std::to_string(rxnIdx + 1));
+                }
+                evalArgs.push_back(v);
+            }
+            return computeScaledTypedPropensity(
+                rxn.statFactor, rxn.reactantIndices, rxn.productIndices,
+                fixedSpecies_, c, evalArgs, static_cast<int>(rxn.rateLawKind),
+                poplevel, pScaleChecker, rxnScaling);
+        }
+        const double baseVal = functionEvaluator_.evaluate(*rxn.functionalExpr, dynResolver);
         if (!std::isfinite(baseVal)) {
             throw std::runtime_error(
                 "PSA produced a non-finite functional rate coefficient for reaction " +
@@ -960,6 +1368,14 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
     double nSteps = 0.0;
     bool hitMaxSteps = false;
     bool hitStopCondition = false;
+
+    if (stopIfExpr.has_value() && stopConditionMet(t, false)) {
+        result.timePoints.push_back(t);
+        result.concentrations.push_back(c);
+        result.observables.resize(1);
+        updateObservables(c, result.observables[0]);
+        return result;
+    }
 
     // === MAIN SIMULATION LOOP (adaptive_scaling_network) ===
     for (std::size_t step = 0; step < targetTimes.size(); ++step) {
@@ -1019,9 +1435,14 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
             (void)updateConcentrationsPsa(irxn, c, s);
             nSteps += 1.0;
 
-            // Update observables before refreshing functional rates
-            if (hasFunctional) {
+            // Update observables before refreshing functional rates / stop_if
+            if (hasFunctional || stopIfExpr.has_value()) {
                 updateObservables(c, currentObs);
+            }
+
+            if (stopIfExpr.has_value() && stopConditionMet(outputTime - tRemain, false)) {
+                hitStopCondition = true;
+                break;
             }
 
             // Update affected reaction rates
@@ -1063,15 +1484,22 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
             hitMaxSteps || hitStopCondition ? t : outputTime);
         result.concentrations.push_back(c);
 
+        if (!hitStopCondition && stopIfExpr.has_value() &&
+            stopConditionMet(t, !hasFunctional)) {
+            hitStopCondition = true;
+        }
+
         if (hitMaxSteps || hitStopCondition) {
             break;
         }
     }
 
-    // Fill remaining output points if we stopped early
-    while (result.timePoints.size() < targetTimes.size()) {
-        result.timePoints.push_back(result.timePoints.back());
-        result.concentrations.push_back(c);
+    // Fill remaining output points if we hit maxStep (stop_if ends at the stop point)
+    if (!hitStopCondition) {
+        while (result.timePoints.size() < targetTimes.size()) {
+            result.timePoints.push_back(result.timePoints.back());
+            result.concentrations.push_back(c);
+        }
     }
 
     // Compute observables for each time point

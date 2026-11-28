@@ -1971,6 +1971,10 @@ nextReaction->fire(randElement);
 
 void System::equilibrate(double duration)
 {
+	if (!std::isfinite(duration) || duration < 0.0) {
+		throw std::invalid_argument("NFsim equilibration duration must be finite and non-negative");
+	}
+	if (duration == 0.0) return;
 	invalidatePendingEvent();
 	double startTime = current_time;
 	stepTo(startTime + duration);
@@ -1980,6 +1984,12 @@ void System::equilibrate(double duration)
 
 void System::equilibrate(double duration, int statusReports)
 {
+	if (!std::isfinite(duration) || duration < 0.0) {
+		throw std::invalid_argument("NFsim equilibration duration must be finite and non-negative");
+	}
+	if (statusReports < 0) {
+		throw std::invalid_argument("NFsim equilibration statusReports must be non-negative");
+	}
 	if(duration<=0) return;
 
 	if(statusReports<=0) {
@@ -3049,6 +3059,7 @@ void System::updateSystemWithNewParameters() {
 
 	//Update all reactions
 	for(unsigned int r=0; r<allReactions.size(); r++) {
+		allReactions.at(r)->markGlobalObservableDirty();
 		allReactions.at(r)->resetBaseRateFromSystemParamter();
 		// Functional (observable-dependent) zero-order reactions carry no
 		// baseRateParameterName, so resetBaseRateFromSystemParamter() is a

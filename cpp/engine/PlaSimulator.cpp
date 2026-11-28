@@ -1,5 +1,6 @@
 #include "PlaSimulator.hpp"
 #include "DelayedSemanticsGuard.hpp"
+#include "ObservableProjection.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -7,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <sstream>
@@ -14,18 +16,13 @@
 #include <unordered_map>
 #include <unordered_set>
 
-#include "parser/antlr_compat.hpp"
-#include "antlr4-runtime.h"
-#include "BNGLexer.h"
-#include "BNGParser.h"
 #include "ast/ModelFunctionEvaluator.hpp"
 #include "parser/BNGAstVisitor.hpp"
-#include "parser/PatternGraphBuilder.hpp"
-#include "core/PatternMatching.hpp"
-#include "core/Ullmann.hpp"
+#include "compile/CompiledModel.hpp"
 #include "compile/CompiledRateLaw.hpp"
 #include "compile/TotalRate.hpp"
 #include "io/NetWriter.hpp"
+#include "io/TfunReader.hpp"
 
 namespace bng::engine {
 
@@ -72,11 +69,16 @@ bool plaExprDependsOnTimeImpl(const ast::Expression& expression,
             }
             return name == "time" || name == "t";
         }
-        case ast::ExpressionKind::Function:
-            if (expression.name() == "time" && expression.args().empty()) {
+        case ast::ExpressionKind::Function: {
+            const auto& name = expression.name();
+            if ((name == "time" || name == "t") && expression.args().empty()) {
+                return true;
+            }
+            if ((name == "TFUN" || name == "tfun") && expression.args().size() == 1) {
                 return true;
             }
             [[fallthrough]];
+        }
         case ast::ExpressionKind::Unary:
         case ast::ExpressionKind::Binary:
         case ast::ExpressionKind::ObservableRef:
@@ -133,39 +135,58 @@ bool plaExprUsesObservableImpl(const ast::Expression& expression,
     return false;
 }
 
-bool plaExprUsesObservable(const ast::Expression& expression,
-                           const ast::ModelFunctionEvaluator& fnEval,
-                           const std::unordered_set<std::string>& obsNames) {
-    if (obsNames.empty()) return false;
-    try {
-        return plaExprUsesObservableImpl(fnEval.expandFunctions(expression), obsNames);
-    } catch (const std::exception&) {
-        return plaExprUsesObservableImpl(expression, obsNames);
-    }
-}
-
-std::string resolvePlaBaseRateString(
-    const ast::Rxn& rxn,
-    const std::function<double(const std::string&)>& paramResolver) {
-    const auto& originRuleName = rxn.getOriginRuleName();
-    if (!originRuleName.empty()) {
-        const bool isReverse = originRuleName.rfind("_reverse__", 0) == 0;
-        std::string ruleBase = isReverse
-            ? originRuleName.substr(std::string("_reverse__").size())
-            : originRuleName;
-        if (!ruleBase.empty() && ruleBase[0] == '_' && ruleBase != "_reverse") {
-            ruleBase = ruleBase.substr(1);
+ast::Expression materializePlaTfunExpression(const ast::Expression& expr) {
+    switch (expr.kind()) {
+        case ast::ExpressionKind::Number:
+        case ast::ExpressionKind::Identifier:
+            return expr;
+        case ast::ExpressionKind::Unary:
+            return ast::Expression::unary(
+                expr.name(), materializePlaTfunExpression(expr.args().front()));
+        case ast::ExpressionKind::Binary:
+            return ast::Expression::binary(
+                expr.name(),
+                materializePlaTfunExpression(expr.args()[0]),
+                materializePlaTfunExpression(expr.args()[1]));
+        case ast::ExpressionKind::Function: {
+            std::vector<ast::Expression> args;
+            args.reserve(expr.args().size());
+            for (const auto& arg : expr.args()) {
+                args.push_back(materializePlaTfunExpression(arg));
+            }
+            return ast::Expression::function(expr.name(), std::move(args));
         }
-        const std::string derivedParamName = isReverse
-            ? ("__reverse__" + ruleBase + "_local1")
-            : ("__" + ruleBase + "_local1");
-        try {
-            (void)paramResolver(derivedParamName);
-            return derivedParamName;
-        } catch (const std::exception&) {
+        case ast::ExpressionKind::ObservableRef: {
+            std::vector<ast::Expression> args;
+            args.reserve(expr.args().size());
+            for (const auto& arg : expr.args()) {
+                args.push_back(materializePlaTfunExpression(arg));
+            }
+            return ast::Expression::observableRef(expr.name(), std::move(args));
+        }
+        case ast::ExpressionKind::TableFunction: {
+            if (expr.args().size() != 1) {
+                throw std::runtime_error("TFUN expression must have one counter expression");
+            }
+            auto counter = materializePlaTfunExpression(expr.args().front());
+            if (!expr.tableFilePath().empty()) {
+                auto table = bng::io::TfunReader::read(expr.tableFilePath());
+                return ast::Expression::tableFunction(
+                    std::move(table.times),
+                    std::move(table.values),
+                    std::string(),
+                    std::move(counter),
+                    expr.tableMethod());
+            }
+            return ast::Expression::tableFunction(
+                expr.tableXValues(),
+                expr.tableYValues(),
+                std::string(),
+                std::move(counter),
+                expr.tableMethod());
         }
     }
-    return stripPlaLocalTag(rxn.getRateLaw());
+    return expr;
 }
 
 std::vector<RxnClass> classifyReactionsForTau(const std::vector<double>& a,
@@ -176,12 +197,14 @@ std::vector<RxnClass> classifyReactionsForTau(const std::vector<double>& a,
         const double expectedFirings = a[r] * tau;
         if (!std::isfinite(expectedFirings) || expectedFirings <= 0.0) {
             classes[r] = RxnClass::ExactStochastic;
-        } else if (expectedFirings < config.apx1) {
-            classes[r] = RxnClass::ExactStochastic;
-        } else if (expectedFirings < config.gg1) {
+        } else if (std::sqrt(expectedFirings) > config.gg1) {
+            classes[r] = RxnClass::Deterministic;
+        } else if (expectedFirings > config.gg1) {
+            classes[r] = RxnClass::Langevin;
+        } else if (expectedFirings > config.apx1) {
             classes[r] = RxnClass::Poisson;
         } else {
-            classes[r] = RxnClass::Deterministic;
+            classes[r] = RxnClass::ExactStochastic;
         }
     }
     return classes;
@@ -303,6 +326,7 @@ PlaSimulator::PlaSimulator(const ast::Model& model, const GeneratedNetwork& netw
 void PlaSimulator::compile() {
     nSpecies_ = network_.species.size();
     fixedSpecies_.resize(nSpecies_, false);
+    speciesG_.assign(nSpecies_, 1.0);
 
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         fixedSpecies_[i] = network_.species.get(i).isConstant();
@@ -319,7 +343,46 @@ void PlaSimulator::compile() {
         obsNames.insert(obs.getName());
     }
 
+    // Build per-reaction derived rate maps from NetWriter (Arrhenius, scoped
+    // rates, FunctionProduct, barrier patterns, driven reservoirs).
+    std::unordered_map<std::size_t, std::pair<std::string, double>> perRxnDerivedRates;
+    std::unordered_map<std::size_t, ast::Expression> perRxnDerivedRateFunctions;
+    std::unordered_map<std::size_t, double> perRxnDerivedRuntimeRateConstants;
+    {
+        auto derived = bng::io::NetWriter::buildDerivedRateParams(model_, network_);
+        for (const auto& [ruleName, info] : derived) {
+            if (info.isPerReactionArrhenius || info.isPerReactionLocalFunction || info.isLocalFunction) {
+                for (const auto& [rxnIdx, functionPair] : info.perReactionRateFunctions) {
+                    perRxnDerivedRateFunctions[rxnIdx] = functionPair.second;
+                }
+                for (const auto& [rxnIdx, rate] : info.perReactionRuntimeRateConstants) {
+                    perRxnDerivedRuntimeRateConstants[rxnIdx] = rate;
+                }
+                for (const auto& [rxnIdx, paramPair] : info.perReactionRates) {
+                    perRxnDerivedRates[rxnIdx] = paramPair;
+                }
+                if (!info.perReactionRates.empty() ||
+                    !info.perReactionRateFunctions.empty() ||
+                    !info.perReactionRuntimeRateConstants.empty()) {
+                    continue;
+                }
+                std::size_t rxnIdx = 0;
+                for (const auto& rxn2 : network_.reactions.all()) {
+                    if (rxn2.getOriginRuleName() == ruleName && !rxn2.getReactants().empty()) {
+                        const auto specIdx = rxn2.getReactants()[0];
+                        const auto it = info.perSpeciesRates.find(specIdx);
+                        if (it != info.perSpeciesRates.end()) {
+                            perRxnDerivedRates[rxnIdx] = it->second;
+                        }
+                    }
+                    ++rxnIdx;
+                }
+            }
+        }
+    }
+
     compiledRxns_.clear();
+    std::size_t rxnIndex = 0;
     for (const auto& rxn : network_.reactions.all()) {
         if (bng::compile::isTotalRateReaction(model_, rxn.getOriginRuleName()) ||
             bng::compile::isAbsoluteFluxReaction(model_, rxn)) {
@@ -340,41 +403,87 @@ void PlaSimulator::compile() {
         }
         crxn.statFactor = rxn.getFactor() * unitScale;
 
-        const std::string baseRateStr = resolvePlaBaseRateString(rxn, resolver);
-        if (isUnsupportedPlaTypedRateLaw(baseRateStr)) {
-            throw std::runtime_error(
-                "PLA does not support Sat/MM/Hill rate laws; failing closed.");
-        }
-
-        std::optional<ast::Expression> parsedRate;
-        try {
-            parsedRate = parser::parseExpression(baseRateStr);
-        } catch (const std::exception&) {
-        }
-
-        if (parsedRate.has_value()) {
-            if (plaExprDependsOnTime(*parsedRate, model_, fnEval)) {
+        // Fast path: per-reaction derived rates (Arrhenius, scoped rates, FunctionProduct)
+        bool resolvedDerived = false;
+        if (const auto rtIt = perRxnDerivedRuntimeRateConstants.find(rxnIndex);
+            rtIt != perRxnDerivedRuntimeRateConstants.end()) {
+            if (!std::isfinite(rtIt->second)) {
+                throw std::runtime_error(
+                    "PLA encountered a non-finite derived reaction rate constant");
+            }
+            crxn.rateConstant = rtIt->second;
+            resolvedDerived = true;
+        } else if (const auto fnIt = perRxnDerivedRateFunctions.find(rxnIndex);
+                   fnIt != perRxnDerivedRateFunctions.end()) {
+            if (plaExprDependsOnTime(fnIt->second, model_, fnEval)) {
                 throw std::runtime_error(
                     "PLA does not support explicitly time-dependent rate laws");
             }
-            if (plaExprUsesObservable(*parsedRate, fnEval, obsNames)) {
-                // Sentinel: dynamically evaluated from current observables in simulate().
+            const auto expanded = materializePlaTfunExpression(
+                fnEval.expandFunctions(fnIt->second));
+            if (plaExprUsesObservableImpl(expanded, obsNames)) {
+                crxn.usesObservables = true;
+                crxn.functionalExpr = expanded;
                 crxn.rateConstant = std::numeric_limits<double>::quiet_NaN();
             } else {
-                const double val = fnEval.evaluate(*parsedRate, resolver);
+                const double val = fnEval.evaluate(expanded, resolver);
+                if (!std::isfinite(val)) {
+                    throw std::runtime_error(
+                        "PLA encountered a non-finite derived reaction rate constant");
+                }
+                crxn.rateConstant = val;
+            }
+            resolvedDerived = true;
+        } else if (const auto drIt = perRxnDerivedRates.find(rxnIndex);
+                   drIt != perRxnDerivedRates.end()) {
+            if (!std::isfinite(drIt->second.second)) {
+                throw std::runtime_error(
+                    "PLA encountered a non-finite derived reaction rate constant");
+            }
+            crxn.rateConstant = drIt->second.second;
+            resolvedDerived = true;
+        }
+
+        if (!resolvedDerived) {
+            const std::string baseRateStr = stripPlaLocalTag(rxn.getRateLaw());
+            if (isUnsupportedPlaTypedRateLaw(baseRateStr)) {
+                throw std::runtime_error(
+                    "PLA does not support Sat/MM/Hill rate laws; failing closed.");
+            }
+
+            std::optional<ast::Expression> parsedRate;
+            try {
+                parsedRate = parser::parseExpression(baseRateStr);
+            } catch (const std::exception&) {
+            }
+
+            if (parsedRate.has_value()) {
+                if (plaExprDependsOnTime(*parsedRate, model_, fnEval)) {
+                    throw std::runtime_error(
+                        "PLA does not support explicitly time-dependent rate laws");
+                }
+                const auto expanded = materializePlaTfunExpression(
+                    fnEval.expandFunctions(*parsedRate));
+                if (plaExprUsesObservableImpl(expanded, obsNames)) {
+                    crxn.usesObservables = true;
+                    crxn.functionalExpr = expanded;
+                    crxn.rateConstant = std::numeric_limits<double>::quiet_NaN();
+                } else {
+                    const double val = fnEval.evaluate(expanded, resolver);
+                    if (!std::isfinite(val)) {
+                        throw std::runtime_error(
+                            "PLA encountered a non-finite reaction rate constant");
+                    }
+                    crxn.rateConstant = val;
+                }
+            } else {
+                const double val = evaluateRateString(baseRateStr, resolver);
                 if (!std::isfinite(val)) {
                     throw std::runtime_error(
                         "PLA encountered a non-finite reaction rate constant");
                 }
                 crxn.rateConstant = val;
             }
-        } else {
-            const double val = evaluateRateString(baseRateStr, resolver);
-            if (!std::isfinite(val)) {
-                throw std::runtime_error(
-                    "PLA encountered a non-finite reaction rate constant");
-            }
-            crxn.rateConstant = val;
         }
 
         // Compute stoichiometry
@@ -385,28 +494,50 @@ void PlaSimulator::compile() {
             if (coeff != 0) crxn.stoich.push_back({idx, coeff});
         }
 
+        // Update Cao et al. (2006) highest-order reaction factor g_i per reactant species
+        const std::size_t totalReactants = crxn.reactantIndices.size();
+        for (std::size_t ri = 0; ri < totalReactants; ++ri) {
+            const std::size_t specIdx = crxn.reactantIndices[ri];
+            if (specIdx >= nSpecies_) continue;
+            const std::size_t mult = static_cast<std::size_t>(
+                std::count(crxn.reactantIndices.begin(), crxn.reactantIndices.end(), specIdx));
+            double gVal = 1.0;
+            if (totalReactants == 1) {
+                gVal = 1.0;
+            } else if (totalReactants == 2) {
+                gVal = (mult == 2) ? 3.0 : 2.0;
+            } else if (totalReactants == 3) {
+                gVal = (mult == 3) ? 5.5 : ((mult == 2) ? 4.5 : 3.0);
+            } else if (totalReactants > 3) {
+                gVal = static_cast<double>(totalReactants) +
+                       0.5 * static_cast<double>(mult > 0 ? mult - 1 : 0);
+            }
+            if (gVal > speciesG_[specIdx]) {
+                speciesG_[specIdx] = gVal;
+            }
+        }
+
         compiledRxns_.push_back(std::move(crxn));
+        ++rxnIndex;
     }
 }
 
 void PlaSimulator::compileGroups() {
     compiledGroups_.clear();
-    auto& mutableModel = const_cast<ast::Model&>(model_);
 
-    struct CachedObservablePattern {
-        BNGcore::PatternGraph graph;
-        std::string compartment;
+    std::unique_ptr<compile::CompiledModel> compiledModel;
+    std::unique_ptr<ObservableProjection> projection;
+    const auto ensureProjection = [&]() {
+        if (!projection) {
+            compiledModel = std::make_unique<compile::CompiledModel>(model_);
+            projection = std::make_unique<ObservableProjection>(*compiledModel);
+        }
     };
-    struct ParsedPatternInfo {
-        const BNGcore::PatternGraph* graph = nullptr;
-        std::string compartment;
-        std::string quantifier;
-        int quantifierThreshold = 0;
-        bool hasQuantifier = false;
-    };
-    std::unordered_map<std::string, CachedObservablePattern> parsedObservableCache;
 
-    for (const auto& observable : model_.getObservables()) {
+    const auto& observables = model_.getObservables();
+    compiledGroups_.reserve(observables.size());
+    for (std::size_t observableIndex = 0; observableIndex < observables.size(); ++observableIndex) {
+        const auto& observable = observables[observableIndex];
         CompiledGroup group;
         group.name = observable.getName();
 
@@ -443,124 +574,16 @@ void PlaSimulator::compileGroups() {
             continue;
         }
 
-        // Parse and cache each observable pattern ONCE outside the species loop
-        // with treatUnspecifiedBondAsWildcard = false (matching OdeIntegrator).
-        std::vector<ParsedPatternInfo> parsedPatterns;
-        parsedPatterns.reserve(observable.getPatterns().size());
-        for (const auto& patternText : observable.getPatterns()) {
-            try {
-                std::string cleanPattern = patternText;
-                std::string quantifier;
-                int quantifierThreshold = 0;
-                bool hasQuantifier = false;
-
-                static const std::vector<std::string> ops = {">=", "<=", "==", "!=", ">", "<"};
-                for (const auto& op : ops) {
-                    const auto pos = cleanPattern.rfind(op);
-                    if (pos == std::string::npos || pos == 0) {
-                        continue;
-                    }
-                    std::string after = cleanPattern.substr(pos + op.size());
-                    const auto firstNonWs = after.find_first_not_of(" \t");
-                    if (firstNonWs == std::string::npos) continue;
-                    after.erase(0, firstNonWs);
-                    after.erase(after.find_last_not_of(" \t") + 1);
-                    bool isInteger = !after.empty();
-                    for (const char c : after) {
-                        if (!std::isdigit(static_cast<unsigned char>(c))) {
-                            isInteger = false;
-                            break;
-                        }
-                    }
-                    if (!isInteger) continue;
-
-                    std::string before = cleanPattern.substr(0, pos);
-                    const auto lastNonWs = before.find_last_not_of(" \t");
-                    if (lastNonWs == std::string::npos) continue;
-                    before.erase(lastNonWs + 1);
-                    if (before.empty() ||
-                        (before.back() != ')' &&
-                         !std::isalnum(static_cast<unsigned char>(before.back())) &&
-                         before.back() != '_')) {
-                        continue;
-                    }
-
-                    quantifier = op;
-                    quantifierThreshold = std::stoi(after);
-                    hasQuantifier = true;
-                    cleanPattern = std::move(before);
-                    break;
-                }
-
-                auto cacheIt = parsedObservableCache.find(cleanPattern);
-                if (cacheIt == parsedObservableCache.end()) {
-                    antlr4::ANTLRInputStream input(cleanPattern);
-                    BNGLexer lexer(&input);
-                    antlr4::CommonTokenStream tokens(&lexer);
-                    BNGParser parser(&tokens);
-                    auto* species = parser.species_def();
-                    if (parser.getNumberOfSyntaxErrors() != 0) {
-                        continue;
-                    }
-                    auto graph = bng::parser::buildPatternGraph(species, mutableModel, false);
-                    auto compartment = bng::parser::extractSpeciesCompartment(species);
-                    cacheIt = parsedObservableCache.emplace(
-                        cleanPattern,
-                        CachedObservablePattern{std::move(graph), std::move(compartment)}).first;
-                }
-                parsedPatterns.push_back({&cacheIt->second.graph,
-                                          cacheIt->second.compartment,
-                                          std::move(quantifier),
-                                          quantifierThreshold,
-                                          hasQuantifier});
-            } catch (...) {}
-        }
-
+        ensureProjection();
         for (std::size_t speciesIndex = 0; speciesIndex < network_.species.size(); ++speciesIndex) {
-            std::size_t weight = 0;
             const auto& speciesObj = network_.species.get(speciesIndex);
-            const auto& targetGraph = speciesObj.getSpeciesGraph().getGraph();
-            const auto& speciesCompartment = speciesObj.getCompartment();
-
-            for (const auto& parsedPattern : parsedPatterns) {
-                const auto& pattern = *parsedPattern.graph;
-                const auto& patternCompartment = parsedPattern.compartment;
-                bool compartmentMatches = true;
-                if (!patternCompartment.empty()) {
-                    bool patternHasMoleculeCompartment = false;
-                    for (auto it = pattern.begin(); it != pattern.end(); ++it) {
-                        if (!(*it)->get_compartment().empty()) {
-                            patternHasMoleculeCompartment = true;
-                            break;
-                        }
-                    }
-                    if (!patternHasMoleculeCompartment &&
-                        speciesCompartment != patternCompartment) {
-                        compartmentMatches = false;
-                    }
-                }
-
-                std::size_t matchCount = 0;
-                if (compartmentMatches) {
-                    matchCount = bng::core::countPatternMatches(pattern, targetGraph);
-                }
-
-                if (parsedPattern.hasQuantifier && observable.getType() == "Species") {
-                    bool passes = false;
-                    const int matchCountInt = static_cast<int>(matchCount);
-                    if (parsedPattern.quantifier == ">") passes = matchCountInt > parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == "<") passes = matchCountInt < parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == ">=") passes = matchCountInt >= parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == "<=") passes = matchCountInt <= parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == "==") passes = matchCountInt == parsedPattern.quantifierThreshold;
-                    else if (parsedPattern.quantifier == "!=") passes = matchCountInt != parsedPattern.quantifierThreshold;
-                    matchCount = passes ? 1 : 0;
-                } else if (observable.getType() == "Species" && matchCount > 0) {
-                    matchCount = 1;
-                }
-                weight += matchCount;
+            const int weight = projection->weight(
+                observableIndex,
+                speciesObj.getSpeciesGraph().getGraph(),
+                speciesObj.getCompartment());
+            if (weight > 0) {
+                group.entries.emplace_back(speciesIndex, static_cast<double>(weight));
             }
-            if (weight > 0) group.entries.push_back({speciesIndex, static_cast<double>(weight)});
         }
         compiledGroups_.push_back(std::move(group));
     }
@@ -605,7 +628,7 @@ double PlaSimulator::computeTau(const std::vector<double>& state, const std::vec
     if (a0 <= 0.0) return std::numeric_limits<double>::infinity();
 
     // Adaptive tau calculation (Cao et al. 2006) in O(R + S) via scatter-accumulation
-    // over reaction stoichiometry entries (eliminating the O(S * R) nested scan).
+    // over reaction stoichiometry entries with species highest-order g_i factors.
     std::vector<double> mu(nSpecies_, 0.0);
     std::vector<double> sigma2(nSpecies_, 0.0);
 
@@ -631,7 +654,8 @@ double PlaSimulator::computeTau(const std::vector<double>& state, const std::vec
         const double absMu = std::abs(mu[s]);
         if (absMu < 1e-30 && sigma2[s] < 1e-30) continue;
 
-        const double bound = std::max(eps * std::max(state[s], 0.0), 1.0);
+        const double g = (s < speciesG_.size() && speciesG_[s] > 0.0) ? speciesG_[s] : 1.0;
+        const double bound = std::max(eps * std::max(state[s], 0.0) / g, 1.0);
         const double bound_mu = (absMu > 0.0)
             ? (bound / absMu)
             : std::numeric_limits<double>::infinity();
@@ -643,10 +667,11 @@ double PlaSimulator::computeTau(const std::vector<double>& state, const std::vec
         tauMin = std::min(tauMin, tau_s);
     }
 
-    // Don't let tau be too small or remain infinite when reactions are active
-    const double exactTau = 1.0 / a0;
-    if (!std::isfinite(tauMin) || tauMin < config.apx1 * exactTau) {
-        tauMin = exactTau;
+    // Only fall back to 1/a0 when no species has non-zero drift or variance
+    // (e.g. catalyst-only reactions); do NOT clamp small tau up to 1/a0, so
+    // exact-stochastic regimes take true Gillespie SSA steps.
+    if (!std::isfinite(tauMin)) {
+        tauMin = 1.0 / a0;
     }
 
     return tauMin;
@@ -660,8 +685,9 @@ std::vector<RxnClass> PlaSimulator::classifyReactions(const std::vector<double>&
 void PlaSimulator::fireReactionsEuler(std::vector<double>& state, const std::vector<double>& a,
                                        const std::vector<RxnClass>& classes, double tau,
                                        std::mt19937& rng) const {
+    std::normal_distribution<double> normal01(0.0, 1.0);
     for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
-        if (a[r] <= 0.0) continue;
+        if (a[r] <= 0.0 || classes[r] == RxnClass::ExactStochastic) continue;
 
         const double mean = a[r] * tau;
         if (!std::isfinite(mean)) {
@@ -673,27 +699,24 @@ void PlaSimulator::fireReactionsEuler(std::vector<double>& state, const std::vec
 
         switch (classes[r]) {
             case RxnClass::ExactStochastic:
+                break;
             case RxnClass::Poisson: {
-                if (mean < 20.0) {
+                if (mean < 1e9) {
                     std::poisson_distribution<std::int64_t> poisson(mean);
                     firings = static_cast<double>(poisson(rng));
                 } else {
-                    std::normal_distribution<double> normal(mean, std::sqrt(mean));
-                    const double draw = std::round(normal(rng));
+                    const double draw = std::round(mean + std::sqrt(mean) * normal01(rng));
                     firings = (std::isfinite(draw) && draw > 0.0) ? draw : 0.0;
                 }
                 break;
             }
             case RxnClass::Langevin: {
-                const double noise = std::sqrt(mean);
-                std::normal_distribution<double> normal(0.0, 1.0);
-                const double draw = std::round(mean + noise * normal(rng));
+                const double draw = std::round(mean + std::sqrt(mean) * normal01(rng));
                 firings = (std::isfinite(draw) && draw > 0.0) ? draw : 0.0;
                 break;
             }
             case RxnClass::Deterministic: {
                 if (mean < 1.0) {
-                    // Guard against rounding small expected firings to 0 even if gg1 < 1.
                     std::poisson_distribution<std::int64_t> poisson(mean);
                     firings = static_cast<double>(poisson(rng));
                 } else {
@@ -703,7 +726,6 @@ void PlaSimulator::fireReactionsEuler(std::vector<double>& state, const std::vec
             }
         }
 
-        // Apply stoichiometry changes in double precision (no 32-bit int overflow UB).
         if (firings > 0.0) {
             for (const auto& [idx, coeff] : compiledRxns_[r].stoich) {
                 if (!fixedSpecies_[idx]) {
@@ -719,6 +741,22 @@ bool PlaSimulator::checkNegativePopulations(const std::vector<double>& state) co
         if (!fixedSpecies_[s] && state[s] < -1e-9) return true;
     }
     return false;
+}
+
+bool PlaSimulator::checkSpeciesEps(const std::vector<double>& savedState,
+                                   const std::vector<double>& newState,
+                                   double eps, double wFactor) const {
+    constexpr double kTol = 1e-9;
+    for (std::size_t s = 0; s < nSpecies_; ++s) {
+        if (fixedSpecies_[s]) continue;
+        const double dX = std::abs(newState[s] - savedState[s]);
+        const double g = (s < speciesG_.size() && speciesG_[s] > 0.0) ? speciesG_[s] : 1.0;
+        const double bound = wFactor * eps * std::max(savedState[s], 0.0) / g;
+        if (dX > bound && dX > (1.0 + kTol)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 void PlaSimulator::clampNegatives(std::vector<double>& state) const {
@@ -748,49 +786,96 @@ OdeResult PlaSimulator::simulate(const OdeOptions& opts, const PlaConfig& config
         throw std::runtime_error(
             "PLA currently supports only species-based (:sb) leaping (reaction-based :rb is not implemented); failing closed.");
     }
+    if (!std::isfinite(config.eps) || config.eps <= 0.0 || config.eps > 1.0) {
+        throw std::runtime_error("PLA eps must be finite and in (0, 1]");
+    }
+    if (!std::isfinite(config.fixedTau) || config.fixedTau < 0.0) {
+        throw std::runtime_error("PLA tau must be finite and non-negative");
+    }
+    if (config.checkType == PlaConfig::CheckType::Fixed && config.fixedTau <= 0.0) {
+        throw std::runtime_error("PLA fixed check mode requires a positive tau");
+    }
+    if (!std::isfinite(config.p) || config.p <= 0.0 || config.p >= 1.0) {
+        throw std::runtime_error("PLA p must be finite and in (0, 1)");
+    }
+    if (!std::isfinite(config.q) || config.q < 1.0) {
+        throw std::runtime_error("PLA q must be finite and >= 1");
+    }
+    if (!std::isfinite(config.w) || config.w <= 0.0 || config.w >= 1.0) {
+        throw std::runtime_error("PLA w must be finite and in (0, 1)");
+    }
+    if (!std::isfinite(config.apx1) || config.apx1 < 0.0 ||
+        !std::isfinite(config.gg1) || config.gg1 < 0.0) {
+        throw std::runtime_error("PLA apx1 and gg1 must be finite and non-negative");
+    }
 
     const std::vector<double> targetTimes = plaOutputTimes(opts);
     const double tStart = opts.tStart;
     const double tEnd = opts.tEnd;
     const double minTauFloor = 1e-15 * std::max(1.0, std::abs(tEnd - tStart));
-    const double shrink = (config.w > 0.0 && config.w < 1.0) ? config.w : 0.5;
+    const double maxPostTau = std::max(std::abs(tEnd - tStart), 1.0);
+    const bool useEpsPostcheck =
+        config.checkType == PlaConfig::CheckType::PreEps ||
+        config.checkType == PlaConfig::CheckType::PostEps;
+    const bool usePostAdaptiveTau =
+        config.fixedTau <= 0.0 &&
+        (config.checkType == PlaConfig::CheckType::PostNeg ||
+         config.checkType == PlaConfig::CheckType::PostEps);
 
-    // Prepare dynamic functional-rate evaluator if any reaction references observables
+    ast::ModelFunctionEvaluator fnEval(model_);
+
+    // Parse optional stop_if condition
+    std::optional<ast::Expression> stopIfExpr;
+    if (!opts.stopIf.empty()) {
+        try {
+            stopIfExpr = materializePlaTfunExpression(
+                fnEval.expandFunctions(parser::parseExpression(opts.stopIf)));
+        } catch (const std::exception& error) {
+            throw std::runtime_error(
+                "Failed to parse stop_if expression: " + std::string(error.what()));
+        }
+    }
+
     bool hasFunctional = false;
     for (const auto& crxn : compiledRxns_) {
-        if (std::isnan(crxn.rateConstant)) {
+        if (crxn.usesObservables) {
             hasFunctional = true;
             break;
         }
     }
 
-    ast::ModelFunctionEvaluator fnEval(model_);
-    std::vector<std::optional<ast::Expression>> functionalExprs;
     std::unordered_map<std::string, std::size_t> obsNameToIndex;
     std::vector<double> currentObs(compiledGroups_.size(), 0.0);
-    if (hasFunctional) {
+    if (hasFunctional || stopIfExpr.has_value()) {
         obsNameToIndex.reserve(compiledGroups_.size());
         for (std::size_t g = 0; g < compiledGroups_.size(); ++g) {
             obsNameToIndex.emplace(compiledGroups_[g].name, g);
         }
-        const auto paramResolver = [&](const std::string& name) -> double {
-            return model_.getParameters().evaluate(name);
-        };
-        functionalExprs.resize(compiledRxns_.size());
-        const auto& rawRxns = network_.reactions.all();
-        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
-            if (!std::isnan(compiledRxns_[r].rateConstant)) continue;
-            const std::string baseRateStr = resolvePlaBaseRateString(rawRxns[r], paramResolver);
-            functionalExprs[r] = fnEval.expandFunctions(parser::parseExpression(baseRateStr));
-        }
     }
 
+    double evalTime = tStart;
     const auto dynResolver = [&](const std::string& name) -> double {
+        if (name == "time" || name == "t") {
+            return evalTime;
+        }
         const auto obsIt = obsNameToIndex.find(name);
         if (obsIt != obsNameToIndex.end()) {
             return currentObs[obsIt->second];
         }
         return model_.getParameters().evaluate(name);
+    };
+
+    auto stopConditionMet = [&](double checkTime, const std::vector<double>& currentState) -> bool {
+        if (!stopIfExpr.has_value()) return false;
+        updateObservables(currentState, currentObs);
+        evalTime = checkTime;
+        try {
+            return fnEval.evaluate(*stopIfExpr, dynResolver, checkTime) != 0.0;
+        } catch (const std::exception& error) {
+            throw std::runtime_error(
+                "Failed to evaluate stop_if expression '" +
+                opts.stopIf + "': " + error.what());
+        }
     };
 
     auto computeStepPropensities = [&](const std::vector<double>& currentState,
@@ -803,11 +888,11 @@ OdeResult PlaSimulator::simulate(const OdeOptions& opts, const PlaConfig& config
         aOut.resize(compiledRxns_.size());
         for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
             const auto& rxn = compiledRxns_[r];
-            if (!functionalExprs[r].has_value()) {
+            if (!rxn.usesObservables || !rxn.functionalExpr.has_value()) {
                 aOut[r] = computePropensity(rxn, currentState);
                 continue;
             }
-            const double baseVal = fnEval.evaluate(*functionalExprs[r], dynResolver);
+            const double baseVal = fnEval.evaluate(*rxn.functionalExpr, dynResolver);
             if (!std::isfinite(baseVal)) {
                 throw std::runtime_error(
                     "PLA produced a non-finite functional rate coefficient for reaction " +
@@ -838,6 +923,83 @@ OdeResult PlaSimulator::simulate(const OdeOptions& opts, const PlaConfig& config
 
     // Random number generator
     std::mt19937 rng(opts.seed > 0 ? opts.seed : std::random_device{}());
+    std::uniform_real_distribution<double> u01(0.0, 1.0);
+    std::normal_distribution<double> normal01(0.0, 1.0);
+
+    auto drawOpenUnit = [&]() -> double {
+        double u = u01(rng);
+        while (u <= 0.0 || u >= 1.0) {
+            u = u01(rng);
+        }
+        return u;
+    };
+
+    auto applySingleReaction = [&](std::vector<double>& st, std::size_t rxnIdx) {
+        if (rxnIdx >= compiledRxns_.size()) return;
+        for (const auto& [idx, coeff] : compiledRxns_[rxnIdx].stoich) {
+            if (!fixedSpecies_[idx]) {
+                st[idx] += static_cast<double>(coeff);
+            }
+        }
+    };
+
+    auto canApplySingleReaction = [&](const std::vector<double>& st, std::size_t rxnIdx) -> bool {
+        if (rxnIdx >= compiledRxns_.size()) return false;
+        for (const auto& [idx, coeff] : compiledRxns_[rxnIdx].stoich) {
+            if (!fixedSpecies_[idx] && st[idx] + static_cast<double>(coeff) < -1e-9) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    auto applyFirings = [&](const std::vector<double>& baseState,
+                            const std::vector<double>& firings,
+                            std::vector<double>& outState) {
+        outState = baseState;
+        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+            const double k = firings[r];
+            if (k <= 0.0) continue;
+            for (const auto& [idx, coeff] : compiledRxns_[r].stoich) {
+                if (!fixedSpecies_[idx]) {
+                    outState[idx] += static_cast<double>(coeff) * k;
+                }
+            }
+        }
+    };
+
+    auto stepExactSsa = [&](std::vector<double>& st,
+                            const std::vector<double>& propensities,
+                            double a0,
+                            double maxDt,
+                            double& dtOut) -> bool {
+        const double ssaTau = -std::log(drawOpenUnit()) / a0;
+        if (ssaTau > maxDt) {
+            dtOut = maxDt;
+            return false;
+        }
+        const double target = u01(rng) * a0;
+        double cum = 0.0;
+        std::size_t chosen = compiledRxns_.size();
+        std::size_t lastPositive = compiledRxns_.size();
+        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+            if (propensities[r] > 0.0) {
+                lastPositive = r;
+            }
+            cum += propensities[r];
+            if (cum >= target && propensities[r] > 0.0) {
+                chosen = r;
+                break;
+            }
+        }
+        if (chosen == compiledRxns_.size()) {
+            chosen = lastPositive;
+        }
+        applySingleReaction(st, chosen);
+        clampNegatives(st);
+        dtOut = ssaTau;
+        return true;
+    };
 
     OdeResult result;
     result.timePoints.reserve(targetTimes.size());
@@ -847,14 +1009,27 @@ OdeResult PlaSimulator::simulate(const OdeOptions& opts, const PlaConfig& config
     std::vector<double> obsValues;
     std::vector<double> a;
     std::vector<double> savedState;
+    std::vector<double> firings(compiledRxns_.size(), 0.0);
+    std::vector<bool> alreadyES(compiledRxns_.size(), false);
 
     double t = tStart;
     bool systemInactive = false;
+    bool hitStopCondition = false;
+    double postTau = 0.0;
+    bool hasPostTau = false;
+
+    if (stopIfExpr.has_value() && stopConditionMet(t, state)) {
+        result.timePoints.push_back(t);
+        result.concentrations.push_back(state);
+        updateObservables(state, obsValues);
+        result.observables.push_back(obsValues);
+        return result;
+    }
 
     for (std::size_t outIdx = 0; outIdx < targetTimes.size(); ++outIdx) {
         const double nextOutputTime = targetTimes[outIdx];
 
-        while (!systemInactive && t < nextOutputTime) {
+        while (!systemInactive && !hitStopCondition && t < nextOutputTime) {
             computeStepPropensities(state, a);
 
             const double a0 = computeTotalPropensity(a);
@@ -867,89 +1042,253 @@ OdeResult PlaSimulator::simulate(const OdeOptions& opts, const PlaConfig& config
                 break;
             }
 
-            // Compute initial trial tau outside the rollback retry loop so that
-            // tau *= shrink is preserved across retries instead of overwritten.
-            double tau = computeTau(state, a, config);
-            if (!std::isfinite(tau) || tau <= 0.0) {
+            const double maxTau = nextOutputTime - t;
+            double trialTau = 0.0;
+            if (config.fixedTau > 0.0) {
+                trialTau = config.fixedTau;
+            } else if (usePostAdaptiveTau && hasPostTau) {
+                trialTau = postTau;
+            } else {
+                trialTau = computeTau(state, a, config);
+            }
+            if (!std::isfinite(trialTau) || trialTau <= 0.0) {
                 systemInactive = true;
                 t = tEnd;
                 break;
             }
 
-            if (t + tau > nextOutputTime) {
-                tau = nextOutputTime - t;
-            }
+            const bool wasCappedByOutput = (trialTau > maxTau);
+            double tau = wasCappedByOutput ? maxTau : trialTau;
 
-            savedState = state;
-            bool accepted = false;
-            constexpr int kMaxRollbackAttempts = 64;
-            for (int attempt = 0; attempt < kMaxRollbackAttempts; ++attempt) {
-                state = savedState;
-                const auto classes = classifyReactionsForTau(a, tau, config);
-                fireReactionsEuler(state, a, classes, tau, rng);
-
-                if (!checkNegativePopulations(state)) {
-                    accepted = true;
+            auto classes = classifyReactionsForTau(a, tau, config);
+            bool allES = true;
+            for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+                if (a[r] > 0.0 && classes[r] != RxnClass::ExactStochastic) {
+                    allES = false;
                     break;
                 }
-                tau *= shrink;
-                if (tau <= minTauFloor) {
+            }
+
+            if (allES) {
+                double dtTaken = 0.0;
+                const bool fired = stepExactSsa(state, a, a0, maxTau, dtTaken);
+                if (!fired) {
+                    t = nextOutputTime;
                     break;
+                }
+                t += dtTaken;
+                hasPostTau = false;
+                if (stopIfExpr.has_value() && stopConditionMet(t, state)) {
+                    hitStopCondition = true;
+                    break;
+                }
+                continue;
+            }
+
+            // Harris & Clancy (2006) iterative ES waiting-time competition
+            std::fill(alreadyES.begin(), alreadyES.end(), false);
+            std::size_t esRxn = compiledRxns_.size();
+            double tauES = std::numeric_limits<double>::infinity();
+            bool fireES = false;
+            bool esConsistent = false;
+            while (!esConsistent) {
+                esConsistent = true;
+                allES = true;
+                for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+                    if (a[r] <= 0.0) continue;
+                    if (classes[r] == RxnClass::ExactStochastic) {
+                        if (!alreadyES[r]) {
+                            alreadyES[r] = true;
+                            const double tauESr = -std::log(drawOpenUnit()) / a[r];
+                            if (tauESr < tauES) {
+                                tauES = tauESr;
+                                esRxn = r;
+                            }
+                        }
+                    } else {
+                        allES = false;
+                    }
+                }
+                if (tauES < tau || allES) {
+                    tau = tauES;
+                    fireES = true;
+                    if (!allES) {
+                        esConsistent = false;
+                        auto newClasses = classifyReactionsForTau(a, tau, config);
+                        for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+                            classes[r] = alreadyES[r] ? RxnClass::ExactStochastic : newClasses[r];
+                        }
+                    }
+                }
+            }
+
+            if (allES) {
+                if (tau <= maxTau && esRxn < compiledRxns_.size()) {
+                    applySingleReaction(state, esRxn);
+                    clampNegatives(state);
+                    t += tau;
+                    hasPostTau = false;
+                    if (stopIfExpr.has_value() && stopConditionMet(t, state)) {
+                        hitStopCondition = true;
+                        break;
+                    }
+                    continue;
+                }
+                t = nextOutputTime;
+                break;
+            }
+
+            // Fire all non-ES reactions over tau and record per-reaction counts
+            savedState = state;
+            std::fill(firings.begin(), firings.end(), 0.0);
+            for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+                if (a[r] <= 0.0 || classes[r] == RxnClass::ExactStochastic) continue;
+                const double mean = a[r] * tau;
+                if (!std::isfinite(mean)) {
+                    throw std::runtime_error("PLA produced non-finite expected reaction firings");
+                }
+                if (mean <= 0.0) continue;
+                switch (classes[r]) {
+                    case RxnClass::ExactStochastic:
+                        break;
+                    case RxnClass::Poisson: {
+                        if (mean < 1e9) {
+                            std::poisson_distribution<std::int64_t> poisson(mean);
+                            firings[r] = static_cast<double>(poisson(rng));
+                        } else {
+                            const double draw = std::round(mean + std::sqrt(mean) * normal01(rng));
+                            firings[r] = (std::isfinite(draw) && draw > 0.0) ? draw : 0.0;
+                        }
+                        break;
+                    }
+                    case RxnClass::Langevin: {
+                        const double draw = std::round(mean + std::sqrt(mean) * normal01(rng));
+                        firings[r] = (std::isfinite(draw) && draw > 0.0) ? draw : 0.0;
+                        break;
+                    }
+                    case RxnClass::Deterministic: {
+                        if (mean < 1.0) {
+                            std::poisson_distribution<std::int64_t> poisson(mean);
+                            firings[r] = static_cast<double>(poisson(rng));
+                        } else {
+                            firings[r] = std::round(mean);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            applyFirings(savedState, firings, state);
+            auto postleapPasses = [&](const std::vector<double>& candidate) -> bool {
+                if (checkNegativePopulations(candidate)) return false;
+                if (useEpsPostcheck && !checkSpeciesEps(savedState, candidate, config.eps, 1.0)) {
+                    return false;
+                }
+                return true;
+            };
+
+            bool accepted = postleapPasses(state);
+            bool wasRejected = !accepted;
+            if (!accepted) {
+                fireES = false;
+                constexpr int kMaxRollbackAttempts = 64;
+                const double pShrink = config.p;
+                for (int attempt = 0; attempt < kMaxRollbackAttempts; ++attempt) {
+                    const double oldTau = tau;
+                    tau *= pShrink;
+                    if (tau <= minTauFloor) {
+                        break;
+                    }
+                    for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
+                        if (a[r] <= 0.0 || classes[r] == RxnClass::ExactStochastic) continue;
+                        const double kOld = firings[r];
+                        if (classes[r] == RxnClass::Poisson) {
+                            if (kOld <= 0.0) {
+                                firings[r] = 0.0;
+                            } else if (kOld < 1e9) {
+                                std::binomial_distribution<std::int64_t> binom(
+                                    static_cast<std::int64_t>(kOld), pShrink);
+                                firings[r] = static_cast<double>(binom(rng));
+                            } else {
+                                const double stdBridge = std::sqrt(kOld * pShrink * (1.0 - pShrink));
+                                const double draw = std::round(pShrink * kOld + stdBridge * normal01(rng));
+                                firings[r] = (std::isfinite(draw) && draw > 0.0) ? draw : 0.0;
+                            }
+                        } else if (classes[r] == RxnClass::Langevin) {
+                            const double stdBridge = std::sqrt(
+                                std::max(0.0, a[r] * oldTau * pShrink * (1.0 - pShrink)));
+                            const double draw = std::round(pShrink * kOld + stdBridge * normal01(rng));
+                            firings[r] = (std::isfinite(draw) && draw > 0.0) ? draw : 0.0;
+                        } else if (classes[r] == RxnClass::Deterministic) {
+                            const double newMean = a[r] * tau;
+                            firings[r] = (newMean >= 1.0) ? std::round(newMean) : 0.0;
+                        }
+                    }
+                    applyFirings(savedState, firings, state);
+                    if (postleapPasses(state)) {
+                        accepted = true;
+                        break;
+                    }
                 }
             }
 
             if (!accepted) {
-                // Exact single-step Gillespie SSA fallback: strictly preserves
-                // non-negativity and mass conservation when leaping overshoots.
+                // Exact single-step Gillespie SSA fallback
                 state = savedState;
-                std::uniform_real_distribution<double> u01(0.0, 1.0);
-                double r1 = u01(rng);
-                while (r1 <= 0.0 || r1 >= 1.0) {
-                    r1 = u01(rng);
-                }
-                const double ssaTau = -std::log(r1) / a0;
-                if (t + ssaTau > nextOutputTime) {
+                double dtTaken = 0.0;
+                const bool fired = stepExactSsa(state, a, a0, maxTau, dtTaken);
+                if (!fired) {
                     t = nextOutputTime;
                     break;
                 }
-                const double target = u01(rng) * a0;
-                double cum = 0.0;
-                std::size_t chosen = compiledRxns_.size();
-                std::size_t lastPositive = compiledRxns_.size();
-                for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
-                    if (a[r] > 0.0) {
-                        lastPositive = r;
-                    }
-                    cum += a[r];
-                    if (cum >= target && a[r] > 0.0) {
-                        chosen = r;
-                        break;
-                    }
+                t += dtTaken;
+                hasPostTau = false;
+                if (stopIfExpr.has_value() && stopConditionMet(t, state)) {
+                    hitStopCondition = true;
+                    break;
                 }
-                if (chosen == compiledRxns_.size()) {
-                    chosen = lastPositive;
-                }
-                if (chosen < compiledRxns_.size()) {
-                    for (const auto& [idx, coeff] : compiledRxns_[chosen].stoich) {
-                        if (!fixedSpecies_[idx]) {
-                            state[idx] += static_cast<double>(coeff);
-                        }
-                    }
-                }
-                clampNegatives(state);
-                t += ssaTau;
                 continue;
+            }
+
+            if (fireES && esRxn < compiledRxns_.size() && canApplySingleReaction(state, esRxn)) {
+                applySingleReaction(state, esRxn);
+            }
+
+            if (usePostAdaptiveTau && ((!wasCappedByOutput && !fireES) || wasRejected)) {
+                if (config.checkType == PlaConfig::CheckType::PostNeg) {
+                    postTau = std::min(std::max(tau * config.q, minTauFloor), maxPostTau);
+                } else {
+                    if (checkSpeciesEps(savedState, state, config.eps, config.w)) {
+                        postTau = std::min(std::max(tau * config.q, minTauFloor), maxPostTau);
+                    } else {
+                        const double pp = 0.5 * (1.0 + config.p);
+                        postTau = std::max(tau * pp, minTauFloor);
+                    }
+                }
+                hasPostTau = true;
             }
 
             clampNegatives(state);
             t += tau;
+            if (stopIfExpr.has_value() && stopConditionMet(t, state)) {
+                hitStopCondition = true;
+                break;
+            }
         }
 
-        // Always emit every scheduled output point (including when a0 == 0).
-        result.timePoints.push_back(nextOutputTime);
+        const double recordTime = hitStopCondition ? t : nextOutputTime;
+        result.timePoints.push_back(recordTime);
         result.concentrations.push_back(state);
         updateObservables(state, obsValues);
         result.observables.push_back(obsValues);
+
+        if (!hitStopCondition && stopIfExpr.has_value() &&
+            stopConditionMet(recordTime, state)) {
+            hitStopCondition = true;
+        }
+        if (hitStopCondition) {
+            break;
+        }
     }
 
     return result;

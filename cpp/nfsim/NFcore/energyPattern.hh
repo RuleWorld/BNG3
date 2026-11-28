@@ -54,6 +54,7 @@ namespace NFcore {
     struct EpMolecule {
         std::string typeName;     // e.g. "S"
         std::string xmlId;        // molecule id within the pattern XML
+        std::string compartment;  // optional compartment constraint, e.g. "PM"
 
         // Components mentioned in this molecule within the pattern.
         // Key: component name (e.g. "A"), Value: bond partner xmlId or "" if unbound requirement
@@ -98,7 +99,7 @@ namespace NFcore {
      * is: "S.B must be bound to B.s".
      */
     struct ContextCondition {
-        enum class Kind { Bond, State, Unbound };
+        enum class Kind { Bond, State, Unbound, Compartment };
         std::string molType;      // molecule type name (e.g. "S")
         int         reactantIdx = 0;  // which reactant (0 or 1) this is on
         std::string compName;     // component name (e.g. "B")
@@ -108,8 +109,9 @@ namespace NFcore {
         // Which energy pattern(s) this condition gates
         std::vector<int> gatedPatternIndices;
         Kind        kind = Kind::Bond;
-        std::string stateValue;   // for Kind::State: required internal state
+        std::string stateValue;   // for Kind::State: required internal state; for Kind::Compartment: required compartment
         std::vector<std::pair<std::string, std::string>> partnerStates; // for Kind::Bond: partner (comp, state)
+        std::string partnerCompartment; // for Kind::Bond: optional partner compartment constraint
     };
 
     /*
@@ -127,10 +129,11 @@ namespace NFcore {
             std::string compName;
             bool        mustBeBound = false;
             ContextCondition::Kind kind = ContextCondition::Kind::Bond;
-            std::string stateValue;   // for Kind::State: required state (when mustBeBound=true) or excluded state (when mustBeBound=false)
+            std::string stateValue;   // for Kind::State: required/excluded state; for Kind::Compartment: required/excluded compartment
             std::string partnerType;  // for Kind::Bond: specific partner molecule type (empty for wildcard !+)
             std::string partnerComp;  // for Kind::Bond: specific partner component
             std::vector<std::pair<std::string, std::string>> partnerStates; // for Kind::Bond: partner state constraints
+            std::string partnerCompartment; // for Kind::Bond: optional partner compartment constraint
         };
         std::vector<ContextConstraint> constraints;
         // Signed pattern contributions (patternIndex, +1.0 / -1.0) active in this variant,

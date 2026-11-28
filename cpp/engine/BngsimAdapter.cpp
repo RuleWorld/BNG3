@@ -32,6 +32,7 @@
 #include "antlr4-runtime.h"
 #include "BNGLexer.h"
 #include "BNGParser.h"
+#include "core/List.hpp"
 #include "core/PatternMatching.hpp"
 #include "core/Ullmann.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -372,6 +373,50 @@ std::vector<int> checkedBngsimIndices(
     return result;
 }
 
+bool bngsimMapIsExactAutomorphism(const BNGcore::PatternGraph& pattern,
+                                  const BNGcore::Map& map) {
+    std::unordered_set<const BNGcore::Node*> mappedNodes;
+    for (auto node = pattern.begin(); node != pattern.end(); ++node) {
+        const auto* mapped = map.mapf(*node);
+        if (mapped == nullptr ||
+            !((*node)->get_type() == mapped->get_type()) ||
+            (*node)->get_state().get_BNG2_string() !=
+                mapped->get_state().get_BNG2_string() ||
+            (*node)->get_compartment() != mapped->get_compartment() ||
+            (*node)->in_degree() != mapped->in_degree() ||
+            (*node)->out_degree() != mapped->out_degree() ||
+            !mappedNodes.insert(mapped).second) {
+            return false;
+        }
+        std::unordered_map<const BNGcore::Node*, std::size_t> expectedEdges;
+        for (auto edge = (*node)->edges_out_begin();
+             edge != (*node)->edges_out_end(); ++edge) {
+            const auto* mappedTarget = map.mapf(*edge);
+            if (mappedTarget == nullptr) return false;
+            ++expectedEdges[mappedTarget];
+        }
+        std::unordered_map<const BNGcore::Node*, std::size_t> actualEdges;
+        for (auto edge = mapped->edges_out_begin();
+             edge != mapped->edges_out_end(); ++edge) {
+            ++actualEdges[*edge];
+        }
+        if (expectedEdges != actualEdges) return false;
+    }
+    return mappedNodes.size() == pattern.size();
+}
+
+std::size_t bngsimCountExactPatternAutomorphisms(const BNGcore::PatternGraph& pattern) {
+    if (pattern.empty()) return 0;
+    BNGcore::UllmannSGIso matcher(pattern, pattern);
+    BNGcore::List<BNGcore::Map> maps;
+    matcher.find_maps(maps);
+    std::size_t count = 0;
+    for (auto it = maps.begin(); it != maps.end(); ++it) {
+        if (bngsimMapIsExactAutomorphism(pattern, *it)) ++count;
+    }
+    return count;
+}
+
 std::vector<std::pair<int, double>> compileBngsimObservableEntries(
     ast::Model& model,
     const GeneratedNetwork& network,
@@ -382,99 +427,160 @@ std::vector<std::pair<int, double>> compileBngsimObservableEntries(
             "': unsupported observable type '" + observable.getType() + "'");
     }
 
+    const auto& options = model.getOptions();
+    const auto readCountUnique = [&options](const std::string& key) -> bool {
+        const auto found = options.find(key);
+        if (found == options.end() || found->second == "CountAll") return false;
+        if (found->second == "CountUnique") return true;
+        throw std::runtime_error("unsupported " + key + " value '" + found->second +
+                                 "' (expected 'CountUnique' or 'CountAll')");
+    };
+    const bool moleculesCountUnique = readCountUnique("MoleculesObservables");
+    const bool speciesCountUnique = readCountUnique("SpeciesObservables");
+
+    struct CompiledBngsimPattern {
+        BNGcore::PatternGraph pattern;
+        std::string compartment;
+        bool hasMoleculeCompartment = false;
+        std::string quantifier;
+        int quantifierThreshold = 0;
+        bool hasQuantifier = false;
+        std::size_t automorphisms = 1;
+    };
+
+    std::vector<CompiledBngsimPattern> compiledPatterns;
+    compiledPatterns.reserve(observable.getPatterns().size());
+    for (const auto& patternText : observable.getPatterns()) {
+        std::string cleanPattern = patternText;
+        std::string quantifier;
+        int quantifierThreshold = 0;
+        bool hasQuantifier = false;
+
+        static const std::vector<std::string> operators = {">=", "<=", "==", "!=", ">", "<"};
+        for (const auto& op : operators) {
+            const auto position = cleanPattern.rfind(op);
+            if (position == std::string::npos || position == 0) continue;
+
+            std::string after = cleanPattern.substr(position + op.size());
+            const auto first = after.find_first_not_of(" \t");
+            if (first == std::string::npos) continue;
+            after.erase(0, first);
+            const auto last = after.find_last_not_of(" \t");
+            after.erase(last + 1);
+
+            bool isInteger = !after.empty();
+            for (const char c : after) {
+                if (!std::isdigit(static_cast<unsigned char>(c))) {
+                    isInteger = false;
+                    break;
+                }
+            }
+            if (!isInteger) continue;
+
+            std::string before = cleanPattern.substr(0, position);
+            const auto beforeLast = before.find_last_not_of(" \t");
+            if (beforeLast == std::string::npos) continue;
+            before.erase(beforeLast + 1);
+            if (before.empty() ||
+                (before.back() != ')' &&
+                 !std::isalnum(static_cast<unsigned char>(before.back())) &&
+                 before.back() != '_')) {
+                continue;
+            }
+
+            quantifier = op;
+            quantifierThreshold = std::stoi(after);
+            hasQuantifier = true;
+            cleanPattern = std::move(before);
+            break;
+        }
+
+        antlr4::ANTLRInputStream input(cleanPattern);
+        BNGLexer lexer(&input);
+        antlr4::CommonTokenStream tokens(&lexer);
+        BNGParser parser(&tokens);
+        auto* species = parser.species_def();
+        if (parser.getNumberOfSyntaxErrors() != 0) {
+            throw std::runtime_error(
+                "BNGsim adapter rejected observable '" + observable.getName() +
+                "': could not parse pattern '" + patternText + "'");
+        }
+
+        auto pattern = bng::parser::buildPatternGraph(species, model, false);
+        const auto patternCompartment = bng::parser::extractSpeciesCompartment(species);
+        bool hasMoleculeCompartment = false;
+        for (auto it = pattern.begin(); it != pattern.end(); ++it) {
+            if (!(*it)->get_compartment().empty()) {
+                hasMoleculeCompartment = true;
+                break;
+            }
+        }
+        std::size_t automorphisms = 1;
+        if (observable.getType() == "Molecules" && moleculesCountUnique) {
+            automorphisms = bngsimCountExactPatternAutomorphisms(pattern);
+            if (automorphisms == 0) {
+                throw std::runtime_error(
+                    "observable '" + observable.getName() +
+                    "': pattern has no self-embedding, so its automorphism "
+                    "count cannot be established for CountUnique");
+            }
+        }
+        compiledPatterns.push_back(CompiledBngsimPattern{
+            std::move(pattern), patternCompartment, hasMoleculeCompartment,
+            std::move(quantifier), quantifierThreshold, hasQuantifier,
+            automorphisms});
+    }
+
     std::vector<std::pair<int, double>> entries;
     for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
         std::size_t weight = 0;
+        const auto& targetSpecies = network.species.get(speciesIndex);
+        const auto& targetGraph = targetSpecies.getSpeciesGraph().getGraph();
 
-        for (const auto& patternText : observable.getPatterns()) {
-            std::string cleanPattern = patternText;
-            std::string quantifier;
-            int quantifierThreshold = 0;
-            bool hasQuantifier = false;
+        for (const auto& cp : compiledPatterns) {
+            bool compartmentMatches = true;
+            if (!cp.compartment.empty() && !cp.hasMoleculeCompartment &&
+                targetSpecies.getCompartment() != cp.compartment) {
+                compartmentMatches = false;
+            }
 
-            static const std::vector<std::string> operators = {">=", "<=", "==", "!=", ">", "<"};
-            for (const auto& op : operators) {
-                const auto position = cleanPattern.rfind(op);
-                if (position == std::string::npos || position == 0) continue;
+            const std::size_t matchCount = compartmentMatches
+                ? bng::core::countPatternMatches(cp.pattern, targetGraph)
+                : 0;
 
-                std::string after = cleanPattern.substr(position + op.size());
-                const auto first = after.find_first_not_of(" \t");
-                if (first == std::string::npos) continue;
-                after.erase(0, first);
-                const auto last = after.find_last_not_of(" \t");
-                after.erase(last + 1);
-
-                bool isInteger = !after.empty();
-                for (const char c : after) {
-                    if (!std::isdigit(static_cast<unsigned char>(c))) {
-                        isInteger = false;
-                        break;
+            if (observable.getType() == "Species") {
+                bool matches = false;
+                if (cp.hasQuantifier) {
+                    const int count = static_cast<int>(matchCount);
+                    if (cp.quantifier == ">") matches = count > cp.quantifierThreshold;
+                    else if (cp.quantifier == "<") matches = count < cp.quantifierThreshold;
+                    else if (cp.quantifier == ">=") matches = count >= cp.quantifierThreshold;
+                    else if (cp.quantifier == "<=") matches = count <= cp.quantifierThreshold;
+                    else if (cp.quantifier == "==") matches = count == cp.quantifierThreshold;
+                    else if (cp.quantifier == "!=") matches = count != cp.quantifierThreshold;
+                } else {
+                    matches = matchCount > 0;
+                }
+                if (matches) {
+                    ++weight;
+                }
+                if (speciesCountUnique && (cp.hasQuantifier || matches)) {
+                    break;
+                }
+            } else {
+                if (moleculesCountUnique) {
+                    if (matchCount % cp.automorphisms != 0) {
+                        throw std::runtime_error(
+                            "observable '" + observable.getName() + "': match count " +
+                            std::to_string(matchCount) + " is not divisible by the pattern's "
+                            "automorphism count " + std::to_string(cp.automorphisms) +
+                            "; CountUnique cannot produce an exact value");
                     }
-                }
-                if (!isInteger) continue;
-
-                std::string before = cleanPattern.substr(0, position);
-                const auto beforeLast = before.find_last_not_of(" \t");
-                if (beforeLast == std::string::npos) continue;
-                before.erase(beforeLast + 1);
-                if (before.empty() ||
-                    (before.back() != ')' &&
-                     !std::isalnum(static_cast<unsigned char>(before.back())) &&
-                     before.back() != '_')) {
-                    continue;
-                }
-
-                quantifier = op;
-                quantifierThreshold = std::stoi(after);
-                hasQuantifier = true;
-                cleanPattern = std::move(before);
-                break;
-            }
-
-            antlr4::ANTLRInputStream input(cleanPattern);
-            BNGLexer lexer(&input);
-            antlr4::CommonTokenStream tokens(&lexer);
-            BNGParser parser(&tokens);
-            auto* species = parser.species_def();
-            if (parser.getNumberOfSyntaxErrors() != 0) {
-                throw std::runtime_error(
-                    "BNGsim adapter rejected observable '" + observable.getName() +
-                    "': could not parse pattern '" + patternText + "'");
-            }
-
-            auto pattern = bng::parser::buildPatternGraph(species, model, false);
-            const auto patternCompartment = bng::parser::extractSpeciesCompartment(species);
-            if (!patternCompartment.empty()) {
-                bool hasMoleculeCompartment = false;
-                for (auto it = pattern.begin(); it != pattern.end(); ++it) {
-                    if (!(*it)->get_compartment().empty()) {
-                        hasMoleculeCompartment = true;
-                        break;
-                    }
-                }
-                if (!hasMoleculeCompartment &&
-                    network.species.get(speciesIndex).getCompartment() != patternCompartment) {
-                    continue;
+                    weight += matchCount / cp.automorphisms;
+                } else {
+                    weight += matchCount;
                 }
             }
-
-            const auto& targetGraph = network.species.get(speciesIndex).getSpeciesGraph().getGraph();
-            std::size_t matchCount = bng::core::countPatternMatches(pattern, targetGraph);
-
-            if (hasQuantifier && observable.getType() == "Species") {
-                bool passes = false;
-                const int count = static_cast<int>(matchCount);
-                if (quantifier == ">") passes = count > quantifierThreshold;
-                else if (quantifier == "<") passes = count < quantifierThreshold;
-                else if (quantifier == ">=") passes = count >= quantifierThreshold;
-                else if (quantifier == "<=") passes = count <= quantifierThreshold;
-                else if (quantifier == "==") passes = count == quantifierThreshold;
-                else if (quantifier == "!=") passes = count != quantifierThreshold;
-                matchCount = passes ? matchCount : 0;
-            }
-
-            if (observable.getType() == "Species" && matchCount > 0) matchCount = 1;
-            weight += matchCount;
         }
 
         if (weight > 0) {

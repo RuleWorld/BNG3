@@ -3,6 +3,7 @@
 
 
 #include "../NFreactions.hh"
+#include <stdexcept>
 
 namespace NFcore
 {
@@ -386,6 +387,7 @@ namespace NFcore
 			Molecule * get_population_pointer() const;
 			// explicit product compartment, or NULL when inherited
 			Compartment * getNewCompartment() const;
+			MoleculeCreator * getMoleculeCreator() const { return mc; };
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
 
 		protected:
@@ -402,7 +404,7 @@ namespace NFcore
 			virtual void apply(Mapping *m, MappingSet **ms);
 			// AS2023 - alternative call sig to store a log of the transform
 			virtual void apply(Mapping *m, MappingSet **ms, string & logstr);
-			virtual int getComponentIndex() const {cout<<"You should not get a component index from a RemoveMoleculeTransform!!"<<endl; exit(1); return -1;};
+			virtual int getComponentIndex() const {throw std::runtime_error("RemoveMoleculeTransform has no component index");};
 			virtual int getRemovalType() { return removalType; };
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
 
@@ -475,6 +477,7 @@ namespace NFcore
 			virtual TemplateMolecule * getTemplateMolecule() const {return this->tm;};
 
 			bool isMoveConnected() const { return moveConnected; }
+			Compartment * getNewCompartment() const { return newCompartment; }
 			string getNewCompartmentId() const;
 			const vector<int> & getExcludedMappingIndices() const {
 				return excludedMappingIndices;

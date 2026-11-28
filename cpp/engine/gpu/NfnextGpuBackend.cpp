@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
 #include <numeric>
@@ -174,6 +175,9 @@ detail::NfnextUnaryStatePlan compileUnaryStatePlan(
     plan.transitionOffsets.push_back(static_cast<std::uint32_t>(plan.transitionRates.size()));
 
     for (const auto& seed : source.seeds()) {
+        if (seed.constant) {
+            refuse("constant ($) seed species are outside the unary single-site state-change slice");
+        }
         if (seed.declaredUnit || seed.compartmentId || seed.pattern.compartmentId() ||
             !seed.evaluatedAmount || !std::isfinite(*seed.evaluatedAmount) ||
             *seed.evaluatedAmount < 0.0 || std::floor(*seed.evaluatedAmount) != *seed.evaluatedAmount ||
@@ -323,28 +327,127 @@ std::vector<CanonicalConstraintKey> canonicalizeNodeConstraints(
     return out;
 }
 
-std::uint32_t observableAutomorphismWeight(
-    const nfnext::PatternIR& pattern, const nfnext::ModelIR& model) {
-    std::size_t weight = nfnext::compileMatchPlan(pattern, model).automorphismCount();
-    for (const auto& node : pattern.nodes) {
-        const auto& type = model.molecule_types.at(node.molecule_type);
-        std::map<std::string, std::size_t> classes;
-        for (const auto& constraint : node.constraints) {
-            std::ostringstream key;
-            const std::string siteName =
-                constraint.site < type.sites.size()
-                    ? type.sites[constraint.site].name
-                    : std::to_string(constraint.site);
-            key << siteName << ':' << static_cast<int>(constraint.kind) << ':';
-            for (const auto state : constraint.states) key << state << ',';
-            key << constraint.state;
-            ++classes[key.str()];
-        }
-        for (const auto& [_, count] : classes) {
-            for (std::size_t f = 2; f <= count; ++f) weight *= f;
+// Verify that a multi-node pattern is connected via its explicit bonds so
+// root-anchored GPU traversal deterministically visits every node.
+bool isPatternConnected(const nfnext::PatternIR& pat) {
+    if (pat.nodes.size() <= 1) return true;
+    std::vector<bool> visited(pat.nodes.size(), false);
+    std::vector<std::size_t> q{0};
+    visited[0] = true;
+    for (std::size_t head = 0; head < q.size(); ++head) {
+        const auto cur = q[head];
+        for (const auto& b : pat.bonds) {
+            if (b.first == cur && b.second < visited.size() && !visited[b.second]) {
+                visited[b.second] = true;
+                q.push_back(b.second);
+            } else if (b.second == cur && b.first < visited.size() && !visited[b.first]) {
+                visited[b.first] = true;
+                q.push_back(b.first);
+            }
         }
     }
-    return static_cast<std::uint32_t>(weight);
+    return q.size() == pat.nodes.size();
+}
+
+// Check whether a compiled observable's patterns all require at least one
+// molecule of `scopedType` (and are single-molecule when `moleculeScope` is
+// true), so global evaluation matches complex-scoped evaluation for a 1-copy
+// molecule type.
+bool observableRequiresScopedType(
+    const bng::compile::CompiledObservable& obs,
+    std::uint32_t scopedType,
+    bool moleculeScope,
+    const nfnext::ModelIR& model,
+    const std::function<nfnext::PatternIR(const bng::compile::PatternDescriptor&,
+                                          const nfnext::ModelIR&)>& lowerFn) {
+    if (obs.terms.empty()) return false;
+    for (const auto& term : obs.terms) {
+        const auto pat = lowerFn(term.pattern, model);
+        if (!isPatternConnected(pat)) return false;
+        if (moleculeScope && pat.nodes.size() != 1) return false;
+        bool hasScoped = false;
+        for (const auto& nd : pat.nodes) {
+            if (nd.molecule_type == scopedType) {
+                hasScoped = true;
+                break;
+            }
+        }
+        if (!hasScoped) return false;
+    }
+    return true;
+}
+
+// Verify VM bytecode stays within bounded stack capacity [0, maxStack] and
+// never underflows on any reachable control-flow path.
+bool verifyGpuVmStackDepth(
+    const std::vector<detail::GpuVmInstr>& code,
+    std::uint32_t offset,
+    std::uint32_t len,
+    int maxStack) {
+    if (len == 0) return false;
+    std::vector<int> depth(len, -1);
+    std::vector<std::pair<std::uint32_t, int>> worklist;
+    worklist.emplace_back(0u, 0);
+    while (!worklist.empty()) {
+        const auto [pc, d] = worklist.back();
+        worklist.pop_back();
+        if (d < 0 || d > maxStack) return false;
+        if (pc >= len) {
+            if (pc == len && d == 1) continue;
+            return false;
+        }
+        if (depth[pc] >= 0) {
+            if (depth[pc] != d) return false;
+            continue;
+        }
+        depth[pc] = d;
+        const auto& ins = code[offset + pc];
+        switch (ins.op) {
+        case detail::kGpuVmConst:
+        case detail::kGpuVmObservable:
+            worklist.emplace_back(pc + 1u, d + 1);
+            break;
+        case detail::kGpuVmNeg:
+        case detail::kGpuVmExp:
+        case detail::kGpuVmLog:
+        case detail::kGpuVmSqrt:
+        case detail::kGpuVmSin:
+        case detail::kGpuVmCos:
+        case detail::kGpuVmTan:
+        case detail::kGpuVmAbs:
+            if (d < 1) return false;
+            worklist.emplace_back(pc + 1u, d);
+            break;
+        case detail::kGpuVmAdd:
+        case detail::kGpuVmSub:
+        case detail::kGpuVmMul:
+        case detail::kGpuVmDiv:
+        case detail::kGpuVmPow:
+        case detail::kGpuVmMin:
+        case detail::kGpuVmMax:
+        case detail::kGpuVmLess:
+        case detail::kGpuVmLessEq:
+        case detail::kGpuVmGreater:
+        case detail::kGpuVmGreaterEq:
+        case detail::kGpuVmEqual:
+        case detail::kGpuVmNotEqual:
+            if (d < 2) return false;
+            worklist.emplace_back(pc + 1u, d - 1);
+            break;
+        case detail::kGpuVmJumpIfZero:
+            if (d < 1 || ins.index > len) return false;
+            worklist.emplace_back(pc + 1u, d - 1);
+            worklist.emplace_back(ins.index, d - 1);
+            break;
+        case detail::kGpuVmJump:
+            if (ins.index > len) return false;
+            worklist.emplace_back(ins.index, d);
+            break;
+        default:
+            return false;
+        }
+    }
+    return true;
 }
 
 // Convert a CompiledModel observable pattern term into NFIR PatternIR (1..4 nodes).
@@ -482,8 +585,13 @@ detail::NfnextGraphPlan compileGraphPlan(
     plan.typeDefaultStates.assign(
         static_cast<std::size_t>(plan.numTypes) * plan.maxSites, 0);
 
-    // Identify fixed single-molecule seed species (e.g. $Trash()) and initial counts.
-    std::set<std::uint32_t> fixedTypes;
+    // Identify fixed single-molecule seed species (e.g. $Trash()) by exact species
+    // signature (type + site states) and collect initial counts.
+    struct FixedSeedSpec {
+        std::uint32_t molType{0};
+        std::vector<std::int32_t> siteStates;
+    };
+    std::vector<FixedSeedSpec> fixedSeeds;
     std::vector<std::uint32_t> initialTypeCounts(plan.numTypes, 0);
     struct InitialComplex {
         std::vector<std::uint32_t> molTypes;
@@ -501,12 +609,23 @@ detail::NfnextGraphPlan compileGraphPlan(
             *seed.evaluatedAmount > static_cast<double>(maxParticles)) {
             refuse("seeds must be bounded static integer populations without units or compartments");
         }
-        if (seed.constant && seed.pattern.molecules().size() == 1 &&
-            seed.pattern.molecules().front().moleculeTypeId) {
-            fixedTypes.insert(
-                static_cast<std::uint32_t>(seed.pattern.molecules().front().moleculeTypeId->value()));
-        }
         const auto copies = static_cast<std::uint32_t>(*seed.evaluatedAmount);
+        if (seed.constant) {
+            if (seed.pattern.molecules().size() != 1) {
+                refuse("multi-molecule constant ($) seed species are outside the GPU graph kernel slice");
+            }
+            const auto seedIr = lowerObservablePatternToIr(seed.pattern, model);
+            if (!seedIr.bonds.empty()) {
+                refuse("bonded constant ($) seed species are outside the GPU graph kernel slice");
+            }
+            std::vector<std::int32_t> st(plan.maxSites, 0);
+            for (const auto& c : seedIr.nodes.front().constraints) {
+                if (c.kind == nfnext::PatternIR::SiteConstraintKind::State) {
+                    st[c.site] = c.state;
+                }
+            }
+            fixedSeeds.push_back({seedIr.nodes.front().molecule_type, std::move(st)});
+        }
         if (copies == 0) continue;
 
         const auto seedIr = lowerObservablePatternToIr(seed.pattern, model);
@@ -527,6 +646,90 @@ detail::NfnextGraphPlan compileGraphPlan(
             cx.bonds.emplace_back(b.first, b.first_site, b.second, b.second_site);
         }
         initComplexes.push_back(std::move(cx));
+    }
+
+    auto isFixedCreatedNode = [&](const nfnext::ExpandedRuleIR& rule,
+                                  std::uint32_t targetNode,
+                                  std::uint32_t createdType) -> bool {
+        if (fixedSeeds.empty()) return false;
+        for (const auto& act : rule.actions) {
+            if (act.kind == nfnext::ActionKind::Bind &&
+                (act.target_node == targetNode || act.partner_node == targetNode)) {
+                return false;
+            }
+        }
+        std::vector<std::int32_t> st(plan.maxSites, 0);
+        for (const auto& act : rule.actions) {
+            if (act.kind == nfnext::ActionKind::SetSiteState &&
+                act.target_node == targetNode && act.site < plan.maxSites) {
+                st[act.site] = act.value;
+            }
+        }
+        for (const auto& fs : fixedSeeds) {
+            if (fs.molType == createdType && fs.siteStates == st) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    // Constant ($) seed species may only act as pure sinks or unmodified catalysts
+    // on GPU; refuse any rule that mutates, binds, or destroys a constant seed.
+    if (!fixedSeeds.empty()) {
+        for (const auto& rule : model.expanded_rules) {
+            for (std::size_t ni = 0; ni < rule.pattern.nodes.size(); ++ni) {
+                bool mutated = false;
+                for (const auto& act : rule.actions) {
+                    if (act.kind == nfnext::ActionKind::SetSiteState ||
+                        act.kind == nfnext::ActionKind::Destroy ||
+                        act.kind == nfnext::ActionKind::DestroyComplex) {
+                        if (act.target_node == ni) { mutated = true; break; }
+                    } else if (act.kind == nfnext::ActionKind::Bind ||
+                               act.kind == nfnext::ActionKind::Unbind) {
+                        if (act.target_node == ni || act.partner_node == ni) {
+                            mutated = true;
+                            break;
+                        }
+                    }
+                }
+                if (!mutated) continue;
+                const auto& rn = rule.pattern.nodes[ni];
+                bool hasPatternBond = false;
+                for (const auto& b : rule.pattern.bonds) {
+                    if (b.first == ni || b.second == ni) { hasPatternBond = true; break; }
+                }
+                if (hasPatternBond) continue;
+                bool requiresBound = false;
+                for (const auto& c : rn.constraints) {
+                    if (c.kind == nfnext::PatternIR::SiteConstraintKind::Bound) {
+                        requiresBound = true;
+                        break;
+                    }
+                }
+                if (requiresBound) continue;
+                const auto& mt = model.molecule_types.at(rn.molecule_type);
+                for (const auto& fs : fixedSeeds) {
+                    if (fs.molType != rn.molecule_type) continue;
+                    bool couldMatch = true;
+                    for (const auto& c : rn.constraints) {
+                        if (c.kind == nfnext::PatternIR::SiteConstraintKind::State) {
+                            const std::string& sName = mt.sites.at(c.site).name;
+                            bool anySameNameMatches = false;
+                            for (std::size_t si = 0; si < mt.sites.size(); ++si) {
+                                if (mt.sites[si].name == sName && fs.siteStates[si] == c.state) {
+                                    anySameNameMatches = true;
+                                    break;
+                                }
+                            }
+                            if (!anySameNameMatches) { couldMatch = false; break; }
+                        }
+                    }
+                    if (couldMatch) {
+                        refuse("rules that consume, bind, or modify constant ($) seed species are outside the GPU graph kernel slice");
+                    }
+                }
+            }
+        }
     }
 
     // Track which molecule types can be dynamically created by rules.
@@ -560,7 +763,7 @@ detail::NfnextGraphPlan compileGraphPlan(
     for (const auto& rule : model.expanded_rules) {
         for (const auto& action : rule.actions) {
             if (action.kind == nfnext::ActionKind::Create &&
-                fixedTypes.count(action.molecule_type) == 0) {
+                !isFixedCreatedNode(rule, action.target_node, action.molecule_type)) {
                 createdTypes.insert(action.molecule_type);
             }
         }
@@ -709,11 +912,20 @@ detail::NfnextGraphPlan compileGraphPlan(
 
     // Helper to expand a PatternIR (observable term or reactant filter pattern)
     // across same-name site permutations and append canonical GpuObsTermDef rows.
+    // For Molecules observables, each canonical term's weight equals the exact
+    // number of distinct mentioned-site assignments collapsing onto that term;
+    // root-node graph automorphisms are already enumerated by iterating roots in
+    // the kernel. For Species observables, termGroupId groups all site-permuted
+    // variants of one original BNGL term so each complex counts at most once per
+    // original BNGL term.
     auto appendPatternTerms = [&](const nfnext::PatternIR& basePat, bool isSpecies,
-                                  std::uint32_t baseWeight) -> std::size_t {
+                                  std::uint32_t termGroupId) -> std::size_t {
         if (basePat.nodes.empty() || basePat.nodes.size() > detail::kGpuMaxObsPatternNodes ||
             basePat.bonds.size() > detail::kGpuMaxObsPatternBonds) {
             refuse("pattern node/bond count exceeds bounded GPU graph kernel capacity");
+        }
+        if (!isPatternConnected(basePat)) {
+            refuse("disconnected observable or filter pattern is outside the GPU graph kernel slice");
         }
         for (const auto& nd : basePat.nodes) {
             if (nd.compartment.has_value()) {
@@ -724,6 +936,32 @@ detail::NfnextGraphPlan compileGraphPlan(
             !basePat.connected_to.empty()) {
             refuse("topological pattern constraints are outside the GPU graph kernel slice");
         }
+        // Compute unmentioned same-name site factorial factor so duplicate-site
+        // permutations of unmentioned sites do not inflate Molecules weights.
+        std::size_t unmentionedFactor = 1;
+        for (std::size_t ni = 0; ni < basePat.nodes.size(); ++ni) {
+            const auto& mt = model.molecule_types.at(basePat.nodes[ni].molecule_type);
+            std::set<std::uint32_t> mentioned;
+            for (const auto& c : basePat.nodes[ni].constraints) mentioned.insert(c.site);
+            for (const auto& b : basePat.bonds) {
+                if (b.first == ni) mentioned.insert(b.first_site);
+                if (b.second == ni) mentioned.insert(b.second_site);
+            }
+            std::map<std::string, std::size_t> totalByName;
+            std::map<std::string, std::size_t> mentionedByName;
+            for (std::size_t si = 0; si < mt.sites.size(); ++si) {
+                ++totalByName[mt.sites[si].name];
+                if (mentioned.count(static_cast<std::uint32_t>(si)) != 0) {
+                    ++mentionedByName[mt.sites[si].name];
+                }
+            }
+            for (const auto& [sName, totalCnt] : totalByName) {
+                const std::size_t mCnt = mentionedByName[sName];
+                const std::size_t rem = totalCnt > mCnt ? (totalCnt - mCnt) : 0;
+                for (std::size_t f = 2; f <= rem; ++f) unmentionedFactor *= f;
+            }
+        }
+
         std::vector<std::vector<std::vector<std::uint16_t>>> nodePerms(basePat.nodes.size());
         for (std::size_t ni = 0; ni < basePat.nodes.size(); ++ni) {
             nodePerms[ni] = sitePermutationsForType(
@@ -733,7 +971,9 @@ detail::NfnextGraphPlan compileGraphPlan(
         using ObsTermKey = std::tuple<
             std::vector<std::pair<std::int32_t, std::vector<CanonicalConstraintKey>>>,
             std::vector<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t, std::uint16_t>>>;
-        std::set<ObsTermKey> seenTerms;
+        std::map<ObsTermKey, std::size_t> seenTerms;
+        std::vector<std::size_t> termHitCounts;
+        const std::size_t termsStart = plan.obsTerms.size();
 
         for (;;) {
             std::vector<std::pair<std::int32_t, std::vector<CanonicalConstraintKey>>> nodeKeys;
@@ -787,7 +1027,8 @@ detail::NfnextGraphPlan compileGraphPlan(
             }
             std::sort(canonBonds.begin(), canonBonds.end());
             ObsTermKey key{nodeKeys, canonBonds};
-            if (seenTerms.insert(key).second) {
+            const auto [it, inserted] = seenTerms.emplace(std::move(key), termHitCounts.size());
+            if (inserted) {
                 detail::GpuObsTermDef tdef;
                 tdef.nodeOffset = static_cast<std::uint32_t>(plan.obsNodes.size());
                 tdef.nodeCount = static_cast<std::uint32_t>(nodeKeys.size());
@@ -800,8 +1041,12 @@ detail::NfnextGraphPlan compileGraphPlan(
                 for (const auto& [n0, s0, n1, s1] : canonBonds) {
                     plan.obsBonds.push_back({n0, s0, n1, s1});
                 }
-                tdef.weight = baseWeight;
+                tdef.weight = 1u;
+                tdef.pad = termGroupId;
                 plan.obsTerms.push_back(tdef);
+                termHitCounts.push_back(1u);
+            } else {
+                ++termHitCounts[it->second];
             }
 
             std::size_t pos = basePat.nodes.size();
@@ -814,17 +1059,14 @@ detail::NfnextGraphPlan compileGraphPlan(
             if (basePat.nodes.empty()) break;
         }
     done_pat_perms:
-        if (!isSpecies && seenTerms.size() > 1 && baseWeight > 1) {
-            const std::size_t added = seenTerms.size();
-            if (baseWeight % added == 0) {
-                for (std::size_t k = plan.obsTerms.size() - added;
-                     k < plan.obsTerms.size(); ++k) {
-                    plan.obsTerms[k].weight =
-                        static_cast<std::uint32_t>(baseWeight / added);
-                }
+        if (!isSpecies) {
+            for (std::size_t k = 0; k < termHitCounts.size(); ++k) {
+                const std::size_t mult = termHitCounts[k] / unmentionedFactor;
+                plan.obsTerms[termsStart + k].weight =
+                    static_cast<std::uint32_t>(std::max<std::size_t>(1, mult));
             }
         }
-        return seenTerms.size();
+        return termHitCounts.size();
     };
 
     // Compile Observables first so dynamic rate laws can bind observable indices!
@@ -848,14 +1090,13 @@ detail::NfnextGraphPlan compileGraphPlan(
         def.termOffset = static_cast<std::uint32_t>(plan.obsTerms.size());
         def.isSpecies = (obs.kind == bng::compile::ObservableKind::Species) ? 1 : 0;
 
-        for (const auto& term : obs.terms) {
+        for (std::size_t termIdx = 0; termIdx < obs.terms.size(); ++termIdx) {
+            const auto& term = obs.terms[termIdx];
             if (!term.relation.empty()) {
                 refuse("observable stoichiometry relations are outside GPU graph kernel");
             }
             const auto basePat = lowerObservablePatternToIr(term.pattern, model);
-            const std::uint32_t baseWeight =
-                def.isSpecies ? 1u : observableAutomorphismWeight(basePat, model);
-            appendPatternTerms(basePat, def.isSpecies != 0, baseWeight);
+            appendPatternTerms(basePat, def.isSpecies != 0, static_cast<std::uint32_t>(termIdx));
         }
         def.termCount = static_cast<std::uint32_t>(plan.obsTerms.size()) - def.termOffset;
         plan.observables.push_back(def);
@@ -898,14 +1139,33 @@ detail::NfnextGraphPlan compileGraphPlan(
     };
 
     // Compile each expanded rule with canonical same-name site expansion.
+    constexpr std::uint8_t kGpuRuleFlagReactantDiffComplex = 0x01u;
+    constexpr std::uint8_t kGpuRuleFlagProductDiffComplex = 0x02u;
+    constexpr std::uint8_t kGpuRuleFlagHalfSymmetry = 0x04u;
+    constexpr std::uint32_t kGpuMaxDynamicObservables = 64u;
+    constexpr int kGpuMaxVmStack = 32;
+
     for (const auto& rule : model.expanded_rules) {
+        if (rule.runtime_arrhenius.enabled) {
+            refuse("runtime per-match Arrhenius energy evaluation is outside the GPU graph kernel slice");
+        }
         if (rule.volume_factor != 1.0 || rule.match_once ||
             rule.move_connected ||
             !rule.pattern.aliases.empty() || !rule.pattern.connected_to.empty()) {
             refuse("rule modifiers/aliases are outside GPU graph kernel slice");
         }
+        const auto nNodes = rule.pattern.nodes.size();
+        const auto nBonds = rule.pattern.bonds.size();
+        if (nNodes == 0 || nNodes > 2 || nBonds > 1) {
+            refuse("rule reactant pattern exceeds 1-2 node / 0-1 bond GPU graph kernel slice");
+        }
+        if (nNodes == 1 && nBonds != 0) {
+            refuse("self-bonded single-node reactant is outside GPU graph kernel slice");
+        }
+
         // Allow SameComplex when the two nodes are already directly bonded in the pattern;
-        // allow DifferentComplex between 2 unbound reactant nodes (enforced in kernel).
+        // enforce DifferentComplex between 2 unbound reactant nodes via bounded BFS in kernel.
+        bool requireReactantDiffComplex = false;
         for (const auto& mc : rule.pattern.molecularity) {
             if (mc.kind == nfnext::MolecularityKind::SameComplex) {
                 bool directlyBonded = false;
@@ -920,17 +1180,89 @@ detail::NfnextGraphPlan compileGraphPlan(
                     refuse(
                         "unbonded SameComplex molecularity constraint is outside GPU graph kernel slice");
                 }
-            } else if (mc.kind != nfnext::MolecularityKind::DifferentComplex) {
+            } else if (mc.kind == nfnext::MolecularityKind::DifferentComplex) {
+                if (nNodes == 2 && nBonds == 0 &&
+                    ((mc.left == 0 && mc.right == 1) || (mc.left == 1 && mc.right == 0))) {
+                    requireReactantDiffComplex = true;
+                } else {
+                    refuse("unsupported reactant DifferentComplex molecularity in GPU graph kernel slice");
+                }
+            } else {
                 refuse("unsupported molecularity constraint in GPU graph kernel slice");
             }
         }
-        const auto nNodes = rule.pattern.nodes.size();
-        const auto nBonds = rule.pattern.bonds.size();
-        if (nNodes == 0 || nNodes > 2 || nBonds > 1) {
-            refuse("rule reactant pattern exceeds 1-2 node / 0-1 bond GPU graph kernel slice");
+
+        // Validate product molecularity constraints ('+' vs '.' on product side).
+        bool requireProductDiffComplex = false;
+        for (const auto& pmc : rule.product_molecularity) {
+            if (pmc.kind == nfnext::MolecularityKind::DifferentComplex) {
+                if (nNodes == 2 && nBonds == 1 &&
+                    ((pmc.left == 0 && pmc.right == 1) || (pmc.left == 1 && pmc.right == 0))) {
+                    bool unbinds01 = false;
+                    for (const auto& act : rule.actions) {
+                        if (act.kind == nfnext::ActionKind::Unbind &&
+                            ((act.target_node == 0 && act.partner_node == 1) ||
+                             (act.target_node == 1 && act.partner_node == 0))) {
+                            unbinds01 = true;
+                            break;
+                        }
+                    }
+                    if (!unbinds01) {
+                        refuse("product DifferentComplex constraint without direct unbind is outside GPU graph kernel slice");
+                    }
+                    requireProductDiffComplex = true;
+                } else if (nNodes == 2 && nBonds == 0 &&
+                           ((pmc.left == 0 && pmc.right == 1) ||
+                            (pmc.left == 1 && pmc.right == 0))) {
+                    bool binds01 = false;
+                    for (const auto& act : rule.actions) {
+                        if (act.kind == nfnext::ActionKind::Bind &&
+                            ((act.target_node == 0 && act.partner_node == 1) ||
+                             (act.target_node == 1 && act.partner_node == 0))) {
+                            binds01 = true;
+                            break;
+                        }
+                    }
+                    if (binds01) {
+                        refuse("contradictory product DifferentComplex constraint on bound nodes");
+                    }
+                    requireReactantDiffComplex = true;
+                } else {
+                    refuse("product DifferentComplex molecularity constraint is outside GPU graph kernel slice");
+                }
+            } else if (pmc.kind == nfnext::MolecularityKind::SameComplex) {
+                bool guaranteedConnected = false;
+                for (const auto& act : rule.actions) {
+                    if (act.kind == nfnext::ActionKind::Bind &&
+                        ((act.target_node == pmc.left && act.partner_node == pmc.right) ||
+                         (act.target_node == pmc.right && act.partner_node == pmc.left))) {
+                        guaranteedConnected = true;
+                        break;
+                    }
+                }
+                if (!guaranteedConnected && nBonds == 1) {
+                    const auto& b = rule.pattern.bonds.front();
+                    bool unbound = false;
+                    for (const auto& act : rule.actions) {
+                        if (act.kind == nfnext::ActionKind::Unbind &&
+                            ((act.target_node == b.first && act.partner_node == b.second) ||
+                             (act.target_node == b.second && act.partner_node == b.first))) {
+                            unbound = true;
+                            break;
+                        }
+                    }
+                    if (!unbound && ((b.first == pmc.left && b.second == pmc.right) ||
+                                     (b.first == pmc.right && b.second == pmc.left))) {
+                        guaranteedConnected = true;
+                    }
+                }
+                if (!guaranteedConnected) {
+                    refuse("product SameComplex molecularity constraint is outside GPU graph kernel slice");
+                }
+            }
         }
-        if (nNodes == 1 && nBonds != 0) {
-            refuse("self-bonded single-node reactant is outside GPU graph kernel slice");
+        if (rule.total_rate && (requireReactantDiffComplex || requireProductDiffComplex)) {
+            refuse("TotalRate combined with molecularity thinning is outside GPU graph kernel slice");
         }
 
         // Compile reactant include/exclude filters (exact Gillespie thinning on GPU).
@@ -954,7 +1286,7 @@ detail::NfnextGraphPlan compileGraphPlan(
                 gf.reactantNode = static_cast<std::uint16_t>(filter.reactant_node_offset);
                 gf.include = filter.include ? 1u : 0u;
                 for (const auto& fPat : filter.patterns) {
-                    appendPatternTerms(fPat, false, 1u);
+                    appendPatternTerms(fPat, true, 0u);
                 }
                 gf.termCount = static_cast<std::uint32_t>(plan.obsTerms.size()) - gf.termOffset;
                 plan.ruleFilters.push_back(gf);
@@ -978,13 +1310,25 @@ detail::NfnextGraphPlan compileGraphPlan(
             }
         } else if (rule.rate_law.kind == nfnext::RateLawKind::Function) {
             isDynamic = true;
-            // Single-copy local scoping was already verified above (lines 605-609):
-            // each scoped reactant type has <= 1 copy and is never created, so
-            // local_obs_<slot> evaluates identically to its global observable.
+            // Verify single-copy scoped equivalence: global observable evaluation
+            // equals complex-scoped evaluation only if (a) the scoped molecule type
+            // has <= 1 live copy and is never created, AND (b) every term in the
+            // referenced observable requires that scoped molecule type (so unbound
+            // molecules elsewhere cannot contribute).
             nfnext::FunctionEnvironment ruleFuncEnv = funcEnv;
             for (const auto& lb : rule.local_observable_bindings) {
-                if (lb.observable_index >= source.observables().size()) {
-                    refuse("local observable index out of range in GPU graph kernel");
+                if (lb.observable_index >= source.observables().size() ||
+                    lb.reactant_node >= nNodes) {
+                    refuse("scoped observable binding out of range in GPU graph kernel");
+                }
+                const auto scopedType = rule.pattern.nodes[lb.reactant_node].molecule_type;
+                if (initialTypeCounts.at(scopedType) > 1 || createdTypes.count(scopedType) != 0) {
+                    refuse("multi-copy local scoping is outside GPU graph kernel slice");
+                }
+                if (!observableRequiresScopedType(
+                        source.observables()[lb.observable_index], scopedType,
+                        lb.molecule_scope, model, lowerObservablePatternToIr)) {
+                    refuse("scoped observable whose pattern can match outside the scoped molecule is outside GPU graph kernel slice");
                 }
                 const auto obsId = static_cast<nfnext::ObservableId>(
                     source.observables()[lb.observable_index].id.value());
@@ -1008,8 +1352,12 @@ detail::NfnextGraphPlan compileGraphPlan(
                     if (!obsBind) {
                         refuse("unresolved symbol in GPU dynamic rate: " + ins.symbol);
                     }
+                    const auto gpuObsIdx = obsIdToGpuIndex.at(obsBind->id);
+                    if (gpuObsIdx >= kGpuMaxDynamicObservables) {
+                        refuse("dynamic rate observable index exceeds GPU VM observable cache limit (64)");
+                    }
                     g.op = detail::kGpuVmObservable;
-                    g.index = obsIdToGpuIndex.at(obsBind->id);
+                    g.index = gpuObsIdx;
                     break;
                 }
                 case Op::Add: g.op = detail::kGpuVmAdd; break;
@@ -1047,6 +1395,9 @@ detail::NfnextGraphPlan compileGraphPlan(
                 plan.vmCode.push_back(g);
             }
             vmLen = static_cast<std::uint32_t>(plan.vmCode.size()) - vmOffset;
+            if (!verifyGpuVmStackDepth(plan.vmCode, vmOffset, vmLen, kGpuMaxVmStack)) {
+                refuse("dynamic rate bytecode exceeds GPU VM stack capacity (32)");
+            }
         } else {
             refuse("unsupported rule rate law in GPU graph kernel");
         }
@@ -1057,7 +1408,7 @@ detail::NfnextGraphPlan compileGraphPlan(
         std::uint32_t createdCount = 0;
         for (const auto& action : rule.actions) {
             if (action.kind == nfnext::ActionKind::Create) {
-                if (fixedTypes.count(action.molecule_type) != 0) {
+                if (isFixedCreatedNode(rule, action.target_node, action.molecule_type)) {
                     skippedFixedCreatedNodes.insert(action.target_node);
                 } else if (createdNodeToSlot.find(action.target_node) == createdNodeToSlot.end()) {
                     createdNodeToSlot[action.target_node] =
@@ -1100,6 +1451,33 @@ detail::NfnextGraphPlan compileGraphPlan(
             rule.pattern.nodes[0].molecule_type == rule.pattern.nodes[1].molecule_type) {
             refuse("TotalRate on non-interchangeable same-type unbound reactants is outside GPU graph kernel slice");
         }
+        bool extraHalfSymmetry = false;
+        if (!(nNodes == 2 && nBonds == 1) && rule.symmetry_divisor != 1.0) {
+            if (std::abs(rule.symmetry_divisor - 2.0) < 1e-9) {
+                extraHalfSymmetry = true;
+            } else {
+                refuse("rule symmetry divisor outside GPU graph kernel slice");
+            }
+        }
+
+        auto makeCanonicalActionKey = [&](detail::GpuRuleAction ga, bool twoNodeBonded) -> ActionKey {
+            if (ga.kind == detail::kGpuActionBind || ga.kind == detail::kGpuActionUnbind) {
+                if (std::tie(ga.partnerNode, ga.partnerSite) < std::tie(ga.targetNode, ga.site)) {
+                    std::swap(ga.targetNode, ga.partnerNode);
+                    std::swap(ga.site, ga.partnerSite);
+                }
+            } else if (ga.kind == detail::kGpuActionDestroyComplex && twoNodeBonded &&
+                       (ga.targetNode == 0u || ga.targetNode == 1u)) {
+                ga.targetNode = 0u;
+            }
+            return {ga.kind, ga.targetNode, ga.site, ga.partnerNode, ga.partnerSite, ga.value};
+        };
+
+        auto swapNode01 = [](std::uint16_t n) -> std::uint16_t {
+            if (n == 0u) return 1u;
+            if (n == 1u) return 0u;
+            return n;
+        };
 
         const std::size_t rulesBeforeExpand = plan.rules.size();
         std::vector<std::size_t> idx(nNodes, 0);
@@ -1127,6 +1505,7 @@ detail::NfnextGraphPlan compileGraphPlan(
 
             std::vector<detail::GpuRuleAction> gpuActs;
             std::vector<ActionKey> actKeys;
+            const bool twoNodeBonded = (nNodes == 2 && nBonds == 1);
             for (const auto& action : rule.actions) {
                 if (skippedFixedCreatedNodes.count(action.target_node) != 0) continue;
                 auto mapNode = [&](std::uint32_t logical) -> std::uint16_t {
@@ -1167,11 +1546,34 @@ detail::NfnextGraphPlan compileGraphPlan(
                     ga.targetNode = mapNode(action.target_node);
                 }
                 gpuActs.push_back(ga);
-                actKeys.emplace_back(
-                    ga.kind, ga.targetNode, ga.site, ga.partnerNode, ga.partnerSite, ga.value);
+                actKeys.push_back(makeCanonicalActionKey(ga, twoNodeBonded));
             }
             std::sort(actKeys.begin(), actKeys.end());
             RuleVariantKey vKey{nodeC, bKeys, actKeys};
+
+            const bool sameTypeTwoNode =
+                (nNodes == 2 &&
+                 rule.pattern.nodes[0].molecule_type == rule.pattern.nodes[1].molecule_type);
+            RuleVariantKey swappedKey = vKey;
+            if (sameTypeTwoNode) {
+                std::vector<std::vector<CanonicalConstraintKey>> swNodeC{nodeC[1], nodeC[0]};
+                std::vector<std::tuple<std::uint16_t, std::uint16_t, std::uint16_t, std::uint16_t>> swBKeys;
+                if (nBonds == 1) {
+                    swBKeys.emplace_back(0, bondSite1, 1, bondSite0);
+                }
+                std::vector<ActionKey> swActKeys;
+                swActKeys.reserve(gpuActs.size());
+                for (auto ga : gpuActs) {
+                    ga.targetNode = swapNode01(ga.targetNode);
+                    if (ga.kind == detail::kGpuActionBind || ga.kind == detail::kGpuActionUnbind) {
+                        ga.partnerNode = swapNode01(ga.partnerNode);
+                    }
+                    swActKeys.push_back(makeCanonicalActionKey(ga, twoNodeBonded));
+                }
+                std::sort(swActKeys.begin(), swActKeys.end());
+                swappedKey = RuleVariantKey{std::move(swNodeC), std::move(swBKeys), std::move(swActKeys)};
+            }
+
             if (seenVariants.insert(vKey).second) {
                 detail::GpuGraphRule gr{};
                 gr.actionOffset = static_cast<std::uint32_t>(plan.actions.size());
@@ -1186,6 +1588,9 @@ detail::NfnextGraphPlan compileGraphPlan(
                 gr.filterCount = ruleFilterCount;
                 gr.isTotalRate = rule.total_rate ? 1u : 0u;
                 gr.pad0 = 0u;
+                if (requireReactantDiffComplex) gr.pad0 |= kGpuRuleFlagReactantDiffComplex;
+                if (requireProductDiffComplex) gr.pad0 |= kGpuRuleFlagProductDiffComplex;
+                if (extraHalfSymmetry) gr.pad0 |= kGpuRuleFlagHalfSymmetry;
 
                 if (nNodes == 1) {
                     gr.isTwoComponent = 0;
@@ -1200,15 +1605,37 @@ detail::NfnextGraphPlan compileGraphPlan(
                         static_cast<std::int32_t>(rule.pattern.nodes[1].molecule_type),
                         bondSite0, bondSite1, nodeC[0], nodeC[1]);
                     gr.matchList1 = 0xFFFFFFFFu;
+                    if (sameTypeTwoNode) {
+                        if (swappedKey == vKey) {
+                            // Symmetric 2-node bonded dimer: both endpoints enter
+                            // matchList0, so divide propensity count by 2.
+                            gr.pad0 |= kGpuRuleFlagHalfSymmetry;
+                        } else {
+                            // Deduplicate symmetric mirror site-pair variant (b1, b0).
+                            seenVariants.insert(swappedKey);
+                        }
+                    }
                 } else {
                     gr.isTwoComponent = 1;
-                    gr.isInterchangeable = isInterchangeable ? 1 : 0;
                     gr.matchList0 = internMatchList(
                         static_cast<std::int32_t>(rule.pattern.nodes[0].molecule_type),
                         -1, 0, 0, nodeC[0], {});
                     gr.matchList1 = internMatchList(
                         static_cast<std::int32_t>(rule.pattern.nodes[1].molecule_type),
                         -1, 0, 0, nodeC[1], {});
+                    if (isInterchangeable) {
+                        if (swappedKey == vKey && gr.matchList0 == gr.matchList1) {
+                            gr.isInterchangeable = 1u;
+                        } else {
+                            // Distinct cross-site match lists: deduplicate the
+                            // symmetric mirror (b1, b0) and use exact c0*c1 with
+                            // self-particle thinning in the kernel.
+                            seenVariants.insert(swappedKey);
+                            gr.isInterchangeable = 0u;
+                        }
+                    } else {
+                        gr.isInterchangeable = 0u;
+                    }
                 }
                 plan.rules.push_back(gr);
             }

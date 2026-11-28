@@ -189,7 +189,7 @@ void CompositeFunction::setGlobalObservableDependency(ReactionClass *r, System *
 				cerr<<"When creating a FunctionalRxnClass of name: "+r->getName()+" you provided a function that\n";
 				cerr<<"depends on an observable type that I can't yet handle! (which is "+gf->getVarRefType(vr)+"\n";
 				cerr<<"try using type: 'MoleculeObservable' for now.\n";
-				cerr<<"quiting..."<<endl; exit(1);
+				throw std::runtime_error("Unsupported observable type in CompositeFunction::setGlobalObservableDependency: " + gf->getVarRefType(vr));
 			}
 		}
 	}

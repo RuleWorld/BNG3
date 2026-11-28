@@ -4,6 +4,7 @@
 
 
 #include "NFcore.hh"
+#include <algorithm>
 #include <utility>
 #include <unordered_set>
 
@@ -137,7 +138,8 @@ namespace NFcore
 		void addComponentExclusion(string cName, int stateValue);
 		void addBondExclusion(const string &cName, MoleculeType *partnerType,
 				const string &partnerCompName,
-				const vector<pair<string, string>> &partnerStates);
+				const vector<pair<string, string>> &partnerStates,
+				Compartment *partnerCompartment = NULL);
 		void addBond(const string& thisBsiteName,TemplateMolecule *t2, const string& bSiteName2);
 
 		/* Methods for adding a disjoint component to a template pattern
@@ -248,6 +250,12 @@ namespace NFcore
 		/* Compartment constraints for cBNGL */
 		Compartment* getCompartment() const { return compartment; }
 		void setCompartment(Compartment* comp) { compartment = comp; }
+		void addExcludedCompartment(Compartment* comp) {
+			if (comp != NULL && std::find(excludedCompartments.begin(), excludedCompartments.end(), comp) == excludedCompartments.end()) {
+				excludedCompartments.push_back(comp);
+			}
+		}
+		const vector<Compartment*>& getExcludedCompartments() const { return excludedCompartments; }
 		string getCompartmentId() const;
 
 		/* Collect every local state/bond/topology predicate reachable from this
@@ -333,8 +341,10 @@ namespace NFcore
 			MoleculeType *partnerType;
 			int partnerCompIndex;
 			vector<pair<int, int>> partnerStates;
+			Compartment *partnerCompartment = NULL;
 		};
 		vector<BondExclusion> bondExclusions;
+		vector<Compartment*> excludedCompartments;
 		bool matchesBondExclusions(Molecule *m) const;
 
 		// The set of connections that a particular site is connected to

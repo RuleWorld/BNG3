@@ -1166,7 +1166,7 @@ std::unique_ptr<ReactionRule> restrictRule(
                             for (auto be = (*e)->edges_out_begin(); be != (*e)->edges_out_end(); ++be) {
                                 if (isBondNode(**be) && (*be)->in_degree() >= 2) {
                                     if (isCrossBondSite) {
-                                        // Cross-boundary bonds are wired below after all molecules exist.
+                                        // Cross-interface bonds are wired below after all molecules exist.
                                         continue;
                                     }
                                     auto& sharedClone = addedProductBonds[*be];
@@ -1192,7 +1192,7 @@ std::unique_ptr<ReactionRule> restrictRule(
         } // switch
     }
 
-    // Wire cross-boundary bonds between matched reactant sites and newly added
+    // Wire cross-interface bonds between matched reactant sites and newly added
     // product molecules.
     for (const auto& [rComp, pComp] : crossBonds) {
         BNGcore::Node* lhs = findAggComponent(rComp);

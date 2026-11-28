@@ -53,6 +53,19 @@ namespace NFcore
 			map<string, TemplateMolecule*> parsedTemplates;
 		};
 
+		struct ProductFilter {
+			int productPatternIndex;
+			TemplateMolecule *pattern;
+			bool isExclude;
+			map<string, TemplateMolecule*> parsedTemplates;
+			bool anchorIsAdded = false;
+			int anchorAddIndex = -1;
+			TemplateMolecule *anchorTemplate = nullptr;
+			int anchorReactantIndex = -1;
+			int anchorMappingIndex = -1;
+			vector<int> anchorBondPath;
+		};
+
 		public:
 
 			/*!
@@ -398,6 +411,11 @@ namespace NFcore
 			void addIncludeReactant(int reactantIndex, TemplateMolecule *pattern, const map<string, TemplateMolecule*>& parsedTemplates);
 			bool checkReactantFilters(int reactantIndex, Molecule *mol) const;
 
+			void addExcludeProduct(int productPatternIndex, TemplateMolecule *pattern, const map<string, TemplateMolecule*>& parsedTemplates, TemplateMolecule *anchorTemplate, int anchorAddIndex = -1);
+			void addIncludeProduct(int productPatternIndex, TemplateMolecule *pattern, const map<string, TemplateMolecule*>& parsedTemplates, TemplateMolecule *anchorTemplate, int anchorAddIndex = -1);
+			bool hasProductFilters() const { return !productFilters.empty(); }
+			bool checkProductFilters(MappingSet **mappingSets) const;
+
 		protected:
 			bool addBindingTransformImpl(TemplateMolecule *t1, string bSiteName1, TemplateMolecule *t2, string bSiteName2, bool isNewMolecule);
 
@@ -548,6 +566,7 @@ namespace NFcore
 			vector < pair<int,int> >  collision_pairs;
 
 			vector <ReactantFilter> reactantFilters;
+			vector <ProductFilter> productFilters;
 
 		private:
 			void initCommon();

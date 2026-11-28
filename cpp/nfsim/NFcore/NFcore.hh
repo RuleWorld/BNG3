@@ -2082,8 +2082,17 @@ namespace NFcore
 		public:
 
 			/* constructors / deconstuctors */
+			struct ShadowTag {};
 			Molecule(MoleculeType * parentMoleculeType, int listId, Compartment * compartment);
+			Molecule(ShadowTag, MoleculeType * parentMoleculeType, Compartment * compartment);
 			~Molecule();
+
+			static void bindShadow(Molecule *m1, int cIndex1, Molecule *m2, int cIndex2);
+			static void unbindShadow(Molecule *m1, int cIndex);
+			void setShadowComponentState(int cIndex, int stateValue) {
+				if (cIndex >= 0 && cIndex < numOfComponents) component[cIndex] = stateValue;
+			}
+			void setShadowCompartment(Compartment *comp) { compartment = comp; }
 
 			/* basic get functions for name, type, complex, and IDs*/
 			int getMolListId() const { return listId; };
@@ -2876,6 +2885,7 @@ namespace NFcore
 				if (system != 0) system->noteObservableDependentReaction();
 			}
 			bool getReadsObservable() const { return readsObservable; }
+			virtual void markGlobalObservableDirty() {}
 			/* Mark this reaction once per firing whose updates are held (issue #115). */
 			bool markDeferredFiringUpdate(unsigned long long generation) {
 				if (deferredFiringUpdateGeneration == generation)

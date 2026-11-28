@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <limits>
+#include <stdexcept>
 #include "NFcore.hh"
 
 #if defined(_MSC_VER)
@@ -148,11 +149,11 @@ MoleculeType::MoleculeType(
 
 
 const string& MoleculeType::getComponentName(int cIndex) const {
-	if(cIndex>=this->numOfComponents) {
+	if(cIndex < 0 || cIndex>=this->numOfComponents) {
 		cerr<<"in MoleculeType:getComponentName, can't get that component!"<<endl;
 		cerr<<"looking for cIndex: "<<cIndex<<endl;
 		cerr<<"I only have: "<<numOfComponents<<" components."<<endl;
-		exit(2);
+		throw std::runtime_error("MoleculeType::getComponentName component index out of range for '" + name + "'");
 	}
 	return this->compName[cIndex];
 }
@@ -174,7 +175,7 @@ void MoleculeType::init(
 			(int)isIntegerComponent.size()!=numOfComponents) {
 		cout<<"Error creating MoleculeType: '"<<name<<"': The length of the input vectors\n";
 		cout<<"do not match, so I can't initialize this object.\n";
-		cout<<"quitting now."<<endl; exit(1);
+		throw std::runtime_error("MoleculeType::init vector length mismatch for '" + name + "'");
 	}
 
 	//Now we can get on with initializing the MoleculeType information

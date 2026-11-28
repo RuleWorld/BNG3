@@ -1,6 +1,7 @@
 #include <iostream>
 #include <sstream>
 #include <functional>
+#include <stdexcept>
 #include <unordered_map>
 
 #include "templateMolecule.hh"
@@ -445,7 +446,8 @@ void TemplateMolecule::addComponentExclusion(string cName, int stateValue) {
 void TemplateMolecule::addBondExclusion(
 		const string &cName, MoleculeType *partnerType,
 		const string &partnerCompName,
-		const vector<pair<string, string>> &partnerStates) {
+		const vector<pair<string, string>> &partnerStates,
+		Compartment *partnerCompartment) {
 	if (moleculeType->isEquivalentComponent(cName)) {
 		printErrorAndExit("Cannot add bond exclusion of a symmetric component with addBondExclusion() function.");
 	}
@@ -453,6 +455,7 @@ void TemplateMolecule::addBondExclusion(
 	excl.compIndex = moleculeType->getCompIndexFromName(cName);
 	excl.partnerType = partnerType;
 	excl.partnerCompIndex = -1;
+	excl.partnerCompartment = partnerCompartment;
 	if (partnerType != 0 && !partnerCompName.empty() &&
 			!partnerType->isEquivalentComponent(partnerCompName)) {
 		excl.partnerCompIndex = partnerType->getCompIndexFromName(partnerCompName);
@@ -473,6 +476,7 @@ bool TemplateMolecule::matchesBondExclusions(Molecule *m) const {
 		Molecule *partner = m->getBondedMolecule(excl.compIndex);
 		if (partner == 0) continue;
 		if (excl.partnerType != 0 && partner->getMoleculeType() != excl.partnerType) continue;
+		if (excl.partnerCompartment != 0 && partner->getCompartment() != excl.partnerCompartment) continue;
 		if (excl.partnerCompIndex >= 0 &&
 				m->getBondedMoleculeBindingSiteIndex(excl.compIndex) != excl.partnerCompIndex) continue;
 		bool allStatesMatch = true;
@@ -536,7 +540,7 @@ void TemplateMolecule::printErrorAndExit(string message) {
 	cerr<<"Error in TemplateMolecule!"<<endl;
 	cerr<<message<<endl;
 	cerr<<"\n In TemplateMolecule of type: "<< moleculeType->getName()<<endl;
-	exit(4);
+	throw std::runtime_error("TemplateMolecule (" + moleculeType->getName() + "): " + message);
 }
 
 
@@ -1072,7 +1076,8 @@ void TemplateMolecule::buildCompiledSimpleMatcher()
 		[&](TemplateMolecule *tm, int parent, int parentComp, int selfComp) {
 			if (!compiledSimpleMatcherSafe) return;
 			if (tm == 0 || tm->n_symComps != 0 || tm->n_connectedTo != 0 ||
-					tm->compartment != 0) {
+					tm->compartment != 0 ||
+					!tm->excludedCompartments.empty()) {
 				compiledSimpleMatcherSafe = false;
 				return;
 			}
@@ -1540,6 +1545,11 @@ bool TemplateMolecule::compare(Molecule *m, ReactantContainer *rc, MappingSet *m
 	// Check compartment constraint
 	if (this->compartment != NULL) {
 		if (m->getCompartment() != this->compartment) {
+			clear(); return false;
+		}
+	}
+	for (Compartment *excluded : excludedCompartments) {
+		if (m->getCompartment() == excluded) {
 			clear(); return false;
 		}
 	}
@@ -2018,6 +2028,16 @@ bool TemplateMolecule::isTemplateCompatible(TemplateMolecule * tm) {
 		if (this->compartment != tm->compartment) {
 			return false;
 		}
+	}
+	if (this->compartment != NULL &&
+		std::find(tm->excludedCompartments.begin(), tm->excludedCompartments.end(), this->compartment) !=
+			tm->excludedCompartments.end()) {
+		return false;
+	}
+	if (tm->compartment != NULL &&
+		std::find(this->excludedCompartments.begin(), this->excludedCompartments.end(), tm->compartment) !=
+			this->excludedCompartments.end()) {
+		return false;
 	}
 
 

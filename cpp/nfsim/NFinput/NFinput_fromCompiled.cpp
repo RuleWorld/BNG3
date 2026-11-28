@@ -199,6 +199,7 @@ const char* binaryText(bng::compile::BinaryOp op) {
     case Op::Subtract: return "-";
     case Op::Multiply: return "*";
     case Op::Divide: return "/";
+    case Op::Modulo: return "%";
     case Op::Power: return "^";
     case Op::Less: return "<";
     case Op::LessEqual: return "<=";
@@ -208,6 +209,7 @@ const char* binaryText(bng::compile::BinaryOp op) {
     case Op::NotEqual: return "!=";
     case Op::LogicalAnd: return "&&";
     case Op::LogicalOr: return "||";
+    case Op::LogicalXor: return "^^";
     case Op::Unknown: return "";
     }
     return "";
@@ -596,6 +598,7 @@ struct LiveCompiledExprNode {
             case BOp::Subtract: return a - b;
             case BOp::Multiply: return a * b;
             case BOp::Divide: return a / b;
+            case BOp::Modulo: return b == 0.0 ? std::numeric_limits<double>::quiet_NaN() : std::fmod(a, b);
             case BOp::Power: return std::pow(a, b);
             case BOp::Less: return a < b ? 1.0 : 0.0;
             case BOp::LessEqual: return a <= b ? 1.0 : 0.0;
@@ -605,6 +608,7 @@ struct LiveCompiledExprNode {
             case BOp::NotEqual: return a != b ? 1.0 : 0.0;
             case BOp::LogicalAnd: return (a != 0.0 && b != 0.0) ? 1.0 : 0.0;
             case BOp::LogicalOr: return (a != 0.0 || b != 0.0) ? 1.0 : 0.0;
+            case BOp::LogicalXor: return ((a != 0.0) != (b != 0.0)) ? 1.0 : 0.0;
             default: return std::numeric_limits<double>::quiet_NaN();
             }
         }
@@ -846,6 +850,18 @@ bool addCompartmentsFromCompiled(const bng::compile::CompiledModel& model,
         if (child == nullptr || parent == nullptr) return false;
         child->setParent(parent);
     }
+    for (const auto& compartment : model.compartments()) {
+        auto* current = system->getCompartment(compartment.name);
+        std::unordered_set<NFcore::Compartment*> visited;
+        while (current != nullptr) {
+            if (!visited.insert(current).second) {
+                std::cerr << "[nfsim/compiled] cyclic compartment parent hierarchy involving '"
+                          << current->getId() << "'\n";
+                return false;
+            }
+            current = current->getParent();
+        }
+    }
     return true;
 }
 
@@ -967,15 +983,14 @@ bool addObservablesFromCompiled(const bng::compile::CompiledModel& model,
         std::vector<NFcore::TemplateMolecule*> roots;
         std::vector<std::string> relations;
         std::vector<int> quantities;
-        for (const auto& term : observable.terms) {
+        std::vector<int> termGroupIds;
+        for (std::size_t termIdx = 0; termIdx < observable.terms.size(); ++termIdx) {
+            const auto& term = observable.terms[termIdx];
             bool hasDisjointSets = false;
             std::string diagnostic;
-            if (moleculesObservable) {
-                // Legacy NFsim counts every valid symmetric embedding for a
-                // Molecules observable.  Expand the full equivalent-site
-                // orbit here so compiled lowering has the same observable
-                // contract as the XML bridge and the native NFsim oracle.
-                std::set<std::pair<std::size_t, std::size_t>> symmetricSites;
+
+            std::set<std::pair<std::size_t, std::size_t>> symmetricSites;
+            if (moleculesObservable || !term.relation.empty()) {
                 for (std::size_t moleculeIndex = 0;
                      moleculeIndex < term.pattern.molecules().size(); ++moleculeIndex) {
                     const auto& molecule = term.pattern.molecules()[moleculeIndex];
@@ -1005,7 +1020,12 @@ bool addObservablesFromCompiled(const bng::compile::CompiledModel& model,
                               << observable.name << "': " << diagnostic << "\n";
                     return false;
                 }
+            }
 
+            if (moleculesObservable || (!term.relation.empty() && !symmetricSites.empty())) {
+                // Expand the full equivalent-site orbit so Molecules observables
+                // and quantified Species observables count every distinct
+                // symmetric embedding (L2-07-08).
                 std::vector<std::vector<NFcore::TemplateMolecule*>> builds;
                 std::vector<NFcore2::RuntimeComponentNames> assignments;
                 if (!NFcore2::lowerPatternToNFsimPermutations(
@@ -1024,6 +1044,9 @@ bool addObservablesFromCompiled(const bng::compile::CompiledModel& model,
                         return false;
                     }
                     roots.push_back(build.front());
+                    relations.push_back(term.relation);
+                    quantities.push_back(term.quantity);
+                    termGroupIds.push_back(static_cast<int>(termIdx));
                 }
             } else {
                 std::vector<NFcore::TemplateMolecule*> lowered;
@@ -1035,10 +1058,11 @@ bool addObservablesFromCompiled(const bng::compile::CompiledModel& model,
                     return false;
                 }
                 roots.push_back(lowered.front());
+                relations.push_back(term.relation);
+                quantities.push_back(term.quantity);
+                termGroupIds.push_back(static_cast<int>(termIdx));
             }
             if (hasDisjointSets || !term.relation.empty()) system->setUsingComplex(true);
-            relations.push_back(term.relation);
-            quantities.push_back(term.quantity);
         }
 
         const bool stoichiometric = std::any_of(
@@ -1051,6 +1075,7 @@ bool addObservablesFromCompiled(const bng::compile::CompiledModel& model,
             } else {
                 created = new NFcore::MoleculesObservable(observable.name, roots);
             }
+            created->setTermGroupIds(termGroupIds);
             std::unordered_set<NFcore::MoleculeType*> registered;
             for (auto* root : roots) {
                 if (registered.insert(root->getMoleculeType()).second)
@@ -1060,6 +1085,7 @@ bool addObservablesFromCompiled(const bng::compile::CompiledModel& model,
         } else {
             created = new NFcore::SpeciesObservable(
                 observable.name, roots, relations, quantities);
+            created->setTermGroupIds(termGroupIds);
         }
         system->addObservableForOutput(created);
         if (verbose)
@@ -1328,15 +1354,10 @@ bool addEnergyPatternsFromCompiled(const bng::compile::CompiledModel& model,
                                    NFcore::System* system, bool verbose) {
     if (system == nullptr) return false;
 
-    // Barrier patterns only have meaning through an Arrhenius expansion, which
-    // requires energy patterns. Reject the combination explicitly rather than
-    // building a system in which the barriers silently do nothing.
-    if (model.barrierPatternCount() != 0 && model.energyFactors().empty()) {
-        std::cerr << "[nfsim/compiled] barrier patterns require energy patterns "
-                     "and an Arrhenius rate law\n";
-        return false;
-    }
-    if (model.energyFactors().empty()) return true;
+    // Allow pure kinetic barrier patterns (empty energyFactors, non-empty
+    // barrierFactors) by installing an EnergyFunction with 0 energy patterns
+    // and the compiled BarrierTable (L2-08-12).
+    if (model.energyFactors().empty() && model.barrierPatternCount() == 0) return true;
 
     // Canonical BNG3 path: energies arrive evaluated in RT units, matching
     // BNG2 RateLaw::evaluate_local which builds exp(-(Ea0+phi*dG)) with no RT
@@ -1390,6 +1411,18 @@ bool addEnergyPatternsFromCompiled(const bng::compile::CompiledModel& model,
             NFcore::EpMolecule epMolecule;
             epMolecule.typeName = typeDecl->name;
             epMolecule.xmlId = "m" + std::to_string(moleculeIndex + 1);
+            if (auto* epComp = compiledCompartment(model, factor.pattern, molecule, *system)) {
+                epMolecule.compartment = epComp->getId();
+            } else {
+                const std::string rawComp = molecule.compartment.empty()
+                    ? factor.pattern.compartment() : molecule.compartment;
+                if (!rawComp.empty()) {
+                    std::cerr << "[nfsim/compiled] energy pattern '" << info.id
+                              << "' refers to unknown compartment '" << rawComp << "'\n";
+                    delete energyFunction;
+                    return false;
+                }
+            }
             for (std::size_t siteIndex = 0; siteIndex < molecule.sites.size(); ++siteIndex) {
                 const auto& site = molecule.sites[siteIndex];
                 if (!site.componentType.has_value()) { delete energyFunction; return false; }

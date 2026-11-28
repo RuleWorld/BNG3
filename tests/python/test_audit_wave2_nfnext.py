@@ -624,7 +624,7 @@ begin observables
 end observables
 begin reaction rules
   L(r) + R(l) -> L(r!1).R(l!1) 0.1
-  A()@EC -> A()@CP 2.0
+  A()@EC -> A()@CP 2.0 MoveConnected
 end reaction rules
 end model
 """

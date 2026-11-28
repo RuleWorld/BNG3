@@ -21,6 +21,7 @@
 #include <utility>
 #include <map>
 #include <set>
+#include <stdexcept>
 
 using namespace NFcore;
 using namespace std;
@@ -29,25 +30,26 @@ namespace {
 
 struct ConditionKey {
     int reactantIdx = 0;
-    int kind = 0; // 0=Bond, 1=State, 2=Unbound
+    int kind = 0; // 0=Bond, 1=State, 2=Unbound, 3=Compartment
     std::string molType;
     std::string compName;
     std::string stateValue;
     std::string partnerType;
     std::string partnerComp;
     std::vector<std::pair<std::string, std::string>> partnerStates;
+    std::string partnerCompartment;
 
     bool operator<(const ConditionKey &o) const {
         return std::tie(reactantIdx, kind, molType, compName, stateValue,
-                        partnerType, partnerComp, partnerStates) <
+                        partnerType, partnerComp, partnerStates, partnerCompartment) <
                std::tie(o.reactantIdx, o.kind, o.molType, o.compName, o.stateValue,
-                        o.partnerType, o.partnerComp, o.partnerStates);
+                        o.partnerType, o.partnerComp, o.partnerStates, o.partnerCompartment);
     }
     bool operator==(const ConditionKey &o) const {
         return std::tie(reactantIdx, kind, molType, compName, stateValue,
-                        partnerType, partnerComp, partnerStates) ==
+                        partnerType, partnerComp, partnerStates, partnerCompartment) ==
                std::tie(o.reactantIdx, o.kind, o.molType, o.compName, o.stateValue,
-                        o.partnerType, o.partnerComp, o.partnerStates);
+                        o.partnerType, o.partnerComp, o.partnerStates, o.partnerCompartment);
     }
 };
 
@@ -61,8 +63,90 @@ ConditionKey makeConditionKey(const ContextCondition &cc) {
     key.partnerType = cc.partnerType;
     key.partnerComp = cc.partnerComp;
     key.partnerStates = cc.partnerStates;
+    key.partnerCompartment = cc.partnerCompartment;
     std::sort(key.partnerStates.begin(), key.partnerStates.end());
     return key;
+}
+
+// Validate that `ep` is faithfully representable by 1-hop context conditions
+// around `centerMols` (and optional `centerBondIdx`). Rejects multi-hop chains
+// (>1 bond from the reaction center), cycles/rings involving center neighbors
+// or extra bonds between center molecules, self-bonds, disconnected molecules,
+// and non-center bond/unbound constraints that 1-hop expansion cannot enforce.
+bool isEnergyPattern1HopAcyclicForCenter(
+    const EnergyPatternInfo &ep,
+    const std::set<int> &centerMols,
+    int centerBondIdx,
+    std::string *reason = nullptr) {
+    const int nMols = static_cast<int>(ep.molecules.size());
+    std::vector<int> bondDegree(static_cast<std::size_t>(nMols), 0);
+    std::vector<int> centerNeighbor(static_cast<std::size_t>(nMols), -1);
+
+    for (int bi = 0; bi < static_cast<int>(ep.bonds.size()); ++bi) {
+        const auto &b = ep.bonds[static_cast<std::size_t>(bi)];
+        if (b.mol1 < 0 || b.mol2 < 0 || b.mol1 >= nMols || b.mol2 >= nMols) {
+            if (reason) *reason = "invalid bond endpoint";
+            return false;
+        }
+        if (b.mol1 == b.mol2) {
+            if (reason) *reason = "intra-molecule self-bond";
+            return false;
+        }
+        ++bondDegree[static_cast<std::size_t>(b.mol1)];
+        ++bondDegree[static_cast<std::size_t>(b.mol2)];
+        const bool in1 = centerMols.count(b.mol1) != 0;
+        const bool in2 = centerMols.count(b.mol2) != 0;
+        if (in1 && in2) {
+            if (bi != centerBondIdx) {
+                if (reason) *reason = "extra cycle bond between reaction-center molecules";
+                return false;
+            }
+        } else if (!in1 && !in2) {
+            if (reason) *reason = "multi-hop (>1 bond from reaction center) or cycle bond";
+            return false;
+        } else if (in1 && !in2) {
+            if (centerNeighbor[static_cast<std::size_t>(b.mol2)] != -1) {
+                if (reason) *reason = "cycle/ring closing through shared neighbor";
+                return false;
+            }
+            centerNeighbor[static_cast<std::size_t>(b.mol2)] = b.mol1;
+        } else {
+            if (centerNeighbor[static_cast<std::size_t>(b.mol1)] != -1) {
+                if (reason) *reason = "cycle/ring closing through shared neighbor";
+                return false;
+            }
+            centerNeighbor[static_cast<std::size_t>(b.mol1)] = b.mol2;
+        }
+    }
+
+    for (int mi = 0; mi < nMols; ++mi) {
+        if (centerMols.count(mi) != 0) continue;
+        if (bondDegree[static_cast<std::size_t>(mi)] != 1 ||
+            centerNeighbor[static_cast<std::size_t>(mi)] < 0) {
+            if (reason) *reason = "molecule at distance > 1 from reaction center or disconnected";
+            return false;
+        }
+        const auto &mol = ep.molecules[static_cast<std::size_t>(mi)];
+        for (const auto &comp : mol.components) {
+            if (comp.isWildcardBound || (comp.isUnbound && comp.stateConstraint.empty())) {
+                if (reason) *reason = "bond/unbound constraint on non-center neighbor molecule";
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+void requireEnergyPattern1HopAcyclicForCenter(
+    const EnergyPatternInfo &ep,
+    const std::set<int> &centerMols,
+    int centerBondIdx) {
+    std::string reason;
+    if (!isEnergyPattern1HopAcyclicForCenter(ep, centerMols, centerBondIdx, &reason)) {
+        throw std::runtime_error(
+            "NFcore energy rule expansion cannot represent energy pattern '" +
+            ep.id + "' (" + reason + "); use method=>'nfnext' or network generation");
+    }
 }
 
 struct CenterEmbedding {
@@ -83,6 +167,14 @@ void extractMoleculeContextConditions(
     int otherCenterMolIdx,
     std::vector<ContextCondition> &out) {
     const EpMolecule &mol = ep.molecules[static_cast<std::size_t>(mi)];
+    if (!mol.compartment.empty()) {
+        ContextCondition compCond;
+        compCond.kind = ContextCondition::Kind::Compartment;
+        compCond.molType = mol.typeName;
+        compCond.reactantIdx = reactantIdx;
+        compCond.stateValue = mol.compartment;
+        out.push_back(std::move(compCond));
+    }
     for (int ci = 0; ci < static_cast<int>(mol.components.size()); ++ci) {
         if (ci == centerCompIdx) continue;
         const auto &comp = mol.components[static_cast<std::size_t>(ci)];
@@ -123,6 +215,7 @@ void extractMoleculeContextConditions(
                     static_cast<std::size_t>(partnerMolIdx) < ep.molecules.size()) {
                     const auto &partnerMol = ep.molecules[static_cast<std::size_t>(partnerMolIdx)];
                     bc.partnerType = partnerMol.typeName;
+                    bc.partnerCompartment = partnerMol.compartment;
                     if (partnerCompIdx >= 0 &&
                         static_cast<std::size_t>(partnerCompIdx) < partnerMol.components.size()) {
                         bc.partnerComp = partnerMol.components[static_cast<std::size_t>(partnerCompIdx)].name;
@@ -173,6 +266,13 @@ bool isComboContradictory(std::uint64_t combo, const std::vector<ContextConditio
             if (ci.reactantIdx != cj.reactantIdx || ci.compName != cj.compName) continue;
             const bool metJ = ((combo >> j) & std::uint64_t{1}) != 0;
 
+            // Both are Compartment conditions on the same reactant
+            if (ci.kind == ContextCondition::Kind::Compartment &&
+                cj.kind == ContextCondition::Kind::Compartment) {
+                if (metI && metJ && ci.stateValue != cj.stateValue) return true;
+                if (metI != metJ && ci.stateValue == cj.stateValue) return true;
+            }
+
             // Both are State conditions on the same component
             if (ci.kind == ContextCondition::Kind::State &&
                 cj.kind == ContextCondition::Kind::State) {
@@ -201,9 +301,12 @@ bool isComboContradictory(std::uint64_t combo, const std::vector<ContextConditio
                 if (wildI && !metI && metJ) return true;
                 if (wildJ && !metJ && metI) return true;
 
-                // Two active specific bonds on the same site must agree on partner & states
+                // Two active specific bonds on the same site must agree on partner, compartment & states
                 if (!wildI && !wildJ && metI && metJ) {
                     if (ci.partnerType != cj.partnerType || ci.partnerComp != cj.partnerComp)
+                        return true;
+                    if (!ci.partnerCompartment.empty() && !cj.partnerCompartment.empty() &&
+                        ci.partnerCompartment != cj.partnerCompartment)
                         return true;
                     for (const auto &psI : ci.partnerStates) {
                         for (const auto &psJ : cj.partnerStates) {
@@ -216,9 +319,13 @@ bool isComboContradictory(std::uint64_t combo, const std::vector<ContextConditio
                 // Active stronger specific bond implies weaker bond on same partner cannot be false
                 if (!wildI && !wildJ && ci.partnerType == cj.partnerType &&
                     ci.partnerComp == cj.partnerComp) {
-                    if (metI && !metJ && isPartnerStateSubset(cj.partnerStates, ci.partnerStates))
+                    const bool compIImpliesJ = cj.partnerCompartment.empty() ||
+                        ci.partnerCompartment == cj.partnerCompartment;
+                    const bool compJImpliesI = ci.partnerCompartment.empty() ||
+                        cj.partnerCompartment == ci.partnerCompartment;
+                    if (metI && !metJ && compIImpliesJ && isPartnerStateSubset(cj.partnerStates, ci.partnerStates))
                         return true;
-                    if (metJ && !metI && isPartnerStateSubset(ci.partnerStates, cj.partnerStates))
+                    if (metJ && !metI && compJImpliesI && isPartnerStateSubset(ci.partnerStates, cj.partnerStates))
                         return true;
                 }
             }
@@ -244,6 +351,7 @@ std::vector<ExpandedRuleInfo::ContextConstraint> buildConstraintsForCombo(
         cc.partnerType = cond.partnerType;
         cc.partnerComp = cond.partnerComp;
         cc.partnerStates = cond.partnerStates;
+        cc.partnerCompartment = cond.partnerCompartment;
         constraints.push_back(std::move(cc));
     }
     return constraints;
@@ -358,9 +466,12 @@ bng::compile::energy::EnergyDeltaPlan EnergyFunction::compileBindingDeltaPlan(
         int weightedMoleculeCount = 0;
 
         // Compact EnergyRxnClass only handles explicit-bond patterns without
-        // unbound/wildcard/state/partner-state conditions.
+        // unbound/wildcard/state/partner-state/compartment conditions or
+        // multi-hop/cyclic topologies.
         bool hasExplicitCenterBond = false;
-        for (const auto &bond : ep.bonds) {
+        int explicitCenterBondIdx = -1;
+        for (int bi = 0; bi < static_cast<int>(ep.bonds.size()); ++bi) {
+            const auto &bond = ep.bonds[static_cast<std::size_t>(bi)];
             if (bond.mol1 < 0 || bond.mol2 < 0 ||
                 static_cast<std::size_t>(bond.mol1) >= ep.molecules.size() ||
                 static_cast<std::size_t>(bond.mol2) >= ep.molecules.size()) continue;
@@ -375,14 +486,24 @@ bng::compile::energy::EnergyDeltaPlan EnergyFunction::compileBindingDeltaPlan(
                 (m2.typeName == molType1 && c2.name == bindSite1 &&
                  m1.typeName == molType2 && c1.name == bindSite2)) {
                 hasExplicitCenterBond = true;
+                explicitCenterBondIdx = bi;
                 break;
             }
         }
         if (!hasExplicitCenterBond) {
             return EnergyDeltaPlan::materializedFallback();
         }
+        {
+            const auto &centerBond = ep.bonds[static_cast<std::size_t>(explicitCenterBondIdx)];
+            if (!isEnergyPattern1HopAcyclicForCenter(
+                    ep, {centerBond.mol1, centerBond.mol2}, explicitCenterBondIdx)) {
+                return EnergyDeltaPlan::materializedFallback();
+            }
+        }
 
         for (const auto &mol : ep.molecules) {
+            if (!mol.compartment.empty())
+                return EnergyDeltaPlan::materializedFallback();
             if (mol.typeName == molType1) ++weightedMoleculeCount;
             const bool isReactantType =
                 mol.typeName == molType1 || mol.typeName == molType2;
@@ -563,8 +684,15 @@ bng::compile::energy::EnergyDeltaPlan EnergyFunction::compileStateChangeDeltaPla
         const auto &ep = patterns[static_cast<std::size_t>(pi)];
         bool hasExtraContext = false;
         int weightedMoleculeCount = 0;
-        for (const auto &mol : ep.molecules) {
-            if (mol.typeName == molType) ++weightedMoleculeCount;
+        int centerMolIdx = -1;
+        for (int mi = 0; mi < static_cast<int>(ep.molecules.size()); ++mi) {
+            const auto &mol = ep.molecules[static_cast<std::size_t>(mi)];
+            if (!mol.compartment.empty())
+                return EnergyDeltaPlan::materializedFallback();
+            if (mol.typeName == molType) {
+                ++weightedMoleculeCount;
+                centerMolIdx = mi;
+            }
             if (mol.typeName != molType) {
                 hasExtraContext = true;
                 for (const auto &c : mol.components) {
@@ -584,6 +712,9 @@ bng::compile::energy::EnergyDeltaPlan EnergyFunction::compileStateChangeDeltaPla
             }
         }
         if (weightedMoleculeCount != 1)
+            return EnergyDeltaPlan::materializedFallback();
+        if (centerMolIdx < 0 ||
+            !isEnergyPattern1HopAcyclicForCenter(ep, {centerMolIdx}, -1))
             return EnergyDeltaPlan::materializedFallback();
 
         double ignored = 0.0;
@@ -814,7 +945,8 @@ vector<ExpandedRuleInfo> EnergyFunction::expandBindingRule(
         bool matchedExplicitBond = false;
 
         // 1. Explicit bond embeddings matching (molType1.bindSite1 - molType2.bindSite2)
-        for (const auto &bond : ep.bonds) {
+        for (int bi = 0; bi < static_cast<int>(ep.bonds.size()); ++bi) {
+            const auto &bond = ep.bonds[static_cast<std::size_t>(bi)];
             if (bond.mol1 < 0 || bond.mol2 < 0 ||
                 static_cast<std::size_t>(bond.mol1) >= ep.molecules.size() ||
                 static_cast<std::size_t>(bond.mol2) >= ep.molecules.size()) continue;
@@ -826,6 +958,7 @@ vector<ExpandedRuleInfo> EnergyFunction::expandBindingRule(
             const auto &c2 = m2.components[static_cast<std::size_t>(bond.comp2)];
 
             auto tryOrientation = [&](int r0Mol, int r0Comp, int r1Mol, int r1Comp) {
+                requireEnergyPattern1HopAcyclicForCenter(ep, {r0Mol, r1Mol}, bi);
                 matchedExplicitBond = true;
                 CenterEmbedding emb;
                 emb.patternIndex = pi;
@@ -865,6 +998,7 @@ vector<ExpandedRuleInfo> EnergyFunction::expandBindingRule(
                         if (comp.name != siteName) continue;
                         if (!comp.isWildcardBound && !comp.isUnbound) continue;
 
+                        requireEnergyPattern1HopAcyclicForCenter(ep, {mi}, -1);
                         CenterEmbedding emb;
                         emb.patternIndex = pi;
                         // Binding creates a bond: !+ is GAINED (+1), unbound is LOST (-1).
@@ -1039,6 +1173,7 @@ vector<ExpandedRuleInfo> EnergyFunction::expandStateChangeRule(
                 else if (c.stateConstraint == stateFrom) sign = -1.0;
                 else continue;
 
+                requireEnergyPattern1HopAcyclicForCenter(ep, {mi}, -1);
                 CenterEmbedding emb;
                 emb.patternIndex = pi;
                 emb.sign = sign;

@@ -6,6 +6,7 @@
  */
 
 #include "../NFcore/NFcore.hh"
+#include "../NFcore/compartment.hh"
 #include "../NFcore/energyPattern.hh"
 #include "../NFfunction/NFfunction.hh"
 #include "../NFreactions/reactions/reaction.hh"
@@ -13,9 +14,11 @@
 #include "NFinput_energy.hh"
 #include "TinyXML/tinyxml.h"
 
+#include <algorithm>
 #include <map>
 #include <set>
 #include <string>
+#include <tuple>
 #include <vector>
 #include <iostream>
 #include <cmath>
@@ -50,14 +53,28 @@ double evaluateEnergyExpression(const string &expression,
 namespace {
 
 // Check whether an expanded variant's constraints are compatible with all
-// rule-level site constraints (ETH-07). Returns false if contradictory.
+// rule-level site constraints and compartments (ETH-07 / L2-08-02).
 bool variantCompatibleWithRuleContext(
     const ExpandedRuleInfo &rule,
     const ArrheniusRuleContext &ruleContext,
     const std::function<std::string(int, const std::string&)> &mapCompName)
 {
+    for (const auto &cc : rule.constraints) {
+        if (cc.kind == ContextCondition::Kind::Compartment) {
+            if (cc.reactantIdx >= 0 && cc.reactantIdx < 2) {
+                Compartment *ruleComp = ruleContext.reactantCompartments[cc.reactantIdx];
+                if (ruleComp != nullptr) {
+                    const bool same = (ruleComp->getId() == cc.stateValue);
+                    if (cc.mustBeBound && !same) return false;
+                    if (!cc.mustBeBound && same) return false;
+                }
+            }
+            continue;
+        }
+    }
     for (const auto &rc : ruleContext.siteConstraints) {
         for (const auto &cc : rule.constraints) {
+            if (cc.kind == ContextCondition::Kind::Compartment) continue;
             if (cc.reactantIdx != rc.reactantIdx) continue;
             const std::string mappedComp = mapCompName(cc.reactantIdx, cc.compName);
             if (mappedComp != rc.compName) continue;
@@ -106,6 +123,20 @@ bool applyConstraintsToTemplates(
     for (const auto &cc : rule.constraints) {
         TemplateMolecule *target = targetFor(cc.reactantIdx);
         if (target == nullptr) return false;
+        if (cc.kind == ContextCondition::Kind::Compartment) {
+            Compartment *comp = s->getCompartment(cc.stateValue);
+            if (comp == nullptr) return false;
+            if (cc.mustBeBound) {
+                if (target->getCompartment() != nullptr && target->getCompartment() != comp) {
+                    return false;
+                }
+                target->setCompartment(comp);
+            } else {
+                if (target->getCompartment() == comp) return false;
+                target->addExcludedCompartment(comp);
+            }
+            continue;
+        }
         const std::string compName = mapCompName(cc.reactantIdx, cc.compName);
         if (target->getMoleculeType()->isEquivalentComponent(compName)) return false;
         const auto siteKey = std::make_pair(cc.reactantIdx, compName);
@@ -148,6 +179,15 @@ bool applyConstraintsToTemplates(
                     } else {
                         partnerTM = pIt->second;
                     }
+                    if (!cc.partnerCompartment.empty()) {
+                        Compartment *partnerComp = s->getCompartment(cc.partnerCompartment);
+                        if (partnerComp == nullptr) return false;
+                        if (partnerTM->getCompartment() != nullptr &&
+                            partnerTM->getCompartment() != partnerComp) {
+                            return false;
+                        }
+                        partnerTM->setCompartment(partnerComp);
+                    }
                     auto &pStates = boundPartnerAppliedStates[siteKey];
                     for (const auto &ps : cc.partnerStates) {
                         if (pStates.insert(ps).second) {
@@ -163,7 +203,10 @@ bool applyConstraintsToTemplates(
                 } else {
                     MoleculeType *partnerMT = s->getMoleculeTypeByName(cc.partnerType);
                     if (partnerMT == nullptr) return false;
-                    target->addBondExclusion(compName, partnerMT, cc.partnerComp, cc.partnerStates);
+                    Compartment *partnerComp = cc.partnerCompartment.empty()
+                        ? nullptr : s->getCompartment(cc.partnerCompartment);
+                    if (!cc.partnerCompartment.empty() && partnerComp == nullptr) return false;
+                    target->addBondExclusion(compName, partnerMT, cc.partnerComp, cc.partnerStates, partnerComp);
                 }
             }
         }
@@ -242,12 +285,8 @@ bool parseEnergyPatterns(
     bool verbose)
 {
     TiXmlElement *pList = pModel->FirstChildElement("ListOfEnergyPatterns");
-    if (!pList) {
-        if (pModel->FirstChildElement("ListOfBarrierPatterns")) {
-            cerr << "Error: barrier patterns require energy patterns and an "
-                    "Arrhenius rate law." << endl;
-            return false;
-        }
+    TiXmlElement *pBarrierList = pModel->FirstChildElement("ListOfBarrierPatterns");
+    if (!pList && !pBarrierList) {
         return true;
     }
 
@@ -260,8 +299,8 @@ bool parseEnergyPatterns(
         phi = parameter.find("phi")->second;
     EnergyFunction *ef = new EnergyFunction(phi, RT);
 
-    TiXmlElement *pEP;
-    for (pEP = pList->FirstChildElement("EnergyPattern"); pEP != 0; pEP = pEP->NextSiblingElement("EnergyPattern"))
+    TiXmlElement *pEP = pList ? pList->FirstChildElement("EnergyPattern") : 0;
+    for (; pEP != 0; pEP = pEP->NextSiblingElement("EnergyPattern"))
     {
         if (!pEP->Attribute("id") || !pEP->Attribute("expression")) {
             cerr << "Error: EnergyPattern missing 'id' or 'expression'." << endl;
@@ -290,6 +329,8 @@ bool parseEnergyPatterns(
         };
 
         TiXmlElement *pPattern = pEP->FirstChildElement("Pattern");
+        const string patternComp = (pPattern && pPattern->Attribute("compartment"))
+            ? pPattern->Attribute("compartment") : "";
         TiXmlElement *pListOfMols = pPattern ? pPattern->FirstChildElement("ListOfMolecules") : pEP->FirstChildElement("ListOfMolecules");
         if (!pListOfMols) {
             cerr << "Error: EnergyPattern " << epId << " has no ListOfMolecules." << endl;
@@ -304,6 +345,8 @@ bool parseEnergyPatterns(
             EpMolecule mol;
             mol.xmlId = pMol->Attribute("id") ? pMol->Attribute("id") : "";
             mol.typeName = pMol->Attribute("name") ? pMol->Attribute("name") : "";
+            mol.compartment = pMol->Attribute("compartment")
+                ? pMol->Attribute("compartment") : patternComp;
             int molIdx = (int)epInfo.molecules.size();
 
             TiXmlElement *pListOfComps = pMol->FirstChildElement("ListOfComponents");
@@ -356,7 +399,6 @@ bool parseEnergyPatterns(
         ef->addEnergyPattern(epInfo);
     }
 
-    TiXmlElement *pBarrierList = pModel->FirstChildElement("ListOfBarrierPatterns");
     if (pBarrierList) {
         if (!bng::compile::energy::generalEnergyEnabled()) {
             cerr << "Error: model declares barrier patterns but "
@@ -555,6 +597,24 @@ bool createExpandedBindingReactions(
         rxnName, Ea0, phi_val, mt1Name, energyBindSite1, mt2Name, energyBindSite2,
         drivingWork);
 
+    // Determine whether the binding/unbinding rule is homodimer-symmetric
+    // under swapping reactant 0 and reactant 1 (L2-07-04 / L2-01-07).
+    auto ruleContextIsSymmetric = [&]() -> bool {
+        if (molType1 != molType2 || energyBindSite1 != energyBindSite2) return false;
+        if (ruleContext.reactantCompartments[0] != ruleContext.reactantCompartments[1]) return false;
+        using SiteTuple = std::tuple<std::string, std::string, bool, bool>;
+        std::vector<SiteTuple> r0Sites, r1Sites;
+        for (const auto &rc : ruleContext.siteConstraints) {
+            SiteTuple entry {rc.compName, rc.stateName, rc.requireEmpty, rc.requireBound};
+            if (rc.reactantIdx == 0) r0Sites.push_back(std::move(entry));
+            else if (rc.reactantIdx == 1) r1Sites.push_back(std::move(entry));
+        }
+        std::sort(r0Sites.begin(), r0Sites.end());
+        std::sort(r1Sites.begin(), r1Sites.end());
+        return r0Sites == r1Sites;
+    };
+    const bool isSymmetricHomodimer = ruleContextIsSymmetric();
+
     for (const auto &rule : expanded) {
         if ((rule.isForward && !includeForward) || (!rule.isForward && !includeReverse)) continue;
         if (!variantCompatibleWithRuleContext(rule, ruleContext, mapCompName)) continue;
@@ -595,6 +655,9 @@ bool createExpandedBindingReactions(
             ts = new TransformationSet(templates);
             if (rule.isForward) ts->addBindingTransform(t1, bindSite1, t2, bindSite2);
             else ts->addUnbindingTransform(t1, bindSite1, t2, bindSite2, true);
+            if (isSymmetricHomodimer) {
+                ts->setSymmetryFactor(0.5);
+            }
             ts->setComplexBookkeeping(blockSameComplexBinding);
             ts->finalize();
         } catch (const std::exception &) {

@@ -1,9 +1,11 @@
 #pragma once
 
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
 
+#include "ast/Expression.hpp"
 #include "ast/Model.hpp"
 #include "ast/ModelFunctionEvaluator.hpp"
 #include "NetworkGenerator.hpp"
@@ -63,13 +65,25 @@ private:
         double total_ = 0.0;
     };
 
+    enum class PsaRateLawKind {
+        Elementary,
+        Saturation,
+        MichaelisMenten,
+        Hill,
+    };
+
     struct CompiledReaction {
         std::vector<std::size_t> reactantIndices;  // 0-based species indices
         std::vector<std::size_t> productIndices;
-        double rateConstant;    // evaluated base rate (k)
-        double statFactor;      // statistical factor
+        double rateConstant = 0.0;    // evaluated base rate (prefactor * k)
+        double statFactor = 1.0;      // unit_conversion * stat_factor
         bool isTotalRate = false;
         bool isAbsoluteFlux = false;
+        bool usesObservables = false;
+        PsaRateLawKind rateLawKind = PsaRateLawKind::Elementary;
+        std::optional<ast::Expression> functionalExpr;
+        std::vector<ast::Expression> rateLawArgExprs;
+        std::vector<double> staticRateLawArgs;
     };
 
     struct CompiledGroup {

@@ -25,6 +25,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -542,6 +543,9 @@ bool addFilters(const CompiledRuleDirection& direction,
                 NFcore::System& system,
                 NFcore::TransformationSet& transformations,
                 const std::vector<NFcore::TemplateMolecule*>& roots,
+                const std::vector<std::vector<NFcore::TemplateMolecule*>>& templates,
+                const MoleculeMap& moleculeMappings,
+                const std::map<PatternMoleculeRef, std::size_t, MoleculeRefLess>& added,
                 bool& hasDisjointSets,
                 int& suggestedTraversalLimit,
                 std::string& diagnostic) {
@@ -553,22 +557,85 @@ bool addFilters(const CompiledRuleDirection& direction,
                 return false;
             }
             const auto& product = direction.productPatterns[filter.patternIndex];
+
+            // Resolve a runtime anchor molecule belonging to product pattern `filter.patternIndex`.
+            NFcore::TemplateMolecule* anchorTemplate = nullptr;
+            int anchorAddIndex = -1;
+            for (const auto& [prodRef, reactRef] : moleculeMappings) {
+                if (prodRef.side != PatternSide::Product ||
+                    prodRef.patternIndex != filter.patternIndex) continue;
+                if (reactRef.side != PatternSide::Reactant ||
+                    reactRef.patternIndex >= templates.size() ||
+                    reactRef.moleculeIndex >= templates[reactRef.patternIndex].size()) continue;
+                NFcore::TemplateMolecule* candidate =
+                    templates[reactRef.patternIndex][reactRef.moleculeIndex];
+                if (candidate == nullptr) continue;
+                if (anchorTemplate == nullptr || reactRef.moleculeIndex == 0) {
+                    anchorTemplate = candidate;
+                    if (reactRef.moleculeIndex == 0) break;
+                }
+            }
+            if (anchorTemplate == nullptr) {
+                for (const auto& [prodRef, addIdx] : added) {
+                    if (prodRef.side == PatternSide::Product &&
+                        prodRef.patternIndex == filter.patternIndex) {
+                        anchorAddIndex = static_cast<int>(addIdx);
+                        break;
+                    }
+                }
+            }
+
             for (const auto& wanted : filter.patterns) {
-                if (wanted.molecules().size() != 1 ||
-                    !wanted.molecules().front().sites.empty()) {
-                    diagnostic = "NFsim direct product filters support one bare molecule";
+                // Exact static optimization ONLY when `wanted` is a single bare
+                // unconstrained molecule guaranteed to be present in the static
+                // RHS product pattern (preserves static elimination for e.g.
+                // `A() -> B() exclude_products(1, B())` while never mis-evaluating
+                // runtime context-attached complexes or stateful patterns).
+                const bool isBareMolecule =
+                    wanted.molecules().size() == 1 &&
+                    wanted.molecules().front().sites.empty() &&
+                    wanted.compartment().empty() &&
+                    wanted.molecules().front().compartment.empty();
+                if (isBareMolecule) {
+                    const auto& type = wanted.molecules().front().moleculeType;
+                    const bool staticallyGuaranteedPresent = std::any_of(
+                        product.molecules().begin(), product.molecules().end(),
+                        [&](const auto& molecule) { return molecule.moleculeType == type; });
+                    if (staticallyGuaranteedPresent) {
+                        if (!filter.include) {
+                            diagnostic = "__BNG_STATIC_PRODUCT_FILTER_REJECT__";
+                            return false;
+                        }
+                        continue; // include_products statically satisfied
+                    }
+                }
+
+                if (anchorTemplate == nullptr && anchorAddIndex < 0) {
+                    diagnostic = "product filter refers to a product pattern with no runtime molecule anchor";
                     return false;
                 }
-                const auto& type = wanted.molecules().front().moleculeType;
-                const bool contains = std::any_of(
-                    product.molecules().begin(), product.molecules().end(),
-                    [&](const auto& molecule) { return molecule.moleculeType == type; });
-                if ((filter.include && !contains) || (!filter.include && contains)) {
-                    // The rule is statically filtered out. Use a distinctive
-                    // diagnostic understood by the caller as a non-error skip.
-                    diagnostic = "__BNG_STATIC_PRODUCT_FILTER_REJECT__";
+
+                std::vector<NFcore::TemplateMolecule*> filterTemplates;
+                bool disjoint = false;
+                if (!NFcore2::lowerPatternToNFsim(wanted, system, filterTemplates,
+                                                  disjoint, suggestedTraversalLimit,
+                                                  diagnostic) || filterTemplates.empty()) {
                     return false;
                 }
+                std::map<std::string, NFcore::TemplateMolecule*> named;
+                for (std::size_t index = 0; index < filterTemplates.size(); ++index)
+                    named.emplace("prod_filter_" + std::to_string(ordinal) + "_M" +
+                                      std::to_string(index + 1), filterTemplates[index]);
+                if (filter.include)
+                    transformations.addIncludeProduct(
+                        static_cast<int>(filter.patternIndex), filterTemplates.front(),
+                        named, anchorTemplate, anchorAddIndex);
+                else
+                    transformations.addExcludeProduct(
+                        static_cast<int>(filter.patternIndex), filterTemplates.front(),
+                        named, anchorTemplate, anchorAddIndex);
+                hasDisjointSets = hasDisjointSets || disjoint;
+                ++ordinal;
             }
             continue;
         }
@@ -577,23 +644,23 @@ bool addFilters(const CompiledRuleDirection& direction,
             return false;
         }
         for (const auto& filterPattern : filter.patterns) {
-            std::vector<NFcore::TemplateMolecule*> templates;
+            std::vector<NFcore::TemplateMolecule*> filterTemplates;
             bool disjoint = false;
-            if (!NFcore2::lowerPatternToNFsim(filterPattern, system, templates,
+            if (!NFcore2::lowerPatternToNFsim(filterPattern, system, filterTemplates,
                                               disjoint, suggestedTraversalLimit,
-                                              diagnostic) || templates.empty()) {
+                                              diagnostic) || filterTemplates.empty()) {
                 return false;
             }
             std::map<std::string, NFcore::TemplateMolecule*> named;
-            for (std::size_t index = 0; index < templates.size(); ++index)
+            for (std::size_t index = 0; index < filterTemplates.size(); ++index)
                 named.emplace("filter_" + std::to_string(ordinal) + "_M" +
-                                  std::to_string(index + 1), templates[index]);
+                                  std::to_string(index + 1), filterTemplates[index]);
             if (filter.include)
                 transformations.addIncludeReactant(
-                    static_cast<int>(filter.patternIndex), templates.front(), named);
+                    static_cast<int>(filter.patternIndex), filterTemplates.front(), named);
             else
                 transformations.addExcludeReactant(
-                    static_cast<int>(filter.patternIndex), templates.front(), named);
+                    static_cast<int>(filter.patternIndex), filterTemplates.front(), named);
             hasDisjointSets = hasDisjointSets || disjoint;
             ++ordinal;
         }
@@ -875,8 +942,8 @@ bool renderExpression(const CompiledModel& model,
         case BinaryOp::GreaterEqual: op = ">="; break; case BinaryOp::Equal: op = "=="; break;
         case BinaryOp::NotEqual: op = "!="; break; case BinaryOp::LogicalAnd: op = "&&"; break;
         case BinaryOp::LogicalOr: op = "||"; break;
-        case BinaryOp::Modulo:
-        case BinaryOp::LogicalXor:
+        case BinaryOp::Modulo: op = "%"; break;
+        case BinaryOp::LogicalXor: op = "^^"; break;
         case BinaryOp::Unknown: break;
         }
         if (op == nullptr) return false; result = "(" + lhs + " " + op + " " + rhs + ")"; return true;
@@ -1772,12 +1839,18 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
         }
         for (const auto& lhsName : lhsEquivalentNames) {
             for (const auto& rhsName : rhsEquivalentNames) {
-                ok = NFinput::createExpandedBindingReactions(
-                    rule.name(), *phi, *activationEnergy, lhsType, lhsName,
-                    rhsType, rhsName, &system, parameters, states,
-                    blockSameComplexBinding, verbose, reactionCount,
-                    rule.isBidirectional(), lhsSiteName, rhsSiteName, drivingWork,
-                    true, ruleContext);
+                try {
+                    ok = NFinput::createExpandedBindingReactions(
+                        rule.name(), *phi, *activationEnergy, lhsType, lhsName,
+                        rhsType, rhsName, &system, parameters, states,
+                        blockSameComplexBinding, verbose, reactionCount,
+                        rule.isBidirectional(), lhsSiteName, rhsSiteName, drivingWork,
+                        true, ruleContext);
+                } catch (const std::exception& error) {
+                    diagnostic = error.what();
+                    semanticRejection = true;
+                    return false;
+                }
                 if (!ok) return false;
             }
         }
@@ -1851,12 +1924,18 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
         }
         for (const auto& lhsName : lhsEquivalentNames) {
             for (const auto& rhsName : rhsEquivalentNames) {
-                ok = NFinput::createExpandedBindingReactions(
-                    rule.name(), unbindPhi, *activationEnergy, lhsType, lhsName,
-                    rhsType, rhsName, &system, parameters, states,
-                    blockSameComplexBinding, verbose, reactionCount,
-                    true, lhsSiteName, rhsSiteName, unbindWork,
-                    false, ruleContext);
+                try {
+                    ok = NFinput::createExpandedBindingReactions(
+                        rule.name(), unbindPhi, *activationEnergy, lhsType, lhsName,
+                        rhsType, rhsName, &system, parameters, states,
+                        blockSameComplexBinding, verbose, reactionCount,
+                        true, lhsSiteName, rhsSiteName, unbindWork,
+                        false, ruleContext);
+                } catch (const std::exception& error) {
+                    diagnostic = error.what();
+                    semanticRejection = true;
+                    return false;
+                }
                 if (!ok) return false;
             }
         }
@@ -1904,11 +1983,17 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
             return false;
         }
         for (const auto& concreteName : equivalentNames) {
-            ok = NFinput::createExpandedStateChangeReactions(
-                rule.name(), *phi, *activationEnergy, moleculeType,
-                concreteName, *sourceState, mutation.newState, &system,
-                blockSameComplexBinding, verbose, reactionCount,
-                rule.isBidirectional(), componentName, drivingWork, ruleContext);
+            try {
+                ok = NFinput::createExpandedStateChangeReactions(
+                    rule.name(), *phi, *activationEnergy, moleculeType,
+                    concreteName, *sourceState, mutation.newState, &system,
+                    blockSameComplexBinding, verbose, reactionCount,
+                    rule.isBidirectional(), componentName, drivingWork, ruleContext);
+            } catch (const std::exception& error) {
+                diagnostic = error.what();
+                semanticRejection = true;
+                return false;
+            }
             if (!ok) return false;
         }
         suggestedTraversalLimit = std::max(suggestedTraversalLimit, 2);
@@ -2212,15 +2297,69 @@ bool expressionUsesLocalScope(const ResolvedExpression& expression) {
 bool hasOnlySymmetricPermutationModifiers(const CompiledRule& rule) {
     return std::all_of(
         rule.modifiers().begin(), rule.modifiers().end(), [](const auto& modifier) {
-            return modifier.kind == ModifierKind::TotalRate ||
-                   modifier.kind == ModifierKind::MatchOnce;
+            return modifier.kind != ModifierKind::Unknown;
         });
+}
+
+bool sitesSymmetricForIntraBond(const CompiledRuleDirection& direction,
+                                const PatternSiteRef& first,
+                                const PatternSiteRef& second) {
+    if (first.side != PatternSide::Reactant || second.side != PatternSide::Reactant) return false;
+    if (first.patternIndex != second.patternIndex ||
+        first.moleculeIndex != second.moleculeIndex ||
+        first.siteIndex == second.siteIndex) return false;
+    const auto* siteA = referencedSite(direction, first);
+    const auto* siteB = referencedSite(direction, second);
+    if (siteA == nullptr || siteB == nullptr) return false;
+    return siteA->componentName == siteB->componentName &&
+           siteA->stateConstraint == siteB->stateConstraint &&
+           siteA->bondKind == siteB->bondKind;
+}
+
+bool isSymmetricTwoMoleculeUnbinding(const CompiledRuleDirection& direction,
+                                     const bng::compile::MutationSignature& mutation) {
+    if (mutation.kind != MutationKind::DeleteBond) return false;
+    if (direction.reactantPatterns.size() != 1) return false;
+    const auto& pattern = direction.reactantPatterns.front();
+    if (pattern.molecules().size() != 2) return false;
+    if (mutation.source.side != PatternSide::Reactant ||
+        mutation.partner.side != PatternSide::Reactant ||
+        mutation.source.patternIndex != 0 || mutation.partner.patternIndex != 0 ||
+        mutation.source.moleculeIndex == mutation.partner.moleculeIndex) {
+        return false;
+    }
+    const auto& mol0 = pattern.molecules()[0];
+    const auto& mol1 = pattern.molecules()[1];
+    if (mol0.moleculeTypeId != mol1.moleculeTypeId ||
+        mol0.moleculeType != mol1.moleculeType ||
+        mol0.compartment != mol1.compartment ||
+        mol0.compartmentId != mol1.compartmentId) {
+        return false;
+    }
+    using SiteSig = std::tuple<std::string, std::string, int, bool>;
+    auto collectSigs = [&](std::size_t molIdx, const auto& mol) {
+        std::vector<SiteSig> sigs;
+        sigs.reserve(mol.sites.size());
+        for (std::size_t si = 0; si < mol.sites.size(); ++si) {
+            const auto& site = mol.sites[si];
+            const bool isCenter =
+                (molIdx == mutation.source.moleculeIndex && si == mutation.source.siteIndex) ||
+                (molIdx == mutation.partner.moleculeIndex && si == mutation.partner.siteIndex);
+            sigs.emplace_back(
+                site.componentName, site.stateConstraint,
+                static_cast<int>(site.bondKind), isCenter);
+        }
+        std::sort(sigs.begin(), sigs.end());
+        return sigs;
+    };
+    return collectSigs(0, mol0) == collectSigs(1, mol1);
 }
 
 bool buildExpandedCompiledReactants(
     const CompiledRuleDirection& direction,
     NFcore::System& system,
     const std::set<PatternSiteRef>& reactionCenter,
+    const std::optional<std::pair<PatternSiteRef, PatternSiteRef>>& symmetricIntraBond,
     int& suggestedTraversalLimit,
     std::vector<ExpandedCompiledReactantPattern>& expandedPatterns,
     bool& hasDisjointSets,
@@ -2252,16 +2391,40 @@ bool buildExpandedCompiledReactants(
 
         // Context-only symmetric sites constrain matching but do not identify a
         // distinct reaction class.  Keep one build for every unique assignment
-        // of reaction-center sites, matching the legacy NFsim expansion.
+        // of reaction-center sites, canonicalizing unordered intra-molecule
+        // self-bond pairs (L2-07-02 / L2-01-09) so {b1,b2} is not double-counted.
         std::set<std::vector<std::string>> seen;
         std::vector<std::vector<NFcore::TemplateMolecule*>> uniqueBuilds;
         std::vector<NFcore2::RuntimeComponentNames> uniqueAssignments;
+        const bool hasIntraBond =
+            symmetricIntraBond.has_value() &&
+            symmetricIntraBond->first.patternIndex == patternIndex;
         for (std::size_t buildIndex = 0;
              buildIndex < expanded.builds.size(); ++buildIndex) {
             std::vector<std::string> key;
+            if (hasIntraBond) {
+                const auto& refA = symmetricIntraBond->first;
+                const auto& refB = symmetricIntraBond->second;
+                if (refA.moleculeIndex >= expanded.assignments[buildIndex].size() ||
+                    refA.siteIndex >= expanded.assignments[buildIndex][refA.moleculeIndex].size() ||
+                    refB.moleculeIndex >= expanded.assignments[buildIndex].size() ||
+                    refB.siteIndex >= expanded.assignments[buildIndex][refB.moleculeIndex].size()) {
+                    diagnostic = "reaction-center site is outside symmetric assignment";
+                    return false;
+                }
+                std::string nameA = expanded.assignments[buildIndex][refA.moleculeIndex][refA.siteIndex];
+                std::string nameB = expanded.assignments[buildIndex][refB.moleculeIndex][refB.siteIndex];
+                if (nameB < nameA) std::swap(nameA, nameB);
+                key.push_back(std::move(nameA));
+                key.push_back(std::move(nameB));
+            }
             for (const auto& ref : reactionCenter) {
                 if (ref.side != PatternSide::Reactant ||
                     ref.patternIndex != patternIndex) continue;
+                if (hasIntraBond &&
+                    (ref == symmetricIntraBond->first || ref == symmetricIntraBond->second)) {
+                    continue;
+                }
                 if (ref.moleculeIndex >= expanded.assignments[buildIndex].size() ||
                     ref.siteIndex >=
                         expanded.assignments[buildIndex][ref.moleculeIndex].size()) {
@@ -2295,8 +2458,8 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
     std::size_t rateOrdinal,
     std::string& diagnostic,
     bool& semanticRejection) {
-    if (direction.reactantPatterns.empty() || direction.productPatterns.empty() ||
-        !direction.rateLaw.has_value() || !direction.filters.empty() ||
+    if (direction.reactantPatterns.empty() ||
+        !direction.rateLaw.has_value() ||
         !hasOnlySymmetricPermutationModifiers(rule)) {
         return SymmetricCompiledExpansionResult::NotApplicable;
     }
@@ -2311,31 +2474,56 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
     MoleculeMap moleculeMappings;
     SiteMap siteMappings;
     directionMappings(rule, reverse, moleculeMappings, siteMappings);
+
+    const bool removeIndividualMolecules = hasModifier(rule, ModifierKind::DeleteMolecules);
+    const auto wholeSpeciesDeletion = [&](std::size_t patternIndex) {
+        return std::find(direction.wholeSpeciesDeletions.begin(),
+                         direction.wholeSpeciesDeletions.end(), patternIndex) !=
+               direction.wholeSpeciesDeletions.end();
+    };
+
+    std::vector<const bng::compile::MutationSignature*> nonDeleteMutations;
+    std::vector<const bng::compile::MutationSignature*> deleteMutations;
+    for (const auto& mutation : direction.mutations) {
+        if (mutation.kind == MutationKind::DeleteMolecule) {
+            deleteMutations.push_back(&mutation);
+        } else if (mutation.kind == MutationKind::AddMolecule) {
+            return SymmetricCompiledExpansionResult::NotApplicable;
+        } else {
+            nonDeleteMutations.push_back(&mutation);
+        }
+    }
+
     enum class CenterKind { State, Bond };
     CenterKind centerKind = CenterKind::State;
     std::set<PatternSiteRef> reactionCenter;
-    if (!direction.mutations.empty() &&
-        std::all_of(direction.mutations.begin(), direction.mutations.end(),
-                    [](const auto& mutation) {
-                        return mutation.kind == MutationKind::ChangeState;
+    std::optional<std::pair<PatternSiteRef, PatternSiteRef>> symmetricIntraBond;
+    const bng::compile::MutationSignature* bondMutation = nullptr;
+    if (!nonDeleteMutations.empty() &&
+        std::all_of(nonDeleteMutations.begin(), nonDeleteMutations.end(),
+                    [](const bng::compile::MutationSignature* mutation) {
+                        return mutation->kind == MutationKind::ChangeState;
                     })) {
-        for (const auto& mutation : direction.mutations) {
-            if (mutation.source.side != PatternSide::Reactant ||
-                !reactionCenter.insert(mutation.source).second) {
+        for (const bng::compile::MutationSignature* mutation : nonDeleteMutations) {
+            if (mutation->source.side != PatternSide::Reactant ||
+                !reactionCenter.insert(mutation->source).second) {
                 return SymmetricCompiledExpansionResult::NotApplicable;
             }
         }
-    } else if (direction.mutations.size() == 1 &&
-               (direction.mutations.front().kind == MutationKind::AddBond ||
-                direction.mutations.front().kind == MutationKind::DeleteBond)) {
+    } else if (nonDeleteMutations.size() == 1 &&
+               (nonDeleteMutations.front()->kind == MutationKind::AddBond ||
+                nonDeleteMutations.front()->kind == MutationKind::DeleteBond)) {
         centerKind = CenterKind::Bond;
-        const auto& mutation = direction.mutations.front();
-        if (mutation.source.side != PatternSide::Reactant ||
-            mutation.partner.side != PatternSide::Reactant) {
+        bondMutation = nonDeleteMutations.front();
+        if (bondMutation->source.side != PatternSide::Reactant ||
+            bondMutation->partner.side != PatternSide::Reactant) {
             return SymmetricCompiledExpansionResult::NotApplicable;
         }
-        reactionCenter.insert(mutation.source);
-        reactionCenter.insert(mutation.partner);
+        reactionCenter.insert(bondMutation->source);
+        reactionCenter.insert(bondMutation->partner);
+        if (sitesSymmetricForIntraBond(direction, bondMutation->source, bondMutation->partner)) {
+            symmetricIntraBond = std::make_pair(bondMutation->source, bondMutation->partner);
+        }
     } else {
         return SymmetricCompiledExpansionResult::NotApplicable;
     }
@@ -2357,11 +2545,22 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
     std::vector<ExpandedCompiledReactantPattern> expandedPatterns;
     bool hasDisjointSets = false;
     if (!buildExpandedCompiledReactants(
-            direction, system, reactionCenter, suggestedTraversalLimit,
-            expandedPatterns, hasDisjointSets, diagnostic)) {
+            direction, system, reactionCenter, symmetricIntraBond,
+            suggestedTraversalLimit, expandedPatterns, hasDisjointSets, diagnostic)) {
         return SymmetricCompiledExpansionResult::Error;
     }
 
+    // Compute exact reaction-center symmetry factor across the permutation orbit
+    // (L2-07-01: bivalent/multivalent homodimer binding & homodimer unbinding).
+    double orbitSymmetryFactor = 1.0;
+    if (!hasModifier(rule, ModifierKind::TotalRate)) {
+        orbitSymmetryFactor *= direction.wholeReactantPermutationFactor();
+        if (bondMutation != nullptr && isSymmetricTwoMoleculeUnbinding(direction, *bondMutation)) {
+            orbitSymmetryFactor *= 0.5;
+        }
+    }
+
+    const std::map<PatternMoleculeRef, std::size_t, MoleculeRefLess> emptyAdded;
     std::vector<std::size_t> selected(expandedPatterns.size(), 0);
     std::size_t reactionOrdinal = 0;
     std::function<bool(std::size_t)> addCombination = [&](std::size_t patternIndex) {
@@ -2388,10 +2587,63 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
             templates.push_back(build);
         }
         auto* transformations = new NFcore::TransformationSet(roots);
+        bool localDisjointSets = hasDisjointSets;
         transformations->setComplexBookkeeping(
-            blockSameComplexBinding || hasDisjointSets);
+            blockSameComplexBinding || localDisjointSets);
         transformations->setNumProductPatterns(
             static_cast<unsigned int>(direction.productPatterns.size()));
+        if (orbitSymmetryFactor != 1.0) {
+            transformations->setSymmetryFactor(orbitSymmetryFactor);
+        }
+
+        if (!addFilters(direction, system, *transformations, roots, templates,
+                        moleculeMappings, emptyAdded, localDisjointSets,
+                        suggestedTraversalLimit, diagnostic)) {
+            if (diagnostic == "__BNG_STATIC_PRODUCT_FILTER_REJECT__") {
+                diagnostic.clear();
+                delete transformations;
+                return true;
+            }
+            delete transformations;
+            return false;
+        }
+        transformations->setComplexBookkeeping(
+            blockSameComplexBinding || localDisjointSets);
+
+        if (blockSameComplexBinding &&
+            !registerProductMolecularity(direction, moleculeMappings, templates, *transformations)) {
+            diagnostic = "could not register product molecularity constraints";
+            delete transformations;
+            return false;
+        }
+
+        // Compartment transport (including MoveConnected) on symmetric rules (L2-07-12).
+        for (const auto& [productRef, reactantRef] : moleculeMappings) {
+            const auto* productMolecule = referencedMolecule(direction, productRef);
+            const auto* reactantMolecule = referencedMolecule(direction, reactantRef);
+            const auto* productPattern = referencedPattern(direction, PatternSide::Product, productRef.patternIndex);
+            const auto* reactantPattern = referencedPattern(direction, PatternSide::Reactant, reactantRef.patternIndex);
+            if (productMolecule == nullptr || reactantMolecule == nullptr ||
+                productPattern == nullptr || reactantPattern == nullptr) {
+                diagnostic = "molecule mapping is outside the compiled direction";
+                delete transformations;
+                return false;
+            }
+            const auto destinationName = compartmentName(model, *productPattern, *productMolecule);
+            const auto sourceName = compartmentName(model, *reactantPattern, *reactantMolecule);
+            if (destinationName.empty() || destinationName == sourceName) continue;
+            auto* destination = resolveCompartment(system, destinationName, diagnostic);
+            if (destination == nullptr) { delete transformations; return false; }
+            NFcore::TemplateMolecule* target = nullptr;
+            if (!templateForRef(reactantRef, templates, target, diagnostic) ||
+                !transformations->addMoveTransform(
+                    target, destination, hasModifier(rule, ModifierKind::MoveConnected))) {
+                if (diagnostic.empty()) diagnostic = "could not lower compartment transport";
+                delete transformations;
+                return false;
+            }
+            system.setUsingComplex(true);
+        }
 
         const auto runtimeComponent = [&](const PatternSiteRef& ref,
                                           NFcore::TemplateMolecule*& molecule,
@@ -2417,23 +2669,23 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
 
         bool applied = true;
         if (centerKind == CenterKind::State) {
-            for (const auto& mutation : direction.mutations) {
+            for (const bng::compile::MutationSignature* mutation : nonDeleteMutations) {
                 NFcore::TemplateMolecule* target = nullptr;
                 std::string component;
-                if (!runtimeComponent(mutation.source, target, component)) {
+                if (!runtimeComponent(mutation->source, target, component)) {
                     applied = false;
                     break;
                 }
                 try {
-                    if (mutation.newState == "PLUS") {
+                    if (mutation->newState == "PLUS") {
                         applied = transformations->addIncrementStateTransform(
                             target, component);
-                    } else if (mutation.newState == "MINUS") {
+                    } else if (mutation->newState == "MINUS") {
                         applied = transformations->addDecrementStateTransform(
                             target, component);
                     } else {
                         applied = transformations->addStateChangeTransform(
-                            target, component, mutation.newState);
+                            target, component, mutation->newState);
                     }
                 } catch (const std::exception& error) {
                     diagnostic = error.what();
@@ -2442,18 +2694,21 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
                 if (!applied) break;
             }
         } else {
-            const auto& mutation = direction.mutations.front();
             NFcore::TemplateMolecule* lhs = nullptr;
             NFcore::TemplateMolecule* rhs = nullptr;
             std::string lhsName, rhsName;
-            if (!runtimeComponent(mutation.source, lhs, lhsName) ||
-                !runtimeComponent(mutation.partner, rhs, rhsName)) {
+            if (bondMutation->kind == MutationKind::DeleteBond &&
+                (wholeSpeciesDeletion(bondMutation->source.patternIndex) ||
+                 wholeSpeciesDeletion(bondMutation->partner.patternIndex))) {
+                applied = true;
+            } else if (!runtimeComponent(bondMutation->source, lhs, lhsName) ||
+                       !runtimeComponent(bondMutation->partner, rhs, rhsName)) {
                 applied = false;
             } else {
                 try {
                     const auto [separates, staysConnected] =
-                        unbindingProductRelation(moleculeMappings, mutation.source, mutation.partner);
-                    applied = mutation.kind == MutationKind::AddBond
+                        unbindingProductRelation(moleculeMappings, bondMutation->source, bondMutation->partner);
+                    applied = bondMutation->kind == MutationKind::AddBond
                         ? transformations->addBindingTransform(
                               lhs, lhsName, rhs, rhsName)
                         : transformations->addUnbindingTransform(
@@ -2461,6 +2716,31 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
                 } catch (const std::exception& error) {
                     diagnostic = error.what();
                     applied = false;
+                }
+            }
+        }
+        if (applied && !deleteMutations.empty()) {
+            std::vector<bool> deletedPattern(templates.size(), false);
+            for (const bng::compile::MutationSignature* mutation : deleteMutations) {
+                NFcore::TemplateMolecule* target = nullptr;
+                if (!templateForRef(mutation->molecule, templates, target, diagnostic)) {
+                    applied = false;
+                    break;
+                }
+                const auto pIdx = mutation->molecule.patternIndex;
+                const bool wholeSpecies = wholeSpeciesDeletion(pIdx);
+                if (wholeSpecies && deletedPattern.at(pIdx)) continue;
+                if (wholeSpecies) deletedPattern.at(pIdx) = true;
+                const bool ok = target->getMoleculeType()->isPopulationType()
+                    ? transformations->addDecrementPopulation(target)
+                    : transformations->addDeleteMolecule(
+                        target,
+                        (removeIndividualMolecules && !wholeSpecies)
+                            ? NFcore::TransformationFactory::DELETE_MOLECULES
+                            : NFcore::TransformationFactory::COMPLETE_SPECIES_REMOVAL);
+                if (!ok) {
+                    applied = false;
+                    break;
                 }
             }
         }
@@ -2613,13 +2893,18 @@ bool lowerDirection(const CompiledModel& model,
                                 : new NFcore::TransformationSet(roots, addTemplates);
     transformations->setComplexBookkeeping(blockSameComplexBinding || hasDisjointSets);
     transformations->setNumProductPatterns(static_cast<unsigned int>(direction.productPatterns.size()));
-    const double permutationFactor = rule.modifiers().empty()
+    const double permutationFactor = !hasModifier(rule, ModifierKind::TotalRate)
         ? direction.wholeReactantPermutationFactor() : 1.0;
     if (permutationFactor != 1.0) transformations->setSymmetryFactor(permutationFactor);
     for (auto* creator : creators)
         if (!transformations->addAddMolecule(creator)) { delete transformations; return false; }
 
-    if (!addFilters(direction, system, *transformations, roots, hasDisjointSets,
+    MoleculeMap moleculeMappings;
+    SiteMap siteMappings;
+    directionMappings(rule, reverse, moleculeMappings, siteMappings);
+
+    if (!addFilters(direction, system, *transformations, roots, templates,
+                    moleculeMappings, added, hasDisjointSets,
                     suggestedTraversalLimit, diagnostic)) {
         if (diagnostic == "__BNG_STATIC_PRODUCT_FILTER_REJECT__") {
             delete transformations;
@@ -2628,10 +2913,6 @@ bool lowerDirection(const CompiledModel& model,
         delete transformations; return false;
     }
     transformations->setComplexBookkeeping(blockSameComplexBinding || hasDisjointSets);
-
-    MoleculeMap moleculeMappings;
-    SiteMap siteMappings;
-    directionMappings(rule, reverse, moleculeMappings, siteMappings);
 
     if (blockSameComplexBinding &&
         !registerProductMolecularity(direction, moleculeMappings, templates, *transformations)) {

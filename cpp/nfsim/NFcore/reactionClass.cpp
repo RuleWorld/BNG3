@@ -251,7 +251,7 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 				cout<<"Make sure that is correct."<<endl;
 
 				cout<<endl;
-				baseRate = baseRate*0.5;  //We have to correct the rate to get the proper factor
+				this->baseRate *= 0.5;  //We have to correct the rate to get the proper factor
 				isDimerStyle=true;
 			}
 		}
@@ -263,7 +263,7 @@ ReactionClass::ReactionClass(string name, double baseRate, string baseRateParame
 				cout<<"Warning! You have an unbinding rxn (" << name << ") that is symmetric."<<endl;
 				cout<<"Make sure that is correct."<<endl;
 				cout<<endl;
-				baseRate = baseRate*0.5;  //We have to correct the rate to get the proper factor
+				this->baseRate *= 0.5;  //We have to correct the rate to get the proper factor
 				isDimerStyle=true;
 			}
 		}
@@ -820,6 +820,13 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		}
 	}
 
+	// Check product-side filters (include_products / exclude_products) dynamically
+	// against the transformed product complexes without mutating live system state.
+	if (!transformationSet->checkProductFilters(mappingSet)) {
+		++(System::NULL_EVENT_COUNTER);
+		return string("");
+	}
+
 	// BioNetGen counts a reactant the rule deletes as a whole species, or one
 	// marked MatchOnce, once per complex, however many matches the complex
 	// holds (the rule's symmetry factor, in baseRate, still applies).  The
@@ -848,8 +855,8 @@ string ReactionClass::fire(double random_A_number, bool track) {
 					<<"), but a complex"<<endl;
 				cerr<<"  holds "<<matches<<" matches of that pattern.  NFsim counts each match, and the law is"<<endl;
 				cerr<<"  not linear in that count, so it cannot be corrected as the rule fires.  Simulate"<<endl;
-				cerr<<"  the network BioNetGen generates for this model instead.  quitting."<<endl;
-				exit(1);
+				cerr<<"  the network BioNetGen generates for this model instead."<<endl;
+				throw std::runtime_error("Michaelis-Menten rule '" + name + "' cannot thin MatchOnce/whole-species deletion across multi-match complex");
 			}
 			if (system->getRNG().random_int(0, matches) != 0) {
 				++(System::NULL_EVENT_COUNTER);

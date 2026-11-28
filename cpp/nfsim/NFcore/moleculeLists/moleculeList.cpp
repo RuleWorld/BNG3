@@ -1,4 +1,7 @@
 #include "moleculeList.hh"
+#include <limits>
+#include <stdexcept>
+#include <string>
 
 
 using namespace NFcore;
@@ -50,13 +53,6 @@ int MoleculeList::create(Molecule *&m)
 	//Check if we are going to exceed capacity
 	if(n_molecules>=capacity)
 	{
-		int newCapacity;
-		if(capacity>400000) {
-			newCapacity = capacity+50000;
-		} else {
-			newCapacity=capacity*2;
-		}
-
 		if(capacity>finalCapacity && finalCapacity!=MoleculeList::NO_LIMIT) {
 			cout.flush();
 			cerr<<"\n\nError in Simulation!  Creating space for "<<capacity;
@@ -66,7 +62,23 @@ int MoleculeList::create(Molecule *&m)
 			cerr<<"  If you need \nto have more molecules, rerun with the -gml [int] flag \nto increase the limit.";
 			cerr<<"  For instance, to increase the limit \nto 1 million, write: -gml 1000000.\n\n";
 			cerr<<"Better luck next time!"<<endl;
-			exit(1);
+			throw std::runtime_error(
+				"NFsim molecule limit (-gml " + std::to_string(finalCapacity) +
+				") exceeded for MoleculeType '" + mt->getName() +
+				"' (requested capacity " + std::to_string(capacity) + ")");
+		}
+
+		int newCapacity;
+		if(capacity>400000) {
+			if (capacity > std::numeric_limits<int>::max() - 50000) {
+				throw std::runtime_error("MoleculeList capacity overflow for MoleculeType '" + mt->getName() + "'");
+			}
+			newCapacity = capacity+50000;
+		} else {
+			if (capacity > std::numeric_limits<int>::max() / 2) {
+				throw std::runtime_error("MoleculeList capacity overflow for MoleculeType '" + mt->getName() + "'");
+			}
+			newCapacity=capacity*2;
 		}
 
 		//Copy everything over to new arrays that are double the size
@@ -158,7 +170,7 @@ void MoleculeList::removeLast()
 {
 	if(n_molecules<=0) {
 		cerr<<"Trying to remove the last element from an empty MoleculeList!!"<<endl;
-		exit(1);
+		throw std::runtime_error("MoleculeList::removeLast called on empty list");
 	}
 
 	n_molecules--;

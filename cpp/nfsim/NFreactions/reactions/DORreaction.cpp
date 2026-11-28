@@ -177,6 +177,9 @@ DORRxnClass::DORRxnClass(
 	//is reevaluated on a molecule, the molecule knows to update this reaction.
 	//This is only necessary for the DOR reactant.
 	cf->addTypeIMoleculeDependency( reactantTemplates[DORreactantIndex]->getMoleculeType() );
+	if (cf != nullptr && s != nullptr) {
+		cf->setGlobalObservableDependency(this, s);
+	}
 
 }
 
@@ -705,6 +708,14 @@ double DORRxnClass::evaluateLocalFunctions(MappingSet *ms)
 
 double DORRxnClass::update_a() {
 	refreshTimeDependentLocalFunctions();
+	if (globalObsDirty) {
+		globalObsDirty = false;
+		for (int i = 0; i < reactantTree->size(); ++i) {
+			MappingSet *ms = reactantTree->getMappingSetByIndex(static_cast<unsigned int>(i));
+			if (ms == nullptr) continue;
+			reactantTree->updateValue(ms->getId(), evaluateLocalFunctions(ms));
+		}
+	}
 	if (useRuleMonkey) {
 		a = exactRuleMonkey_a();
 		return a;
@@ -2204,6 +2215,12 @@ DOR2RxnClass::DOR2RxnClass(
 	//This is only necessary for the DOR reactants.
 	cf1->addTypeIMoleculeDependency( reactantTemplates[DORreactantIndex1]->getMoleculeType() );
 	cf2->addTypeIMoleculeDependency( reactantTemplates[DORreactantIndex2]->getMoleculeType() );
+	if (cf1 != nullptr && s != nullptr) {
+		cf1->setGlobalObservableDependency(this, s);
+	}
+	if (cf2 != nullptr && s != nullptr) {
+		cf2->setGlobalObservableDependency(this, s);
+	}
 
 }
 
@@ -2514,6 +2531,19 @@ double DOR2RxnClass::evaluateLocalFunctions2(MappingSet *ms)
 
 double DOR2RxnClass::update_a() {
 	refreshTimeDependentLocalFunctions();
+	if (globalObsDirty) {
+		globalObsDirty = false;
+		for (int i = 0; i < reactantTree1->size(); ++i) {
+			MappingSet *ms = reactantTree1->getMappingSetByIndex(static_cast<unsigned int>(i));
+			if (ms == nullptr) continue;
+			reactantTree1->updateValue(ms->getId(), evaluateLocalFunctions1(ms));
+		}
+		for (int i = 0; i < reactantTree2->size(); ++i) {
+			MappingSet *ms = reactantTree2->getMappingSetByIndex(static_cast<unsigned int>(i));
+			if (ms == nullptr) continue;
+			reactantTree2->updateValue(ms->getId(), evaluateLocalFunctions2(ms));
+		}
+	}
 	if (useRuleMonkey) {
 		a = exactRuleMonkey_a();
 		return a;

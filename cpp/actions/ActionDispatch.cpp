@@ -2923,8 +2923,8 @@ void runSimulation(
         throw std::runtime_error(
             "max_step, steady_state, and sparse require an ODE simulation method");
     }
-    if (!isOdeMethod && opts.method != "ssa" && !opts.stopIf.empty()) {
-        throw std::runtime_error("stop_if requires an ODE or SSA simulation method");
+    if (!isOdeMethod && opts.method != "ssa" && opts.method != "psa" && opts.method != "pla" && !opts.stopIf.empty()) {
+        throw std::runtime_error("stop_if requires an ODE, SSA, PSA, or PLA simulation method");
     }
     if (!isOdeMethod && opts.method != "ssa" && hasSampleTimes) {
         throw std::runtime_error(

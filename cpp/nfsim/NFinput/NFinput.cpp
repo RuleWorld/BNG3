@@ -2724,8 +2724,15 @@ bool validateXmlProductFilters(
 				}
 				const bool contains = productPatternContainsMolecule(
 						pProductPattern, moleculeName);
-				if ((include && !contains) || (!include && contains)) {
-					passes = false;
+				if (contains) {
+					if (!include) {
+						passes = false;
+					}
+				} else {
+					diagnostic =
+						"product filter requires dynamic product-complex evaluation "
+						"not available on legacy XML fallback";
+					return false;
 				}
 			}
 		}

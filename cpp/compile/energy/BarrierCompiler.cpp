@@ -284,6 +284,9 @@ bool compileBarrierCenter(
             diagnostic = "barrier state transition does not change the state";
             return false;
         }
+        if (!validateUnconditionalBarrierTransition(transition, diagnostic)) {
+            return false;
+        }
         key = ReactionCenterKey::stateChange(moleculeType, componentName, fromState, toState);
         return true;
     }
@@ -299,6 +302,9 @@ bool compileBarrierCenter(
         std::string stateB;
         if (!resolveComponent(reactants, operation.source, typeA, nameA, stateA, diagnostic) ||
             !resolveComponent(reactants, operation.partner, typeB, nameB, stateB, diagnostic)) {
+            return false;
+        }
+        if (!validateUnconditionalBarrierTransition(transition, diagnostic)) {
             return false;
         }
         key = ReactionCenterKey::binding(typeA, nameA, typeB, nameB);

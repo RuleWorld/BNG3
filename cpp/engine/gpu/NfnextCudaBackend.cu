@@ -688,6 +688,69 @@ __device__ bool matchObsTermFromRootCuda(
     return true;
 }
 
+__device__ bool areInSameComplexCuda(
+    std::uint32_t pBase,
+    std::uint32_t maxSites,
+    std::int32_t mA,
+    std::int32_t mB,
+    std::int32_t ignoreMolA,
+    std::int32_t ignoreSiteA,
+    std::int32_t ignoreMolB,
+    std::int32_t ignoreSiteB,
+    const std::uint32_t* __restrict__ typeSiteCounts,
+    const std::int8_t* __restrict__ alive,
+    const std::int32_t* __restrict__ molType,
+    const std::int32_t* __restrict__ siteBondMol,
+    bool& overflow)
+{
+    if (mA == mB) return true;
+    if (mA < 0 || mB < 0) return false;
+    const std::uint32_t scA =
+        typeSiteCounts[static_cast<std::uint32_t>(molType[pBase + static_cast<std::uint32_t>(mA)])];
+    bool hasAnyBond = false;
+    for (std::uint32_t s = 0u; s < scA; ++s) {
+        if ((mA == ignoreMolA && static_cast<std::int32_t>(s) == ignoreSiteA) ||
+            (mA == ignoreMolB && static_cast<std::int32_t>(s) == ignoreSiteB)) {
+            continue;
+        }
+        const std::int32_t p =
+            siteBondMol[(pBase + static_cast<std::uint32_t>(mA)) * maxSites + s];
+        if (p == mB) return true;
+        if (p >= 0 && alive[pBase + static_cast<std::uint32_t>(p)] != 0) hasAnyBond = true;
+    }
+    if (!hasAnyBond) return false;
+    std::int32_t q[64];
+    std::uint32_t head = 0u, tail = 0u;
+    q[tail++] = mA;
+    while (head < tail) {
+        const std::int32_t cur = q[head++];
+        const std::uint32_t sc = typeSiteCounts[static_cast<std::uint32_t>(
+            molType[pBase + static_cast<std::uint32_t>(cur)])];
+        for (std::uint32_t s = 0u; s < sc; ++s) {
+            if ((cur == ignoreMolA && static_cast<std::int32_t>(s) == ignoreSiteA) ||
+                (cur == ignoreMolB && static_cast<std::int32_t>(s) == ignoreSiteB)) {
+                continue;
+            }
+            const std::int32_t p =
+                siteBondMol[(pBase + static_cast<std::uint32_t>(cur)) * maxSites + s];
+            if (p < 0 || alive[pBase + static_cast<std::uint32_t>(p)] == 0) continue;
+            if (p == mB) return true;
+            bool seen = false;
+            for (std::uint32_t k = 0u; k < tail; ++k) {
+                if (q[k] == p) { seen = true; break; }
+            }
+            if (!seen) {
+                if (tail >= 64u) {
+                    overflow = true;
+                    return false;
+                }
+                q[tail++] = p;
+            }
+        }
+    }
+    return false;
+}
+
 __device__ float evalObservableCuda(
     std::uint32_t pBase,
     std::uint32_t obsIdx,
@@ -704,7 +767,8 @@ __device__ float evalObservableCuda(
     const std::int32_t* __restrict__ molType,
     const std::int32_t* __restrict__ siteState,
     const std::int32_t* __restrict__ siteBondMol,
-    const std::int32_t* __restrict__ siteBondSite)
+    const std::int32_t* __restrict__ siteBondSite,
+    bool& bfsOverflow)
 {
     const GpuObsDef obs = observables[obsIdx];
     std::uint32_t total = 0u;
@@ -726,24 +790,60 @@ __device__ float evalObservableCuda(
             total += matches * term.weight;
         }
     } else if (obs.termCount > 0u) {
-        const std::uint32_t t0 =
-            static_cast<std::uint32_t>(obsNodes[obsTerms[obs.termOffset].nodeOffset].molType);
-        const std::uint32_t start = typeOffsets[t0];
-        const std::uint32_t end = start + typeCaps[t0];
-        for (std::uint32_t m = start; m < end; ++m) {
+        for (std::uint32_t m = 0u; m < params.totalCapacity; ++m) {
             if (alive[pBase + m] == 0) continue;
-            bool matchedAny = false;
-            for (std::uint32_t ti = 0; ti < obs.termCount; ++ti) {
-                if (matchObsTermFromRootCuda(
-                        pBase, params.maxSites, static_cast<std::int32_t>(m),
-                        obsTerms[obs.termOffset + ti],
-                        obsNodes, obsBonds, constraints, typeSiteCounts,
-                        alive, molType, siteState, siteBondMol, siteBondSite, true)) {
-                    matchedAny = true;
-                    break;
+            std::int32_t comp[64];
+            std::uint32_t head = 0u, tail = 0u;
+            comp[tail++] = static_cast<std::int32_t>(m);
+            bool isRoot = true;
+            while (head < tail && isRoot) {
+                const std::int32_t cur = comp[head++];
+                const std::uint32_t sc = typeSiteCounts[static_cast<std::uint32_t>(
+                    molType[pBase + static_cast<std::uint32_t>(cur)])];
+                for (std::uint32_t s = 0u; s < sc; ++s) {
+                    const std::int32_t p =
+                        siteBondMol[(pBase + static_cast<std::uint32_t>(cur)) * params.maxSites + s];
+                    if (p < 0 || alive[pBase + static_cast<std::uint32_t>(p)] == 0) continue;
+                    if (p < static_cast<std::int32_t>(m)) {
+                        isRoot = false;
+                        break;
+                    }
+                    bool seen = false;
+                    for (std::uint32_t k = 0u; k < tail; ++k) {
+                        if (comp[k] == p) { seen = true; break; }
+                    }
+                    if (!seen) {
+                        if (tail >= 64u) {
+                            bfsOverflow = true;
+                            return 0.0f;
+                        }
+                        comp[tail++] = p;
+                    }
                 }
             }
-            if (matchedAny) ++total;
+            if (!isRoot) continue;
+            std::uint32_t ti = 0u;
+            while (ti < obs.termCount) {
+                const std::uint32_t groupId = obsTerms[obs.termOffset + ti].pad;
+                bool groupMatched = false;
+                while (ti < obs.termCount && obsTerms[obs.termOffset + ti].pad == groupId) {
+                    if (!groupMatched) {
+                        const GpuObsTermDef term = obsTerms[obs.termOffset + ti];
+                        for (std::uint32_t ci = 0u; ci < tail; ++ci) {
+                            if (matchObsTermFromRootCuda(
+                                    pBase, params.maxSites, comp[ci], term,
+                                    obsNodes, obsBonds, constraints, typeSiteCounts,
+                                    alive, molType, siteState, siteBondMol, siteBondSite,
+                                    false)) {
+                                groupMatched = true;
+                                break;
+                            }
+                        }
+                    }
+                    ++ti;
+                }
+                if (groupMatched) ++total;
+            }
         }
     }
     return static_cast<float>(total);
@@ -763,54 +863,78 @@ __device__ float evalVmCuda(
         const GpuVmInstr ins = vmCode[vmOffset + pc++];
         const std::uint8_t op = ins.op;
         if (op == 0u) {
+            if (top >= 32u) { ok = false; return 0.0f; }
             stack[top++] = ins.value;
         } else if (op == 1u) {
+            if (top >= 32u || ins.index >= 64u) { ok = false; return 0.0f; }
             stack[top++] = obsValues[ins.index];
         } else if (op == 2u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] += b;
         } else if (op == 3u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] -= b;
         } else if (op == 4u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] *= b;
         } else if (op == 5u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top];
             if (b == 0.0f) { ok = false; return 0.0f; }
             stack[top - 1u] /= b;
         } else if (op == 6u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = powf(stack[top - 1u], b);
         } else if (op == 7u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = -stack[top - 1u];
         } else if (op == 8u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = expf(stack[top - 1u]);
         } else if (op == 9u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = logf(stack[top - 1u]);
         } else if (op == 10u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = sqrtf(stack[top - 1u]);
         } else if (op == 11u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = sinf(stack[top - 1u]);
         } else if (op == 12u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = cosf(stack[top - 1u]);
         } else if (op == 13u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = tanf(stack[top - 1u]);
         } else if (op == 14u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             stack[top - 1u] = fabsf(stack[top - 1u]);
         } else if (op == 15u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = fminf(stack[top - 1u], b);
         } else if (op == 16u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = fmaxf(stack[top - 1u], b);
         } else if (op == 17u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] < b) ? 1.0f : 0.0f;
         } else if (op == 18u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] <= b) ? 1.0f : 0.0f;
         } else if (op == 19u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] > b) ? 1.0f : 0.0f;
         } else if (op == 20u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] >= b) ? 1.0f : 0.0f;
         } else if (op == 21u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] == b) ? 1.0f : 0.0f;
         } else if (op == 22u) {
+            if (top < 2u) { ok = false; return 0.0f; }
             float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] != b) ? 1.0f : 0.0f;
         } else if (op == 23u) {
+            if (top < 1u) { ok = false; return 0.0f; }
             if (stack[--top] == 0.0f) pc = ins.index;
         } else if (op == 24u) {
             pc = ins.index;
@@ -823,12 +947,17 @@ __device__ float evalVmCuda(
     return stack[0];
 }
 
-__device__ void addTouchedCuda(std::int32_t* touched, std::uint32_t& touchedCount, std::int32_t mol) {
+__device__ void addTouchedCuda(
+    std::int32_t* touched, std::uint32_t& touchedCount, std::int32_t mol, bool& overflow) {
     if (mol < 0) return;
     for (std::uint32_t i = 0; i < touchedCount; ++i) {
         if (touched[i] == mol) return;
     }
-    if (touchedCount < 32u) touched[touchedCount++] = mol;
+    if (touchedCount < 64u) {
+        touched[touchedCount++] = mol;
+    } else {
+        overflow = true;
+    }
 }
 
 __global__ void nfnextGraphBatchKernel(
@@ -903,7 +1032,7 @@ __global__ void nfnextGraphBatchKernel(
     }
 
     float ruleProps[256];
-    float obsValues[32];
+    float obsValues[64];
     unsigned long long events = 0ULL;
     float time = 0.0f;
 
@@ -911,11 +1040,18 @@ __global__ void nfnextGraphBatchKernel(
         const float targetTime = sampleTimes[outIdx];
         for (;;) {
             if (hasDynamicRules) {
-                for (std::uint32_t oi = 0; oi < params.numObservables && oi < 32u; ++oi) {
+                for (std::uint32_t oi = 0; oi < params.numObservables && oi < 64u; ++oi) {
+                    bool bfsOverflow = false;
                     obsValues[oi] = evalObservableCuda(
                         pBase, oi, params, typeOffsets, typeCaps, typeSiteCounts,
                         constraints, obsNodes, obsBonds, obsTerms, observables,
-                        alive, molType, siteState, siteBondMol, siteBondSite);
+                        alive, molType, siteState, siteBondMol, siteBondSite,
+                        bfsOverflow);
+                    if (bfsOverflow) {
+                        errorFlags[trajectory] = 4u;
+                        eventCounts[trajectory] = events;
+                        return;
+                    }
                 }
             }
             float total = 0.0f;
@@ -940,6 +1076,9 @@ __global__ void nfnextGraphBatchKernel(
                 } else {
                     const std::uint32_t c1 = mlCounts[trajectory * params.numMatchLists + rule.matchList1];
                     countF = static_cast<float>(c0) * static_cast<float>(c1);
+                }
+                if ((rule.pad0 & 0x04u) != 0u) {
+                    countF *= 0.5f;
                 }
                 const float prop = (rule.isTotalRate != 0u)
                     ? ((countF > 0.0f) ? rate : 0.0f)
@@ -1003,6 +1142,34 @@ __global__ void nfnextGraphBatchKernel(
                                        static_cast<std::uint32_t>(ml0.bondSite0)];
             }
 
+            if ((rule.pad0 & 0x01u) != 0u && rule.isTwoComponent != 0u) {
+                bool bfsOverflow = false;
+                const bool same = areInSameComplexCuda(
+                    pBase, params.maxSites, nodes[0], nodes[1],
+                    -1, -1, -1, -1,
+                    typeSiteCounts, alive, molType, siteBondMol, bfsOverflow);
+                if (bfsOverflow) {
+                    errorFlags[trajectory] = 4u;
+                    eventCounts[trajectory] = events;
+                    return;
+                }
+                if (same) continue;
+            }
+            if ((rule.pad0 & 0x02u) != 0u && ml0.partnerType >= 0) {
+                bool bfsOverflow = false;
+                const bool stillSame = areInSameComplexCuda(
+                    pBase, params.maxSites, nodes[0], nodes[1],
+                    nodes[0], static_cast<std::int32_t>(ml0.bondSite0),
+                    nodes[1], static_cast<std::int32_t>(ml0.bondSite1),
+                    typeSiteCounts, alive, molType, siteBondMol, bfsOverflow);
+                if (bfsOverflow) {
+                    errorFlags[trajectory] = 4u;
+                    eventCounts[trajectory] = events;
+                    return;
+                }
+                if (stillSame) continue;
+            }
+
             if (rule.filterCount > 0u) {
                 bool filterPassed = true;
                 for (std::uint32_t fi = 0u; fi < static_cast<std::uint32_t>(rule.filterCount); ++fi) {
@@ -1055,17 +1222,19 @@ __global__ void nfnextGraphBatchKernel(
                 if (!filterPassed) continue;
             }
 
-            std::int32_t touched[32];
+            std::int32_t touched[64];
             std::uint32_t touchedCount = 0u;
+            bool touchedOverflow = false;
             for (std::uint32_t ni = 0; ni < 2u; ++ni) {
                 if (nodes[ni] < 0) continue;
-                addTouchedCuda(touched, touchedCount, nodes[ni]);
+                addTouchedCuda(touched, touchedCount, nodes[ni], touchedOverflow);
                 const std::uint32_t sc =
                     typeSiteCounts[static_cast<std::uint32_t>(molType[pBase + static_cast<std::uint32_t>(nodes[ni])])];
                 for (std::uint32_t s = 0; s < sc; ++s) {
                     addTouchedCuda(
                         touched, touchedCount,
-                        siteBondMol[(pBase + static_cast<std::uint32_t>(nodes[ni])) * params.maxSites + s]);
+                        siteBondMol[(pBase + static_cast<std::uint32_t>(nodes[ni])) * params.maxSites + s],
+                        touchedOverflow);
                 }
             }
 
@@ -1093,7 +1262,7 @@ __global__ void nfnextGraphBatchKernel(
                         siteBondSite[sIdx] = -1;
                     }
                     nodes[act.targetNode] = slot;
-                    addTouchedCuda(touched, touchedCount, slot);
+                    addTouchedCuda(touched, touchedCount, slot, touchedOverflow);
                 }
             }
             for (std::uint32_t ai = 0; ai < rule.actionCount; ++ai) {
@@ -1138,7 +1307,16 @@ __global__ void nfnextGraphBatchKernel(
                                 static_cast<std::uint32_t>(ps);
                             siteBondMol[iP] = -1;
                             siteBondSite[iP] = -1;
-                            addTouchedCuda(touched, touchedCount, p);
+                            addTouchedCuda(touched, touchedCount, p, touchedOverflow);
+                            const std::uint32_t pSc = typeSiteCounts[static_cast<std::uint32_t>(
+                                molType[pBase + static_cast<std::uint32_t>(p)])];
+                            for (std::uint32_t ps2 = 0u; ps2 < pSc; ++ps2) {
+                                const std::int32_t p2 =
+                                    siteBondMol[(pBase + static_cast<std::uint32_t>(p)) * params.maxSites + ps2];
+                                if (p2 >= 0 && p2 != m) {
+                                    addTouchedCuda(touched, touchedCount, p2, touchedOverflow);
+                                }
+                            }
                         }
                         siteBondMol[iM] = -1;
                         siteBondSite[iM] = -1;
@@ -1151,7 +1329,7 @@ __global__ void nfnextGraphBatchKernel(
                     if (root >= 0 && alive[pBase + static_cast<std::uint32_t>(root)] != 0) {
                         dq[dqt++] = root;
                         alive[pBase + static_cast<std::uint32_t>(root)] = 0;
-                        addTouchedCuda(touched, touchedCount, root);
+                        addTouchedCuda(touched, touchedCount, root, touchedOverflow);
                         while (dqh < dqt) {
                             const std::int32_t cur = dq[dqh++];
                             const std::uint32_t sc = typeSiteCounts[static_cast<std::uint32_t>(
@@ -1177,13 +1355,18 @@ __global__ void nfnextGraphBatchKernel(
                                         }
                                         alive[pBase + static_cast<std::uint32_t>(p)] = 0;
                                         dq[dqt++] = p;
-                                        addTouchedCuda(touched, touchedCount, p);
+                                        addTouchedCuda(touched, touchedCount, p, touchedOverflow);
                                     }
                                 }
                             }
                         }
                     }
                 }
+            }
+            if (touchedOverflow) {
+                errorFlags[trajectory] = 4u;
+                eventCounts[trajectory] = events;
+                return;
             }
 
             for (std::uint32_t ti = 0; ti < touchedCount; ++ti) {
@@ -1199,10 +1382,17 @@ __global__ void nfnextGraphBatchKernel(
         }
 
         for (std::uint32_t oi = 0; oi < params.numObservables; ++oi) {
+            bool bfsOverflow = false;
             const float val = evalObservableCuda(
                 pBase, oi, params, typeOffsets, typeCaps, typeSiteCounts,
                 constraints, obsNodes, obsBonds, obsTerms, observables,
-                alive, molType, siteState, siteBondMol, siteBondSite);
+                alive, molType, siteState, siteBondMol, siteBondSite,
+                bfsOverflow);
+            if (bfsOverflow) {
+                errorFlags[trajectory] = 4u;
+                eventCounts[trajectory] = events;
+                return;
+            }
             const std::size_t outFlat =
                 (static_cast<std::size_t>(trajectory) * params.numOutputs + outIdx) *
                     params.numObservables +

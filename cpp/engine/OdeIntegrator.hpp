@@ -133,6 +133,7 @@ public:
         if (table.method == "step") {
             tfunFileStepKnots_.insert(
                 tfunFileStepKnots_.end(), table.times.begin(), table.times.end());
+            tfunFileStepKnotsByName_[name] = table.times;
         }
         tfunRegistry_.addTable(name, std::move(table));
     }
@@ -216,6 +217,24 @@ private:
     bool tIsUserSymbol_ = false;                                   // true if model declares param/obs/fn named 't'
     std::vector<double> tfunInlineStepKnots_;                      // knot times of inline method=>"step" tfuns
     std::vector<double> tfunFileStepKnots_;                        // knot times of file-backed method=>"step" tfuns
+    std::unordered_map<std::string, std::vector<double>> tfunFileStepKnotsByName_;
+    struct StateTfunStepSpec {
+        ast::Expression counter;
+        std::vector<double> inlineKnots;
+        std::string tableKey;
+        std::string tablePath;
+    };
+    std::vector<StateTfunStepSpec> stateTfunStepSpecs_;
+    struct StateTfunKnotRoot {
+        ast::Expression counter;
+        double knot = 0.0;
+    };
+    struct StateTfunSortedKnots {
+        ast::Expression counter;
+        std::vector<double> knots;
+    };
+    std::vector<StateTfunKnotRoot> stateTfunKnotRoots_;
+    std::vector<StateTfunSortedKnots> stateTfunSortedKnots_;
     const std::vector<double>* interventionPreState_ = nullptr;    // pre-intervention state on continue=>1
     std::vector<std::size_t> constantRxnIndices_;              // Fallback indices for small networks
     std::vector<CompiledConstantReaction> constantReactions_;  // Compact constant-rate reaction data
@@ -230,6 +249,8 @@ private:
     mutable std::vector<double> cvodePhysicalDerivatives_;
     std::vector<std::size_t> algebraicSpeciesIndices_;
     std::vector<ast::Expression> algebraicResiduals_;
+    bool algebraicRulesDependOnTime_ = false;
+    bool hasTimeDependentEventTrigger_ = false;
     std::vector<std::size_t> resultFunctionIndices_;                // zero-argument, user-visible, declaration order
 
     // One native event: the trigger that fires it, the delay between the
@@ -275,7 +296,8 @@ private:
     // true when the state changed.
     bool applyDueEvents(double time, std::vector<double>& state,
                         const std::vector<double>* continuousRates = nullptr,
-                        const std::vector<bool>* continuousSpecies = nullptr);
+                        const std::vector<bool>* continuousSpecies = nullptr,
+                        double algebraicTolerance = 0.0);
     double eventSideDerivative(const ast::Expression& expression, double time,
                                const double* state,
                                const std::vector<double>& derivatives) const;
@@ -421,6 +443,14 @@ private:
         return name == "time" || (name == "t" && !tIsUserSymbol_);
     }
     bool resolveTfunEntry(const std::string& tfunName, double value, double& out) const;
+    void scanExpressionDelaysAndTfun(const ast::Expression& root);
+    bool expressionDependsOnClock(const ast::Expression& expression) const;
+    void buildStateTfunKnotRoots();
+    double capTargetForStateTfun(double t, double target,
+                                 const std::vector<double>& state,
+                                 const std::vector<double>& derivatives,
+                                 bool justHitRoot,
+                                 bool& atKnot) const;
     std::vector<double> collectStepKnots(double tStart, double tEnd) const;
     void compile();
     void compileGroups();
@@ -445,7 +475,8 @@ private:
                                             double* rates,
                                             std::vector<double>& groupValues,
                                             bool failOnError = false,
-                                            bool discreteReactantCounts = false) const;
+                                            bool discreteReactantCounts = false,
+                                            bool preferLiveEventParameters = true) const;
     void updateGroups(const double* y, std::vector<double>& groupValues) const;
     void correctAlgebraicState(std::vector<double>& state, double time,
                                double tolerance) const;
@@ -458,7 +489,8 @@ private:
     double evaluateExpressionWithHistory(
         const ast::Expression& expression, double time,
         const double* state,
-        bool discreteReactantCounts = false) const;
+        bool discreteReactantCounts = false,
+        bool preferLiveEventParameters = true) const;
     // Same evaluation with the history parameters and observable snapshot
     // supplied by the caller.  updateFunctions evaluates many expressions
     // against one state and time, so hoisting that context out of the loop
@@ -468,7 +500,8 @@ private:
         const double* state,
         const std::unordered_map<std::string, double>& parameters,
         const std::vector<double>& groupValues,
-        bool discreteReactantCounts = false) const;
+        bool discreteReactantCounts = false,
+        bool preferLiveEventParameters = false) const;
     void recordHistoryPoint(double time, const std::vector<double>& state);
     void recordHistoryJump(double time, const std::vector<double>& state);
     double reactionFlux(const CompiledReaction& reaction,
@@ -480,7 +513,8 @@ private:
                           const std::vector<double>& state) const;
     bool steadyStateReached(const OdeOptions& options,
                             double time,
-                            const std::vector<double>& state) const;
+                            const std::vector<double>& state,
+                            const std::vector<double>* physicalDerivatives = nullptr) const;
 
     OdeResult integrateEuler(const OdeOptions& opts);
     OdeResult integrateRK4(const OdeOptions& opts);
