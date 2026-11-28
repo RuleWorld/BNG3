@@ -865,3 +865,41 @@ generate_network({overwrite=>1, check_iso=>0, max_iter=>4})
     _, net = _generate(bngl, tmp_path, "check_iso_zero", max_iter=4)
     assert net.num_species == 3
     assert net.num_reactions == 2
+
+
+def test_rulehub04_observable_engines_enforce_exact_bond_cardinality(tmp_path: Path):
+    """ODE, SSA, PSA, and PLA observable groups must reject !1 matching b!1!2."""
+    bngl = """
+begin model
+begin parameters
+  k 1.0
+end parameters
+begin molecule types
+  CDK(b)
+  Cyclin(b)
+  p21(b)
+end molecule types
+begin seed species
+  CDK(b!1).Cyclin(b!2!1).p21(b!2) 10
+  Cyclin(b!1).p21(b!1) 3
+end seed species
+begin observables
+  Molecules ExactSingleBond Cyclin(b!1).p21(b!1)
+  Molecules AnyBond Cyclin(b!+).p21(b!1)
+end observables
+begin reaction rules
+  CDK(b!1).Cyclin(b!2!1).p21(b!2) -> CDK(b!1).Cyclin(b!2!1).p21(b!2) k
+end reaction rules
+end model
+"""
+    path = tmp_path / "obs_bond_card.bngl"
+    path.write_text(bngl, encoding="utf-8")
+    model = bionetgen.load(str(path))
+    for method in ("ode", "ssa", "psa", "pla"):
+        kwargs = {"method": method, "t_end": 0.01, "n_steps": 1}
+        if method != "ode":
+            kwargs["seed"] = 7
+        res = model.simulate(**kwargs)
+        # Only Cyclin(b!1).p21(b!1) (count=3) has bond degree 1 on Cyclin(b);
+        # CDK.Cyclin(b!2!1).p21 (count=10) has degree 2 and must NOT match !1.
+        assert float(res.observables["ExactSingleBond"][0]) == pytest.approx(3.0), method

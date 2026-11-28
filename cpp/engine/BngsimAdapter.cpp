@@ -32,6 +32,7 @@
 #include "antlr4-runtime.h"
 #include "BNGLexer.h"
 #include "BNGParser.h"
+#include "core/PatternMatching.hpp"
 #include "core/Ullmann.hpp"
 #include "parser/BNGAstVisitor.hpp"
 #include "parser/PatternGraphBuilder.hpp"
@@ -458,35 +459,9 @@ std::vector<std::pair<int, double>> compileBngsimObservableEntries(
             }
 
             const auto& targetGraph = network.species.get(speciesIndex).getSpeciesGraph().getGraph();
-            BNGcore::UllmannSGIso matcher(pattern, targetGraph);
-            BNGcore::List<BNGcore::Map> maps;
-            matcher.find_maps(maps);
+            std::size_t matchCount = bng::core::countPatternMatches(pattern, targetGraph);
 
-            std::size_t matchCount = 0;
-            for (auto mapIt = maps.begin(); mapIt != maps.end(); ++mapIt) {
-                bool valid = true;
-                for (auto patternIt = pattern.begin(); patternIt != pattern.end(); ++patternIt) {
-                    auto* target = mapIt->mapf(*patternIt);
-                    if (!target || !((*patternIt)->get_state() == target->get_state())) {
-                        valid = false;
-                        break;
-                    }
-                    const bool patternIsMolecule = ((*patternIt)->in_degree() == 0);
-                    const bool targetIsMolecule = (target->in_degree() == 0);
-                    if (patternIsMolecule != targetIsMolecule) {
-                        valid = false;
-                        break;
-                    }
-                    if (patternIsMolecule && !(*patternIt)->get_compartment().empty() &&
-                        target->get_compartment() != (*patternIt)->get_compartment()) {
-                        valid = false;
-                        break;
-                    }
-                }
-                if (valid) ++matchCount;
-            }
-
-            if (hasQuantifier) {
+            if (hasQuantifier && observable.getType() == "Species") {
                 bool passes = false;
                 const int count = static_cast<int>(matchCount);
                 if (quantifier == ">") passes = count > quantifierThreshold;

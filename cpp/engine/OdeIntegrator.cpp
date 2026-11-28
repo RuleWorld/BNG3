@@ -33,6 +33,7 @@
 #include "ast/ReactionRule.hpp"
 #include "DelayedSemanticsGuard.hpp"
 #include "compile/CompiledRateLaw.hpp"
+#include "core/PatternMatching.hpp"
 #include "core/Ullmann.hpp"
 #include "io/NetWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -1875,36 +1876,11 @@ void OdeIntegrator::compileGroups() {
                     }
                 }
 
-                // Count matches (with node-level state and structure validation)
+                // Count matches using the shared BNGL pattern matcher (enforcing
+                // node states, structural roles, per-molecule compartments, and
+                // exact bond-cardinality semantics for !1 vs !+ vs !?).
                 const auto& targetGraph = network_.species.get(speciesIndex).getSpeciesGraph().getGraph();
-                BNGcore::UllmannSGIso matcher(pattern, targetGraph);
-                BNGcore::List<BNGcore::Map> maps;
-                matcher.find_maps(maps);
-
-                // Post-filter: verify each map respects node states, compartments,
-                // and structural roles (molecule vs component vs bond nodes).
-                // The Ullmann SGIso matches by type_name which may conflate molecule
-                // types and component types that share the same name (e.g., CDKN1A).
-                std::size_t matchCount = 0;
-                for (auto mapIt = maps.begin(); mapIt != maps.end(); ++mapIt) {
-                    bool valid = true;
-                    for (auto pnIt = pattern.begin(); pnIt != pattern.end(); ++pnIt) {
-                        auto* target = mapIt->mapf(*pnIt);
-                        if (!target) { valid = false; break; }
-                        // Check state compatibility
-                        if (!((*pnIt)->get_state() == target->get_state())) { valid = false; break; }
-                        // Check structural role: molecule nodes must map to molecule nodes
-                        bool patternIsMol = ((*pnIt)->in_degree() == 0);
-                        bool targetIsMol = (target->in_degree() == 0);
-                        if (patternIsMol != targetIsMol) { valid = false; break; }
-                        // Check per-molecule compartment
-                        if (patternIsMol) {
-                            const auto& pc = (*pnIt)->get_compartment();
-                            if (!pc.empty() && target->get_compartment() != pc) { valid = false; break; }
-                        }
-                    }
-                    if (valid) ++matchCount;
-                }
+                std::size_t matchCount = bng::core::countPatternMatches(pattern, targetGraph);
 
                 // Apply quantifier filter if present.
                 //

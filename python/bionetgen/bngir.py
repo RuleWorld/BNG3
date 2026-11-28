@@ -657,9 +657,12 @@ def _quote_action_value(value: Any) -> str:
 
 
 def _action_value(value: Any) -> str:
-    raw = str(value)
-    if (len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"') or re.fullmatch(
-        r"[A-Za-z0-9_+./:-]+", raw
+    raw = str(value).strip()
+    if (
+        (len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"')
+        or (len(raw) >= 2 and raw[0] == "{" and raw[-1] == "}")
+        or (len(raw) >= 2 and raw[0] == "[" and raw[-1] == "]")
+        or re.fullmatch(r"[A-Za-z0-9_+./:-]+", raw)
     ):
         return raw
     return _quote_action_value(raw)

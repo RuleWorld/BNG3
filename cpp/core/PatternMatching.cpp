@@ -33,6 +33,7 @@ bool embeddingRespectsBioNetGenSemantics(const BNGcore::PatternGraph& pattern,
     for (auto nodeIter = pattern.begin(); nodeIter != pattern.end(); ++nodeIter) {
         auto* target = map.mapf(*nodeIter);
         if (target == nullptr || !nodeCompatible(**nodeIter, *target)) return false;
+        if (isMoleculeNode(**nodeIter) != isMoleculeNode(*target)) return false;
 
         if (isMoleculeNode(**nodeIter)) {
             const auto& patternComp = (*nodeIter)->get_compartment();

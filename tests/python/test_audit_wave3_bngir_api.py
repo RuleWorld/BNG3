@@ -1159,3 +1159,36 @@ end model
     assert "k1 5.0" in written
     assert "delay=tau" in written
     assert "NonConsuming" in written
+
+
+def test_bngir_roundtrip_preserves_hash_and_list_action_arguments(tmp_path):
+    """from_bngir must not quote hash/list action args like max_stoich=>{A=>20}."""
+    path = tmp_path / "hash_action.bngl"
+    path.write_text(
+        """begin model
+begin parameters
+  k 1.0
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 5
+end seed species
+begin observables
+  Molecules Atot A()
+end observables
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+end model
+generate_network({overwrite=>1, max_stoich=>{A=>20}})
+simulate({method=>"ode", t_end=>1, n_steps=>5})
+""",
+        encoding="utf-8",
+    )
+    m = bionetgen.load(str(path))
+    ir = bionetgen.to_bngir(m)
+    m2 = bionetgen.from_bngir(ir)
+    assert bionetgen.semantic_equal(m, m2) is True
+    assert dict(m2.actions[0].arguments)["max_stoich"] == "{A=>20}"

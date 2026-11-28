@@ -21,6 +21,7 @@
 #include "ast/ModelFunctionEvaluator.hpp"
 #include "parser/BNGAstVisitor.hpp"
 #include "parser/PatternGraphBuilder.hpp"
+#include "core/PatternMatching.hpp"
 #include "core/Ullmann.hpp"
 #include "compile/CompiledRateLaw.hpp"
 #include "compile/TotalRate.hpp"
@@ -541,31 +542,7 @@ void PlaSimulator::compileGroups() {
 
                 std::size_t matchCount = 0;
                 if (compartmentMatches) {
-                    BNGcore::UllmannSGIso matcher(pattern, targetGraph);
-                    BNGcore::List<BNGcore::Map> maps;
-                    matcher.find_maps(maps);
-                    for (auto mapIt = maps.begin(); mapIt != maps.end(); ++mapIt) {
-                        bool valid = true;
-                        for (auto pnIt = pattern.begin(); pnIt != pattern.end(); ++pnIt) {
-                            auto* target = mapIt->mapf(*pnIt);
-                            if (!target) { valid = false; break; }
-                            if (!((*pnIt)->get_state() == target->get_state())) {
-                                valid = false;
-                                break;
-                            }
-                            const bool patternIsMol = ((*pnIt)->in_degree() == 0);
-                            const bool targetIsMol = (target->in_degree() == 0);
-                            if (patternIsMol != targetIsMol) { valid = false; break; }
-                            if (patternIsMol) {
-                                const auto& pc = (*pnIt)->get_compartment();
-                                if (!pc.empty() && target->get_compartment() != pc) {
-                                    valid = false;
-                                    break;
-                                }
-                            }
-                        }
-                        if (valid) ++matchCount;
-                    }
+                    matchCount = bng::core::countPatternMatches(pattern, targetGraph);
                 }
 
                 if (parsedPattern.hasQuantifier && observable.getType() == "Species") {
