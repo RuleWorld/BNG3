@@ -58,15 +58,19 @@ def _run_nfnext_ensemble(
 
 def _run_ode_final(source: str, obs_names: list[str], t_end: float) -> dict[str, float]:
     model = bionetgen.BioNetGenModel(cpp.parse_string(source))
-    res = model.simulate(method="ode", t_start=0.0, t_end=t_end, n_steps=20, rtol=1e-9, atol=1e-12)
+    res = model.simulate(
+        method="ode", t_start=0.0, t_end=t_end, n_steps=20, rtol=1e-9, atol=1e-12
+    )
     return {name: float(res.observables[name][-1]) for name in obs_names}
 
 
-def _assert_close_ensemble(mean: float, se: float, expected: float, z_max: float = 4.5, min_tol: float = 1.5):
+def _assert_close_ensemble(
+    mean: float, se: float, expected: float, z_max: float = 4.5, min_tol: float = 1.5
+):
     tol = max(z_max * se, min_tol)
-    assert abs(mean - expected) <= tol, (
-        f"ensemble mean {mean:.3f} +/- {se:.3f} deviates from expected {expected:.3f} (tol={tol:.3f})"
-    )
+    assert (
+        abs(mean - expected) <= tol
+    ), f"ensemble mean {mean:.3f} +/- {se:.3f} deviates from expected {expected:.3f} (tol={tol:.3f})"
 
 
 # 1. RULEHUB-05: Simultaneous DeleteBond + AddBond
@@ -153,7 +157,9 @@ end reaction rules
 end model
 """
     ode = _run_ode_final(bind_src, ["AB2", "Bfree"], t_end=2.0)
-    ens = _run_nfnext_ensemble(bind_src, ["AB2", "Bfree"], t_end=2.0, n_runs=16, seed_base=1100)
+    ens = _run_nfnext_ensemble(
+        bind_src, ["AB2", "Bfree"], t_end=2.0, n_runs=16, seed_base=1100
+    )
     assert ode["AB2"] > 30.0
     _assert_close_ensemble(ens["AB2"][0], ens["AB2"][1], ode["AB2"], min_tol=2.5)
     _assert_close_ensemble(ens["Bfree"][0], ens["Bfree"][1], ode["Bfree"], min_tol=2.5)
@@ -175,7 +181,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens_s = _run_nfnext_ensemble(state_src, ["A11", "P1"], t_end=2.0, n_runs=20, seed_base=1200)
+    ens_s = _run_nfnext_ensemble(
+        state_src, ["A11", "P1"], t_end=2.0, n_runs=20, seed_base=1200
+    )
     p = 1.0 - math.exp(-2.0)
     expected_a11 = 60.0 * p * p
     expected_p1 = 120.0 * p
@@ -226,11 +234,15 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens_o = _run_nfnext_ensemble(open_src, ["FreeB_A", "FreeB_D"], t_end=1.0, n_runs=20, seed_base=1300)
+    ens_o = _run_nfnext_ensemble(
+        open_src, ["FreeB_A", "FreeB_D"], t_end=1.0, n_runs=20, seed_base=1300
+    )
     # Each closed ring opens once at rate 3*0.5 = 1.5; once opened into linear trimer,
     # remaining bonds cannot break under '.' without disconnecting!
     expected_opened = 40.0 * (1.0 - math.exp(-1.5))
-    _assert_close_ensemble(ens_o["FreeB_A"][0], ens_o["FreeB_A"][1], expected_opened, min_tol=2.5)
+    _assert_close_ensemble(
+        ens_o["FreeB_A"][0], ens_o["FreeB_A"][1], expected_opened, min_tol=2.5
+    )
     # Linear dimer D-D starts with 1 free b per dimer (40 total) and must NEVER unbind under '.'.
     assert ens_o["FreeB_D"][0] == 40.0
 
@@ -306,8 +318,12 @@ end reaction rules
 end model
 """
     expected_closed = 60.0 * (1.0 - math.exp(-1.0))
-    ens_r = _run_nfnext_ensemble(ring_src, ["Closed"], t_end=2.0, n_runs=24, seed_base=1600)
-    _assert_close_ensemble(ens_r["Closed"][0], ens_r["Closed"][1], expected_closed, min_tol=2.5)
+    ens_r = _run_nfnext_ensemble(
+        ring_src, ["Closed"], t_end=2.0, n_runs=24, seed_base=1600
+    )
+    _assert_close_ensemble(
+        ens_r["Closed"][0], ens_r["Closed"][1], expected_closed, min_tol=2.5
+    )
 
     # (c) Pure-context symmetric catalyst (#87) vs asymmetric control
     cat_src = """begin model
@@ -334,7 +350,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens_c = _run_nfnext_ensemble(cat_src, ["A0", "B0"], t_end=2.0, n_runs=24, seed_base=1700)
+    ens_c = _run_nfnext_ensemble(
+        cat_src, ["A0", "B0"], t_end=2.0, n_runs=24, seed_base=1700
+    )
     _assert_close_ensemble(ens_c["A0"][0], ens_c["A0"][1], expected, min_tol=2.5)
     _assert_close_ensemble(ens_c["B0"][0], ens_c["B0"][1], expected, min_tol=2.5)
 
@@ -378,9 +396,15 @@ begin population maps
 end population maps
 end model
 """
-    ens_p = _run_nfnext_ensemble(popmap_src, ["AA_part", "AA_pop"], t_end=2.0, n_runs=24, seed_base=1900)
-    _assert_close_ensemble(ens_p["AA_part"][0], ens_p["AA_part"][1], expected, min_tol=2.5)
-    _assert_close_ensemble(ens_p["AA_pop"][0], ens_p["AA_pop"][1], 60.0 - expected, min_tol=2.5)
+    ens_p = _run_nfnext_ensemble(
+        popmap_src, ["AA_part", "AA_pop"], t_end=2.0, n_runs=24, seed_base=1900
+    )
+    _assert_close_ensemble(
+        ens_p["AA_part"][0], ens_p["AA_part"][1], expected, min_tol=2.5
+    )
+    _assert_close_ensemble(
+        ens_p["AA_pop"][0], ens_p["AA_pop"][1], 60.0 - expected, min_tol=2.5
+    )
 
 
 # 7. NFN-05: Constant seed species ($A(), $Trash())
@@ -410,7 +434,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens = _run_nfnext_ensemble(source, ["Atot", "Btot", "Ttot"], t_end=2.0, n_runs=16, seed_base=2000)
+    ens = _run_nfnext_ensemble(
+        source, ["Atot", "Btot", "Ttot"], t_end=2.0, n_runs=16, seed_base=2000
+    )
     assert ens["Atot"][0] == 100.0
     assert ens["Ttot"][0] == 0.0
     _assert_close_ensemble(ens["Btot"][0], ens["Btot"][1], 200.0, min_tol=12.0)
@@ -442,7 +468,9 @@ end model
     # include_products allowing the formed product must match ODE
     incl_prod = excl_prod.replace("exclude_products", "include_products")
     ode_ip = _run_ode_final(incl_prod, ["AB"], t_end=2.0)
-    ens_ip = _run_nfnext_ensemble(incl_prod, ["AB"], t_end=2.0, n_runs=16, seed_base=2100)
+    ens_ip = _run_nfnext_ensemble(
+        incl_prod, ["AB"], t_end=2.0, n_runs=16, seed_base=2100
+    )
     _assert_close_ensemble(ens_ip["AB"][0], ens_ip["AB"][1], ode_ip["AB"], min_tol=2.5)
 
     # NFN-07: include_reactants(1, A(c)) must require site c to be UNBOUND
@@ -494,7 +522,11 @@ end model
 
     # PERF-02: 12-mer chain observable must not hang on 12! permutations
     chain_pat = ".".join(
-        f"A(l!{i},r!{i + 1})" if 0 < i < 11 else (f"A(l,r!1)" if i == 0 else f"A(l!11,r)")
+        (
+            f"A(l!{i},r!{i + 1})"
+            if 0 < i < 11
+            else (f"A(l,r!1)" if i == 0 else f"A(l!11,r)")
+        )
         for i in range(12)
     )
     chain_src = f"""begin model
@@ -552,13 +584,19 @@ end reaction rules
 end model
 """
     ens_a = _run_nfnext_ensemble(
-        inherit_src, ["C_EC", "C_PM", "C_CP", "B_EC", "B_CP"], t_end=2.0, n_runs=16, seed_base=2200
+        inherit_src,
+        ["C_EC", "C_PM", "C_CP", "B_EC", "B_CP"],
+        t_end=2.0,
+        n_runs=16,
+        seed_base=2200,
     )
     _assert_close_ensemble(ens_a["C_EC"][0], ens_a["C_EC"][1], 20.0, min_tol=4.0)
     _assert_close_ensemble(ens_a["C_PM"][0], ens_a["C_PM"][1], 20.0, min_tol=4.0)
     _assert_close_ensemble(ens_a["C_CP"][0], ens_a["C_CP"][1], 20.0, min_tol=4.0)
     assert ens_a["B_EC"][0] == 0.0
-    _assert_close_ensemble(ens_a["B_CP"][0], ens_a["B_CP"][1], 20.0 * (1.0 - math.exp(-2.0)), min_tol=2.5)
+    _assert_close_ensemble(
+        ens_a["B_CP"][0], ens_a["B_CP"][1], 20.0 * (1.0 - math.exp(-2.0)), min_tol=2.5
+    )
 
     # 09b: Non-adjacent binding blocked + cross-membrane transport moves bound cargo
     adj_src = """begin model
@@ -592,8 +630,14 @@ end model
 """
     res_b = cpp.simulate_nfnext(cpp.parse_string(adj_src), [0.0, 2.0], seed=15)
     assert float(res_b["observables"]["LR"][-1]) == 0.0
-    assert float(res_b["observables"]["A_CP"][-1]) == float(res_b["observables"]["B_CP"][-1])
-    assert float(res_b["observables"]["B_CP"][-1]) + float(res_b["observables"]["B_EC"][-1]) == 40.0
+    assert float(res_b["observables"]["A_CP"][-1]) == float(
+        res_b["observables"]["B_CP"][-1]
+    )
+    assert (
+        float(res_b["observables"]["B_CP"][-1])
+        + float(res_b["observables"]["B_EC"][-1])
+        == 40.0
+    )
     assert float(res_b["observables"]["B_CP"][-1]) > 30.0
 
     # 09c: Species-level @PM:L.R matches spanning complex L@EC.R@PM
@@ -620,8 +664,12 @@ end model
 """
     res_c0 = cpp.simulate_nfnext(cpp.parse_string(surf_src), [0.0, 2.0], seed=16)
     assert float(res_c0["observables"]["LR_pm"][0]) == 50.0
-    ens_c = _run_nfnext_ensemble(surf_src, ["LR_pm"], t_end=2.0, n_runs=20, seed_base=2300)
-    _assert_close_ensemble(ens_c["LR_pm"][0], ens_c["LR_pm"][1], 50.0 * math.exp(-2.0), min_tol=2.5)
+    ens_c = _run_nfnext_ensemble(
+        surf_src, ["LR_pm"], t_end=2.0, n_runs=20, seed_base=2300
+    )
+    _assert_close_ensemble(
+        ens_c["LR_pm"][0], ens_c["LR_pm"][1], 50.0 * math.exp(-2.0), min_tol=2.5
+    )
 
     # 09d: Unqualified bimolecular rule scales by 1/V
     vol_src = """begin model
@@ -700,7 +748,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens_a = _run_nfnext_ensemble(partner_src, ["A1_B", "A1_C"], t_end=3.0, n_runs=20, seed_base=2600)
+    ens_a = _run_nfnext_ensemble(
+        partner_src, ["A1_B", "A1_C"], t_end=3.0, n_runs=20, seed_base=2600
+    )
     _assert_close_ensemble(ens_a["A1_B"][0], ens_a["A1_B"][1], 25.0, min_tol=3.0)
     _assert_close_ensemble(ens_a["A1_C"][0], ens_a["A1_C"][1], 25.0, min_tol=3.0)
 
@@ -726,9 +776,15 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens_b = _run_nfnext_ensemble(and_src, ["A1_onlyY", "A1_onlyX"], t_end=3.0, n_runs=20, seed_base=2700)
-    _assert_close_ensemble(ens_b["A1_onlyY"][0], ens_b["A1_onlyY"][1], 25.0, min_tol=3.0)
-    _assert_close_ensemble(ens_b["A1_onlyX"][0], ens_b["A1_onlyX"][1], 25.0, min_tol=3.0)
+    ens_b = _run_nfnext_ensemble(
+        and_src, ["A1_onlyY", "A1_onlyX"], t_end=3.0, n_runs=20, seed_base=2700
+    )
+    _assert_close_ensemble(
+        ens_b["A1_onlyY"][0], ens_b["A1_onlyY"][1], 25.0, min_tol=3.0
+    )
+    _assert_close_ensemble(
+        ens_b["A1_onlyX"][0], ens_b["A1_onlyX"][1], 25.0, min_tol=3.0
+    )
 
     # (c) ETH-11 / NFN-10c: Wildcard !+ in EP does not apply to unbound molecule
     wild_src = """begin model
@@ -776,7 +832,9 @@ end reaction rules
 end model
 """
     ode_d = _run_ode_final(coop3_src, ["ABC"], t_end=5.0)
-    ens_d = _run_nfnext_ensemble(coop3_src, ["ABC"], t_end=5.0, n_runs=16, seed_base=2900)
+    ens_d = _run_nfnext_ensemble(
+        coop3_src, ["ABC"], t_end=5.0, n_runs=16, seed_base=2900
+    )
     _assert_close_ensemble(ens_d["ABC"][0], ens_d["ABC"][1], ode_d["ABC"], min_tol=2.5)
 
     # (e) ETH-10: Homodimer Ising coupling A(s~1,b!1).A(s~1,b!1)
@@ -801,8 +859,12 @@ end model
     # Exact Boltzmann partition function: Z = 1 (00) + 2 (01/10) + e^3 (11)
     z = 3.0 + math.exp(3.0)
     expected_both1 = 50.0 * math.exp(3.0) / z
-    ens_i = _run_nfnext_ensemble(ising_src, ["Both1"], t_end=8.0, n_runs=20, seed_base=3000)
-    _assert_close_ensemble(ens_i["Both1"][0], ens_i["Both1"][1], expected_both1, min_tol=3.0)
+    ens_i = _run_nfnext_ensemble(
+        ising_src, ["Both1"], t_end=8.0, n_runs=20, seed_base=3000
+    )
+    _assert_close_ensemble(
+        ens_i["Both1"][0], ens_i["Both1"][1], expected_both1, min_tol=3.0
+    )
 
     # (f) ETH-13: State-constrained Arrhenius binding must not crash on conflicting branch
     conflict_src = """begin model
@@ -826,7 +888,9 @@ end reaction rules
 end model
 """
     ode_f = _run_ode_final(conflict_src, ["AB"], t_end=3.0)
-    ens_f = _run_nfnext_ensemble(conflict_src, ["AB"], t_end=3.0, n_runs=16, seed_base=3100)
+    ens_f = _run_nfnext_ensemble(
+        conflict_src, ["AB"], t_end=3.0, n_runs=16, seed_base=3100
+    )
     _assert_close_ensemble(ens_f["AB"][0], ens_f["AB"][1], ode_f["AB"], min_tol=2.5)
 
     # (g) ETH-13: Duplicate-site R(s,s) cooperativity
@@ -876,8 +940,12 @@ end reaction rules
 end model
 """
     ode_dm = _run_ode_final(delmol_src, ["Afree"], t_end=2.0)
-    ens_dm = _run_nfnext_ensemble(delmol_src, ["Afree"], t_end=2.0, n_runs=20, seed_base=3300)
-    _assert_close_ensemble(ens_dm["Afree"][0], ens_dm["Afree"][1], ode_dm["Afree"], min_tol=4.0)
+    ens_dm = _run_nfnext_ensemble(
+        delmol_src, ["Afree"], t_end=2.0, n_runs=20, seed_base=3300
+    )
+    _assert_close_ensemble(
+        ens_dm["Afree"][0], ens_dm["Afree"][1], ode_dm["Afree"], min_tol=4.0
+    )
 
     symfilt_src = """begin model
 begin molecule types
@@ -896,8 +964,12 @@ end reaction rules
 end model
 """
     ode_sf = _run_ode_final(symfilt_src, ["Afree"], t_end=2.0)
-    ens_sf = _run_nfnext_ensemble(symfilt_src, ["Afree"], t_end=2.0, n_runs=20, seed_base=3400)
-    _assert_close_ensemble(ens_sf["Afree"][0], ens_sf["Afree"][1], ode_sf["Afree"], min_tol=4.0)
+    ens_sf = _run_nfnext_ensemble(
+        symfilt_src, ["Afree"], t_end=2.0, n_runs=20, seed_base=3400
+    )
+    _assert_close_ensemble(
+        ens_sf["Afree"][0], ens_sf["Afree"][1], ode_sf["Afree"], min_tol=4.0
+    )
 
     # NFN-12: MatchOnce deduplicates by complexId (not particle set)
     mo_src = """begin model
@@ -917,7 +989,9 @@ end reaction rules
 end model
 """
     ens_mo = _run_nfnext_ensemble(mo_src, ["MNM"], t_end=2.0, n_runs=24, seed_base=3500)
-    _assert_close_ensemble(ens_mo["MNM"][0], ens_mo["MNM"][1], 60.0 * math.exp(-1.0), min_tol=2.5)
+    _assert_close_ensemble(
+        ens_mo["MNM"][0], ens_mo["MNM"][1], 60.0 * math.exp(-1.0), min_tol=2.5
+    )
 
     # NFN-13: TotalRate NOT multiplied by compartment volume_factor
     tr_src = """begin model
@@ -959,8 +1033,12 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens_pmo = _run_nfnext_ensemble(pop_mo_src, ["Ptot"], t_end=2.0, n_runs=20, seed_base=3700)
-    _assert_close_ensemble(ens_pmo["Ptot"][0], ens_pmo["Ptot"][1], 60.0 * math.exp(-1.0), min_tol=3.0)
+    ens_pmo = _run_nfnext_ensemble(
+        pop_mo_src, ["Ptot"], t_end=2.0, n_runs=20, seed_base=3700
+    )
+    _assert_close_ensemble(
+        ens_pmo["Ptot"][0], ens_pmo["Ptot"][1], 60.0 * math.exp(-1.0), min_tol=3.0
+    )
 
     # NFN-14b: Mixed-lumped TotalRate NOT multiplied by popFactor
     mixed_tr_src = """begin model
@@ -982,7 +1060,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens_mtr = _run_nfnext_ensemble(mixed_tr_src, ["A1"], t_end=1.0, n_runs=24, seed_base=3800)
+    ens_mtr = _run_nfnext_ensemble(
+        mixed_tr_src, ["A1"], t_end=1.0, n_runs=24, seed_base=3800
+    )
     _assert_close_ensemble(ens_mtr["A1"][0], ens_mtr["A1"][1], 15.0, min_tol=3.5)
 
     # NFN-14c: Mixed-lumped MoveConnected captures beforeCompartments BEFORE SetCompartment
@@ -1013,7 +1093,9 @@ end model
 """
     res_mc = cpp.simulate_nfnext(cpp.parse_string(mixed_mc_src), [0.0, 2.0], seed=21)
     assert float(res_mc["observables"]["A_c2"][-1]) > 20.0
-    assert float(res_mc["observables"]["B_c2"][-1]) == float(res_mc["observables"]["A_c2"][-1])
+    assert float(res_mc["observables"]["B_c2"][-1]) == float(
+        res_mc["observables"]["A_c2"][-1]
+    )
 
 
 # 13. NFN-15: Canonical final .species output merges isomorphic species
@@ -1044,10 +1126,14 @@ end actions
     bionetgen.load(str(bngl)).execute()
     species_lines = [
         line.strip()
-        for line in (tmp_path / "canon_out.species").read_text(encoding="utf-8").splitlines()
+        for line in (tmp_path / "canon_out.species")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
-    assert len(species_lines) == 1, f"Expected 1 canonical species line, got: {species_lines}"
+    assert (
+        len(species_lines) == 1
+    ), f"Expected 1 canonical species line, got: {species_lines}"
     assert species_lines[0].endswith(" 10")
 
 

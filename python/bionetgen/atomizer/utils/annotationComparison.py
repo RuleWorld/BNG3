@@ -27,7 +27,9 @@ def componentAnalysis(directory):
     bindingCount = []
     stateCount = []
     modelComponentDict = {}
-    with open(os.path.join(directory, "moleculeTypeDataSet.dump"), "r", encoding="utf-8") as f:
+    with open(
+        os.path.join(directory, "moleculeTypeDataSet.dump"), "r", encoding="utf-8"
+    ) as f:
         moleculeTypesArray = json.load(f)
     for model in moleculeTypesArray:
         modelComponentCount = [len(x.components) for x in model[0]]

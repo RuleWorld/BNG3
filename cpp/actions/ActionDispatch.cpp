@@ -5821,7 +5821,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             auto vizPrefix = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
             if (vizPrefix.empty()) vizPrefix = sourcePath.stem().string();
             const auto outputPath = resolveConfinedOutputPath(
-                sourcePath, vizPrefix + fileSuffix + extension, "visualize");
+                sourcePath, vizPrefix + fileSuffix + extension, actionName);
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");

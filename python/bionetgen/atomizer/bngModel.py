@@ -349,7 +349,9 @@ class Function:
             ) and (oldrule != rule):
                 oldrule = rule
                 for x in functionList:
-                    rule = re.sub(r"({0})\(([^,]+),([^)]+)\)".format(re.escape(x)), function, rule)
+                    rule = re.sub(
+                        r"({0})\(([^,]+),([^)]+)\)".format(re.escape(x)), function, rule
+                    )
                 if rule == oldrule:
                     logMess("ERROR:TRS001", "Malformed pow or root function %s" % rule)
             return rule
@@ -653,7 +655,9 @@ class Function:
             )
             raise e
         while (
-            re.search(r"(\W|^){0}\([^)]*\)(\W|$)".format(re.escape(subfunctionName)), function)
+            re.search(
+                r"(\W|^){0}\([^)]*\)(\W|$)".format(re.escape(subfunctionName)), function
+            )
             != None
         ):
             contentRule = (

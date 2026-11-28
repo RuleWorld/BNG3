@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 import sys
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 # Development builds: the native extension may live in build/cpp (the CMake
 # binary directory for this checkout) rather than inside the installed

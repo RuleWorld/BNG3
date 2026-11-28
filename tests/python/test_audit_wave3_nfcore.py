@@ -78,7 +78,9 @@ def _run_nf_ensemble(
 
 def _run_ode_final(source: str, obs_names: list[str], t_end: float) -> dict[str, float]:
     model = bionetgen.BioNetGenModel(cpp.parse_string(source))
-    res = model.simulate(method="ode", t_start=0.0, t_end=t_end, n_steps=20, rtol=1e-9, atol=1e-12)
+    res = model.simulate(
+        method="ode", t_start=0.0, t_end=t_end, n_steps=20, rtol=1e-9, atol=1e-12
+    )
     return {name: float(res.observables[name][-1]) for name in obs_names}
 
 
@@ -90,17 +92,23 @@ def _assert_close_ensemble(
     min_tol: float = 1.5,
 ):
     tol = max(z_max * se, min_tol)
-    assert abs(mean - expected) <= tol, (
-        f"ensemble mean {mean:.3f} +/- {se:.3f} deviates from expected {expected:.3f} (tol={tol:.3f})"
-    )
+    assert (
+        abs(mean - expected) <= tol
+    ), f"ensemble mean {mean:.3f} +/- {se:.3f} deviates from expected {expected:.3f} (tol={tol:.3f})"
 
 
-def _run_bng_cpp_rnf(tmp_path: Path, model_text: str, rnf_text: str, env_extra: dict[str, str] | None = None):
+def _run_bng_cpp_rnf(
+    tmp_path: Path,
+    model_text: str,
+    rnf_text: str,
+    env_extra: dict[str, str] | None = None,
+):
     bng_cpp = _require_bng_cpp()
     (tmp_path / "run.rnf").write_text(rnf_text, encoding="utf-8")
     bngl_path = tmp_path / "run.bngl"
     bngl_path.write_text(
-        model_text + '\nbegin actions\n  simulate({method=>"nfcore", param=>"-rnf run.rnf"})\nend actions\n',
+        model_text
+        + '\nbegin actions\n  simulate({method=>"nfcore", param=>"-rnf run.rnf"})\nend actions\n',
         encoding="utf-8",
     )
     env = os.environ.copy()
@@ -158,7 +166,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ustats = _run_nf_ensemble(unbind_model, ["Afree"], t_end=10.0, n_runs=25, seed_base=50)
+    ustats = _run_nf_ensemble(
+        unbind_model, ["Afree"], t_end=10.0, n_runs=25, seed_base=50
+    )
     # Exact mean: 2 * k * t = 200.0 (0.5x bug gives 100.0)
     _assert_close_ensemble(*ustats["Afree"], expected=200.0, min_tol=15.0)
 
@@ -329,7 +339,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    tstats = _run_nf_ensemble(source_self_trimer, ["P_EC", "P_CP"], t_end=10.0, n_runs=15, seed_base=1)
+    tstats = _run_nf_ensemble(
+        source_self_trimer, ["P_EC", "P_CP"], t_end=10.0, n_runs=15, seed_base=1
+    )
     # Each complex produces ~50 products (bug gave P_EC=0 or wrong rate)
     _assert_close_ensemble(*tstats["P_EC"], expected=50.0, min_tol=8.0)
     _assert_close_ensemble(*tstats["P_CP"], expected=50.0, min_tol=8.0)
@@ -357,7 +369,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    stats_a = _run_nf_ensemble(src_state, ["A0_free", "A1_free", "AB"], t_end=2.0, n_runs=10, seed_base=1)
+    stats_a = _run_nf_ensemble(
+        src_state, ["A0_free", "A1_free", "AB"], t_end=2.0, n_runs=10, seed_base=1
+    )
     assert stats_a["A0_free"][0] == pytest.approx(0.0)
     assert stats_a["A1_free"][0] == pytest.approx(50.0)
     assert stats_a["AB"][0] > 45.0
@@ -382,7 +396,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    stats_b = _run_nf_ensemble(src_mix, ["A0", "A1", "Ptot"], t_end=1.0, n_runs=10, seed_base=1)
+    stats_b = _run_nf_ensemble(
+        src_mix, ["A0", "A1", "Ptot"], t_end=1.0, n_runs=10, seed_base=1
+    )
     assert stats_b["A0"][0] == pytest.approx(100.0)
     assert stats_b["A1"][0] == pytest.approx(50.0)
     _assert_close_ensemble(*stats_b["Ptot"], expected=200.0, min_tol=15.0)
@@ -508,7 +524,9 @@ end model
 """
     sub_a = tmp_path / "expr"
     sub_a.mkdir()
-    proc_a = _run_bng_cpp_rnf(sub_a, m_expr, "-seed 1\nbegin\n  set p1 5\n  update\n  sim 1.0 1\nend\n")
+    proc_a = _run_bng_cpp_rnf(
+        sub_a, m_expr, "-seed 1\nbegin\n  set p1 5\n  update\n  sim 1.0 1\nend\n"
+    )
     assert proc_a.returncode == 0, proc_a.stderr
     arr_a = np.loadtxt(sub_a / "run.gdat")
     assert arr_a[-1, 1] < 10.0
@@ -546,7 +564,9 @@ end model
 """
     sub_b = tmp_path / "sat"
     sub_b.mkdir()
-    proc_b = _run_bng_cpp_rnf(sub_b, m_sat, "-seed 1\nbegin\n  set k0 50\n  update\n  sim 5.0 1\nend\n")
+    proc_b = _run_bng_cpp_rnf(
+        sub_b, m_sat, "-seed 1\nbegin\n  set k0 50\n  update\n  sim 5.0 1\nend\n"
+    )
     assert proc_b.returncode == 0, proc_b.stderr
     arr_b = np.loadtxt(sub_b / "run.gdat")
     assert arr_b[-1, 1] < 5.0
@@ -579,7 +599,9 @@ end model
 """
     sub_c = tmp_path / "arr"
     sub_c.mkdir()
-    proc_c = _run_bng_cpp_rnf(sub_c, m_arr, "-seed 1\nbegin\n  set Ea0 0.0\n  update\n  sim 5.0 1\nend\n")
+    proc_c = _run_bng_cpp_rnf(
+        sub_c, m_arr, "-seed 1\nbegin\n  set Ea0 0.0\n  update\n  sim 5.0 1\nend\n"
+    )
     assert proc_c.returncode == 0, proc_c.stderr
     arr_c = np.loadtxt(sub_c / "run.gdat")
     # Equilibrium A1 ≈ 200 / (1 + exp(-4)) ≈ 196.4 (frozen Ea0=20 gives 0)
@@ -671,9 +693,15 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ode = _run_ode_final(mwc_square, ["RT_free", "RR_free", "RT_bound", "RR_bound"], t_end=150.0)
+    ode = _run_ode_final(
+        mwc_square, ["RT_free", "RR_free", "RT_bound", "RR_bound"], t_end=150.0
+    )
     stats = _run_nf_ensemble(
-        mwc_square, ["RT_free", "RR_free", "RT_bound", "RR_bound"], t_end=150.0, n_runs=25, seed_base=1
+        mwc_square,
+        ["RT_free", "RR_free", "RT_bound", "RR_bound"],
+        t_end=150.0,
+        n_runs=25,
+        seed_base=1,
     )
     for k in ("RT_free", "RR_free", "RT_bound", "RR_bound"):
         _assert_close_ensemble(*stats[k], expected=ode[k], min_tol=1.5)
@@ -707,7 +735,9 @@ end reaction rules
 end model
 """
     ode_c = _run_ode_final(cube, ["A111", "A000"], t_end=30.0)
-    stats_c = _run_nf_ensemble(cube, ["A111", "A000"], t_end=30.0, n_runs=20, seed_base=10)
+    stats_c = _run_nf_ensemble(
+        cube, ["A111", "A000"], t_end=30.0, n_runs=20, seed_base=10
+    )
     _assert_close_ensemble(*stats_c["A111"], expected=ode_c["A111"], min_tol=2.5)
     _assert_close_ensemble(*stats_c["A000"], expected=ode_c["A000"], min_tol=1.5)
 
@@ -1000,7 +1030,9 @@ end reaction rules
 end model
 """
     ode_r = _run_ode_final(ring, ["UpSpins", "AlignedUU", "AlignedDD"], t_end=50.0)
-    stats_r = _run_nf_ensemble(ring, ["UpSpins", "AlignedUU", "AlignedDD"], t_end=50.0, n_runs=20, seed_base=1)
+    stats_r = _run_nf_ensemble(
+        ring, ["UpSpins", "AlignedUU", "AlignedDD"], t_end=50.0, n_runs=20, seed_base=1
+    )
     _assert_close_ensemble(*stats_r["UpSpins"], expected=ode_r["UpSpins"], min_tol=5.0)
     aligned_mean = stats_r["AlignedUU"][0] + stats_r["AlignedDD"][0]
     aligned_ode = ode_r["AlignedUU"] + ode_r["AlignedDD"]
@@ -1118,7 +1150,9 @@ def test_mem03_tinyxml_depth_limit_fails_cleanly(tmp_path):
         text=True,
     )
     # Must fail cleanly (non-zero return code > 0), NOT crash with signal (returncode < 0)
-    assert proc.returncode > 0, f"Expected clean error, got rc={proc.returncode}, stderr={proc.stderr}"
+    assert (
+        proc.returncode > 0
+    ), f"Expected clean error, got rc={proc.returncode}, stderr={proc.stderr}"
 
 
 # 20. MEM-04: High-rate NFsim model avoids float-to-int overflow UB

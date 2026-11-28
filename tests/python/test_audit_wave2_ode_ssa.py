@@ -60,9 +60,13 @@ def _parse_and_sim(
 
 
 def _read_gdat(path: Path) -> tuple[list[str], np.ndarray]:
-    lines = [ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    lines = [
+        ln.strip() for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()
+    ]
     header = lines[0].lstrip("#").split()
-    data = np.array([[float(tok) for tok in ln.split()] for ln in lines[1:]], dtype=float)
+    data = np.array(
+        [[float(tok) for tok in ln.split()] for ln in lines[1:]], dtype=float
+    )
     return header, data
 
 
@@ -491,7 +495,9 @@ end model
 
 
 def test_ode07_expr15_file_tfun_and_print_functions_skips_arg_functions(tmp_path: Path):
-    (tmp_path / "drive.tfun").write_text("# time val\n0 1\n1 3\n2 5\n", encoding="utf-8")
+    (tmp_path / "drive.tfun").write_text(
+        "# time val\n0 1\n1 3\n2 5\n", encoding="utf-8"
+    )
     bngl = tmp_path / "tfun_and_local.bngl"
     bngl.write_text(
         """begin model
@@ -653,8 +659,7 @@ simulate({method=>"ode", t_end=>2, n_steps=>2, continue=>1})
 
 def test_ode16_ida_tiny_span_strict_t0_and_scaled_constraint():
     # Sub-1e-12 span
-    m_tiny = _cpp.parse_string(
-        """begin model
+    m_tiny = _cpp.parse_string("""begin model
 begin molecule types
   X()
   Z()
@@ -671,8 +676,7 @@ begin reaction rules
   0 -> X() 1e13
 end reaction rules
 end model
-"""
-    )
+""")
     n_tiny = _cpp.generate_network(m_tiny)
     res_tiny = _cpp.simulate_ode(
         m_tiny,
@@ -685,8 +689,7 @@ end model
     assert res_tiny["observables"]["Z_obs"][-1] == pytest.approx(10.0, rel=1e-5)
 
     # Strict time > 0 event must preserve t = 0 output state
-    m_strict = _cpp.parse_string(
-        """begin model
+    m_strict = _cpp.parse_string("""begin model
 begin molecule types
   X()
   Z()
@@ -709,8 +712,7 @@ begin bng3_events version 1
   end event
 end bng3_events
 end model
-"""
-    )
+""")
     n_strict = _cpp.generate_network(m_strict)
     res_strict = _cpp.simulate_ode(
         m_strict,
@@ -725,8 +727,7 @@ end model
     assert res_strict["observables"]["Z_obs"][-1] == pytest.approx(0.0, abs=1e-9)
 
     # Small-scaled nonsingular constraint 1e-15 * (Z - 2*X) = 0
-    m_scaled = _cpp.parse_string(
-        """begin model
+    m_scaled = _cpp.parse_string("""begin model
 begin molecule types
   X()
   Z()
@@ -743,8 +744,7 @@ begin reaction rules
   X() -> X() 0
 end reaction rules
 end model
-"""
-    )
+""")
     n_scaled = _cpp.generate_network(m_scaled)
     res_scaled = _cpp.simulate_ode(
         m_scaled,
@@ -778,7 +778,9 @@ end model
 """
     res = _parse_and_sim(src, t_end=5.0, n_steps=50, stop_if="frac() < 0.5")
     assert res.time[-1] == pytest.approx(0.7, abs=1e-9)
-    assert res.observables["A_obs"][-1] == pytest.approx(100.0 * math.exp(-0.7), rel=1e-4)
+    assert res.observables["A_obs"][-1] == pytest.approx(
+        100.0 * math.exp(-0.7), rel=1e-4
+    )
 
 
 def test_ode19_tfun_step_narrow_pulse_not_skipped():
@@ -1127,10 +1129,22 @@ end reaction rules
 end model
 """
     r1 = _parse_and_sim(
-        src, method="ssa", t_end=1.0, n_steps=5, seed=0, batch_size=32, batch_gpu_preferred=False
+        src,
+        method="ssa",
+        t_end=1.0,
+        n_steps=5,
+        seed=0,
+        batch_size=32,
+        batch_gpu_preferred=False,
     )
     r2 = _parse_and_sim(
-        src, method="ssa", t_end=1.0, n_steps=5, seed=0, batch_size=32, batch_gpu_preferred=False
+        src,
+        method="ssa",
+        t_end=1.0,
+        n_steps=5,
+        seed=0,
+        batch_size=32,
+        batch_gpu_preferred=False,
     )
     assert not np.array_equal(r1.observables["Atot"], r2.observables["Atot"])
 
@@ -1198,30 +1212,36 @@ def test_perf11_indexed_function_lookup_matches_inline_ode():
     rule_inline = [f"  S{i}() -> 0 1.0 / (1.0 + 0.05 * S0_obs)" for i in range(n_rxns)]
 
     def build(funcs, rules):
-        return "\n".join(
-            [
-                "begin model",
-                "begin molecule types",
-                *mol_lines,
-                "end molecule types",
-                "begin seed species",
-                *seed_lines,
-                "end seed species",
-                "begin observables",
-                *obs_lines,
-                "end observables",
-                "begin functions",
-                *funcs,
-                "end functions",
-                "begin reaction rules",
-                *rules,
-                "end reaction rules",
-                "end model",
-            ]
-        ) + "\n"
+        return (
+            "\n".join(
+                [
+                    "begin model",
+                    "begin molecule types",
+                    *mol_lines,
+                    "end molecule types",
+                    "begin seed species",
+                    *seed_lines,
+                    "end seed species",
+                    "begin observables",
+                    *obs_lines,
+                    "end observables",
+                    "begin functions",
+                    *funcs,
+                    "end functions",
+                    "begin reaction rules",
+                    *rules,
+                    "end reaction rules",
+                    "end model",
+                ]
+            )
+            + "\n"
+        )
 
     r_func = _parse_and_sim(build(func_lines, rule_func), t_end=2.0, n_steps=10)
     r_inline = _parse_and_sim(build([], rule_inline), t_end=2.0, n_steps=10)
     assert np.allclose(
-        r_func.observables["S0_obs"], r_inline.observables["S0_obs"], rtol=1e-6, atol=1e-9
+        r_func.observables["S0_obs"],
+        r_inline.observables["S0_obs"],
+        rtol=1e-6,
+        atol=1e-9,
     )

@@ -29,7 +29,9 @@ require_extension()
 import bionetgen
 
 
-def _load_model(bngl: str, tmp_path: Path, name: str = "model") -> bionetgen.BioNetGenModel:
+def _load_model(
+    bngl: str, tmp_path: Path, name: str = "model"
+) -> bionetgen.BioNetGenModel:
     path = tmp_path / f"{name}.bngl"
     path.write_text(bngl, encoding="utf-8")
     return bionetgen.load(str(path))
@@ -235,7 +237,9 @@ end model
 # ==============================================================================
 
 
-def test_net02_asymmetric_multistate_reaction_center_preserves_both_isomers(tmp_path: Path):
+def test_net02_asymmetric_multistate_reaction_center_preserves_both_isomers(
+    tmp_path: Path,
+):
     """Ordered reaction-center signature emits both product isomers and 2*k on symmetric dimer."""
     bngl = """
 begin model
@@ -284,7 +288,9 @@ end model
     _, net_double = _generate(bngl_double, tmp_path, "double_bond")
     assert net_double.num_species == 3
     assert net_double.num_reactions == 2
-    factors_double = dict(zip(net_double.reaction_rate_laws, net_double.reaction_factors))
+    factors_double = dict(
+        zip(net_double.reaction_rate_laws, net_double.reaction_factors)
+    )
     assert factors_double["kf"] == pytest.approx(2.0)
     assert factors_double["kr"] == pytest.approx(1.0)
 
@@ -386,12 +392,16 @@ end model
     _, net_reordered = _generate(bngl_reordered, tmp_path, "reordered_sites")
     assert net_reordered.num_species == 2
     assert net_reordered.num_reactions == 2
-    factors_reordered = dict(zip(net_reordered.reaction_rate_laws, net_reordered.reaction_factors))
+    factors_reordered = dict(
+        zip(net_reordered.reaction_rate_laws, net_reordered.reaction_factors)
+    )
     assert factors_reordered["kf"] == pytest.approx(0.5)
     assert factors_reordered["kr"] == pytest.approx(1.0)
 
 
-def test_net03_polyvalent_wildcard_unbinding_and_net04_dup_comp_deletion(tmp_path: Path):
+def test_net03_polyvalent_wildcard_unbinding_and_net04_dup_comp_deletion(
+    tmp_path: Path,
+):
     """Polyvalent !1!+ unbinding must not enter dimer fast path; A(b,b,b)->0 gets factor 1.0."""
     bngl_poly = """
 begin model
@@ -902,4 +912,6 @@ end model
         res = model.simulate(**kwargs)
         # Only Cyclin(b!1).p21(b!1) (count=3) has bond degree 1 on Cyclin(b);
         # CDK.Cyclin(b!2!1).p21 (count=10) has degree 2 and must NOT match !1.
-        assert float(res.observables["ExactSingleBond"][0]) == pytest.approx(3.0), method
+        assert float(res.observables["ExactSingleBond"][0]) == pytest.approx(
+            3.0
+        ), method

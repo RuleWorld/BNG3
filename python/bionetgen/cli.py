@@ -338,9 +338,7 @@ def check(model):
         source_text = Path(path).read_text(encoding="utf-8", errors="replace")
         undeclared = _find_undeclared_molecule_types(source_text, cpp_model)
         if undeclared:
-            raise ValueError(
-                "Undeclared molecule type(s): " + ", ".join(undeclared)
-            )
+            raise ValueError("Undeclared molecule type(s): " + ", ".join(undeclared))
         _cpp.generate_network(cpp_model, max_iter=0)
         click.echo(f"OK: {path}")
         click.echo(f"  Parameters:      {len(cpp_model.parameters)}")

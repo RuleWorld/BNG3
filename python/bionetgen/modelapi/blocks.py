@@ -583,7 +583,10 @@ class RuleBlock(ModelBlock):
             delay_expr = getattr(rule_obj, "_delay_expression", None)
             if delay_expr and "delay=" not in line:
                 line = f"{line.rstrip()} delay={delay_expr}"
-            if getattr(rule_obj, "_is_non_consuming", False) and "NonConsuming" not in line:
+            if (
+                getattr(rule_obj, "_is_non_consuming", False)
+                and "NonConsuming" not in line
+            ):
                 line = f"{line.rstrip()} NonConsuming"
             block_lines.append(line)
         if self.comment[1] is not None:

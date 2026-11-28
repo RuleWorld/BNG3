@@ -41,8 +41,7 @@ def _eval_ode_final(source: str, t_end: float = 1.0, n_steps: int = 10):
 
 def test_tfun_nan_returns_nan_without_oob_and_unsorted_rejected():
     # Inline TFUN with NaN counter must evaluate to NaN cleanly (both linear and step)
-    nan_model = _cpp.parse_string(
-        """begin model
+    nan_model = _cpp.parse_string("""begin model
 begin parameters
   p_lin  tfun([0, 1], [10, 20], 0/0)
   p_step tfun([0, 1], [10, 20], 0/0, method=>"step")
@@ -55,8 +54,7 @@ begin seed species
   A() 10
 end seed species
 end model
-"""
-    )
+""")
     nan_model.parameter_list.evaluate_all()
     assert math.isnan(nan_model.get_parameter("p_lin").value)
     assert math.isnan(nan_model.get_parameter("p_step").value)
@@ -64,14 +62,12 @@ end model
 
     # Unsorted inline x-values must be rejected
     with pytest.raises(RuntimeError, match="monotonically non-decreasing"):
-        _cpp.parse_string(
-            """begin model
+        _cpp.parse_string("""begin model
 begin parameters
   p_bad tfun([0, 2, 1, 3], [10, 20, 30, 40], 1.5)
 end parameters
 end model
-"""
-        )
+""")
 
 
 def test_tfun_file_unsorted_and_nan_guarded(tmp_path: Path):
@@ -176,8 +172,7 @@ end model
     assert model.get_parameter("k").value == pytest.approx(10.0)
 
     # Without a declared parameter `t`, bare `t` and `time` still resolve to clock
-    clock_model = _cpp.parse_string(
-        """begin model
+    clock_model = _cpp.parse_string("""begin model
 begin parameters
   k_time 2*time
   k_t    2*t
@@ -199,13 +194,16 @@ begin reaction rules
   B() -> 0 k_t
 end reaction rules
 end model
-"""
-    )
+""")
     clock_net = _cpp.generate_network(clock_model)
     clock_res = _cpp.simulate_ode(clock_model, clock_net, t_end=1.0, n_steps=10)
     # Integral of 2*t from 0 to 1 is 1.0 -> A(1) = B(1) = 10 * exp(-1)
-    assert clock_res["observables"]["Atot"][-1] == pytest.approx(10.0 * math.exp(-1.0), rel=1e-4)
-    assert clock_res["observables"]["Btot"][-1] == pytest.approx(10.0 * math.exp(-1.0), rel=1e-4)
+    assert clock_res["observables"]["Atot"][-1] == pytest.approx(
+        10.0 * math.exp(-1.0), rel=1e-4
+    )
+    assert clock_res["observables"]["Btot"][-1] == pytest.approx(
+        10.0 * math.exp(-1.0), rel=1e-4
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -261,8 +259,7 @@ end model
 
 
 def test_fortran_float_exponents_not_truncated():
-    model = _cpp.parse_string(
-        """begin model
+    model = _cpp.parse_string("""begin model
 begin parameters
   p1 1.5f2
   p2 2F-3
@@ -272,8 +269,7 @@ begin parameters
   p6 3.5d+1
 end parameters
 end model
-"""
-    )
+""")
     model.parameter_list.evaluate_all()
     assert model.get_parameter("p1").value == pytest.approx(150.0)
     assert model.get_parameter("p2").value == pytest.approx(0.002)
@@ -309,8 +305,7 @@ def test_deeply_nested_parentheses_fail_cleanly():
 
 
 def test_power_unary_base_and_double_negation_rendering():
-    model = _cpp.parse_string(
-        """begin model
+    model = _cpp.parse_string("""begin model
 begin parameters
   k 2
   p_negk (-k)^2
@@ -321,8 +316,7 @@ begin functions
   f_dbl() = -(-k)
 end functions
 end model
-"""
-    )
+""")
     model.parameter_list.evaluate_all()
     assert model.get_parameter("p_negk").value == pytest.approx(4.0)
     assert model.get_parameter("p_dbl").value == pytest.approx(2.0)
@@ -336,16 +330,14 @@ end model
     assert "--" not in rendered_dbl
 
     # Round-tripping the rendered expressions parses cleanly and keeps values
-    rt = _cpp.parse_string(
-        f"""begin model
+    rt = _cpp.parse_string(f"""begin model
 begin parameters
   k 2
   p_negk {rendered_negk}
   p_dbl  {rendered_dbl}
 end parameters
 end model
-"""
-    )
+""")
     rt.parameter_list.evaluate_all()
     assert rt.get_parameter("p_negk").value == pytest.approx(4.0)
     assert rt.get_parameter("p_dbl").value == pytest.approx(2.0)
@@ -433,8 +425,7 @@ end model
     assert net.num_reactions == 1
 
     # 3-compartment spanning complex L@EC.R@PM.C@CP must also infer @PM
-    span = _cpp.parse_string(
-        """begin model
+    span = _cpp.parse_string("""begin model
 begin compartments
   EC 3 10
   PM 2 2 EC
@@ -449,8 +440,7 @@ begin seed species
   L(r!1)@EC.R(l!1,c!2)@PM.C(r!2)@CP 5
 end seed species
 end model
-"""
-    )
+""")
     assert span.seed_species[0].compartment == "PM"
 
 
@@ -499,7 +489,9 @@ end model
 # ---------------------------------------------------------------------------
 
 
-def test_driven_by_identifier_prefix_and_barrier_commas_and_context_leak(tmp_path: Path):
+def test_driven_by_identifier_prefix_and_barrier_commas_and_context_leak(
+    tmp_path: Path,
+):
     # Ordinary parameter starting with `driven_by` must parse and run cleanly
     prefix_source = """begin model
 begin parameters
@@ -560,8 +552,7 @@ end model
 
     # Top-level comma (rate pair) in a barrier pattern must still be rejected
     with pytest.raises(RuntimeError, match="not a rate pair"):
-        _cpp.parse_string(
-            """begin model
+        _cpp.parse_string("""begin model
 begin molecule types
   A(b, s~0~1)
 end molecule types
@@ -569,8 +560,7 @@ begin barrier patterns
   A(b, s~0) -> A(b, s~1) 1.0, 2.0
 end barrier patterns
 end model
-"""
-        )
+""")
 
     # Context-bearing barrier pattern must fail closed instead of leaking onto free A
     context_barrier = """begin model
@@ -615,32 +605,27 @@ end model
 def test_unit_parser_overflow_and_zero_scale_rejected():
     # Overflowing nested exponent must fail cleanly without int32 UB wrap
     with pytest.raises(RuntimeError, match="overflow|Unknown unit"):
-        _cpp.parse_string(
-            """begin model
+        _cpp.parse_string("""begin model
 begin parameters
   p = 1.0 [((((s^1000)^1000)^1000)^1000)]
 end parameters
 end model
-"""
-        )
+""")
 
     # 0*s and 1/0*s must be rejected
     for bad_unit in ("0*s", "1/0*s", "0.0*metre"):
         with pytest.raises(RuntimeError, match="positive|Unknown unit"):
-            _cpp.parse_string(
-                f"""begin model
+            _cpp.parse_string(f"""begin model
 begin parameters
   p = 1.0 [{bad_unit}]
 end parameters
 end model
-"""
-            )
+""")
 
 
 def test_unit_analysis_power_neg_exp_tilde_2d_comp_and_scale_mismatch():
     # Valid strict model with L^-2, L**2, unary ~, and 2D compartment [um^2]
-    valid_strict = _cpp.parse_string(
-        """begin model
+    valid_strict = _cpp.parse_string("""begin model
 setOption("units", "strict")
 begin parameters
   L = 2.0 [metre]
@@ -664,28 +649,24 @@ begin reaction rules
   A()@PM -> 0 k
 end reaction rules
 end model
-"""
-    )
+""")
     snap = _cpp._compiled_snapshot(valid_strict)
     assert snap is not None
 
     # `L**2 [second]` must be rejected in strict mode (was bypassed because `**` was omitted)
-    bad_pow = _cpp.parse_string(
-        """begin model
+    bad_pow = _cpp.parse_string("""begin model
 setOption("units", "strict")
 begin parameters
   L = 2.0 [metre]
   bogus = L**2 [second]
 end parameters
 end model
-"""
-    )
+""")
     with pytest.raises(RuntimeError, match="invalid model"):
         _cpp._compiled_snapshot(bad_pow)
 
     # `1 [s] + 1 [min]` must be rejected (differently scaled units cannot be added without conversion)
-    scale_mismatch = _cpp.parse_string(
-        """begin model
+    scale_mismatch = _cpp.parse_string("""begin model
 setOption("units", "strict")
 begin parameters
   t1 = 1.0 [s]
@@ -693,21 +674,18 @@ begin parameters
   tsum = t1 + t2 [s]
 end parameters
 end model
-"""
-    )
+""")
     with pytest.raises(RuntimeError, match="invalid model"):
         _cpp._compiled_snapshot(scale_mismatch)
 
     # 2D compartment with non-spatial unit [second] must be rejected (2D accepts area L^2 or effective volume L^3)
-    bad_2d_comp = _cpp.parse_string(
-        """begin model
+    bad_2d_comp = _cpp.parse_string("""begin model
 setOption("units", "strict")
 begin compartments
   EC 3 10 [fL]
   PM 2 5 EC [second]
 end compartments
 end model
-"""
-    )
+""")
     with pytest.raises(RuntimeError, match="invalid model"):
         _cpp._compiled_snapshot(bad_2d_comp)

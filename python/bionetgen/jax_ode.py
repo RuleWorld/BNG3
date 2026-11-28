@@ -122,7 +122,9 @@ def _expr_param_deps(node: Any, functions: Dict[int, Any]) -> set[int]:
         if isinstance(sym, dict) and "index" in sym:
             fn_idx = sym["index"]
             if fn_idx in functions:
-                deps |= _expr_param_deps(functions[fn_idx].get("expression", {}), functions)
+                deps |= _expr_param_deps(
+                    functions[fn_idx].get("expression", {}), functions
+                )
     for arg in node.get("arguments", []):
         deps |= _expr_param_deps(arg, functions)
     return deps
@@ -258,7 +260,9 @@ def _eval_expr(
                 S = rxn_reactant_vals[0]
                 return jnp.where(Km + S != 0.0, (kcat * S) / (Km + S), 0.0)
             else:
-                raise ValueError("michaelis_menten requires at least 2 arguments with substrate")
+                raise ValueError(
+                    "michaelis_menten requires at least 2 arguments with substrate"
+                )
         elif builtin in ("hill", "Hill"):
             if len(args) >= 4:
                 Vmax, Kh, n, S = args[0], args[1], args[2], args[3]
@@ -282,7 +286,9 @@ def _eval_expr(
                     val = val * extra_r
                 return val
             else:
-                raise ValueError("Hill function requires 3 arguments (with reactant) or 4 arguments")
+                raise ValueError(
+                    "Hill function requires 3 arguments (with reactant) or 4 arguments"
+                )
         elif builtin in ("sat", "saturation"):
             if len(args) == 1:
                 return args[0]
@@ -314,7 +320,9 @@ def _eval_expr(
                 Vmax, Km, S = args[0], args[1], args[2]
                 return jnp.where(Km + S != 0.0, (Vmax * S) / (Km + S), 0.0)
             else:
-                raise ValueError("saturation requires at least 2 arguments (with reactant) or 3 arguments")
+                raise ValueError(
+                    "saturation requires at least 2 arguments (with reactant) or 3 arguments"
+                )
         else:
             raise NotImplementedError(
                 f"JAX ODE does not support builtin function '{builtin}'"

@@ -3816,9 +3816,11 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
             if isinstance(comp, Mapping) and comp.get("volume_expression")
         }
         native_data["compartments"] = [
-            {k: v for k, v in comp.items() if k != "volume_expression"}
-            if isinstance(comp, Mapping)
-            else comp
+            (
+                {k: v for k, v in comp.items() if k != "volume_expression"}
+                if isinstance(comp, Mapping)
+                else comp
+            )
             for comp in model_data.get("compartments", [])
         ]
         result_cpp = _cpp._model_from_bngir_v02(native_data)
@@ -4821,9 +4823,7 @@ def _count_pattern_automorphisms(pattern: Mapping[str, Any]) -> int:
                     nr = dict(b_rev)
                     ok = True
                     for b1, b2 in zip(num1, perm):
-                        if (b1 in nf and nf[b1] != b2) or (
-                            b2 in nr and nr[b2] != b1
-                        ):
+                        if (b1 in nf and nf[b1] != b2) or (b2 in nr and nr[b2] != b1):
                             ok = False
                             break
                         nf[b1] = b2
@@ -5971,7 +5971,7 @@ def _referenced_identifiers(
     expr_str: str,
     zero_arg_functions: Mapping[str, str],
 ) -> set[str]:
-    """Return identifier tokens referenced directly or via zero-arg functions."""
+    """Return identifier tokens referenced directly or via nullary functions."""
     found: set[str] = set()
     stack = [expr_str]
     visited_fns: set[str] = set()
@@ -6163,7 +6163,7 @@ def _compare_functions_exact(
             return None, {"function": name, "left_args": l_args, "right_args": r_args}
 
         # Exact identical syntax (including same argument names) without renamed obs,
-        # ONLY when all referenced bound parameters and zero-arg helpers match.
+        # ONLY when all referenced bound parameters and nullary helpers match.
         if (
             l_args == r_args
             and l_body == r_body

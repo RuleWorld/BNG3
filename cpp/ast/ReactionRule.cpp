@@ -3840,11 +3840,11 @@ bool ReactionRule::buildReaction(
                         break;
                     }
                 }
-                if (hasModifier(modifiers_, "MoveConnected") && !deleteMolecules) {
+                if (hasModifier(modifiers_, "MoveConnected") && !deleteMoleculesModifier) {
                     return false;
                 }
                 if ((hasDeleteMoleculeOps || hasMoleculeTypeMismatch_) &&
-                    !deleteMolecules) {
+                    !deleteMoleculesModifier) {
                     return false;
                 }
             }

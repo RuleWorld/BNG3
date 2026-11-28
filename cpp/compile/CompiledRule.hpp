@@ -236,7 +236,7 @@ struct CompiledRuleDirection {
         }
         if (!hasIdenticalPair) return 1.0;
 
-        // Any reactant pattern bound to a local-function scope is pinned.
+        // Any reactant pattern bound to a scoped function is pinned.
         std::vector<bool> pinned(n, false);
         for (const auto& scope : localScopes) {
             if (scope.side == PatternSide::Reactant && scope.patternIndex < n) {

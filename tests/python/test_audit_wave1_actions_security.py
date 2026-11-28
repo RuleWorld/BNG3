@@ -191,15 +191,15 @@ simulate({method=>"ode", t_end=>1, n_steps=>2, prefix=>"sub/sim_out"})
 @pytest.mark.parametrize(
     "action_line",
     [
-        'simulate_nf({t_end=>1, n_steps=>-5, seed=>1})',
-        'simulate_nf({t_end=>1, n_steps=>5, seed=>-1})',
+        "simulate_nf({t_end=>1, n_steps=>-5, seed=>1})",
+        "simulate_nf({t_end=>1, n_steps=>5, seed=>-1})",
         'simulate({method=>"ssa", t_end=>1, n_steps=>5, seed=>-1})',
-        'writeSBML({level=>1e30})',
+        "writeSBML({level=>1e30})",
         'writeFile({format=>"sbml", level=>1e30, overwrite=>1})',
-        'writeMfile({n_steps=>-5})',
-        'writeCppfile({n_steps=>-5})',
-        'writeCPYfile({n_steps=>-5})',
-        'writeMEXfile({n_steps=>-5})',
+        "writeMfile({n_steps=>-5})",
+        "writeCppfile({n_steps=>-5})",
+        "writeCPYfile({n_steps=>-5})",
+        "writeMEXfile({n_steps=>-5})",
     ],
 )
 def test_mem05_mem06_rejects_invalid_integer_action_options(
@@ -284,7 +284,9 @@ end actions
 
 
 def test_ode07_expr15_direct_rule_tfun_and_print_functions(tmp_path: Path):
-    (tmp_path / "drive.tfun").write_text("# time val\n0 1\n1 3\n2 5\n", encoding="utf-8")
+    (tmp_path / "drive.tfun").write_text(
+        "# time val\n0 1\n1 3\n2 5\n", encoding="utf-8"
+    )
     bngl = tmp_path / "tfun_direct.bngl"
     bngl.write_text(
         """begin model
@@ -408,7 +410,9 @@ simulate({method=>"ode", t_end=>2.0, n_steps=>4, continue=>1})
 # ---------------------------------------------------------------------------
 
 
-def test_rulehub10_set_and_add_concentration_noncanonical_component_order(tmp_path: Path):
+def test_rulehub10_set_and_add_concentration_noncanonical_component_order(
+    tmp_path: Path,
+):
     bngl = tmp_path / "setconc_order.bngl"
     bngl.write_text(
         """begin model

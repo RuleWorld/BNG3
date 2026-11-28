@@ -179,7 +179,10 @@ begin reaction rules
 end reaction rules
 end model
 """
-    assert semantic_equal(_load_bngl(fn_tpl.format(p=1)), _load_bngl(fn_tpl.format(p=999))) is False
+    assert (
+        semantic_equal(_load_bngl(fn_tpl.format(p=1)), _load_bngl(fn_tpl.format(p=999)))
+        is False
+    )
 
     arg_fn_1 = """begin model
 begin parameters
@@ -581,7 +584,9 @@ end reaction rules
 end model
 """)
     crn = m.to_crn()
-    by_rule = {r["rate_law"]["rule_name"]: r["rate_law"]["type"] for r in crn["reactions"]}
+    by_rule = {
+        r["rate_law"]["rule_name"]: r["rate_law"]["type"] for r in crn["reactions"]
+    }
     assert by_rule["R_mm_tot"] == "total_rate"
     assert by_rule["R_func"] == "functional"
     assert by_rule["R_sat"] == "sat"
@@ -717,9 +722,15 @@ end model
     assert sens_par.matrix[0, 0] == pytest.approx(-1.0, rel=1e-3)
     assert sens_par.matrix[0, 0] == pytest.approx(sens_ser.matrix[0, 0], rel=1e-9)
 
-    scan_ser = m.parameter_scan("k1", values=[1.0, 2.0], t_end=1.0, n_steps=10, parallel=0)
-    scan_par = m.parameter_scan("k1", values=[1.0, 2.0], t_end=1.0, n_steps=10, parallel=2)
-    np.testing.assert_allclose(scan_par.final("ObsA"), scan_ser.final("ObsA"), rtol=1e-9)
+    scan_ser = m.parameter_scan(
+        "k1", values=[1.0, 2.0], t_end=1.0, n_steps=10, parallel=0
+    )
+    scan_par = m.parameter_scan(
+        "k1", values=[1.0, 2.0], t_end=1.0, n_steps=10, parallel=2
+    )
+    np.testing.assert_allclose(
+        scan_par.final("ObsA"), scan_ser.final("ObsA"), rtol=1e-9
+    )
 
     scan2d_ser = m.parameter_scan_2d(
         "k1", [1.0, 2.0], "k2", [5.0, 6.0], t_end=1.0, n_steps=10, parallel=0
@@ -795,7 +806,9 @@ end reaction rules
 end model
 """)
     native_c = m.simulate(t_end=1.0, n_steps=100).observables["ObsC"][-1]
-    static_c = jax_ode.simulate_jax_ode(m, t_end=1.0, n_steps=100)["concentrations"][-1, 2]
+    static_c = jax_ode.simulate_jax_ode(m, t_end=1.0, n_steps=100)["concentrations"][
+        -1, 2
+    ]
     params_c = jax_ode.simulate_jax_ode(
         m, t_end=1.0, n_steps=100, parameters={"k": 1.0}
     )["concentrations"][-1, 2]
@@ -827,7 +840,9 @@ begin reaction rules
 end reaction rules
 end model
 """)
-    dyn_c = jax_ode.simulate_jax_ode(m_dyn, t_end=1.0, n_steps=100)["concentrations"][-1, 2]
+    dyn_c = jax_ode.simulate_jax_ode(m_dyn, t_end=1.0, n_steps=100)["concentrations"][
+        -1, 2
+    ]
     assert dyn_c == pytest.approx(native_c, rel=1e-4)
 
 
@@ -941,7 +956,9 @@ end reaction rules
 end model
 """)
         native_b = m.simulate(t_end=2.0, n_steps=50).observables["ObsB"][-1]
-        jax_b = jax_ode.simulate_jax_ode(m, t_end=2.0, n_steps=200)["concentrations"][-1, 1]
+        jax_b = jax_ode.simulate_jax_ode(m, t_end=2.0, n_steps=200)["concentrations"][
+            -1, 1
+        ]
         assert jax_b == pytest.approx(native_b, rel=1e-3), f"Mismatch on {rule_line}"
 
     # Two-reactant self-consistent MM(kcat, Km)
@@ -968,7 +985,9 @@ end reaction rules
 end model
 """)
     native_p = m_mm2.simulate(t_end=2.0, n_steps=50).observables["ObsP"][-1]
-    jax_p = jax_ode.simulate_jax_ode(m_mm2, t_end=2.0, n_steps=200)["concentrations"][-1, 2]
+    jax_p = jax_ode.simulate_jax_ode(m_mm2, t_end=2.0, n_steps=200)["concentrations"][
+        -1, 2
+    ]
     assert jax_p == pytest.approx(native_p, rel=1e-3)
 
 
@@ -1066,7 +1085,16 @@ end model
     for m_name in ("nfcore", "nfnext"):
         res = runner.invoke(
             cli_main,
-            ["run", str(valid_path), "--method", m_name, "--t-end", "0.5", "--n-steps", "2"],
+            [
+                "run",
+                str(valid_path),
+                "--method",
+                m_name,
+                "--t-end",
+                "0.5",
+                "--n-steps",
+                "2",
+            ],
         )
         assert res.exit_code == 0, res.output
     for bad in ("cvode", "rm"):

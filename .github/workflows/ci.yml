@@ -331,9 +331,9 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
-            -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer" \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
             -DBUILD_PYTHON_BINDINGS=OFF \
             -DBUILD_CLI=ON \
             -DBUILD_TESTS=ON
@@ -341,14 +341,22 @@ jobs:
       - name: Build
         env:
           ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: cmake --build build
 
       - name: Run tests under ASan
         env:
           ASAN_OPTIONS: detect_leaks=0
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
         run: |
           mkdir -p "$RUNNER_TEMP/asan-results"
           ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error --output-junit "$RUNNER_TEMP/asan-results/asan-ctest-results.xml"
+
+      - name: Run security and memory-safety CLI checks under ASan+UBSan
+        env:
+          ASAN_OPTIONS: detect_leaks=0:halt_on_error=1:abort_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: python scripts/ci/check_security_memory_asan.py --bng-cpp build/cpp/bng_cpp
 
       - name: Qualify issue 141 late CVODE exception cleanup
         env:
@@ -1070,6 +1078,11 @@ jobs:
         env:
           SYMPY_USE_GMPY: "0"
 
+      - name: Run adversarial audit regression suites
+        run: pytest tests/python/test_audit_wave*.py -v --tb=short --maxfail=1 --junitxml=audit-results.xml
+        env:
+          SYMPY_USE_GMPY: "0"
+
       - name: Retain integration test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -1078,6 +1091,7 @@ jobs:
           path: |
             atomizer-results.xml
             model-results.xml
+            audit-results.xml
 
       - name: Test CLI commands
         run: |

@@ -509,7 +509,9 @@ def safe_sympify(expr, locals=None):
     if isinstance(expr, (sympy.Basic, int, float, complex)):
         return sympy.sympify(expr, locals=locals)
     if not isinstance(expr, str):
-        raise SympifyError(f"Unsupported expression type for safe_sympify: {type(expr).__name__}")
+        raise SympifyError(
+            f"Unsupported expression type for safe_sympify: {type(expr).__name__}"
+        )
     text = expr.strip()
     if not text:
         raise SympifyError("Empty mathematical expression")
@@ -557,15 +559,21 @@ def safe_sympify(expr, locals=None):
             continue
         if isinstance(node, ast.BinOp):
             if not isinstance(node.op, allowed_binops):
-                raise SympifyError(f"Disallowed binary operator: {type(node.op).__name__}")
+                raise SympifyError(
+                    f"Disallowed binary operator: {type(node.op).__name__}"
+                )
             continue
         if isinstance(node, ast.UnaryOp):
             if not isinstance(node.op, allowed_unaryops):
-                raise SympifyError(f"Disallowed unary operator: {type(node.op).__name__}")
+                raise SympifyError(
+                    f"Disallowed unary operator: {type(node.op).__name__}"
+                )
             continue
         if isinstance(node, ast.BoolOp):
             if not isinstance(node.op, allowed_boolops):
-                raise SympifyError(f"Disallowed boolean operator: {type(node.op).__name__}")
+                raise SympifyError(
+                    f"Disallowed boolean operator: {type(node.op).__name__}"
+                )
             continue
         if isinstance(node, ast.Compare):
             if not all(isinstance(op, allowed_cmpops) for op in node.ops):
@@ -586,24 +594,29 @@ def safe_sympify(expr, locals=None):
                 and (not locals or node.id not in locals)
                 and node.id not in {"__e__", "__Avogadro__"}
             ):
-                raise SympifyError(f"Disallowed identifier in mathematical expression: {node.id}")
+                raise SympifyError(
+                    f"Disallowed identifier in mathematical expression: {node.id}"
+                )
             continue
         if isinstance(node, ast.Call):
             if node.keywords:
-                raise SympifyError("Keyword arguments are not allowed in mathematical expressions")
+                raise SympifyError(
+                    "Keyword arguments are not allowed in mathematical expressions"
+                )
             if not isinstance(node.func, ast.Name):
                 raise SympifyError("Dynamic or attribute call targets are not allowed")
             func_name = node.func.id
-            if (
-                func_name in _FORBIDDEN_SYMPY_NAMES
-                or (
-                    func_name not in _SAFE_SYMPY_FUNCS
-                    and func_name not in allowed_local_funcs
-                )
+            if func_name in _FORBIDDEN_SYMPY_NAMES or (
+                func_name not in _SAFE_SYMPY_FUNCS
+                and func_name not in allowed_local_funcs
             ):
-                raise SympifyError(f"Disallowed function call in mathematical expression: {func_name}")
+                raise SympifyError(
+                    f"Disallowed function call in mathematical expression: {func_name}"
+                )
             continue
-        if isinstance(node, (allowed_binops, allowed_unaryops, allowed_boolops, allowed_cmpops)):
+        if isinstance(
+            node, (allowed_binops, allowed_unaryops, allowed_boolops, allowed_cmpops)
+        ):
             continue
         raise SympifyError(
             f"Disallowed syntax construct in mathematical expression: {type(node).__name__}"

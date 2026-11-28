@@ -68,14 +68,16 @@ end model
     n1 = cpp.generate_network(m1)
     finals = [
         float(
-            cpp.simulate_psa(
-                m1, n1, t_end=10.0, n_steps=5, poplevel=1000.0, seed=s
-            )["observables"]["A_free"][-1]
+            cpp.simulate_psa(m1, n1, t_end=10.0, n_steps=5, poplevel=1000.0, seed=s)[
+                "observables"
+            ]["A_free"][-1]
         )
         for s in range(1, 61)
     ]
     mean_a = float(np.mean(finals))
-    assert abs(mean_a - 50.0) < 4.0, f"Expected ~50.0 (statFactor=0.5), got {mean_a:.2f}"
+    assert (
+        abs(mean_a - 50.0) < 4.0
+    ), f"Expected ~50.0 (statFactor=0.5), got {mean_a:.2f}"
 
     # Case 2: A(b~U,b~U) -> A(b~U,b~P) (statFactor = 2.0). Exact E[AUU(1)] = 100*exp(-1) = 36.79.
     # Buggy statFactor^2 gave 100*exp(-2) = 13.53. Use Species AUU (weight 1 per species).
@@ -101,17 +103,17 @@ end model
     n2 = cpp.generate_network(m2)
     finals2 = [
         float(
-            cpp.simulate_psa(
-                m2, n2, t_end=1.0, n_steps=5, poplevel=1000.0, seed=s
-            )["observables"]["AUU"][-1]
+            cpp.simulate_psa(m2, n2, t_end=1.0, n_steps=5, poplevel=1000.0, seed=s)[
+                "observables"
+            ]["AUU"][-1]
         )
         for s in range(1, 61)
     ]
     mean_auu = float(np.mean(finals2))
     exact_auu = 100.0 * math.exp(-1.0)
-    assert abs(mean_auu - exact_auu) < 4.0, (
-        f"Expected ~{exact_auu:.2f} (statFactor=2), got {mean_auu:.2f}"
-    )
+    assert (
+        abs(mean_auu - exact_auu) < 4.0
+    ), f"Expected ~{exact_auu:.2f} (statFactor=2), got {mean_auu:.2f}"
 
 
 def test_psa_and_pla_non_adjacent_identical_reactants():
@@ -258,15 +260,17 @@ end model
     net = cpp.generate_network(model)
     d_counts = [
         float(
-            cpp.simulate_psa(
-                model, net, t_end=1e8, n_steps=1, poplevel=1000.0, seed=s
-            )["observables"]["Dtot"][-1]
+            cpp.simulate_psa(model, net, t_end=1e8, n_steps=1, poplevel=1000.0, seed=s)[
+                "observables"
+            ]["Dtot"][-1]
         )
         for s in range(1, 16)
     ]
     mean_d = float(np.mean(d_counts))
     # Exact D ~ Poisson(10.0). Buggy PSA returned 0.0 on every seed.
-    assert mean_d > 5.0 and mean_d < 16.0, f"Expected Poisson(10) mean, got {mean_d:.2f}"
+    assert (
+        mean_d > 5.0 and mean_d < 16.0
+    ), f"Expected Poisson(10) mean, got {mean_d:.2f}"
 
 
 def test_psa_small_poplevel_preserves_mass_and_does_not_freeze():
@@ -308,7 +312,9 @@ end model
         # Exact mass conservation at every timepoint (buggy check_product_scale=1 gave 128).
         np.testing.assert_allclose(a_free + 2.0 * a2_spec, 100.0, atol=1e-9)
         # Reaction must progress (buggy check_product_scale=0 froze at A_free=100).
-        assert a_free[-1] < 20.0, f"check_product_scale={check_prod} froze at {a_free[-1]}"
+        assert (
+            a_free[-1] < 20.0
+        ), f"check_product_scale={check_prod} froze at {a_free[-1]}"
 
 
 def test_psa_observable_functional_rates():
@@ -337,9 +343,9 @@ end model
     # Exact ODE steady state: 0.5 * A^2 = 10 => A* = sqrt(20) ~ 4.472.
     finals = [
         float(
-            cpp.simulate_psa(
-                model, net, t_end=5.0, n_steps=5, poplevel=100.0, seed=s
-            )["observables"]["Atot"][-1]
+            cpp.simulate_psa(model, net, t_end=5.0, n_steps=5, poplevel=100.0, seed=s)[
+                "observables"
+            ]["Atot"][-1]
         )
         for s in range(1, 41)
     ]
@@ -393,7 +399,11 @@ end model
     m1 = cpp.parse_string(src_zero)
     n1 = cpp.generate_network(m1)
     vals1 = [
-        float(cpp.simulate_pla(m1, n1, t_end=2.0, n_steps=5, seed=s)["observables"]["Atot"][-1])
+        float(
+            cpp.simulate_pla(m1, n1, t_end=2.0, n_steps=5, seed=s)["observables"][
+                "Atot"
+            ][-1]
+        )
         for s in range(1, 31)
     ]
     assert 15.0 < float(np.mean(vals1)) < 25.0
@@ -418,7 +428,11 @@ end model
     m2 = cpp.parse_string(src_buf)
     n2 = cpp.generate_network(m2)
     vals2 = [
-        float(cpp.simulate_pla(m2, n2, t_end=2.0, n_steps=5, seed=s)["observables"]["Btot"][-1])
+        float(
+            cpp.simulate_pla(m2, n2, t_end=2.0, n_steps=5, seed=s)["observables"][
+                "Btot"
+            ][-1]
+        )
         for s in range(1, 31)
     ]
     assert 15.0 < float(np.mean(vals2)) < 25.0
@@ -480,7 +494,12 @@ end model
     m1 = cpp.parse_string(src_loop)
     n1 = cpp.generate_network(m1)
     res1 = cpp.simulate_pla(
-        m1, n1, t_end=1.0, n_steps=10, config_str="fEuler|post-neg:sb|tau=1.0,w=0.5", seed=1
+        m1,
+        n1,
+        t_end=1.0,
+        n_steps=10,
+        config_str="fEuler|post-neg:sb|tau=1.0,w=0.5",
+        seed=1,
     )
     assert len(res1["time"]) == 11
     assert np.all(np.asarray(res1["observables"]["Atot"]) >= 0.0)
@@ -510,7 +529,9 @@ end model
     res2 = cpp.simulate_pla(
         m2, n2, t_end=1.0, n_steps=5, config_str="fEuler|post-eps:sb|tau=1.0", seed=1
     )
-    total = np.asarray(res2["observables"]["Atot"]) + np.asarray(res2["observables"]["Btot"])
+    total = np.asarray(res2["observables"]["Atot"]) + np.asarray(
+        res2["observables"]["Btot"]
+    )
     np.testing.assert_allclose(total, 20.0, atol=1e-9)
 
 
@@ -570,13 +591,21 @@ end model
     mf = cpp.parse_string(func_src)
     nf = cpp.generate_network(mf)
     vals_f = [
-        float(cpp.simulate_pla(mf, nf, t_end=5.0, n_steps=5, seed=s)["observables"]["Atot"][-1])
+        float(
+            cpp.simulate_pla(mf, nf, t_end=5.0, n_steps=5, seed=s)["observables"][
+                "Atot"
+            ][-1]
+        )
         for s in range(1, 26)
     ]
     assert 3.0 < float(np.mean(vals_f)) < 6.5
 
     # SSA-16 #4: unsupported midpt / rk4 / :rb fail closed
-    for bad_cfg in ("midpt|pre-neg:sb|eps=0.03", "rk4|pre-neg:sb|eps=0.03", "fEuler|pre-neg:rb|eps=0.03"):
+    for bad_cfg in (
+        "midpt|pre-neg:sb|eps=0.03",
+        "rk4|pre-neg:sb|eps=0.03",
+        "fEuler|pre-neg:rb|eps=0.03",
+    ):
         with pytest.raises(RuntimeError):
             cpp.simulate_pla(mf, nf, t_end=1.0, n_steps=2, config_str=bad_cfg, seed=1)
 
@@ -723,20 +752,44 @@ end model
 
     # simulate_ssa batch mode with seed=0
     s1 = cpp.simulate_ssa(
-        model, net, t_end=1.0, n_steps=4, seed=0, batch_size=64, batch_gpu_preferred=False
+        model,
+        net,
+        t_end=1.0,
+        n_steps=4,
+        seed=0,
+        batch_size=64,
+        batch_gpu_preferred=False,
     )
     s2 = cpp.simulate_ssa(
-        model, net, t_end=1.0, n_steps=4, seed=0, batch_size=64, batch_gpu_preferred=False
+        model,
+        net,
+        t_end=1.0,
+        n_steps=4,
+        seed=0,
+        batch_size=64,
+        batch_gpu_preferred=False,
     )
     assert not np.array_equal(s1["observables"]["Atot"], s2["observables"]["Atot"])
 
     backend = _usable_gpu_backend()
     if backend is not None:
         g1 = cpp.simulate_batch_ssa_gpu(
-            model, net, batch_size=64, t_end=1.0, n_steps=4, base_seed=0, backend=backend
+            model,
+            net,
+            batch_size=64,
+            t_end=1.0,
+            n_steps=4,
+            base_seed=0,
+            backend=backend,
         )
         g2 = cpp.simulate_batch_ssa_gpu(
-            model, net, batch_size=64, t_end=1.0, n_steps=4, base_seed=0, backend=backend
+            model,
+            net,
+            batch_size=64,
+            t_end=1.0,
+            n_steps=4,
+            base_seed=0,
+            backend=backend,
         )
         assert not np.array_equal(g1["final_species"], g2["final_species"])
 
@@ -745,7 +798,11 @@ def test_gpu_batch_ssa_fast_timescale_offset_clock_and_stiff_fallback():
     """SSA-09 & SSA-10: GPU fast timescale, t_start=1000 offset clock, and stiff fallback."""
     backend = _usable_gpu_backend()
     if backend is None:
-        pytest.skip("No GPU backend available")
+        import bionetgen
+
+        caps = bionetgen.gpu_backend_capabilities()
+        assert all(not entry.get("available") for entry in caps)
+        return
 
     # SSA-09: Fast timescale t_end=1e-6 (buggy 1e-6f tolerance returned flat 100.0)
     fast_src = """begin model
@@ -770,7 +827,9 @@ end model
     )
     a_means = np.asarray(gf["observable_means"]["Atot"], dtype=float)
     exact_end = 100.0 * math.exp(-2.0)  # 13.5335
-    assert abs(a_means[-1] - exact_end) < 2.0, f"Expected ~{exact_end:.2f}, got {a_means}"
+    assert (
+        abs(a_means[-1] - exact_end) < 2.0
+    ), f"Expected ~{exact_end:.2f}, got {a_means}"
     assert a_means[1] < 80.0  # must decay, not stay flat at 100
 
     # SSA-10 #1: t_start=1000.0, t_end=1000.01 (relative GPU clock eliminates float32 stall)
@@ -810,9 +869,9 @@ end model
     )
     exact_offset = 500.0 + 500.0 * math.exp(-2.0)  # 567.67 (buggy Metal gave 501.4)
     got_offset = float(go["observable_means"]["Atot"][-1])
-    assert abs(got_offset - exact_offset) < 10.0, (
-        f"Expected ~{exact_offset:.2f} at t=1000.01, got {got_offset:.2f}"
-    )
+    assert (
+        abs(got_offset - exact_offset) < 10.0
+    ), f"Expected ~{exact_offset:.2f} at t=1000.01, got {got_offset:.2f}"
 
     # SSA-10 #2: Propensity dynamic range > 1e5 must fail closed on GPU backend
     stiff_src = """begin model
@@ -853,7 +912,9 @@ end model
 # ---------------------------------------------------------------------------
 
 
-def test_hybrid_model_generator_unbound_observable_does_not_match_bound_dimer(tmp_path: Path):
+def test_hybrid_model_generator_unbound_observable_does_not_match_bound_dimer(
+    tmp_path: Path,
+):
     """SSA-11: Molecules A_free A(b) must NOT add bound dimer population P_A2()."""
     src = """begin model
 begin parameters
@@ -895,9 +956,9 @@ end actions
         if line.strip().startswith("Molecules ")
     }
     assert "A_free" in obs_lines
-    assert "P_A2" not in obs_lines["A_free"], (
-        f"A_free must not count bound dimer P_A2: {obs_lines['A_free']}"
-    )
+    assert (
+        "P_A2" not in obs_lines["A_free"]
+    ), f"A_free must not count bound dimer P_A2: {obs_lines['A_free']}"
     assert "P_A2" in obs_lines["A_all"]
 
 
@@ -931,11 +992,15 @@ end model
     # Seed reproducibility for PSA and PLA
     psa1 = cpp.simulate_psa(model, net, t_end=2.0, n_steps=5, poplevel=10.0, seed=42)
     psa2 = cpp.simulate_psa(model, net, t_end=2.0, n_steps=5, poplevel=10.0, seed=42)
-    np.testing.assert_array_equal(psa1["observables"]["Atot"], psa2["observables"]["Atot"])
+    np.testing.assert_array_equal(
+        psa1["observables"]["Atot"], psa2["observables"]["Atot"]
+    )
 
     pla1 = cpp.simulate_pla(model, net, t_end=2.0, n_steps=5, seed=42)
     pla2 = cpp.simulate_pla(model, net, t_end=2.0, n_steps=5, seed=42)
-    np.testing.assert_array_equal(pla1["observables"]["Atot"], pla2["observables"]["Atot"])
+    np.testing.assert_array_equal(
+        pla1["observables"]["Atot"], pla2["observables"]["Atot"]
+    )
 
     # Custom sample_times for PSA and PLA
     st = [0.0, 0.3, 1.5]

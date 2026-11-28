@@ -130,9 +130,13 @@ def test_sbml01_from_sbml_executes_delayed_state_events_and_priority(tmp_path):
     assert float(r_true.observables["B"][-1]) == pytest.approx(5.0, rel=1e-4)
 
     p_false = _write_sbml(tmp_path, "delay_f.xml", _delay_xml(False))
-    r_false = bionetgen.from_sbml(p_false).simulate(method="ode", t_end=10.0, n_steps=50)
+    r_false = bionetgen.from_sbml(p_false).simulate(
+        method="ode", t_end=10.0, n_steps=50
+    )
     expected_b_false = 5.0 * math.exp(-0.3 * 2.0)
-    assert float(r_false.observables["B"][-1]) == pytest.approx(expected_b_false, rel=1e-3)
+    assert float(r_false.observables["B"][-1]) == pytest.approx(
+        expected_b_false, rel=1e-3
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -264,7 +268,9 @@ def test_sbml05_homodimer_automorphism_rate_not_doubled(tmp_path):
     path = _write_sbml(tmp_path, "homodimer.xml", xml)
     res = bionetgen.from_sbml(path).simulate(method="ode", t_end=1.0, n_steps=10)
     # Macroscopic rate is 2 * 0.5 * S2 = 1.0 * S2 => S2(1) = 100 * exp(-1)
-    assert float(res.observables["S2"][-1]) == pytest.approx(100.0 * math.exp(-1.0), rel=1e-4)
+    assert float(res.observables["S2"][-1]) == pytest.approx(
+        100.0 * math.exp(-1.0), rel=1e-4
+    )
 
 
 def test_sbml06_symmetric_molecules_observable_not_doubled(tmp_path):
@@ -639,7 +645,9 @@ def test_sbml14_identifier_collisions_amt_and_compartment_param(tmp_path):
     p2 = _write_sbml(tmp_path, "col_comp.xml", xml_comp)
     r2 = bionetgen.from_sbml(p2).simulate(method="ode", t_end=2.0, n_steps=20)
     # Exact ODE: A_amt(0) = 10, dA_amt/dt = -0.5 * A_amt => A_amt(2) = 10 * exp(-1)
-    assert float(r2.observables["A"][-1]) == pytest.approx(10.0 * math.exp(-1.0), rel=1e-4)
+    assert float(r2.observables["A"][-1]) == pytest.approx(
+        10.0 * math.exp(-1.0), rel=1e-4
+    )
 
 
 def test_sbml16_ln10_full_ieee754_precision():
@@ -750,7 +758,9 @@ def test_sec04_pathwaycommons_defaults_https_timeout_and_no_hardcoded_key(
     pathwaycommons.queryActiveSite.cache.clear()
     fake_resp = mock.MagicMock()
     fake_resp.__enter__.return_value = fake_resp
-    fake_resp.read.return_value = b"Entry name\tEntry\tActive site\nEGF_HUMAN\tP01133\tACT_SITE 1\n"
+    fake_resp.read.return_value = (
+        b"Entry name\tEntry\tActive site\nEGF_HUMAN\tP01133\tACT_SITE 1\n"
+    )
     with mock.patch("urllib.request.urlopen", return_value=fake_resp) as mocked_open:
         result = pathwaycommons.queryActiveSite("EGF", ["9606"])
         assert result == ["EGF_HUMAN"]
@@ -796,7 +806,12 @@ def test_sec05_and_mem09_annotation_extender_and_parse_annotation():
 
     repo_root = Path(__file__).resolve().parents[2]
     ext_src = (
-        repo_root / "python" / "bionetgen" / "atomizer" / "utils" / "annotationExtender.py"
+        repo_root
+        / "python"
+        / "bionetgen"
+        / "atomizer"
+        / "utils"
+        / "annotationExtender.py"
     ).read_text(encoding="utf-8")
     assert "os.chdir(tempfile.tempdir)" not in ext_src
     assert "TemporaryDirectory()" in ext_src
@@ -827,7 +842,9 @@ def test_perf04_naming_conventions_and_event_metadata_scale_cleanly():
     result = analyze_naming_conventions(names)
     elapsed_naming = time.perf_counter() - t0
     assert isinstance(result["keys"], list)
-    assert elapsed_naming < 3.0, f"analyze_naming_conventions took {elapsed_naming:.2f}s"
+    assert (
+        elapsed_naming < 3.0
+    ), f"analyze_naming_conventions took {elapsed_naming:.2f}s"
 
     from bionetgen.atomizer.modern.types import (
         SBMLEvent,

@@ -1557,13 +1557,10 @@ def _event_metadata_block(
         (str(identifier) for identifier in model.species), key=len, reverse=True
     )
     species_replacement_map = {
-        identifier: f"{standardize_name(identifier)}_amt"
-        for identifier in species_ids
+        identifier: f"{standardize_name(identifier)}_amt" for identifier in species_ids
     }
     species_pattern = (
-        re.compile(
-            r"\b(?:" + "|".join(re.escape(i) for i in species_ids) + r")\b"
-        )
+        re.compile(r"\b(?:" + "|".join(re.escape(i) for i in species_ids) + r")\b")
         if species_ids
         else None
     )
@@ -1572,9 +1569,7 @@ def _event_metadata_block(
         value = str(expression or "")
         if not value or species_pattern is None:
             return value
-        return species_pattern.sub(
-            lambda m: species_replacement_map[m.group(0)], value
-        )
+        return species_pattern.sub(lambda m: species_replacement_map[m.group(0)], value)
 
     lines = ["# ==== SBML EVENT METADATA ===="]
     for index, event in enumerate(model.events):
@@ -1724,7 +1719,9 @@ def _species_automorphism_count(species: Species) -> int:
             raw_edges.setdefault((v, u), []).append((sv, su))
         elif su == sv:
             parallel_bond_factor *= 2
-    edges: Dict[Tuple[int, int], Tuple[Tuple[Tuple[str, str], Tuple[str, str]], ...]] = {}
+    edges: Dict[
+        Tuple[int, int], Tuple[Tuple[Tuple[str, str], Tuple[str, str]], ...]
+    ] = {}
     for (u, v), elist in raw_edges.items():
         edges[(u, v)] = tuple(sorted(elist))
         if u <= v:
@@ -5701,9 +5698,7 @@ def _substitute_seed_symbols(
     if symbols and result:
         formatted = {symbol: _number(value) for symbol, value in symbols.items()}
         for _ in range(8):
-            present = [
-                symbol for symbol in formatted if symbol in result
-            ]
+            present = [symbol for symbol in formatted if symbol in result]
             if not present:
                 break
             present.sort(key=len, reverse=True)
@@ -5712,9 +5707,7 @@ def _substitute_seed_symbols(
                 + "|".join(re.escape(symbol) for symbol in present)
                 + r")(?:\s*\(\s*\)|\b(?!\s*\())"
             )
-            result, count = pattern.subn(
-                lambda m: formatted[m.group(1)], result
-            )
+            result, count = pattern.subn(lambda m: formatted[m.group(1)], result)
             if not count:
                 break
     value = _evaluate_arithmetic(result)
@@ -14384,7 +14377,10 @@ def generate_bngl(
                         )
                         if comp_param_swaps:
                             swapped_bngl = promoted.bngl
-                            for orig_std, (temp_user, comp_alias) in comp_param_swaps.items():
+                            for orig_std, (
+                                temp_user,
+                                comp_alias,
+                            ) in comp_param_swaps.items():
                                 swapped_bngl = re.sub(
                                     rf"\b{re.escape(orig_std)}\b",
                                     comp_alias,
@@ -14571,12 +14567,8 @@ def generate_bngl(
     ]
     if comp_param_swaps:
         for orig_std, (temp_user, comp_alias) in comp_param_swaps.items():
-            model_text = re.sub(
-                rf"\b{re.escape(orig_std)}\b", comp_alias, model_text
-            )
-            model_text = re.sub(
-                rf"\b{re.escape(temp_user)}\b", orig_std, model_text
-            )
+            model_text = re.sub(rf"\b{re.escape(orig_std)}\b", comp_alias, model_text)
+            model_text = re.sub(rf"\b{re.escape(temp_user)}\b", orig_std, model_text)
         caller_model.import_warnings = model.import_warnings
         caller_model.reaction_rate_functions = model.reaction_rate_functions
 

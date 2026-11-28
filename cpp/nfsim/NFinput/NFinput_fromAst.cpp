@@ -6098,7 +6098,7 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
             reaction->setReactantVolumeCompartments(converted);
         }
 
-        // Keep parameter/expression-backed zero-rate rules so RNF set/update
+        // Keep parameter/expression-backed zero rate rules so RNF set/update
         // or continuation can activate them later (Hlavacek #137).
         if (reaction->getRxnType() == ReactionClass::BASIC_RXN &&
             reaction->getBaseRate() <= 0.0 &&

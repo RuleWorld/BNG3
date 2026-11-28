@@ -542,8 +542,7 @@ def parameter_scan(
     if parallel and parallel > 1:
         model_spec = _serialize_model_for_worker(model)
         payloads = [
-            (model_spec, {parameter: float(value)}, sim_kwargs)
-            for value in scan_values
+            (model_spec, {parameter: float(value)}, sim_kwargs) for value in scan_values
         ]
         with ProcessPoolExecutor(
             max_workers=parallel,

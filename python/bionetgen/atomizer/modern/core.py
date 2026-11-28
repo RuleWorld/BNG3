@@ -2162,7 +2162,10 @@ def build_species_composition_table(
                 continue
             std_surface = standardize_name(sp_comp)
             for molecule in entry.structure.molecules:
-                if molecule.compartment and standardize_name(molecule.compartment) != std_surface:
+                if (
+                    molecule.compartment
+                    and standardize_name(molecule.compartment) != std_surface
+                ):
                     continue
                 candidate_comps = monomer_compartments.get(molecule.name)
                 if not candidate_comps or len(candidate_comps) != 1:
@@ -2171,7 +2174,10 @@ def build_species_composition_table(
                 if monomer_comp_id == sp_comp:
                     continue
                 monomer_comp = model.compartments.get(monomer_comp_id)
-                if monomer_comp is None or getattr(monomer_comp, "spatial_dimensions", 3) != 3:
+                if (
+                    monomer_comp is None
+                    or getattr(monomer_comp, "spatial_dimensions", 3) != 3
+                ):
                     continue
                 adjacent = (
                     getattr(surface, "outside", None) == monomer_comp_id

@@ -542,7 +542,9 @@ end model
         r.attrib["name"]
         for r in root.findall(".//b:ListOfReactionRules/b:ReactionRule", ns)
     ]
-    assert len(rule_names) == len(set(rule_names)), f"Duplicate rule names: {rule_names}"
+    assert len(rule_names) == len(
+        set(rule_names)
+    ), f"Duplicate rule names: {rule_names}"
     assert "_reverse" not in rule_names
 
     # NFC-10: 3-arg Sat stays type="Sat" with 3 RateConstants
@@ -627,9 +629,18 @@ end model
     # No L3-only <rem/> in Level 2 SBML
     assert "<rem/>" not in xml_text
     # No unlowered bare function identifiers
-    for bad in ("<ci> log10 </ci>", "<ci> log2 </ci>", "<ci> rint </ci>",
-                "<ci> sum </ci>", "<ci> avg </ci>", "<ci> sign </ci>",
-                "<ci> sat </ci>", "<ci> Sat </ci>", "<ci> MM </ci>", "<ci> Hill </ci>"):
+    for bad in (
+        "<ci> log10 </ci>",
+        "<ci> log2 </ci>",
+        "<ci> rint </ci>",
+        "<ci> sum </ci>",
+        "<ci> avg </ci>",
+        "<ci> sign </ci>",
+        "<ci> sat </ci>",
+        "<ci> Sat </ci>",
+        "<ci> MM </ci>",
+        "<ci> Hill </ci>",
+    ):
         assert bad not in xml_text
     # logbase used for log10/log2, piecewise used for if/sign/rem/boolean coercion
     assert "<logbase>" in xml_text
@@ -1028,5 +1039,9 @@ end model
     times = np.linspace(0.0, 1.0, 11)
     _, _, obs_py = ns["simulate"](times)
     native = cpp.simulate_ode(model, net, t_end=1.0, n_steps=10)
-    np.testing.assert_allclose(obs_py[:, 0], native["observables"]["Aobs"], rtol=1e-4, atol=1e-5)
-    np.testing.assert_allclose(obs_py[:, 1], native["observables"]["Bobs"], rtol=1e-4, atol=1e-5)
+    np.testing.assert_allclose(
+        obs_py[:, 0], native["observables"]["Aobs"], rtol=1e-4, atol=1e-5
+    )
+    np.testing.assert_allclose(
+        obs_py[:, 1], native["observables"]["Bobs"], rtol=1e-4, atol=1e-5
+    )

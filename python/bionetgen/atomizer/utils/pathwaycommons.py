@@ -69,7 +69,9 @@ def queryBioGridByName(name1, name2, organism, truename1, truename2):
         # and not an organism taxonomy identifier
         data = urllib.parse.urlencode(d).encode("utf-8")
         try:
-            with urllib.request.urlopen(url, data=data, timeout=_HTTP_TIMEOUT_SECONDS) as f:
+            with urllib.request.urlopen(
+                url, data=data, timeout=_HTTP_TIMEOUT_SECONDS
+            ) as f:
                 response = f.read()
         except _NETWORK_ERRORS:
             logMess(
@@ -89,7 +91,9 @@ def queryBioGridByName(name1, name2, organism, truename1, truename2):
         }
         data = urllib.parse.urlencode(d).encode("utf-8")
         try:
-            with urllib.request.urlopen(url, data=data, timeout=_HTTP_TIMEOUT_SECONDS) as f:
+            with urllib.request.urlopen(
+                url, data=data, timeout=_HTTP_TIMEOUT_SECONDS
+            ) as f:
                 response = f.read()
         except _NETWORK_ERRORS:
             logMess("ERROR:MSC02", "A connection could not be established to biogrid")
@@ -238,7 +242,9 @@ def name2uniprot(nameStr, organism):
         }
         data = urllib.parse.urlencode(d).encode("utf-8")
         try:
-            with urllib.request.urlopen(url, data=data, timeout=_HTTP_TIMEOUT_SECONDS) as f:
+            with urllib.request.urlopen(
+                url, data=data, timeout=_HTTP_TIMEOUT_SECONDS
+            ) as f:
                 response = f.read()
         except _NETWORK_ERRORS:
             logMess("ERROR:MSC03", "A connection could not be established to uniprot")
@@ -254,7 +260,9 @@ def name2uniprot(nameStr, organism):
         }
         data = urllib.parse.urlencode(d).encode("utf-8")
         try:
-            with urllib.request.urlopen(url, data=data, timeout=_HTTP_TIMEOUT_SECONDS) as f:
+            with urllib.request.urlopen(
+                url, data=data, timeout=_HTTP_TIMEOUT_SECONDS
+            ) as f:
                 response = f.read()
         except _NETWORK_ERRORS:
             return None

@@ -2,7 +2,6 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 
-
 _UNSAFE_XML_DECL_RE = re.compile(r"<!(?:DOCTYPE|ENTITY)\b", re.IGNORECASE)
 _RDF_RESOURCE_ATTR = "{http://www.w3.org/1999/02/22-rdf-syntax-ns#}resource"
 
@@ -36,7 +35,9 @@ def parseAnnotation(XMLString):
     if XMLString == "":
         return []
     if _UNSAFE_XML_DECL_RE.search(XMLString):
-        raise ValueError("XML DOCTYPE/ENTITY declarations are not allowed in annotations")
+        raise ValueError(
+            "XML DOCTYPE/ENTITY declarations are not allowed in annotations"
+        )
     rootNode = ET.fromstring(XMLString)
     level = 0
     database = []

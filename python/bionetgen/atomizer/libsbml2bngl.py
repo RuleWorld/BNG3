@@ -337,7 +337,10 @@ def processFunctions(functions, sbmlfunctions, artificialObservables, tfunc):
             oldfunc = functions[idx]
             key = element.split(" = ")[0].split("(")[0]
             if (
-                re.search(r"(\W|^){0}(\W|$)".format(re.escape(key)), functions[idx].split(" = ")[1])
+                re.search(
+                    r"(\W|^){0}(\W|$)".format(re.escape(key)),
+                    functions[idx].split(" = ")[1],
+                )
                 != None
             ):
                 dependencies2[functions[idx].split(" = ")[0].split("(")[0]].append(key)
