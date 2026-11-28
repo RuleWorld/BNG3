@@ -18,6 +18,7 @@
 #include "compile/Pattern.hpp"
 #include <map>
 #include <set>
+#include <unordered_map>
 
 namespace bng::io {
 
@@ -332,6 +333,169 @@ std::string multiRoleSpeciesTypeId(const std::string& moleculeType,
 std::string multiRoleId(const std::string& base, const std::string& roleType) {
     return base + "_role_" + roleType.substr(3);
 }
+
+using ExtraGlobalMap = std::unordered_map<std::string, std::vector<std::string>>;
+
+void collectExprGlobals(
+    const bng::ast::Expression& expr,
+    const std::set<std::string>& boundArgs,
+    const std::set<std::string>& paramFuncNames,
+    const std::set<std::string>& knownGlobals,
+    std::set<std::string>& out) {
+    using Kind = bng::ast::ExpressionKind;
+    switch (expr.kind()) {
+    case Kind::Number:
+        return;
+    case Kind::Identifier: {
+        const auto& name = expr.name();
+        if (boundArgs.count(name) == 0 &&
+            (name == "time" || knownGlobals.count(name) != 0)) {
+            out.insert(name);
+        }
+        return;
+    }
+    case Kind::Unary:
+    case Kind::Binary:
+    case Kind::TableFunction:
+        for (const auto& child : expr.args()) {
+            collectExprGlobals(child, boundArgs, paramFuncNames, knownGlobals, out);
+        }
+        return;
+    case Kind::Function:
+    case Kind::ObservableRef: {
+        const auto& name = expr.name();
+        if (expr.args().empty()) {
+            if (boundArgs.count(name) == 0 && paramFuncNames.count(name) == 0 &&
+                (name == "time" || knownGlobals.count(name) != 0)) {
+                out.insert(name);
+            }
+            return;
+        }
+        for (const auto& child : expr.args()) {
+            collectExprGlobals(child, boundArgs, paramFuncNames, knownGlobals, out);
+        }
+        return;
+    }
+    }
+}
+
+void collectCalledParamFuncs(
+    const bng::ast::Expression& expr,
+    const std::set<std::string>& paramFuncNames,
+    std::set<std::string>& out) {
+    if ((expr.kind() == bng::ast::ExpressionKind::Function ||
+         expr.kind() == bng::ast::ExpressionKind::ObservableRef) &&
+        !expr.args().empty() &&
+        paramFuncNames.count(expr.name()) != 0) {
+        out.insert(expr.name());
+    }
+    for (const auto& child : expr.args()) {
+        collectCalledParamFuncs(child, paramFuncNames, out);
+    }
+}
+
+ExtraGlobalMap computeParameterizedFunctionExtraGlobals(const bng::ast::Model& model) {
+    std::set<std::string> paramFuncNames;
+    std::set<std::string> knownGlobals;
+    for (const auto& param : model.getParameters().all()) {
+        knownGlobals.insert(param.getName());
+    }
+    for (const auto& obs : model.getObservables()) {
+        knownGlobals.insert(obs.getName());
+    }
+    for (const auto& func : model.getFunctions()) {
+        if (func.getArgs().empty()) {
+            knownGlobals.insert(func.getName());
+        } else {
+            paramFuncNames.insert(func.getName());
+        }
+    }
+    std::unordered_map<std::string, std::set<std::string>> globalSets;
+    std::unordered_map<std::string, std::set<std::string>> callees;
+    std::unordered_map<std::string, std::set<std::string>> boundMap;
+    for (const auto& func : model.getFunctions()) {
+        if (func.getArgs().empty()) continue;
+        std::set<std::string> bound(func.getArgs().begin(), func.getArgs().end());
+        boundMap[func.getName()] = bound;
+        collectExprGlobals(func.getExpression(), bound, paramFuncNames, knownGlobals,
+                           globalSets[func.getName()]);
+        collectCalledParamFuncs(func.getExpression(), paramFuncNames, callees[func.getName()]);
+    }
+    // Transitive closure for nested parameterized function calls
+    bool changed = true;
+    for (std::size_t iter = 0; changed && iter <= paramFuncNames.size(); ++iter) {
+        changed = false;
+        for (const auto& [fn, calls] : callees) {
+            const auto& bound = boundMap[fn];
+            auto& target = globalSets[fn];
+            for (const auto& callee : calls) {
+                for (const auto& g : globalSets[callee]) {
+                    if (bound.count(g) == 0 && target.insert(g).second) {
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+    ExtraGlobalMap result;
+    for (const auto& [fn, set] : globalSets) {
+        if (!set.empty()) {
+            result[fn].assign(set.begin(), set.end());
+        }
+    }
+    return result;
+}
+
+bng::ast::Expression rewriteMultiExprCalls(
+    const bng::ast::Expression& expr,
+    const ExtraGlobalMap& extraGlobals,
+    bool replaceTimeWithParam) {
+    using Kind = bng::ast::ExpressionKind;
+    switch (expr.kind()) {
+    case Kind::Number:
+        return expr;
+    case Kind::Identifier:
+        if (replaceTimeWithParam && expr.name() == "time") {
+            return bng::ast::Expression::identifier("__bng_time");
+        }
+        return expr;
+    case Kind::Unary:
+        return bng::ast::Expression::unary(
+            expr.name(),
+            rewriteMultiExprCalls(expr.args().front(), extraGlobals, replaceTimeWithParam));
+    case Kind::Binary:
+        return bng::ast::Expression::binary(
+            expr.name(),
+            rewriteMultiExprCalls(expr.args()[0], extraGlobals, replaceTimeWithParam),
+            rewriteMultiExprCalls(expr.args()[1], extraGlobals, replaceTimeWithParam));
+    case Kind::Function:
+    case Kind::ObservableRef: {
+        std::vector<bng::ast::Expression> newArgs;
+        newArgs.reserve(expr.args().size());
+        for (const auto& arg : expr.args()) {
+            newArgs.push_back(rewriteMultiExprCalls(arg, extraGlobals, replaceTimeWithParam));
+        }
+        if (expr.kind() == Kind::Function && !expr.args().empty()) {
+            if (const auto it = extraGlobals.find(expr.name()); it != extraGlobals.end()) {
+                for (const auto& globalName : it->second) {
+                    if (replaceTimeWithParam && globalName == "time") {
+                        newArgs.push_back(bng::ast::Expression::identifier("__bng_time"));
+                    } else {
+                        newArgs.push_back(bng::ast::Expression::identifier(globalName));
+                    }
+                }
+            }
+        }
+        if (expr.kind() == Kind::ObservableRef) {
+            return bng::ast::Expression::observableRef(expr.name(), std::move(newArgs));
+        }
+        return bng::ast::Expression::function(expr.name(), std::move(newArgs));
+    }
+    case Kind::TableFunction:
+        return expr;
+    }
+    return expr;
+}
 } // namespace
 
 std::string SbmlMultiWriter::escapeXml(const std::string& text) {
@@ -414,6 +578,7 @@ std::string SbmlMultiWriter::write(const ast::Model& model, const Options& optio
             }
         }
         if (hasParameterizedFunctions) {
+            const auto extraGlobals = computeParameterizedFunctionExtraGlobals(model);
             auto symbols = SbmlWriter::computeSymbolIds(model, nullptr, {});
             for (const auto& func : model.getFunctions()) {
                 if (!func.getArgs().empty()) {
@@ -431,6 +596,8 @@ std::string SbmlMultiWriter::write(const ast::Model& model, const Options& optio
                     localSymbols.observables.erase(arg);
                     localSymbols.functions.erase(arg);
                 }
+                const auto extraIt = extraGlobals.find(func.getName());
+                const bool hasExtra = extraIt != extraGlobals.end();
                 sbml << "      <functionDefinition id=\"" << makeValidSBMLId(func.getName())
                      << "\" name=\"" << escapeXml(func.getName()) << "\">\n"
                      << "        <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n"
@@ -438,7 +605,26 @@ std::string SbmlMultiWriter::write(const ast::Model& model, const Options& optio
                 for (const auto& arg : func.getArgs()) {
                     sbml << "            <bvar><ci> " << escapeXml(arg) << " </ci></bvar>\n";
                 }
-                sbml << SbmlWriter::exprToMathML(func.getExpression(), "            ", localSymbols)
+                if (hasExtra) {
+                    for (const auto& globalName : extraIt->second) {
+                        std::string bvarId = globalName == "time" ? "__bng_time" : globalName;
+                        if (globalName != "time") {
+                            if (const auto it = localSymbols.parameters.find(globalName);
+                                it != localSymbols.parameters.end()) {
+                                bvarId = it->second;
+                            } else if (const auto it = localSymbols.observables.find(globalName);
+                                       it != localSymbols.observables.end()) {
+                                bvarId = it->second;
+                            } else if (const auto it = localSymbols.functions.find(globalName);
+                                       it != localSymbols.functions.end()) {
+                                bvarId = it->second;
+                            }
+                        }
+                        sbml << "            <bvar><ci> " << escapeXml(bvarId) << " </ci></bvar>\n";
+                    }
+                }
+                const auto bodyExpr = rewriteMultiExprCalls(func.getExpression(), extraGlobals, true);
+                sbml << SbmlWriter::exprToMathML(bodyExpr, "            ", localSymbols)
                      << "          </lambda>\n"
                      << "        </math>\n"
                      << "      </functionDefinition>\n";
@@ -480,28 +666,53 @@ std::string SbmlMultiWriter::writeCompartments(
     const ast::Model& model, const compile::CompiledModel& compiled) {
     std::ostringstream sbml;
 
-    if (model.getCompartments().empty()) {
-        sbml << "    <listOfCompartments>\n";
-        sbml << "      <compartment id=\"default\" spatialDimensions=\"3\" "
-                "size=\"1\" constant=\"true\" multi:isType=\"false\"/>\n";
-        sbml << "    </listOfCompartments>\n";
-        return sbml.str();
+    bool needsDefault = model.getCompartments().empty();
+    if (!needsDefault) {
+        visitMultiPatterns(model, [&](const std::string& text, const std::string&) {
+            if (needsDefault) return;
+            const auto pattern = MultiPattern::parse(text);
+            if (pattern.moleculeCount() == 0) return;
+            std::string compartment = pattern.compartment();
+            if (compartment.empty()) {
+                needsDefault = true;
+            }
+        });
+    }
+
+    bool defaultDeclared = false;
+    for (const auto& comp : model.getCompartments()) {
+        if (makeValidSBMLId(comp.getName()) == "default") {
+            defaultDeclared = true;
+            break;
+        }
     }
 
     sbml << "    <listOfCompartments>\n";
+    if (needsDefault && !defaultDeclared) {
+        sbml << "      <compartment id=\"default\" spatialDimensions=\"3\" "
+                "size=\"1\" constant=\"true\" multi:isType=\"false\"/>\n";
+    }
     for (const auto& comp : model.getCompartments()) {
         sbml << "      <compartment id=\"" << makeValidSBMLId(comp.getName())
              << "\" name=\"" << escapeXml(comp.getName())
              << "\" spatialDimensions=\"" << comp.getDimension()
              << "\" size=\"" << comp.getVolume()
              << "\" constant=\"true\""
-             << sbml_units::attribute(compiled, comp.getUnitName());
+             << sbml_units::attribute(compiled, comp.getUnitName())
+             << " multi:isType=\"false\"";
 
         if (!comp.getParent().empty()) {
-            sbml << " outside=\"" << makeValidSBMLId(comp.getParent()) << "\"";
+            // SBML Level 3 Core removed the Level 2 `outside` attribute on
+            // <compartment>. Preserve parent hierarchy via writer annotation.
+            sbml << ">\n"
+                 << "        <annotation><bng:outside "
+                    "xmlns:bng=\"https://bionetgen.org/sbml\">"
+                 << escapeXml(makeValidSBMLId(comp.getParent()))
+                 << "</bng:outside></annotation>\n"
+                 << "      </compartment>\n";
+        } else {
+            sbml << "/>\n";
         }
-
-        sbml << " multi:isType=\"false\"/>\n";
     }
     sbml << "    </listOfCompartments>\n";
     return sbml.str();
@@ -990,6 +1201,7 @@ std::string SbmlMultiWriter::writeObservableRules(const ast::Model& model) {
     }
     if (model.getObservables().empty() && !hasZeroArgFunctions) return {};
     auto symbols = SbmlWriter::computeSymbolIds(model, nullptr, {});
+    const auto extraGlobals = computeParameterizedFunctionExtraGlobals(model);
     for (const auto& func : model.getFunctions()) {
         if (!func.getArgs().empty()) {
             const std::string fnId = makeValidSBMLId(func.getName());
@@ -1024,9 +1236,10 @@ std::string SbmlMultiWriter::writeObservableRules(const ast::Model& model) {
         const auto idIt = symbols.functions.find(func.getName());
         const auto id = idIt == symbols.functions.end()
             ? makeValidSBMLId(func.getName()) : idIt->second;
+        const auto expr = rewriteMultiExprCalls(func.getExpression(), extraGlobals, false);
         sbml << "      <assignmentRule variable=\"" << id << "\">\n"
              << "        <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n"
-             << SbmlWriter::exprToMathML(func.getExpression(), "          ", symbols)
+             << SbmlWriter::exprToMathML(expr, "          ", symbols)
              << "        </math>\n"
              << "      </assignmentRule>\n";
     }
@@ -1038,6 +1251,7 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
     if (model.getReactionRules().empty()) return {};
     std::ostringstream sbml;
     auto symbols = SbmlWriter::computeSymbolIds(model, nullptr, {});
+    const auto extraGlobals = computeParameterizedFunctionExtraGlobals(model);
     for (const auto& func : model.getFunctions()) {
         if (!func.getArgs().empty()) {
             const std::string fnId = makeValidSBMLId(func.getName());
@@ -1131,7 +1345,7 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
             // The semantic flag belongs to this exact rule, including
             // unnamed rules.  A name-based lookup loses absolute-flux
             // semantics when no rule name was authored.
-            const auto& rateExpr = rule.getRates()[rateIndex];
+            const auto rateExpr = rewriteMultiExprCalls(rule.getRates()[rateIndex], extraGlobals, false);
             const auto volume = absolute ? std::string{} : multiMassActionVolume(model, reactants);
             std::string lowerRateName;
             if (rateExpr.kind() == ast::ExpressionKind::Function) {

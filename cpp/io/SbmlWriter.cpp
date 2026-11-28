@@ -22,6 +22,7 @@
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
 #include "engine/NetworkGenerator.hpp"
+#include "engine/ObservableProjection.hpp"
 #include "engine/DelayedSemanticsGuard.hpp"
 #include "io/NetWriter.hpp"
 #include "compile/CompiledModel.hpp"
@@ -34,6 +35,7 @@ namespace bng::io {
 namespace {
 
 thread_local bool gNextExprExpectsBoolean = false;
+thread_local int gCurrentSbmlVersion = 2;
 
 struct ScopedBooleanMathML {
     bool previous;
@@ -42,6 +44,16 @@ struct ScopedBooleanMathML {
     }
     ~ScopedBooleanMathML() {
         gNextExprExpectsBoolean = previous;
+    }
+};
+
+struct ScopedSbmlVersion {
+    int previous;
+    explicit ScopedSbmlVersion(int version) : previous(gCurrentSbmlVersion) {
+        gCurrentSbmlVersion = version;
+    }
+    ~ScopedSbmlVersion() {
+        gCurrentSbmlVersion = previous;
     }
 };
 
@@ -425,6 +437,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     // Events
     if (model.getEventFormatVersion().has_value()) {
+        ScopedSbmlVersion scopedVersion(options.version);
         sbml << writeEvents(model, groups, symbolIds, network, options.level);
     }
 
@@ -793,32 +806,27 @@ std::string SbmlWriter::writeEvents(
         const auto idIt = symbolIds.events.find(event.id);
         const auto id = idIt == symbolIds.events.end()
             ? makeValidSBMLId(event.id) : idIt->second;
-        // SBML Level 2 carries the delay as an event attribute, and it must
-        // be a constant there; a Level 3 delay element carries an expression.
-        std::string delayAttribute;
-        if (event.delay && level < 3) {
-            const double value = event.delay->evaluate([&](const std::string& name) {
-                return model.getParameters().evaluate(name);
-            }, 0.0);
-            if (!std::isfinite(value) || value < 0) {
-                throw std::runtime_error(
-                    "SBML export cannot preserve a non-constant event delay");
-            }
-            delayAttribute = " delay=\"" + std::to_string(value) + "\"";
-        }
         if (event.priority && level < 3) {
             throw std::runtime_error(
                 "SBML export cannot preserve an event priority below Level 3");
         }
+        const bool emitUseValuesFromTriggerTime =
+            level >= 3 || (level == 2 && gCurrentSbmlVersion >= 4);
         sbml << "      <event id=\"" << escapeXml(id)
-             << "\" name=\"" << escapeXml(event.id)
-             << "\" useValuesFromTriggerTime=\""
-             << (event.useValuesFromTriggerTime ? "true" : "false")
-             << "\"" << delayAttribute << ">\n";
-        sbml << "        <trigger initialValue=\""
-             << (event.initialValue ? "true" : "false")
-             << "\" persistent=\"" << (event.persistent ? "true" : "false")
-             << "\">\n";
+             << "\" name=\"" << escapeXml(event.id) << "\"";
+        if (emitUseValuesFromTriggerTime) {
+            sbml << " useValuesFromTriggerTime=\""
+                 << (event.useValuesFromTriggerTime ? "true" : "false") << "\"";
+        }
+        sbml << ">\n";
+        sbml << "        <trigger";
+        if (level >= 3) {
+            sbml << " initialValue=\""
+                 << (event.initialValue ? "true" : "false")
+                 << "\" persistent=\"" << (event.persistent ? "true" : "false")
+                 << "\"";
+        }
+        sbml << ">\n";
         sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
         {
             ScopedBooleanMathML booleanTrigger;
@@ -826,7 +834,7 @@ std::string SbmlWriter::writeEvents(
         }
         sbml << "          </math>\n";
         sbml << "        </trigger>\n";
-        if (event.delay && level >= 3) {
+        if (event.delay) {
             sbml << "        <delay>\n";
             sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
             sbml << exprToMathML(*event.delay, "            ", symbolIds, true);
@@ -1013,9 +1021,13 @@ std::string SbmlWriter::writeReactions(
 std::vector<SbmlWriter::ObservableGroup> SbmlWriter::computeObservableGroups(
     const ast::Model& model, const engine::GeneratedNetwork& network) {
     std::vector<ObservableGroup> groups;
-    auto& mutableModel = const_cast<ast::Model&>(model);
+    const compile::CompiledModel compiled(model);
+    const engine::ObservableProjection projection(compiled);
+    const auto& observables = model.getObservables();
+    groups.reserve(observables.size());
 
-    for (const auto& observable : model.getObservables()) {
+    for (std::size_t observableIndex = 0; observableIndex < observables.size(); ++observableIndex) {
+        const auto& observable = observables[observableIndex];
         ObservableGroup group;
         group.name = observable.getName();
         group.type = observable.getType();
@@ -1052,49 +1064,24 @@ std::vector<SbmlWriter::ObservableGroup> SbmlWriter::computeObservableGroups(
             }
         }
 
-        for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
-            std::size_t weight = 0;
-
-            for (const auto& patternText : observable.getPatterns()) {
-                try {
-                    antlr4::ANTLRInputStream input(patternText);
-                    BNGLexer lexer(&input);
-                    antlr4::CommonTokenStream tokens(&lexer);
-                    BNGParser parser(&tokens);
-                    auto* species = parser.species_def();
-
-                    if (parser.getNumberOfSyntaxErrors() == 0) {
-                        // A species-level compartment prefix/suffix is a
-                        // filter on the observable pattern, not a molecule
-                        // node attribute.  Ullmann matching alone therefore
-                        // otherwise counts the same graph in every
-                        // compartment (for example GLCo and GLCi in the
-                        // glycolysis BioModel), corrupting the SBML
-                        // assignment rules on round-trip.
-                        const auto patternCompartment =
-                            bng::parser::extractSpeciesCompartment(species);
-                        if (!patternCompartment.empty() &&
-                            network.species.get(speciesIndex).getCompartment() !=
-                                patternCompartment) {
-                            continue;
-                        }
-                        const auto pattern = bng::parser::buildPatternGraph(species, mutableModel);
-                        BNGcore::UllmannSGIso matcher(pattern,
-                            network.species.get(speciesIndex).getSpeciesGraph().getGraph());
-                        BNGcore::List<BNGcore::Map> maps;
-                        weight += matcher.find_maps(maps);
-                    }
-                } catch (...) {
-                    // Skip patterns that fail to parse
+        if (const auto& indexedWeights = observable.getIndexedSpeciesWeights();
+            indexedWeights.has_value()) {
+            for (const auto& [speciesIndex, weight] : *indexedWeights) {
+                if (speciesIndex < network.species.size() && weight > 0.0) {
+                    group.entries.push_back(
+                        {speciesIndex, static_cast<std::size_t>(std::llround(weight))});
                 }
             }
-
-            if (observable.getType() == "Species" && weight > 0) {
-                weight = 1;
-            }
-
-            if (weight > 0) {
-                group.entries.push_back({speciesIndex, weight});
+        } else {
+            for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
+                const auto& species = network.species.get(speciesIndex);
+                const int weight = projection.weight(
+                    observableIndex,
+                    species.getSpeciesGraph().getGraph(),
+                    species.getCompartment());
+                if (weight > 0) {
+                    group.entries.push_back({speciesIndex, static_cast<std::size_t>(weight)});
+                }
             }
         }
 

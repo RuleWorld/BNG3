@@ -1,4 +1,5 @@
 #include "compile/CompiledModel.hpp"
+#include "compile/TotalRate.hpp"
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
@@ -55,6 +56,13 @@ py::array_t<T> vector_to_array(const std::vector<T>& values) {
         std::memcpy(array.mutable_data(), values.data(), values.size() * sizeof(T));
     }
     return array;
+}
+
+std::size_t requireNonNegativeSteps(int n_steps) {
+    if (n_steps < 0) {
+        throw std::invalid_argument("n_steps must be non-negative");
+    }
+    return static_cast<std::size_t>(n_steps);
 }
 } // namespace
 
@@ -300,19 +308,27 @@ py::dict metrics_to_dict(const BatchSsaMetrics& m) {
     d["events_per_sec_total"] = m.eventsPerSecTotal;
     d["memory_usage_bytes"] = m.memoryUsageBytes;
 
-    py::array_t<float> times(m.timePoints.size());
+    const size_t numTimeSteps = !m.timePointsDouble.empty()
+        ? m.timePointsDouble.size()
+        : m.timePoints.size();
+    py::array_t<double> times(numTimeSteps);
     auto tb = times.mutable_unchecked<1>();
-    for (size_t i = 0; i < m.timePoints.size(); ++i) tb(i) = m.timePoints[i];
+    if (!m.timePointsDouble.empty()) {
+        for (size_t i = 0; i < numTimeSteps; ++i) tb(i) = m.timePointsDouble[i];
+    } else {
+        for (size_t i = 0; i < numTimeSteps; ++i) tb(i) = static_cast<double>(m.timePoints[i]);
+    }
     d["time"] = times;
 
     py::dict obs_means;
     py::dict obs_stds;
+    const size_t obsSteps = m.observableMeans.size();
     for (size_t g = 0; g < m.observableNames.size(); ++g) {
-        py::array_t<float> m_arr(m.timePoints.size());
-        py::array_t<float> s_arr(m.timePoints.size());
+        py::array_t<float> m_arr(obsSteps);
+        py::array_t<float> s_arr(obsSteps);
         auto mb = m_arr.mutable_unchecked<1>();
         auto sb = s_arr.mutable_unchecked<1>();
-        for (size_t step = 0; step < m.timePoints.size(); ++step) {
+        for (size_t step = 0; step < obsSteps; ++step) {
             mb(step) = m.observableMeans[step][g];
             sb(step) = m.observableStdDevs[step][g];
         }
@@ -571,8 +587,12 @@ void bind_engine(py::module_& m) {
             timeDependentRates.reserve(compiledReactions.size());
             for (std::size_t i = 0; i < compiledReactions.size(); ++i) {
                 const auto& reaction = compiledReactions[i];
+                const bool authoredTotalRate = (i < rawReactions.size()) &&
+                    bng::compile::isTotalRateReaction(model, rawReactions[i].getOriginRuleName());
+                const bool authoredAbsoluteFlux = (i < rawReactions.size()) &&
+                    bng::compile::isAbsoluteFluxReaction(model, rawReactions[i]);
                 double volScale = 1.0;
-                if (!reaction.isTotalRate && !reaction.isAbsoluteFlux &&
+                if (!authoredTotalRate && !authoredAbsoluteFlux &&
                     i < rawReactions.size()) {
                     const auto unitFactor =
                         bng::io::NetWriter::computeUnitConversionFactor(
@@ -684,6 +704,10 @@ void bind_engine(py::module_& m) {
                              bool fresh_from_initial_state,
                              const std::vector<std::pair<std::string, std::string>>& algebraic_rules,
                              int seed) {
+        const std::size_t validatedSteps = requireNonNegativeSteps(n_steps);
+        if (seed < 0) {
+            throw std::invalid_argument("seed must be non-negative");
+        }
         if (max_sim_steps > 0 || output_step_interval > 0) {
             throw std::runtime_error(
                 "max_sim_steps and output_step_interval are supported only "
@@ -696,11 +720,11 @@ void bind_engine(py::module_& m) {
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
-        opts.nSteps = n_steps;
+        opts.nSteps = validatedSteps;
         opts.rtol = rtol;
         opts.atol = atol;
         opts.method = method;
-        opts.seed = seed;
+        opts.seed = static_cast<unsigned int>(seed);
         opts.maxStep = max_step;
         opts.steadyState = steady_state;
         opts.steadyStateTol = steady_state_tol;
@@ -783,6 +807,7 @@ void bind_engine(py::module_& m) {
                              const std::string& batch_gpu_backend,
                              bool continue_simulation,
                              bool fresh_from_initial_state) {
+        const std::size_t validatedSteps = requireNonNegativeSteps(n_steps);
         if (seed < 0) {
             throw std::invalid_argument("seed must be non-negative");
         }
@@ -801,7 +826,7 @@ void bind_engine(py::module_& m) {
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
-        opts.nSteps = n_steps;
+        opts.nSteps = validatedSteps;
         opts.method = "ssa";
         opts.seed = effectiveSeed;
         opts.stopIf = stop_if;
@@ -862,6 +887,7 @@ void bind_engine(py::module_& m) {
                              double t_end, int n_steps, const std::string& config_str,
                              double t_start, int seed,
                              const std::vector<double>& sample_times) {
+        const std::size_t validatedSteps = requireNonNegativeSteps(n_steps);
         if (seed < 0) {
             throw std::invalid_argument("seed must be non-negative");
         }
@@ -870,7 +896,7 @@ void bind_engine(py::module_& m) {
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
-        opts.nSteps = n_steps;
+        opts.nSteps = validatedSteps;
         opts.seed = static_cast<unsigned int>(seed);
         opts.sampleTimes = sample_times;
 
@@ -900,8 +926,12 @@ void bind_engine(py::module_& m) {
                              double t_start, int seed,
                              const std::vector<double>& sample_times,
                              py::object check_product_scale) {
+        const std::size_t validatedSteps = requireNonNegativeSteps(n_steps);
         if (seed < 0) {
             throw std::invalid_argument("seed must be non-negative");
+        }
+        if (!std::isfinite(poplevel) || poplevel < 0.0) {
+            throw std::invalid_argument("poplevel must be finite and non-negative");
         }
         bool pScaleChecker = true;
         if (!check_product_scale.is_none()) {
@@ -921,7 +951,7 @@ void bind_engine(py::module_& m) {
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
-        opts.nSteps = n_steps;
+        opts.nSteps = validatedSteps;
         opts.seed = static_cast<unsigned int>(seed);
         opts.sampleTimes = sample_times;
 
@@ -975,10 +1005,11 @@ void bind_engine(py::module_& m) {
                                      std::size_t max_sim_steps,
                                      std::size_t output_step_interval, bool sparse,
                                      double check_product_scale) {
+        const std::size_t validatedSteps = requireNonNegativeSteps(n_steps);
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
-        opts.nSteps = n_steps;
+        opts.nSteps = validatedSteps;
         opts.rtol = rtol;
         opts.atol = atol;
         opts.method = method;
@@ -1012,12 +1043,16 @@ void bind_engine(py::module_& m) {
                                      const std::vector<double>& sample_times,
                                      std::size_t max_sim_steps,
                                      std::size_t output_step_interval) {
+        const std::size_t validatedSteps = requireNonNegativeSteps(n_steps);
+        if (seed < 0) {
+            throw std::invalid_argument("seed must be non-negative");
+        }
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
-        opts.nSteps = n_steps;
+        opts.nSteps = validatedSteps;
         opts.method = "ssa";
-        opts.seed = seed;
+        opts.seed = static_cast<unsigned int>(seed);
         opts.stopIf = stop_if;
         opts.sampleTimes = sample_times;
         opts.maxSimSteps = max_sim_steps;
@@ -1041,12 +1076,19 @@ void bind_engine(py::module_& m) {
                                      const std::vector<double>& sample_times,
                                      std::size_t max_sim_steps,
                                      std::size_t output_step_interval) {
+        const std::size_t validatedSteps = requireNonNegativeSteps(n_steps);
+        if (seed < 0) {
+            throw std::invalid_argument("seed must be non-negative");
+        }
+        if (!std::isfinite(poplevel) || poplevel < 0.0) {
+            throw std::invalid_argument("poplevel must be finite and non-negative");
+        }
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
-        opts.nSteps = n_steps;
+        opts.nSteps = validatedSteps;
         opts.method = "psa";
-        opts.seed = seed;
+        opts.seed = static_cast<unsigned int>(seed);
         opts.stopIf = stop_if;
         opts.sampleTimes = sample_times;
         opts.maxSimSteps = max_sim_steps;
@@ -1108,6 +1150,7 @@ void bind_engine(py::module_& m) {
                                        std::size_t batch_size, double t_end, int n_steps,
                                        double t_start, uint64_t base_seed, unsigned int threads,
                                        std::size_t max_sim_steps) {
+        (void)requireNonNegativeSteps(n_steps);
         py::gil_scoped_release release;
 
         BatchSsaOptions opts;
@@ -1151,6 +1194,7 @@ void bind_engine(py::module_& m) {
                                        double t_start, uint64_t base_seed,
                                        std::size_t max_sim_steps,
                                        const std::string& backend) {
+        (void)requireNonNegativeSteps(n_steps);
         py::gil_scoped_release release;
 
         // Flatten and validate (fails closed on unsupported rate laws)

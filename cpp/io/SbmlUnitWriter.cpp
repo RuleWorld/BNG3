@@ -112,7 +112,7 @@ std::string unitDefinition(const std::string& id, const units::Unit& unit) {
         } else {
             xml << std::setprecision(17)
                 << "          <unit kind=\"dimensionless\" exponent=\"1\" multiplier=\""
-                << relativeFactor << "\"/>\n";
+                << relativeFactor << "\" scale=\"0\"/>\n";
         }
     } else {
         // A multiplier/scale attached to a base term is raised to that term's

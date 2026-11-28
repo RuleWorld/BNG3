@@ -1241,6 +1241,7 @@ struct NetworkRulePlan::Impl {
           pruneZeroRates(pruneZeroRates),
           directSynthesis(direction.reactantPatterns.empty() &&
                           direction.localScopes.empty() &&
+                          model.compartments().empty() &&
                           !compiledRule.delayExpression().has_value() &&
                           !compiledRule.resolvedDelayExpression().has_value() &&
                           !compiledRule.hasDrivingWork()),

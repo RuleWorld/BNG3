@@ -11,16 +11,290 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <memory>
+#include <optional>
 #include <unordered_map>
 
 #include "ast/Model.hpp"
 #include "compile/CompiledModel.hpp"
 #include "compile/TotalRate.hpp"
 #include "engine/ObservableProjection.hpp"
+#include "parser/BNGAstVisitor.hpp"
 
 namespace bng::io {
 
 namespace {
+
+std::string toLowerAscii(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return s;
+}
+
+std::string sanitizeCBlockComment(const std::string& text) {
+    std::string out;
+    out.reserve(text.size());
+    for (char c : text) {
+        if (c == '\r' || c == '\n') out += ' ';
+        else out += c;
+    }
+    std::size_t pos = 0;
+    while ((pos = out.find("*/", pos)) != std::string::npos) {
+        out.replace(pos, 2, "* /");
+        pos += 3;
+    }
+    return out;
+}
+
+bool isBalancedOuterParen(const std::string& s) {
+    if (s.size() < 2 || s.front() != '(' || s.back() != ')') return false;
+    int depth = 0;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        if (s[i] == '(') ++depth;
+        else if (s[i] == ')') --depth;
+        if (depth == 0 && i + 1 < s.size()) return false;
+    }
+    return depth == 0;
+}
+
+bool needsOuterParens(const std::string& s) {
+    if (s.empty() || isBalancedOuterParen(s)) return false;
+    int parenDepth = 0;
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        const char c = s[i];
+        if (c == '(') { ++parenDepth; continue; }
+        if (c == ')') { --parenDepth; continue; }
+        if (parenDepth == 0) {
+            if (!(std::isalnum(static_cast<unsigned char>(c)) || c == '_' || c == '.')) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+std::string wrapIfNeeded(const std::string& s) {
+    return needsOuterParens(s) ? ("(" + s + ")") : s;
+}
+
+ast::Expression substituteExprArgs(
+    const ast::Expression& expr,
+    const std::unordered_map<std::string, ast::Expression>& argMap) {
+    using Kind = ast::ExpressionKind;
+    switch (expr.kind()) {
+    case Kind::Number:
+    case Kind::TableFunction:
+        return expr;
+    case Kind::Identifier: {
+        if (auto it = argMap.find(expr.name()); it != argMap.end()) {
+            return it->second;
+        }
+        return expr;
+    }
+    case Kind::Unary:
+        return ast::Expression::unary(
+            expr.name(), substituteExprArgs(expr.args().front(), argMap));
+    case Kind::Binary:
+        return ast::Expression::binary(
+            expr.name(),
+            substituteExprArgs(expr.args()[0], argMap),
+            substituteExprArgs(expr.args()[1], argMap));
+    case Kind::Function:
+    case Kind::ObservableRef: {
+        if (expr.args().empty()) {
+            if (auto it = argMap.find(expr.name()); it != argMap.end()) {
+                return it->second;
+            }
+        }
+        std::vector<ast::Expression> args;
+        args.reserve(expr.args().size());
+        for (const auto& a : expr.args()) {
+            args.push_back(substituteExprArgs(a, argMap));
+        }
+        return expr.kind() == Kind::Function
+            ? ast::Expression::function(expr.name(), std::move(args))
+            : ast::Expression::observableRef(expr.name(), std::move(args));
+    }
+    }
+    return expr;
+}
+
+ast::Expression inlineModelFunctions(
+    const ast::Expression& expr,
+    const std::vector<ast::Function>& functions,
+    const std::unordered_map<std::string, std::size_t>& paramIndex,
+    const std::unordered_map<std::string, std::size_t>& obsIndex,
+    int depth = 0) {
+    if (depth >= 32) return expr;
+    auto findFn = [&](const std::string& name, std::size_t arity) -> const ast::Function* {
+        for (const auto& fn : functions) {
+            if (fn.getName() == name && fn.getArgs().size() == arity) {
+                return &fn;
+            }
+        }
+        return nullptr;
+    };
+    using Kind = ast::ExpressionKind;
+    switch (expr.kind()) {
+    case Kind::Number:
+    case Kind::TableFunction:
+        return expr;
+    case Kind::Identifier: {
+        if (paramIndex.find(expr.name()) == paramIndex.end() &&
+            obsIndex.find(expr.name()) == obsIndex.end()) {
+            if (const auto* fn = findFn(expr.name(), 0)) {
+                return inlineModelFunctions(fn->getExpression(), functions, paramIndex, obsIndex, depth + 1);
+            }
+        }
+        return expr;
+    }
+    case Kind::Unary:
+        return ast::Expression::unary(
+            expr.name(),
+            inlineModelFunctions(expr.args().front(), functions, paramIndex, obsIndex, depth));
+    case Kind::Binary:
+        return ast::Expression::binary(
+            expr.name(),
+            inlineModelFunctions(expr.args()[0], functions, paramIndex, obsIndex, depth),
+            inlineModelFunctions(expr.args()[1], functions, paramIndex, obsIndex, depth));
+    case Kind::Function:
+    case Kind::ObservableRef: {
+        std::vector<ast::Expression> inlinedArgs;
+        inlinedArgs.reserve(expr.args().size());
+        for (const auto& a : expr.args()) {
+            inlinedArgs.push_back(inlineModelFunctions(a, functions, paramIndex, obsIndex, depth));
+        }
+        const bool shadowedBySymbol =
+            inlinedArgs.empty() &&
+            (obsIndex.find(expr.name()) != obsIndex.end() ||
+             paramIndex.find(expr.name()) != paramIndex.end());
+        if (!shadowedBySymbol) {
+            if (const auto* fn = findFn(expr.name(), inlinedArgs.size())) {
+                std::unordered_map<std::string, ast::Expression> argMap;
+                for (std::size_t i = 0; i < fn->getArgs().size(); ++i) {
+                    argMap.emplace(fn->getArgs()[i], inlinedArgs[i]);
+                }
+                const auto body = substituteExprArgs(fn->getExpression(), argMap);
+                return inlineModelFunctions(body, functions, paramIndex, obsIndex, depth + 1);
+            }
+        }
+        return expr.kind() == Kind::Function
+            ? ast::Expression::function(expr.name(), std::move(inlinedArgs))
+            : ast::Expression::observableRef(expr.name(), std::move(inlinedArgs));
+    }
+    }
+    return expr;
+}
+
+std::optional<ast::Expression> parseRateLawExpression(const std::string& rawRate) {
+    auto first = rawRate.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return std::nullopt;
+    auto last = rawRate.find_last_not_of(" \t\r\n");
+    std::string trimmed = rawRate.substr(first, last - first + 1);
+
+    std::string lower = toLowerAscii(trimmed);
+    for (const char* kw : {"sat", "mm", "hill"}) {
+        const std::size_t kwLen = std::char_traits<char>::length(kw);
+        if (lower.rfind(kw, 0) == 0 && trimmed.size() > kwLen &&
+            std::isspace(static_cast<unsigned char>(trimmed[kwLen])) != 0) {
+            std::istringstream iss(trimmed.substr(kwLen));
+            std::string tok;
+            std::vector<std::string> toks;
+            while (iss >> tok) toks.push_back(tok);
+            if (!toks.empty() && toks.front().front() != '(') {
+                std::ostringstream norm;
+                norm << trimmed.substr(0, kwLen) << "(";
+                for (std::size_t i = 0; i < toks.size(); ++i) {
+                    if (i > 0) norm << ", ";
+                    norm << toks[i];
+                }
+                norm << ")";
+                trimmed = norm.str();
+            }
+            break;
+        }
+    }
+
+    try {
+        return bng::parser::parseExpression(trimmed);
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+ast::Expression expandTopLevelRateExpression(
+    const ast::Expression& rawExpr,
+    const ast::Rxn& rxn,
+    const std::vector<ast::Function>& functions,
+    const std::unordered_map<std::string, std::size_t>& paramIndex,
+    const std::unordered_map<std::string, std::size_t>& obsIndex,
+    bool& consumedReactants) {
+    consumedReactants = false;
+    if (rawExpr.kind() == ast::ExpressionKind::Function) {
+        const std::string lower = toLowerAscii(rawExpr.name());
+        const auto& reactants = rxn.getReactants();
+        auto spRef = [](std::size_t idx) {
+            return ast::Expression::identifier("__bng_sp_" + std::to_string(idx));
+        };
+        if ((lower == "sat" || lower == "mm" || lower == "hill") && !rawExpr.args().empty()) {
+            std::vector<ast::Expression> args;
+            args.reserve(rawExpr.args().size());
+            for (const auto& a : rawExpr.args()) {
+                args.push_back(inlineModelFunctions(a, functions, paramIndex, obsIndex));
+            }
+            if (lower == "sat") {
+                if (args.size() == 1) {
+                    consumedReactants = true;
+                    return args[0];
+                }
+                if (!reactants.empty()) {
+                    consumedReactants = true;
+                    const std::size_t nDenom = std::min(args.size() - 1, reactants.size());
+                    ast::Expression res = ast::Expression::function("Sat", {args[0], args[1], spRef(reactants[0])});
+                    for (std::size_t ri = 1; ri < nDenom; ++ri) {
+                        auto denom = ast::Expression::binary("+", args[ri + 1], spRef(reactants[ri]));
+                        res = ast::Expression::binary(
+                            "*", std::move(res),
+                            ast::Expression::binary("/", spRef(reactants[ri]), std::move(denom)));
+                    }
+                    for (std::size_t ri = nDenom; ri < reactants.size(); ++ri) {
+                        res = ast::Expression::binary("*", std::move(res), spRef(reactants[ri]));
+                    }
+                    return res;
+                }
+            } else if (lower == "mm" && args.size() >= 2 && !reactants.empty()) {
+                consumedReactants = true;
+                if (args.size() >= 3) {
+                    ast::Expression res = ast::Expression::function("Sat", {args[0], args[1], args[2]});
+                    for (std::size_t ri = 1; ri < reactants.size(); ++ri) {
+                        res = ast::Expression::binary("*", std::move(res), spRef(reactants[ri]));
+                    }
+                    return res;
+                }
+                if (reactants.size() >= 2) {
+                    ast::Expression res = ast::Expression::function(
+                        "MM", {args[0], args[1], spRef(reactants[0]), spRef(reactants[1])});
+                    for (std::size_t ri = 2; ri < reactants.size(); ++ri) {
+                        res = ast::Expression::binary("*", std::move(res), spRef(reactants[ri]));
+                    }
+                    return res;
+                }
+                return ast::Expression::function("Sat", {args[0], args[1], spRef(reactants[0])});
+            } else if (lower == "hill" && args.size() >= 2 && !reactants.empty()) {
+                consumedReactants = true;
+                const auto nExpr = (args.size() >= 3) ? args[2] : ast::Expression::number(1.0);
+                ast::Expression res = ast::Expression::function(
+                    "Hill", {args[0], args[1], nExpr, spRef(reactants[0])});
+                for (std::size_t ri = 1; ri < reactants.size(); ++ri) {
+                    res = ast::Expression::binary("*", std::move(res), spRef(reactants[ri]));
+                }
+                return res;
+            }
+        }
+    }
+    return inlineModelFunctions(rawExpr, functions, paramIndex, obsIndex);
+}
 
 std::string renderExprToCVode(
     const ast::Expression& expr,
@@ -35,12 +309,16 @@ std::string renderExprToCVode(
     }
     case Kind::Identifier: {
         const auto& name = expr.name();
+        if (name.rfind("__bng_sp_", 0) == 0) {
+            return "NV_Ith_S(species," + name.substr(9) + ")";
+        }
         if (auto it = paramIndex.find(name); it != paramIndex.end()) {
             return "NV_Ith_S(expressions," + std::to_string(it->second) + ")";
         }
         if (auto it = obsIndex.find(name); it != obsIndex.end()) {
             return "NV_Ith_S(observables," + std::to_string(it->second) + ")";
         }
+        if (name == "time") return "t";
         if (name == "_pi" || name == "pi" || name == "_PI") return "M_PI";
         if (name == "_e" || name == "e") return "M_E";
         return name;
@@ -83,11 +361,31 @@ std::string renderExprToCVode(
             if (auto it = paramIndex.find(name); it != paramIndex.end()) {
                 return "NV_Ith_S(expressions," + std::to_string(it->second) + ")";
             }
+            if (name == "time") return "t";
         }
         std::vector<std::string> rendered;
         rendered.reserve(expr.args().size());
         for (const auto& a : expr.args()) {
             rendered.push_back(renderExprToCVode(a, paramIndex, obsIndex));
+        }
+        const std::string lowerName = toLowerAscii(name);
+        if ((lowerName == "sat" || lowerName == "mm") && rendered.size() == 3) {
+            return "((" + rendered[0] + ") * (" + rendered[2] + ") / ((" + rendered[1] + ") + (" + rendered[2] + ")))";
+        }
+        if (lowerName == "mm" && rendered.size() == 4) {
+            const auto& kcat = rendered[0];
+            const auto& km = rendered[1];
+            const auto& st = rendered[2];
+            const auto& et = rendered[3];
+            return "(2.0 * (" + kcat + ") * (" + st + ") * (" + et + ") / (((" + st + ") + (" + km + ") + (" + et +
+                   ")) + sqrt(pow((" + st + ") - (" + km + ") - (" + et + "), 2.0) + 4.0 * (" + st + ") * (" + km + "))))";
+        }
+        if (lowerName == "hill" && rendered.size() == 4) {
+            const auto& vmax = rendered[0];
+            const auto& kh = rendered[1];
+            const auto& n = rendered[2];
+            const auto& s = rendered[3];
+            return "((" + vmax + ") * pow(" + s + ", " + n + ") / (pow(" + kh + ", " + n + ") + pow(" + s + ", " + n + ")))";
         }
         if (name == "if" && rendered.size() == 3) {
             return "((" + rendered[0] + ") != 0.0 ? (" + rendered[1] + ") : (" + rendered[2] + "))";
@@ -279,10 +577,11 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     }
 
     // ===== Header comment =====
+    const std::string safeModelName = sanitizeCBlockComment(modelName);
     out << "/*\n";
-    out << "**   " << modelName << "_cvode.h\n";
+    out << "**   " << safeModelName << "_cvode.h\n";
     out << "**\n";
-    out << "**   Cvode-C++ implementation of BioNetGen model '" << modelName << "'.\n";
+    out << "**   Cvode-C++ implementation of BioNetGen model '" << safeModelName << "'.\n";
     out << "**\n";
     out << "**   Code Adapted from templates provided by Mathworks and Sundials.\n";
     out << "**\n";
@@ -295,11 +594,11 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     out << "**\n";
     out << "**   include the model in your C++ file with\n";
     out << "**\n";
-    out << "**   #include <" << modelName << ".h>\n";
+    out << "**   #include <" << safeModelName << ".h>\n";
     out << "**\n";
     out << "**   and compile with\n";
     out << "**\n";
-    out << "**   g++ -I/path/to/" << modelName << ".h -c your_script.cpp\n";
+    out << "**   g++ -I/path/to/" << safeModelName << ".h -c your_script.cpp\n";
     out << "**   g++  your_script.o -L/path/to/sundials/lib -lsundials_cvode -lsundials_nvecserial -o run_model\n";
     out << "**   ./run_model\n";
     out << "**\n";
@@ -390,12 +689,14 @@ using namespace std;
                 }
             }
             if (allKnown) {
+                const auto expandedParam = inlineModelFunctions(
+                    expr, model.getFunctions(), paramIndex, obsIndex);
                 out << "    NV_Ith_S(expressions," << i << ") = "
-                    << renderExprToCVode(expr, paramIndex, obsIndex) << ";";
+                    << renderExprToCVode(expandedParam, paramIndex, obsIndex) << ";";
             } else {
                 out << "    NV_Ith_S(expressions," << i << ") = parameters[" << i << "];";
             }
-            out << "   /* " << paramNames[i] << " */\n";
+            out << "   /* " << sanitizeCBlockComment(paramNames[i]) << " */\n";
         }
     }
     out << "}\n\n";
@@ -421,15 +722,16 @@ using namespace std;
             }
             out << ";";
         }
-        out << "   /* " << groups[g].name << " */\n";
+        out << "   /* " << sanitizeCBlockComment(groups[g].name) << " */\n";
     }
     out << "}\n\n";
 
     // ===== calc_ratelaws =====
     out << "/* Calculate ratelaws */\n";
     out << "void\n";
-    out << "calc_ratelaws ( N_Vector ratelaws, N_Vector species, N_Vector expressions, N_Vector observables )\n";
+    out << "calc_ratelaws ( N_Vector ratelaws, N_Vector species, N_Vector expressions, N_Vector observables, double t = 0.0 )\n";
     out << "{\n";
+    out << "    (void)t;\n";
     for (std::size_t r = 0; r < nRxns; ++r) {
         const auto& rxn = network.reactions.all()[r];
         out << "    NV_Ith_S(ratelaws," << r << ") = ";
@@ -446,23 +748,36 @@ using namespace std;
             compile::isTotalRateReaction(model, rxn.getOriginRuleName()) ||
             absoluteFlux;
         double statFactor = totalRate ? 1.0 : rxn.getFactor();
-        if (!absoluteFlux) {
+        if (!totalRate && !absoluteFlux) {
             if (const auto unitFactor = NetWriter::computeUnitConversionFactor(rxn, model, network);
                 unitFactor.has_value()) {
                 statFactor *= *unitFactor;
             }
         }
 
-        if (rxn.getRateExpression().has_value()) {
-            const auto expanded = ast::partialEvaluate(*rxn.getRateExpression(), model.getFunctions());
+        bool consumedReactants = false;
+        std::optional<ast::Expression> parsedRate = rxn.getRateExpression();
+        if (!parsedRate.has_value()) {
+            parsedRate = parseRateLawExpression(cleanRate);
+        }
+
+        if (parsedRate.has_value()) {
+            const auto expanded = ast::partialEvaluate(
+                expandTopLevelRateExpression(
+                    *parsedRate, rxn, model.getFunctions(), paramIndex, obsIndex, consumedReactants),
+                model.getFunctions());
             if (expanded.kind() == ast::ExpressionKind::Number) {
                 out << std::setprecision(17) << (statFactor * expanded.numberValue());
             } else {
                 const std::string rateRef = renderExprToCVode(expanded, paramIndex, obsIndex);
+                const bool willMultiply =
+                    (std::abs(statFactor - 1.0) > 1e-12) ||
+                    (!absoluteFlux && !consumedReactants && !rxn.getReactants().empty());
+                const std::string safeRef = willMultiply ? wrapIfNeeded(rateRef) : rateRef;
                 if (std::abs(statFactor - 1.0) > 1e-12) {
-                    out << std::setprecision(17) << statFactor << "*" << rateRef;
+                    out << std::setprecision(17) << statFactor << "*" << safeRef;
                 } else {
-                    out << rateRef;
+                    out << safeRef;
                 }
             }
         } else {
@@ -479,16 +794,20 @@ using namespace std;
                 out << std::setprecision(17) << combined;
             } else {
                 std::string rateRef = convertRateToCVode(cleanRate, paramNames);
+                const bool willMultiply =
+                    (std::abs(statFactor - 1.0) > 1e-12) ||
+                    (!absoluteFlux && !consumedReactants && !rxn.getReactants().empty());
+                const std::string safeRef = willMultiply ? wrapIfNeeded(rateRef) : rateRef;
                 if (std::abs(statFactor - 1.0) > 1e-12) {
-                    out << std::setprecision(17) << statFactor << "*" << rateRef;
+                    out << std::setprecision(17) << statFactor << "*" << safeRef;
                 } else {
-                    out << rateRef;
+                    out << safeRef;
                 }
             }
         }
 
-        // Multiply by reactant concentrations (unless absoluteFlux already includes them)
-        if (!absoluteFlux) {
+        // Multiply by reactant concentrations (unless absoluteFlux or special rate law already includes them)
+        if (!absoluteFlux && !consumedReactants) {
             for (const auto idx : rxn.getReactants()) {
                 out << "*NV_Ith_S(species," << idx << ")";
             }
@@ -522,7 +841,7 @@ using namespace std;
     out << "    calc_observables( observables, species, expressions );\n";
     out << "\n";
     out << "    /* calculate ratelaws */\n";
-    out << "    calc_ratelaws( ratelaws, species, expressions, observables );\n";
+    out << "    calc_ratelaws( ratelaws, species, expressions, observables, time );\n";
     out << "\n";
     out << "    /* calculate derivatives */\n";
 
@@ -875,21 +1194,44 @@ std::string CppExportWriter::convertRateToCVode(const std::string& rate, const s
 std::vector<CppExportWriter::ObservableGroup> CppExportWriter::computeObservableGroups(
     const ast::Model& model, const engine::GeneratedNetwork& network) {
     std::vector<ObservableGroup> groups;
-    const compile::CompiledModel compiledModel(model);
-    const engine::ObservableProjection projection(compiledModel);
-    groups.reserve(projection.size());
+    std::unique_ptr<compile::CompiledModel> compiledModel;
+    std::unique_ptr<engine::ObservableProjection> projection;
+    const auto ensureProjection = [&]() {
+        if (!projection) {
+            compiledModel = std::make_unique<compile::CompiledModel>(model);
+            projection = std::make_unique<engine::ObservableProjection>(*compiledModel);
+        }
+    };
 
-    for (std::size_t observableIndex = 0;
-         observableIndex < projection.size(); ++observableIndex) {
+    const auto& observables = model.getObservables();
+    groups.reserve(observables.size());
+
+    for (std::size_t observableIndex = 0; observableIndex < observables.size(); ++observableIndex) {
+        const auto& observable = observables[observableIndex];
         ObservableGroup group;
-        group.name = projection.name(observableIndex);
-        group.type = compiledModel.observables().at(observableIndex).type;
+        group.name = observable.getName();
+        group.type = observable.getType();
 
+        if (const auto& indexed = observable.getIndexedSpeciesWeights(); indexed.has_value()) {
+            for (const auto& [speciesIndex, rawWeight] : *indexed) {
+                if (speciesIndex < network.species.size() && rawWeight > 0.0) {
+                    const auto w = static_cast<std::size_t>(std::llround(rawWeight));
+                    if (w > 0) {
+                        group.entries.push_back({speciesIndex, w});
+                    }
+                }
+            }
+            groups.push_back(std::move(group));
+            continue;
+        }
+
+        ensureProjection();
         for (std::size_t speciesIndex = 0; speciesIndex < network.species.size(); ++speciesIndex) {
             const auto& species = network.species.get(speciesIndex);
-            const auto weight = projection.weight(
+            const auto weight = projection->weight(
                 observableIndex,
-                species.getSpeciesGraph().getGraph(), species.getCompartment());
+                species.getSpeciesGraph().getGraph(),
+                species.getCompartment());
             if (weight > 0) {
                 group.entries.push_back(
                     {speciesIndex, static_cast<std::size_t>(weight)});

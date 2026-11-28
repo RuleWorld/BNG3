@@ -279,7 +279,15 @@ bool containsName(const std::vector<std::string>& names, const std::string& name
     return std::find(names.begin(), names.end(), name) != names.end();
 }
 
-Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
+constexpr std::size_t kMaxBngirExprDepth = 256;
+
+Expression expressionFromBngir(const py::dict& value, const BngirScope& scope,
+                               std::size_t depth = 0) {
+    if (depth > kMaxBngirExprDepth) {
+        throw std::runtime_error(
+            "native BNGIR expression nesting depth exceeds maximum supported limit (" +
+            std::to_string(kMaxBngirExprDepth) + ")");
+    }
     const auto& names = *scope.names;
     const auto kind = py::cast<std::string>(value["kind"]);
     if (kind == "number") {
@@ -345,7 +353,7 @@ Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
             arguments.reserve(raw.size());
             for (const auto& item : raw) {
                 arguments.push_back(
-                    expressionFromBngir(py::cast<py::dict>(item), scope));
+                    expressionFromBngir(py::cast<py::dict>(item), scope, depth + 1));
             }
         }
         if (!isCall) {
@@ -418,8 +426,14 @@ Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
                 "native BNGIR unary expression must have one argument");
         }
         const auto op = py::cast<std::string>(value["operator"]);
-        if (op == "plus") return Expression::unary("+", expressionFromBngir(arguments[0], scope));
-        if (op == "negate") return Expression::unary("-", expressionFromBngir(arguments[0], scope));
+        if (op == "plus") {
+            return Expression::unary(
+                "+", expressionFromBngir(py::cast<py::dict>(arguments[0]), scope, depth + 1));
+        }
+        if (op == "negate") {
+            return Expression::unary(
+                "-", expressionFromBngir(py::cast<py::dict>(arguments[0]), scope, depth + 1));
+        }
         throw std::runtime_error("unsupported native BNGIR unary operator");
     }
     if (kind == "binary") {
@@ -440,8 +454,8 @@ Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
         }
         return Expression::binary(
             found->second,
-            expressionFromBngir(arguments[0], scope),
-            expressionFromBngir(arguments[1], scope));
+            expressionFromBngir(py::cast<py::dict>(arguments[0]), scope, depth + 1),
+            expressionFromBngir(py::cast<py::dict>(arguments[1]), scope, depth + 1));
     }
     throw std::runtime_error("unsupported native BNGIR expression kind: " + kind);
 }

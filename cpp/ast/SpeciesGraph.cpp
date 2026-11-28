@@ -1,5 +1,7 @@
 #include "SpeciesGraph.hpp"
 
+#include <stdexcept>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -199,7 +201,13 @@ std::string SpeciesGraph::inferCompartment(const std::vector<Compartment>& hiera
     auto getDepth = [&](const Compartment* c) {
         int depth = 0;
         const Compartment* current = c;
+        std::unordered_set<const Compartment*> visited;
         while (current && !current->getParent().empty()) {
+            if (!visited.insert(current).second) {
+                throw std::runtime_error(
+                    "Cyclic compartment parent hierarchy detected involving '" +
+                    current->getName() + "'");
+            }
             depth++;
             auto it = compMap.find(current->getParent());
             if (it != compMap.end()) {

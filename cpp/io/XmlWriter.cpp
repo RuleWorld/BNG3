@@ -17,6 +17,7 @@
 #include <regex>
 #include <set>
 #include <stdexcept>
+#include <tuple>
 #include <vector>
 
 namespace bng::io {
@@ -728,15 +729,23 @@ std::string patternToXml(const ParsedPattern& pattern, const std::string& idPref
                 if (!comp.label.empty()) {
                     xml << " label=\"" << comp.label << "\"";
                 }
-                // numberOfBonds
+                // numberOfBonds (preserving explicit bond counts alongside wildcards, e.g. b!1!? -> "1?")
                 int nBonds = 0;
-                std::string bondStr;
+                bool hasAny = false;
+                bool hasPlus = false;
                 for (int b : comp.bonds) {
-                    if (b == -1) { bondStr = "?"; break; }
-                    else if (b == -2) { bondStr = "+"; break; }
-                    else nBonds++;
+                    if (b == -1) hasAny = true;
+                    else if (b == -2) hasPlus = true;
+                    else ++nBonds;
                 }
-                if (bondStr.empty()) bondStr = std::to_string(nBonds);
+                std::string bondStr;
+                if (hasAny) {
+                    bondStr = (nBonds > 0 ? std::to_string(nBonds) : "") + "?";
+                } else if (hasPlus) {
+                    bondStr = (nBonds > 0 ? std::to_string(nBonds) : "") + "+";
+                } else {
+                    bondStr = std::to_string(nBonds);
+                }
                 xml << " numberOfBonds=\"" << bondStr << "\"";
                 xml << "/>\n";
             }
@@ -1980,8 +1989,29 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model, bool retainRa
         xml << "          <ListOfRateConstants>\n";
         if (type == "MM" || type == "Arrhenius" || type == "Sat" || type == "Hill") {
             for (const auto& argument : rate.args()) {
-                xml << "            <RateConstant value=\""
-                    << escapeXml(argument.toString()) << "\"/>\n";
+                if (type != "Arrhenius") {
+                    double staticValue = 0.0;
+                    const bool staticallyEvaluable =
+                        expressionCanEvaluateStatically(argument, model, staticValue);
+                    const bool numericConstant =
+                        argument.kind() != ast::ExpressionKind::Identifier &&
+                        staticallyEvaluable;
+                    std::string value = argument.toString();
+                    if (numericConstant) {
+                        std::ostringstream numeric;
+                        numeric << std::setprecision(17) << staticValue;
+                        value = numeric.str();
+                    }
+                    xml << "            <RateConstant value=\"" << escapeXml(value) << "\"";
+                    if (retainRateExpressions && numericConstant &&
+                        !argument.getDependencies().empty()) {
+                        xml << " bng3Expression=\"" << escapeXml(argument.toString()) << "\"";
+                    }
+                    xml << "/>\n";
+                } else {
+                    xml << "            <RateConstant value=\""
+                        << escapeXml(argument.toString()) << "\"/>\n";
+                }
             }
         } else {
             double staticValue = 0.0;
@@ -2023,8 +2053,93 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model, bool retainRa
         if (!xmlRuleName.empty() && xmlRuleName.back() == ':') xmlRuleName.pop_back();
         xml << "      <ReactionRule id=\"" << rrId
             << "\" name=\"" << escapeXml(xmlRuleName) << "\"";
-        const double permutationFactor = rule.getModifiers().empty()
+        const auto intraSelfBondSymmetryFactor =
+            [&](const compile::CompiledRuleDirection& dir) -> double {
+                double factor = 1.0;
+                for (const auto& mutation : dir.mutations) {
+                    if (mutation.kind != compile::MutationKind::AddBond &&
+                        mutation.kind != compile::MutationKind::DeleteBond) {
+                        continue;
+                    }
+                    if (mutation.source.side != compile::PatternSide::Reactant ||
+                        mutation.partner.side != compile::PatternSide::Reactant ||
+                        mutation.source.patternIndex != mutation.partner.patternIndex ||
+                        mutation.source.moleculeIndex != mutation.partner.moleculeIndex ||
+                        mutation.source.siteIndex == mutation.partner.siteIndex) {
+                        continue;
+                    }
+                    const std::size_t pi = mutation.source.patternIndex;
+                    const std::size_t mi = mutation.source.moleculeIndex;
+                    if (pi >= dir.reactantPatterns.size() ||
+                        mi >= dir.reactantPatterns[pi].molecules().size()) {
+                        continue;
+                    }
+                    const auto& mol = dir.reactantPatterns[pi].molecules()[mi];
+                    const std::size_t s1 = mutation.source.siteIndex;
+                    const std::size_t s2 = mutation.partner.siteIndex;
+                    if (s1 >= mol.sites.size() || s2 >= mol.sites.size()) {
+                        continue;
+                    }
+                    const auto& siteA = mol.sites[s1];
+                    const auto& siteB = mol.sites[s2];
+                    if (siteA.componentName != siteB.componentName ||
+                        siteA.stateConstraint != siteB.stateConstraint ||
+                        siteA.bondKind != siteB.bondKind) {
+                        continue;
+                    }
+                    std::string stateChangeA;
+                    std::string stateChangeB;
+                    for (const auto& other : dir.mutations) {
+                        if (other.kind != compile::MutationKind::ChangeState) continue;
+                        if (other.source.side != compile::PatternSide::Reactant ||
+                            other.source.patternIndex != pi ||
+                            other.source.moleculeIndex != mi) {
+                            continue;
+                        }
+                        if (other.source.siteIndex == s1) stateChangeA = other.newState;
+                        if (other.source.siteIndex == s2) stateChangeB = other.newState;
+                    }
+                    if (stateChangeA == stateChangeB) {
+                        factor *= 0.5;
+                    }
+                }
+                return factor;
+            };
+        const bool isTotalRate = compile::isTotalRateRule(rule);
+        bool hasAsymmetricReactantFilter = false;
+        if (!isTotalRate && direction.reactantPatterns.size() > 1) {
+            std::map<std::size_t, std::set<std::pair<bool, std::string>>> reactantFilterSets;
+            for (const auto& modifier : rule.getModifiers()) {
+                if (!isReactionFilterModifier(modifier)) continue;
+                ParsedReactionFilter filter;
+                std::string diag;
+                if (parseReactionFilterModifier(modifier, filter, diag) && !filter.products) {
+                    for (const auto& pat : filter.patterns) {
+                        reactantFilterSets[filter.patternIndex].emplace(filter.include, pat);
+                    }
+                }
+            }
+            if (!reactantFilterSets.empty()) {
+                for (std::size_t i = 0; i < direction.reactantPatterns.size(); ++i) {
+                    for (std::size_t j = i + 1; j < direction.reactantPatterns.size(); ++j) {
+                        if (direction.reactantPatterns[i] == direction.reactantPatterns[j]) {
+                            const auto itI = reactantFilterSets.find(i);
+                            const auto itJ = reactantFilterSets.find(j);
+                            const bool emptyI = itI == reactantFilterSets.end();
+                            const bool emptyJ = itJ == reactantFilterSets.end();
+                            if (emptyI != emptyJ || (!emptyI && itI->second != itJ->second)) {
+                                hasAsymmetricReactantFilter = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        const double wholeFactor = (!isTotalRate && !hasAsymmetricReactantFilter)
             ? direction.wholeReactantPermutationFactor() : 1.0;
+        const double intraFactor = isTotalRate
+            ? 1.0 : intraSelfBondSymmetryFactor(direction);
+        const double permutationFactor = wholeFactor * intraFactor;
         if (permutationFactor != 1.0) {
             xml << " symmetry_factor=\"" << std::setprecision(17)
                 << permutationFactor << "\"";
@@ -2070,29 +2185,9 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model, bool retainRa
         }
         xml << "        </ListOfProductPatterns>\n";
 
-        const auto writeFilters = [&](const ParsedReactionFilter& filter,
-                                      const std::string& listId) {
-            const char* listName = filter.include
-                                       ? (filter.products ? "ListOfIncludeProducts"
-                                                           : "ListOfIncludeReactants")
-                                       : (filter.products ? "ListOfExcludeProducts"
-                                                           : "ListOfExcludeReactants");
-            xml << "        <" << listName << " id=\"" << escapeXml(listId) << "\">\n";
-            for (std::size_t index = 0; index < filter.patterns.size(); ++index) {
-                const auto parsed = parsePattern(filter.patterns[index]);
-                if (parsed.molecules.empty()) {
-                    throw std::runtime_error(
-                        "reaction filter pattern contains no molecule: '" +
-                        filter.patterns[index] + "'");
-                }
-                const auto patternId = listId + "_P" + std::to_string(index + 1);
-                xml << "          <Pattern id=\"" << escapeXml(patternId) << "\">\n"
-                    << patternToXml(parsed, patternId, "            ")
-                    << "          </Pattern>\n";
-            }
-            xml << "        </" << listName << ">\n";
-        };
-
+        using FilterKey = std::tuple<bool, bool, std::size_t>;
+        std::vector<FilterKey> filterOrder;
+        std::map<FilterKey, std::vector<std::string>> groupedFilters;
         for (const auto& modifier : rule.getModifiers()) {
             if (!isReactionFilterModifier(modifier)) continue;
             ParsedReactionFilter filter;
@@ -2107,9 +2202,43 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model, bool retainRa
                 throw std::runtime_error(
                     "reaction filter refers to an unknown pattern index: '" + modifier + "'");
             }
-            const auto prefix = filter.products ? "_PP" : "_RP";
-            const auto listId = rrId + prefix + std::to_string(filter.patternIndex + 1);
-            writeFilters(filter, listId);
+            const FilterKey key{filter.include, filter.products, filter.patternIndex};
+            if (groupedFilters.find(key) == groupedFilters.end()) {
+                filterOrder.push_back(key);
+            }
+            auto& bucket = groupedFilters[key];
+            bucket.insert(bucket.end(), filter.patterns.begin(), filter.patterns.end());
+        }
+
+        for (const auto& key : filterOrder) {
+            const auto [include, products, patternIndex] = key;
+            const char* listName = include
+                                       ? (products ? "ListOfIncludeProducts"
+                                                   : "ListOfIncludeReactants")
+                                       : (products ? "ListOfExcludeProducts"
+                                                   : "ListOfExcludeReactants");
+            const auto prefix = products ? "_PP" : "_RP";
+            const auto listId = rrId + prefix + std::to_string(patternIndex + 1);
+            const char* idKind = include ? "_IncP" : "_P";
+            const auto& patterns = groupedFilters[key];
+            xml << "        <" << listName << " id=\"" << escapeXml(listId) << "\">\n";
+            for (std::size_t index = 0; index < patterns.size(); ++index) {
+                const auto parsed = parsePattern(patterns[index]);
+                if (parsed.molecules.empty()) {
+                    throw std::runtime_error(
+                        "reaction filter pattern contains no molecule: '" +
+                        patterns[index] + "'");
+                }
+                const auto patternId = listId + idKind + std::to_string(index + 1);
+                xml << "          <Pattern id=\"" << escapeXml(patternId) << "\"";
+                if (!parsed.compartment.empty()) {
+                    xml << " compartment=\"" << escapeXml(parsed.compartment) << "\"";
+                }
+                xml << ">\n"
+                    << patternToXml(parsed, patternId, "            ")
+                    << "          </Pattern>\n";
+            }
+            xml << "        </" << listName << ">\n";
         }
 
         if (rate != nullptr) {
@@ -2644,6 +2773,33 @@ std::string XmlWriter::writeFunctions(const ast::Model& model) {
 
 std::string XmlWriter::writeBarrierPatterns(const ast::Model& model) {
     if (model.getBarrierPatterns().empty()) return {};
+
+    // Validate all barrier patterns with the same unconditional-transition
+    // rules enforced by native execution backends before serializing XML.
+    {
+        compile::energy::BarrierTable validatedTable;
+        std::vector<std::string> diagnostics;
+        const auto resolveEnergy = [&](const ast::BarrierPattern& bp,
+                                       double& outVal,
+                                       std::string& outDiag) -> bool {
+            if (!bp.hasExpression()) {
+                outVal = 0.0;
+                return true;
+            }
+            if (!expressionCanEvaluateStatically(bp.expression(), model, outVal)) {
+                outDiag = "barrier pattern expression is not statically evaluable";
+                return false;
+            }
+            return true;
+        };
+        if (!compile::energy::buildBarrierTable(
+                model, resolveEnergy, validatedTable, diagnostics)) {
+            throw std::runtime_error(
+                "cannot serialize barrier patterns: " +
+                (diagnostics.empty() ? std::string("invalid barrier transition")
+                                     : diagnostics.front()));
+        }
+    }
 
     std::ostringstream xml;
     xml << "    <ListOfBarrierPatterns>\n";

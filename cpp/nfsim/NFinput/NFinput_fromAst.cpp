@@ -6209,9 +6209,23 @@ System* buildSystemFromAstWithSeedOverrides(
     }
 
     if (!compiledDocument.valid()) {
-        if (verbose) std::cerr << "[nfsim/compiled] semantic compilation failed\n";
-        return fail("semantic compilation of the model failed before NFsim "
-                    "construction began");
+        std::string joined;
+        bool hasSemanticIncompat = false;
+        for (const auto& diagnostic : compiledModel.diagnostics()) {
+            if (!joined.empty()) joined += "; ";
+            joined += diagnostic.message;
+            if (diagnostic.message.find("TotalRate") != std::string::npos ||
+                diagnostic.message.find("not compatible") != std::string::npos) {
+                hasSemanticIncompat = true;
+            }
+        }
+        if (verbose) std::cerr << "[nfsim/compiled] semantic compilation failed: " << joined << "\n";
+        if (hasSemanticIncompat && semanticsUnsupported != nullptr) {
+            *semanticsUnsupported = true;
+        }
+        return fail(joined.empty()
+                        ? std::string("semantic compilation of the model failed before NFsim construction began")
+                        : joined);
     }
     const std::string& name = compiledModel.metadata().name;
 

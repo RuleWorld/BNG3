@@ -12,8 +12,10 @@
 #include "RefineRule.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -27,6 +29,8 @@
 #include "core/Ullmann.hpp"
 
 namespace bng::ast {
+
+double ruleSymmetryFactorForRefinement(const ReactionRule& rule);
 
 // ---- local helpers (mirrors the anonymous namespace in ReactionRule.cpp) ----
 
@@ -159,6 +163,7 @@ std::vector<BNGcore::Map> findAllMaps(const BNGcore::PatternGraph& pattern,
 
 // Build a string representation of reactants + products for dedup (StringID).
 // Perl lines 704-711: join reactant strings with '+', append '->', join product strings.
+// Uses compartment-aware dedup keys so distinct compartment child rules never merge.
 std::string buildStringID(const std::vector<SpeciesGraph>& reactants,
                           const std::vector<SpeciesGraph>& products,
                           std::size_t nProductPatterns)
@@ -166,20 +171,20 @@ std::string buildStringID(const std::vector<SpeciesGraph>& reactants,
     std::string sid;
     for (std::size_t i = 0; i < reactants.size(); ++i) {
         if (i > 0) sid += '+';
-        sid += reactants[i].toString();
+        sid += reactants[i].toStringForDedup();
     }
     sid += "->";
     // First nProductPatterns products in order
     std::size_t nProd = std::min(products.size(), nProductPatterns);
     for (std::size_t i = 0; i < nProd; ++i) {
         if (i > 0) sid += '+';
-        sid += products[i].toString();
+        sid += products[i].toStringForDedup();
     }
-    // Extra products (from DeleteMolecules) sorted
+    // Extra products sorted
     if (products.size() > nProductPatterns) {
         std::vector<std::string> extras;
         for (std::size_t i = nProductPatterns; i < products.size(); ++i) {
-            extras.push_back(products[i].toString());
+            extras.push_back(products[i].toStringForDedup());
         }
         std::sort(extras.begin(), extras.end());
         for (const auto& e : extras) {
@@ -321,10 +326,47 @@ void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node) {
 namespace {
 
 // BNGL text of a refined pattern.  toString() drops compartments, which a
-// compartmental child rule needs: @EC:L(r) is not L(r).
+// compartmental child rule needs: @EC:L(r) is not L(r).  When there is no
+// outer species-level compartment, format per-molecule @COMP suffixes directly
+// in valid BNGL syntax instead of emitting internal dedup markers.
 std::string authoredPattern(const SpeciesGraph& pattern) {
     if (pattern.getCompartment().empty()) {
-        return pattern.getGraph().get_BNG2_string_with_compartments();
+        std::vector<std::string> molComps;
+        const std::string base = pattern.getGraph().get_BNG2_string(molComps);
+        bool anyComp = false;
+        for (const auto& c : molComps) {
+            if (!c.empty()) {
+                anyComp = true;
+                break;
+            }
+        }
+        if (!anyComp) return base;
+
+        std::string result;
+        result.reserve(base.size() + molComps.size() * 6);
+        std::size_t molIdx = 0;
+        std::size_t pos = 0;
+        while (pos < base.size()) {
+            int parenDepth = 0;
+            std::size_t molEnd = pos;
+            while (molEnd < base.size()) {
+                if (base[molEnd] == '(') ++parenDepth;
+                else if (base[molEnd] == ')') --parenDepth;
+                else if (base[molEnd] == '.' && parenDepth == 0) break;
+                ++molEnd;
+            }
+            result.append(base, pos, molEnd - pos);
+            if (molIdx < molComps.size() && !molComps[molIdx].empty()) {
+                result += "@" + molComps[molIdx];
+            }
+            if (molEnd < base.size() && base[molEnd] == '.') {
+                result += '.';
+                ++molEnd;
+            }
+            pos = molEnd;
+            ++molIdx;
+        }
+        return result;
     }
     std::string text = pattern.toStringForDedup();  // "@C::..." form
     const auto doubleColon = text.find("::");
@@ -332,6 +374,139 @@ std::string authoredPattern(const SpeciesGraph& pattern) {
         text.erase(doubleColon, 1);
     }
     return text;
+}
+
+std::string extractLeadingScopePrefix(const std::string& patternText) {
+    const std::size_t pos = patternText.find_first_not_of(" \t\r\n");
+    if (pos == std::string::npos || patternText[pos] != '%') return {};
+    const std::size_t begin = pos + 1;
+    if (begin >= patternText.size() ||
+        !(std::isalpha(static_cast<unsigned char>(patternText[begin])) ||
+          patternText[begin] == '_')) {
+        return {};
+    }
+    std::size_t end = begin + 1;
+    while (end < patternText.size() &&
+           (std::isalnum(static_cast<unsigned char>(patternText[end])) ||
+            patternText[end] == '_')) {
+        ++end;
+    }
+    if (end < patternText.size() && patternText[end] == ':') {
+        std::size_t colonEnd = end + 1;
+        if (colonEnd < patternText.size() && patternText[colonEnd] == ':') {
+            ++colonEnd;
+        }
+        return patternText.substr(pos, colonEnd - pos);
+    }
+    return {};
+}
+
+bool isValidBnglIdentifier(const std::string& text) {
+    if (text.empty()) return false;
+    const unsigned char first = static_cast<unsigned char>(text[0]);
+    if (!(std::isalpha(first) || first == '_')) return false;
+    for (std::size_t i = 1; i < text.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        if (!(std::isalnum(c) || c == '_')) return false;
+    }
+    return true;
+}
+
+bool expressionCanBeParameter(const Expression& expr, const Model& model) {
+    switch (expr.kind()) {
+    case ExpressionKind::Number:
+        return true;
+    case ExpressionKind::Identifier: {
+        const auto& name = expr.name();
+        if (name == "time" || name == "t") return false;
+        return model.getParameters().contains(name);
+    }
+    case ExpressionKind::Unary:
+    case ExpressionKind::Binary:
+        for (const auto& arg : expr.args()) {
+            if (!expressionCanBeParameter(arg, model)) return false;
+        }
+        return true;
+    case ExpressionKind::Function: {
+        const auto& fn = expr.name();
+        for (const auto& modelFn : model.getFunctions()) {
+            if (modelFn.getName() == fn) return false;
+        }
+        for (const auto& obs : model.getObservables()) {
+            if (obs.getName() == fn) return false;
+        }
+        for (const auto& arg : expr.args()) {
+            if (!expressionCanBeParameter(arg, model)) return false;
+        }
+        return fn != "time" && fn != "tfun";
+    }
+    default:
+        return false;
+    }
+}
+
+void removeNodesForDeletedMolecules(
+    BNGcore::PatternGraph& aggregateGraph,
+    const std::vector<BNGcore::Node*>& molsToDelete)
+{
+    if (molsToDelete.empty()) return;
+    std::unordered_set<BNGcore::Node*> deletedMols(molsToDelete.begin(), molsToDelete.end());
+    std::unordered_set<BNGcore::Node*> deletedComps;
+    for (auto* mol : molsToDelete) {
+        for (auto e = mol->edges_out_begin(); e != mol->edges_out_end(); ++e) {
+            if (isComponentNode(**e)) deletedComps.insert(*e);
+        }
+    }
+
+    std::vector<BNGcore::Node*> liberatedPartners;
+    std::unordered_set<BNGcore::Node*> liberatedSeen;
+    std::unordered_set<BNGcore::Node*> deletedBonds;
+
+    for (auto* aggMol : molsToDelete) {
+        std::vector<BNGcore::Node*> children;
+        for (auto e = aggMol->edges_out_begin(); e != aggMol->edges_out_end(); ++e) {
+            children.push_back(*e);
+        }
+        for (auto* child : children) {
+            std::vector<BNGcore::Node*> grandchildren;
+            for (auto e = child->edges_out_begin(); e != child->edges_out_end(); ++e) {
+                grandchildren.push_back(*e);
+            }
+            for (auto* gc : grandchildren) {
+                if (!deletedBonds.insert(gc).second) continue;
+                if (isBondNode(*gc)) {
+                    for (auto inIt = gc->edges_in_begin(); inIt != gc->edges_in_end(); ++inIt) {
+                        BNGcore::Node* partner = *inIt;
+                        if (partner != child && !deletedComps.count(partner) &&
+                            liberatedSeen.insert(partner).second) {
+                            liberatedPartners.push_back(partner);
+                        }
+                    }
+                }
+                safeDeleteNode(aggregateGraph, gc);
+            }
+            safeDeleteNode(aggregateGraph, child);
+        }
+        safeDeleteNode(aggregateGraph, aggMol);
+    }
+
+    // Re-attach an UNBOUND_STATE bond marker to any surviving partner site
+    // that lost its last bond when the deleted molecule was removed.
+    for (auto* partner : liberatedPartners) {
+        bool hasRemainingBond = false;
+        for (auto e = partner->edges_out_begin(); e != partner->edges_out_end(); ++e) {
+            if (isBondNode(**e)) {
+                hasRemainingBond = true;
+                break;
+            }
+        }
+        if (!hasRemainingBond) {
+            auto* ub = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
+            ub->set_state(BNGcore::UNBOUND_STATE);
+            aggregateGraph.add_node(ub);
+            aggregateGraph.add_edge(partner, ub);
+        }
+    }
 }
 
 // Parsed rules keep an internal R<n> identity and the authored rule name in
@@ -343,28 +518,6 @@ std::string hybridRuleBaseName(const ReactionRule& rule) {
         return label.substr(0, label.size() - 1);
     }
     return rule.getRuleName();
-}
-
-// Symmetry scale of a rule's reactant side, BNG2's MultScale for the cases
-// BNG3's network generation represents: 1/n! for each group of n reactant
-// patterns that are the same graph (ReactionRule::buildReaction applies the
-// same convention).  Correspondence tags are ignored: two copies of A(a)
-// carrying different temporary tags are still the same pattern.
-double reactantSymmetryScale(const std::vector<SpeciesGraph>& patterns) {
-    std::unordered_map<std::string, int> groups;
-    for (const auto& pattern : patterns) {
-        BNGcore::PatternGraph untagged;
-        cloneGraphInto(pattern.getGraph(), untagged);
-        for (auto node = untagged.begin(); node != untagged.end(); ++node) {
-            (*node)->set_label_tag("");
-        }
-        ++groups[SpeciesGraph(std::move(untagged), pattern.getCompartment()).canonicalLabel()];
-    }
-    double scale = 1.0;
-    for (const auto& [label, count] : groups) {
-        for (int k = 2; k <= count; ++k) scale /= static_cast<double>(k);
-    }
-    return scale;
 }
 
 } // namespace
@@ -403,6 +556,8 @@ ExpandRuleResult expandRule(
                              rule.getProducts(), rule.getReactants(), {rule.getRates()[1]},
                              rule.getModifiers(), false, rule.getProductPatterns(),
                              rule.getReactantPatterns());
+        forward.setHasScopePrefix(rule.hasScopePrefix());
+        reverse.setHasScopePrefix(rule.hasScopePrefix());
         if (rule.getDelayExpression()) {
             forward.setDelay(*rule.getDelayExpression(), rule.isNonConsuming());
             reverse.setDelay(*rule.getDelayExpression(), rule.isNonConsuming());
@@ -612,10 +767,10 @@ ExpandRuleResult expandRule(
     {
         // Re-iterate Cartesian product to count multiplicities. Each rule
         // instance adds parent.MultScale / child.MultScale (RefineRule.pm
-        // 739-745): a child that no longer has the parent's symmetric
-        // reactant pair (A(a) + A_pop() from A(a) + A(a)) counts each
-        // instance once per ordering, which the parent's 1/2 compensates.
-        const double parentScale = reactantSymmetryScale(rule.getReactantPatterns());
+        // 739-745), computed from exact rule automorphisms including both
+        // inter-pattern permutations and within-pattern reaction-center
+        // symmetries.
+        const double parentScale = ruleSymmetryFactorForRefinement(rule);
         std::unordered_map<std::string, double> factorMap;
         std::fill(indices.begin(), indices.end(), 0);
         bool done2 = hasEmpty || nReactants == 0;
@@ -635,7 +790,8 @@ ExpandRuleResult expandRule(
                     crProducts.push_back(p);
                 std::string sid = buildStringID(
                     crReactants, crProducts, rule.getProductPatterns().size());
-                factorMap[sid] += parentScale / reactantSymmetryScale(crReactants);
+                const double childScale = ruleSymmetryFactorForRefinement(*childRule);
+                factorMap[sid] += parentScale / childScale;
             }
 
             std::size_t carry = nReactants;
@@ -648,7 +804,7 @@ ExpandRuleResult expandRule(
             }
         }
 
-        // Adjust rates for stat factors > 1 (Perl lines 405-421), in child
+        // Adjust rates for stat factors != 1 (Perl lines 405-421), in child
         // order so that the scaled rate parameters are numbered as BNG2
         // numbers them.
         std::vector<std::pair<std::size_t, std::string>> childOrder;
@@ -657,35 +813,29 @@ ExpandRuleResult expandRule(
         std::sort(childOrder.begin(), childOrder.end());
         for (const auto& [idx, sid] : childOrder) {
             double factor = factorMap.count(sid) ? factorMap[sid] : 1.0;
-            if (factor != 1.0 && idx < result.childRules.size()) {
-                // The count above is BNG2's Factor sum over rule instances
-                // that restrict to the same child (RefineRule.pm 388-398).
-                // Symmetry outside the reaction center was removed when the
-                // embeddings were filtered, so no further division applies.
-                // Multiply the first rate constant by the stat factor
+            if (std::abs(factor - 1.0) > 1e-12 && idx < result.childRules.size()) {
                 auto& childRule = result.childRules[idx];
                 const auto& rates = childRule.getRates();
                 if (!rates.empty()) {
-                    const std::string& paramName = rates[0].toString();
+                    const Expression factorExpr = Expression::number(factor);
+                    const Expression origExpr = rates[0];
+                    const Expression newExpr = Expression::binary("*", factorExpr, origExpr);
 
-                    // Build new rate expression: factor * original_rate
-                    Expression factorExpr = Expression::number(factor);
-                    Expression origExpr = rates[0];
-                    Expression newExpr = Expression::binary("*", factorExpr, origExpr);
-
-                    // Name the scaled rate paramName_<n> with the first free n,
-                    // as BNG2's Expression::getName does. A name derived from
-                    // the factor would collide for non-integer factors.
-                    std::string newParamName;
-                    for (int suffix = 1;; ++suffix) {
-                        newParamName = paramName + "_" + std::to_string(suffix);
-                        if (!hybridModel.getParameters().contains(newParamName)) break;
+                    std::vector<Expression> newRates;
+                    if (expressionCanBeParameter(origExpr, model)) {
+                        const std::string rawParamName = origExpr.toString();
+                        const std::string baseParamName =
+                            isValidBnglIdentifier(rawParamName) ? rawParamName : "_rateLaw";
+                        std::string newParamName;
+                        for (int suffix = 1;; ++suffix) {
+                            newParamName = baseParamName + "_" + std::to_string(suffix);
+                            if (!hybridModel.getParameters().contains(newParamName)) break;
+                        }
+                        hybridModel.addParameter(Parameter(newParamName, newExpr));
+                        newRates.push_back(Expression::identifier(newParamName));
+                    } else {
+                        newRates.push_back(newExpr);
                     }
-                    hybridModel.addParameter(Parameter(newParamName, newExpr));
-
-                    // Reconstruct the child rule with the adjusted rate.
-                    // Since ReactionRule doesn't expose a rate setter, we reconstruct.
-                    std::vector<Expression> newRates = {Expression::identifier(newParamName)};
                     for (std::size_t i = 1; i < rates.size(); ++i) {
                         newRates.push_back(rates[i]);
                     }
@@ -699,6 +849,7 @@ ExpandRuleResult expandRule(
                         childRule.isBidirectional(),
                         childRule.getReactantPatterns(),
                         childRule.getProductPatterns());
+                    refinedRule.setHasScopePrefix(childRule.hasScopePrefix());
                     if (childRule.getDelayExpression()) {
                         refinedRule.setDelay(*childRule.getDelayExpression(),
                                              childRule.isNonConsuming());
@@ -783,13 +934,22 @@ std::unique_ptr<ReactionRule> restrictRule(
         transferLabels(mapCopy);
 
         // The species-level compartment of the copied target: the pattern's
-        // own for a self-embedding, the population species' otherwise.
+        // own for a self-embedding, the population species' otherwise. When a
+        // multi-molecule pattern carries per-molecule compartments (e.g.
+        // R@PM.L@EC), infer the complex compartment via 2D-surface precedence.
         std::string compartment;
         if (embed.speciesIndex == static_cast<std::size_t>(-1)) {
             compartment = reactantPatterns[i].getCompartment();
+            if (compartment.empty()) {
+                compartment = reactantPatterns[i].inferCompartment(model.getCompartments());
+            }
         } else if (params.populationParticleGraphs != nullptr &&
                    embed.speciesIndex < params.populationParticleGraphs->size()) {
             compartment = (*params.populationParticleGraphs)[embed.speciesIndex].getCompartment();
+            if (compartment.empty()) {
+                compartment = (*params.populationParticleGraphs)[embed.speciesIndex].inferCompartment(
+                    model.getCompartments());
+            }
         }
 
         // The embedding maps into the cloned target graph. Preserve that node
@@ -860,79 +1020,60 @@ std::unique_ptr<ReactionRule> restrictRule(
         deletesSpecies[i] = rule.deletesWholeReactantPattern(i);
     }
 
+    auto findAggComponent = [&](const ReactionRule::ComponentRef& ref) -> BNGcore::Node* {
+        if (ref.patternIndex >= nReactants) return nullptr;
+        const auto& patt = reactantPatterns[ref.patternIndex];
+        std::size_t mi = 0;
+        for (auto nIt = patt.getGraph().begin(); nIt != patt.getGraph().end(); ++nIt) {
+            if (!isMoleculeNode(**nIt)) continue;
+            if (mi == ref.moleculeIndex) {
+                std::size_t ci = 0;
+                for (auto e = (*nIt)->edges_out_begin(); e != (*nIt)->edges_out_end(); ++e) {
+                    if (!isComponentNode(**e)) continue;
+                    if (ci == ref.componentIndex) {
+                        BNGcore::Node* matched = matches[ref.patternIndex].mapf(*e);
+                        if (matched) {
+                            auto cIt = cloneMaps[ref.patternIndex].find(matched);
+                            if (cIt != cloneMaps[ref.patternIndex].end()) return cIt->second;
+                        }
+                        return nullptr;
+                    }
+                    ++ci;
+                }
+                return nullptr;
+            }
+            ++mi;
+        }
+        return nullptr;
+    };
+
+    const auto crossBonds = rule.getCrossBonds();
+    std::set<ReactionRule::ComponentRef> crossBondProductComponents;
+    for (const auto& [rComp, pComp] : crossBonds) {
+        (void)rComp;
+        crossBondProductComponents.insert(pComp);
+    }
+    std::unordered_map<const BNGcore::Node*, BNGcore::Node*> addedProductBonds;
+    std::map<ReactionRule::ComponentRef, BNGcore::Node*> addedProductComponents;
+    std::vector<BNGcore::Node*> molsToDelete;
+
     // Apply each transformation operation
     for (const auto& op : rule.getOperations()) {
         switch (op.type) {
         case ReactionRule::TransformOp::Type::ChangeState: {
-            // Find the target node in the aggregate graph
-            if (op.source.patternIndex >= nReactants) break;
-            const auto& pattInfo = reactantPatterns[op.source.patternIndex];
-            // Find the component node in the pattern
-            std::size_t molIdx = 0;
-            for (auto nodeIt = pattInfo.getGraph().begin(); nodeIt != pattInfo.getGraph().end(); ++nodeIt) {
-                if (!isMoleculeNode(**nodeIt)) continue;
-                if (molIdx == op.source.moleculeIndex) {
-                    std::size_t compIdx = 0;
-                    for (auto e = (*nodeIt)->edges_out_begin(); e != (*nodeIt)->edges_out_end(); ++e) {
-                        if (!isComponentNode(**e)) continue;
-                        if (compIdx == op.source.componentIndex) {
-                            // Map pattern node -> target node via match -> aggregate
-                            BNGcore::Node* matchedNode = matches[op.source.patternIndex].mapf(*e);
-                            if (matchedNode) {
-                                auto cloneIt = cloneMaps[op.source.patternIndex].find(matchedNode);
-                                if (cloneIt != cloneMaps[op.source.patternIndex].end()) {
-                                    BNGcore::Node* aggNode = cloneIt->second;
-                                    const auto& stateType = aggNode->get_type().get_state_type();
-                                    const auto& labelType = static_cast<const BNGcore::LabelStateType&>(stateType);
-                                    BNGcore::LabelState state(labelType, op.newState);
-                                    aggregateGraph.set_node_state(aggNode, state);
-                                }
-                            }
-                            break;
-                        }
-                        ++compIdx;
-                    }
-                    break;
-                }
-                ++molIdx;
+            if (BNGcore::Node* aggNode = findAggComponent(op.source)) {
+                const auto& stateType = aggNode->get_type().get_state_type();
+                const auto& labelType = static_cast<const BNGcore::LabelStateType&>(stateType);
+                BNGcore::LabelState state(labelType, op.newState);
+                aggregateGraph.set_node_state(aggNode, state);
             }
             break;
         }
         case ReactionRule::TransformOp::Type::AddBond: {
-            // Find both component nodes and add a bond between them
-            auto findAggNode = [&](const ReactionRule::ComponentRef& ref) -> BNGcore::Node* {
-                if (ref.patternIndex >= nReactants) return nullptr;
-                const auto& patt = reactantPatterns[ref.patternIndex];
-                std::size_t mi = 0;
-                for (auto nIt = patt.getGraph().begin(); nIt != patt.getGraph().end(); ++nIt) {
-                    if (!isMoleculeNode(**nIt)) continue;
-                    if (mi == ref.moleculeIndex) {
-                        std::size_t ci = 0;
-                        for (auto e = (*nIt)->edges_out_begin(); e != (*nIt)->edges_out_end(); ++e) {
-                            if (!isComponentNode(**e)) continue;
-                            if (ci == ref.componentIndex) {
-                                BNGcore::Node* matched = matches[ref.patternIndex].mapf(*e);
-                                if (matched) {
-                                    auto cIt = cloneMaps[ref.patternIndex].find(matched);
-                                    if (cIt != cloneMaps[ref.patternIndex].end())
-                                        return cIt->second;
-                                }
-                                return nullptr;
-                            }
-                            ++ci;
-                        }
-                        return nullptr;
-                    }
-                    ++mi;
-                }
-                return nullptr;
-            };
-
-            BNGcore::Node* lhs = findAggNode(op.source);
-            BNGcore::Node* rhs = findAggNode(op.partner);
+            BNGcore::Node* lhs = findAggComponent(op.source);
+            BNGcore::Node* rhs = findAggComponent(op.partner);
             if (!lhs || !rhs) return nullptr;
 
-            // Remove unbound bond nodes
             auto removeUnbound = [&](BNGcore::Node* comp) {
                 std::vector<BNGcore::Node*> toRemove;
                 for (auto e = comp->edges_out_begin(); e != comp->edges_out_end(); ++e) {
@@ -953,39 +1094,10 @@ std::unique_ptr<ReactionRule> restrictRule(
             break;
         }
         case ReactionRule::TransformOp::Type::DeleteBond: {
-            auto findAggNode2 = [&](const ReactionRule::ComponentRef& ref) -> BNGcore::Node* {
-                if (ref.patternIndex >= nReactants) return nullptr;
-                const auto& patt = reactantPatterns[ref.patternIndex];
-                std::size_t mi = 0;
-                for (auto nIt = patt.getGraph().begin(); nIt != patt.getGraph().end(); ++nIt) {
-                    if (!isMoleculeNode(**nIt)) continue;
-                    if (mi == ref.moleculeIndex) {
-                        std::size_t ci = 0;
-                        for (auto e = (*nIt)->edges_out_begin(); e != (*nIt)->edges_out_end(); ++e) {
-                            if (!isComponentNode(**e)) continue;
-                            if (ci == ref.componentIndex) {
-                                BNGcore::Node* matched = matches[ref.patternIndex].mapf(*e);
-                                if (matched) {
-                                    auto cIt = cloneMaps[ref.patternIndex].find(matched);
-                                    if (cIt != cloneMaps[ref.patternIndex].end())
-                                        return cIt->second;
-                                }
-                                return nullptr;
-                            }
-                            ++ci;
-                        }
-                        return nullptr;
-                    }
-                    ++mi;
-                }
-                return nullptr;
-            };
-
-            BNGcore::Node* lhsNode = findAggNode2(op.source);
-            BNGcore::Node* rhsNode = findAggNode2(op.partner);
+            BNGcore::Node* lhsNode = findAggComponent(op.source);
+            BNGcore::Node* rhsNode = findAggComponent(op.partner);
             if (!lhsNode || !rhsNode) return nullptr;
 
-            // Find shared bond node and delete it
             BNGcore::Node* sharedBond = nullptr;
             for (auto e1 = lhsNode->edges_out_begin(); e1 != lhsNode->edges_out_end(); ++e1) {
                 if (!isBondNode(**e1)) continue;
@@ -996,7 +1108,6 @@ std::unique_ptr<ReactionRule> restrictRule(
             }
             if (sharedBond) {
                 safeDeleteNode(aggregateGraph, sharedBond);
-                // Add unbound markers
                 auto* ub1 = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
                 ub1->set_state(BNGcore::UNBOUND_STATE);
                 aggregateGraph.add_node(ub1);
@@ -1021,21 +1132,7 @@ std::unique_ptr<ReactionRule> restrictRule(
                     if (matched) {
                         auto cIt = cloneMaps[op.patternIndex].find(matched);
                         if (cIt != cloneMaps[op.patternIndex].end()) {
-                            BNGcore::Node* aggMol = cIt->second;
-                            // Delete molecule and all its children
-                            std::vector<BNGcore::Node*> children;
-                            for (auto e = aggMol->edges_out_begin(); e != aggMol->edges_out_end(); ++e) {
-                                children.push_back(*e);
-                            }
-                            for (auto* child : children) {
-                                std::vector<BNGcore::Node*> grandchildren;
-                                for (auto e = child->edges_out_begin(); e != child->edges_out_end(); ++e)
-                                    grandchildren.push_back(*e);
-                                for (auto* gc : grandchildren)
-                                    safeDeleteNode(aggregateGraph, gc);
-                                safeDeleteNode(aggregateGraph, child);
-                            }
-                            safeDeleteNode(aggregateGraph, aggMol);
+                            molsToDelete.push_back(cIt->second);
                         }
                     }
                     break;
@@ -1045,24 +1142,44 @@ std::unique_ptr<ReactionRule> restrictRule(
             break;
         }
         case ReactionRule::TransformOp::Type::AddMolecule: {
-            // Clone the product molecule into the aggregate graph
+            // Clone the product molecule into the aggregate graph, sharing
+            // bond nodes across molecules added from the same product pattern.
             if (op.patternIndex < productPatterns.size()) {
                 const auto& prodPatt = productPatterns[op.patternIndex];
                 std::size_t mi = 0;
                 for (auto nIt = prodPatt.getGraph().begin(); nIt != prodPatt.getGraph().end(); ++nIt) {
                     if (!isMoleculeNode(**nIt)) continue;
                     if (mi == op.moleculeIndex) {
-                        // Clone this molecule and its descendants
                         auto* molClone = (*nIt)->clone();
                         aggregateGraph.add_node(molClone);
+                        std::size_t ci = 0;
                         for (auto e = (*nIt)->edges_out_begin(); e != (*nIt)->edges_out_end(); ++e) {
                             auto* compClone = (*e)->clone();
                             aggregateGraph.add_node(compClone);
                             aggregateGraph.add_edge(molClone, compClone);
+                            const ReactionRule::ComponentRef prodCompRef{op.patternIndex, op.moleculeIndex, ci};
+                            const bool isCrossBondSite = crossBondProductComponents.count(prodCompRef) != 0;
+                            if (isComponentNode(**e)) {
+                                addedProductComponents[prodCompRef] = compClone;
+                                ++ci;
+                            }
                             for (auto be = (*e)->edges_out_begin(); be != (*e)->edges_out_end(); ++be) {
-                                auto* bondClone = (*be)->clone();
-                                aggregateGraph.add_node(bondClone);
-                                aggregateGraph.add_edge(compClone, bondClone);
+                                if (isBondNode(**be) && (*be)->in_degree() >= 2) {
+                                    if (isCrossBondSite) {
+                                        // Cross-boundary bonds are wired below after all molecules exist.
+                                        continue;
+                                    }
+                                    auto& sharedClone = addedProductBonds[*be];
+                                    if (!sharedClone) {
+                                        sharedClone = (*be)->clone();
+                                        aggregateGraph.add_node(sharedClone);
+                                    }
+                                    aggregateGraph.add_edge(compClone, sharedClone);
+                                } else {
+                                    auto* bondClone = (*be)->clone();
+                                    aggregateGraph.add_node(bondClone);
+                                    aggregateGraph.add_edge(compClone, bondClone);
+                                }
                             }
                         }
                         break;
@@ -1075,6 +1192,49 @@ std::unique_ptr<ReactionRule> restrictRule(
         } // switch
     }
 
+    // Wire cross-boundary bonds between matched reactant sites and newly added
+    // product molecules.
+    for (const auto& [rComp, pComp] : crossBonds) {
+        BNGcore::Node* lhs = findAggComponent(rComp);
+        auto pIt = addedProductComponents.find(pComp);
+        if (!lhs || pIt == addedProductComponents.end()) return nullptr;
+        BNGcore::Node* rhs = pIt->second;
+        std::vector<BNGcore::Node*> toRemove;
+        for (auto e = lhs->edges_out_begin(); e != lhs->edges_out_end(); ++e) {
+            if (isBondNode(**e) && (*e)->get_state() == BNGcore::UNBOUND_STATE) {
+                toRemove.push_back(*e);
+            }
+        }
+        for (auto* n : toRemove) safeDeleteNode(aggregateGraph, n);
+        auto* bondNode = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
+        bondNode->set_state(BNGcore::BOUND_STATE);
+        aggregateGraph.add_node(bondNode);
+        aggregateGraph.add_edge(lhs, bondNode);
+        aggregateGraph.add_edge(rhs, bondNode);
+    }
+
+    // Pure degradation with molecule-level removal (e.g. A() -> 0 with the
+    // molecule-deletion modifier) leaves operations_ empty and deletesSpecies
+    // false: remove each matched reactant molecule individually while keeping
+    // any bonded partners intact with fresh unbound markers.
+    if (nProducts == 0 && rule.getOperations().empty()) {
+        for (std::size_t i = 0; i < nReactants; ++i) {
+            if (deletesSpecies[i]) continue;
+            const auto& patt = reactantPatterns[i];
+            for (auto nIt = patt.getGraph().begin(); nIt != patt.getGraph().end(); ++nIt) {
+                if (!isMoleculeNode(**nIt)) continue;
+                BNGcore::Node* matched = matches[i].mapf(*nIt);
+                if (!matched) continue;
+                auto cIt = cloneMaps[i].find(matched);
+                if (cIt != cloneMaps[i].end()) {
+                    molsToDelete.push_back(cIt->second);
+                }
+            }
+        }
+    }
+
+    removeNodesForDeletedMolecules(aggregateGraph, molsToDelete);
+
     for (std::size_t i = 0; i < nReactants; ++i) {
         if (!deletesSpecies[i]) continue;
         std::vector<BNGcore::Node*> speciesNodes;
@@ -1085,6 +1245,21 @@ std::unique_ptr<ReactionRule> restrictRule(
 
     // Split aggregate into product species graphs
     auto products = splitConnected(aggregateGraph);
+
+    // Self-embedding of an intramolecular bond-breaking rule (e.g.
+    // A(r!1).A(l!1) -> A(r).A(l)): the parent's single product pattern is
+    // intentionally disconnected (written with '.'), so preserve the aggregate
+    // as one intramolecular product pattern rather than splitting into '+'.
+    const bool allSelfEmbeddings = !ruleInstance.empty() &&
+        std::all_of(ruleInstance.begin(), ruleInstance.end(),
+                    [](const ReactionRule::EmbeddingResult& e) {
+                        return e.speciesIndex == static_cast<std::size_t>(-1);
+                    });
+    if (allSelfEmbeddings && nProducts == 1 && products.size() > 1 &&
+        products.size() == productPatterns[0].numComponents()) {
+        products.clear();
+        products.emplace_back(aggregateGraph);
+    }
 
     // ---- Step 4: Validate products (Perl lines 503-582) ----
     // Check number of product graphs
@@ -1175,6 +1350,9 @@ std::unique_ptr<ReactionRule> restrictRule(
                 usedPattern[matched] = true;
                 compartment = productPatterns[matched].getCompartment();
             }
+            if (compartment.empty()) {
+                compartment = products[ip].inferCompartment(model.getCompartments());
+            }
             if (compartment.empty()) compartment = sharedReactantCompartment;
             if (compartment.empty()) {
                 // Reactants on a surface and in an adjacent volume make a
@@ -1231,10 +1409,25 @@ std::unique_ptr<ReactionRule> restrictRule(
     }
 
     // Build string representations, with the species-level compartment as
-    // an @C: prefix and molecule compartments that differ from it.
+    // an @C: prefix and molecule compartments that differ from it, preserving
+    // any leading %scope: / %scope:: tags from the parent rule.
     std::vector<std::string> reactantStrs, productStrs;
-    for (const auto& r : reactants) reactantStrs.push_back(authoredPattern(r));
-    for (const auto& p : products) productStrs.push_back(authoredPattern(p));
+    for (std::size_t i = 0; i < reactants.size(); ++i) {
+        std::string text = authoredPattern(reactants[i]);
+        if (i < rule.getReactants().size()) {
+            const std::string scopePrefix = extractLeadingScopePrefix(rule.getReactants()[i]);
+            if (!scopePrefix.empty()) text = scopePrefix + text;
+        }
+        reactantStrs.push_back(std::move(text));
+    }
+    for (std::size_t i = 0; i < products.size(); ++i) {
+        std::string text = authoredPattern(products[i]);
+        if (i < rule.getProducts().size()) {
+            const std::string scopePrefix = extractLeadingScopePrefix(rule.getProducts()[i]);
+            if (!scopePrefix.empty()) text = scopePrefix + text;
+        }
+        productStrs.push_back(std::move(text));
+    }
 
     // Copy rates from parent rule
     std::vector<Expression> rates;
@@ -1259,6 +1452,7 @@ std::unique_ptr<ReactionRule> restrictRule(
         rule.isBidirectional(),
         std::move(reactants),
         std::move(products));
+    childRule->setHasScopePrefix(rule.hasScopePrefix());
     if (rule.getDelayExpression()) {
         childRule->setDelay(*rule.getDelayExpression(), rule.isNonConsuming());
     }
@@ -1301,6 +1495,7 @@ std::unique_ptr<ReactionRule> restrictRule(
             childRule->isBidirectional(),
             childRule->getReactantPatterns(),
             childRule->getProductPatterns());
+        rebuilt->setHasScopePrefix(childRule->hasScopePrefix());
         if (childRule->getDelayExpression()) {
             rebuilt->setDelay(*childRule->getDelayExpression(), childRule->isNonConsuming());
         }

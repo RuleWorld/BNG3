@@ -374,14 +374,15 @@ py::dict directionSnapshot(const CompiledRuleDirection& direction,
 
     py::list localScopes;
     for (const auto& scope : direction.localScopes) {
+        if (scope.side != PatternSide::Reactant) {
+            continue;
+        }
         py::dict item;
         item["name"] = scope.name;
         item["kind"] = scope.kind == LocalScopeKind::Species ? "species" : "molecule";
-        item["side"] = scope.side == PatternSide::Reactant ? "reactant" : "product";
+        item["side"] = "reactant";
         item["pattern_index"] = scope.patternIndex;
-        item["reactant_pattern"] = scope.side == PatternSide::Reactant
-                                        ? py::cast(scope.patternIndex)
-                                        : py::none();
+        item["reactant_pattern"] = scope.patternIndex;
         if (scope.moleculeOccurrence.has_value())
             item["molecule_occurrence"] = *scope.moleculeOccurrence;
         localScopes.append(std::move(item));

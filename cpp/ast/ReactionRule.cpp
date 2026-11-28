@@ -907,8 +907,9 @@ ExactCompSig makeExactCompSig(const ComponentInfo& comp) {
     return sig;
 }
 
-ExactMolSig makeExactMolSig(const MoleculeInfo& mol) {
-    return ExactMolSig{mol.name, mol.node->get_compartment(), mol.components.size()};
+ExactMolSig makeExactMolSig(const MoleculeInfo& mol, const std::string& patternCompartment = {}) {
+    const std::string& mc = mol.node->get_compartment();
+    return ExactMolSig{mol.name, mc.empty() ? patternCompartment : mc, mol.components.size()};
 }
 
 std::size_t countComponentBondsBetween(
@@ -984,8 +985,8 @@ std::vector<PatternIsoMap> enumerateExactPatternIsos(
     std::vector<ExactMolSig> molSigsA(numMols), molSigsB(numMols);
     std::vector<std::vector<ExactCompSig>> compSigsA(numMols), compSigsB(numMols);
     for (std::size_t m = 0; m < numMols; ++m) {
-        molSigsA[m] = makeExactMolSig(infoA.molecules[m]);
-        molSigsB[m] = makeExactMolSig(infoB.molecules[m]);
+        molSigsA[m] = makeExactMolSig(infoA.molecules[m], sgA.getCompartment());
+        molSigsB[m] = makeExactMolSig(infoB.molecules[m], sgB.getCompartment());
         compSigsA[m].reserve(infoA.molecules[m].components.size());
         for (const auto& c : infoA.molecules[m].components) {
             compSigsA[m].push_back(makeExactCompSig(c));
@@ -1208,7 +1209,7 @@ double computeRuleSymmetryFactor(
         prodCompSigs[pi].resize(nM);
         for (std::size_t mi = 0; mi < nM; ++mi) {
             const auto& mol = productInfo[pi].molecules[mi];
-            prodMolSigs[pi].push_back(makeExactMolSig(mol));
+            prodMolSigs[pi].push_back(makeExactMolSig(mol, productPatterns[pi].getCompartment()));
             prodCompSigs[pi][mi].reserve(mol.components.size());
             for (const auto& comp : mol.components) {
                 prodCompSigs[pi][mi].push_back(makeExactCompSig(comp));
@@ -2122,6 +2123,46 @@ void ReactionRule::initialize() {
         }
     }
 
+    // Validate wildcard bond preservation across mapped components (BNG2
+    // RxnRule::findMap): breaking a wildcard bond (`!+` or `!?`) without a
+    // corresponding wildcard bond on the product side is illegal because the
+    // unspecified partner cannot be detached.
+    {
+        auto countWildcardBonds = [](const ComponentInfo& comp) -> std::size_t {
+            std::size_t count = 0;
+            for (const auto* bn : comp.bondNodes) {
+                if (bn->in_degree() != 1) continue;
+                const std::string st = bn->get_state().get_BNG2_string();
+                if (st == "!+" || st == "!?") ++count;
+            }
+            return count;
+        };
+        using MolCompKey = std::tuple<std::size_t, std::size_t, std::size_t, std::size_t, std::string>;
+        std::map<MolCompKey, std::pair<std::size_t, std::size_t>> wildcardCounts;
+        for (const auto& [pRef, rRef] : componentMappings_) {
+            const auto& pComp = productInfo[pRef.patternIndex].molecules[pRef.moleculeIndex].components[pRef.componentIndex];
+            const auto& rComp = reactantInfo[rRef.patternIndex].molecules[rRef.moleculeIndex].components[rRef.componentIndex];
+            auto& entry = wildcardCounts[MolCompKey{
+                rRef.patternIndex, rRef.moleculeIndex,
+                pRef.patternIndex, pRef.moleculeIndex, rComp.name}];
+            entry.first += countWildcardBonds(rComp);
+            entry.second += countWildcardBonds(pComp);
+        }
+        for (const auto& [key, counts] : wildcardCounts) {
+            (void)key;
+            if (counts.first > counts.second) {
+                throw std::runtime_error(
+                    "Found illegal wildcard bond breaking in rule '" + ruleName_ +
+                    "': a wildcard bond in reactants does not have a corresponding wildcard bond in products");
+            }
+            if (bidirectional_ && counts.second > counts.first) {
+                throw std::runtime_error(
+                    "Found illegal wildcard bond breaking in reverse of rule '" + ruleName_ +
+                    "': a wildcard bond in products does not have a corresponding wildcard bond in reactants");
+            }
+        }
+    }
+
     const auto reactantBonds = collectBonds(reactantInfo);
     std::set<BondPair> remappedProductBonds;
     crossBonds_.clear();
@@ -2665,7 +2706,60 @@ std::size_t ReactionRule::expandRule(
                 const auto& productPattern = productPatterns_[patternIndex];
                 BNGcore::PatternGraph productGraph;
                 auto clones = cloneGraphIntoTarget(productPattern.getGraph(), productGraph);
-                SpeciesGraph sg(productGraph, productPattern.getCompartment());
+                std::string compartmentToUse;
+                const auto& patternCompartment = productPattern.getCompartment();
+                if (!g_compartmentDimensions.empty()) {
+                    std::set<std::string> surfaces, volumes;
+                    for (auto nodeIter = productGraph.begin(); nodeIter != productGraph.end(); ++nodeIter) {
+                        if (!isMoleculeNode(**nodeIter)) continue;
+                        auto mc = (*nodeIter)->get_compartment();
+                        if (mc.empty() && !patternCompartment.empty()) {
+                            mc = patternCompartment;
+                        }
+                        if (mc.empty()) continue;
+                        auto dimIt = g_compartmentDimensions.find(mc);
+                        if (dimIt != g_compartmentDimensions.end()) {
+                            if (dimIt->second == 2) surfaces.insert(mc);
+                            else if (dimIt->second == 3) volumes.insert(mc);
+                        }
+                    }
+                    if (surfaces.empty()) {
+                        if (volumes.size() == 1) {
+                            compartmentToUse = *volumes.begin();
+                        } else if (volumes.size() > 1) {
+                            return 0;
+                        }
+                    } else if (surfaces.size() == 1) {
+                        const auto& surface = *surfaces.begin();
+                        bool valid = true;
+                        for (const auto& vol : volumes) {
+                            if (!isAdjacentToSurface(vol, surface)) {
+                                valid = false;
+                                break;
+                            }
+                        }
+                        if (!valid) {
+                            return 0;
+                        }
+                        compartmentToUse = surface;
+                    } else {
+                        return 0;
+                    }
+                }
+                if (compartmentToUse.empty()) {
+                    compartmentToUse = patternCompartment;
+                }
+                if (!compartmentToUse.empty()) {
+                    for (auto nodeIter = productGraph.begin(); nodeIter != productGraph.end(); ++nodeIter) {
+                        if (isMoleculeNode(**nodeIter) && (*nodeIter)->get_compartment().empty()) {
+                            (*nodeIter)->set_compartment(compartmentToUse);
+                        }
+                    }
+                }
+                if (!verifyBondTopology(productGraph)) {
+                    return 0;
+                }
+                SpeciesGraph sg(productGraph, compartmentToUse);
                 if (productFilter && !productFilter(sg)) {
                     return 0;
                 }
@@ -2683,11 +2777,11 @@ std::size_t ReactionRule::expandRule(
             }
             for (std::size_t productIndex = 0;
                  productIndex < productGraphs.size(); ++productIndex) {
-                const auto& productPattern =
-                    productPatterns_[productPatternIndices[productIndex]];
+                const std::string resolvedCompartment =
+                    productGraphs[productIndex].getCompartment();
                 auto product = Species(
                     std::move(productGraphs[productIndex]), 0.0, false,
-                    productPattern.getCompartment());
+                    resolvedCompartment);
                 std::string exact;
                 const auto exactIndex = speciesList.findExact(product, exact);
                 std::size_t index;
@@ -4260,6 +4354,118 @@ bool ReactionRule::passesProductFilters(const std::vector<SpeciesGraph>& product
         }
     }
     return true;
+}
+
+double ruleSymmetryFactorForRefinement(const ReactionRule& rule) {
+    const auto& reactantPatterns = rule.getReactantPatterns();
+    const auto& productPatterns = rule.getProductPatterns();
+    if (reactantPatterns.empty()) return 1.0;
+
+    const auto reactantInfo = describePatterns(reactantPatterns);
+    const auto productInfo = describePatterns(productPatterns);
+    const auto& moleculeMappings = rule.getMoleculeMappings();
+    const auto& componentMappings = rule.getComponentMappings();
+
+    std::vector<std::vector<ReactionRule::ReactionCenterRef>> reactionCenter(reactantPatterns.size());
+    for (const auto& op : rule.getOperations()) {
+        switch (op.type) {
+        case ReactionRule::TransformOp::Type::ChangeState:
+            if (op.source.patternIndex < reactionCenter.size()) {
+                reactionCenter[op.source.patternIndex].push_back(
+                    {op.source.patternIndex, op.source.moleculeIndex, true, op.source.componentIndex});
+            }
+            break;
+        case ReactionRule::TransformOp::Type::AddBond:
+        case ReactionRule::TransformOp::Type::DeleteBond:
+            if (op.source.patternIndex < reactionCenter.size()) {
+                reactionCenter[op.source.patternIndex].push_back(
+                    {op.source.patternIndex, op.source.moleculeIndex, true, op.source.componentIndex});
+            }
+            if (op.partner.patternIndex < reactionCenter.size()) {
+                reactionCenter[op.partner.patternIndex].push_back(
+                    {op.partner.patternIndex, op.partner.moleculeIndex, true, op.partner.componentIndex});
+            }
+            break;
+        case ReactionRule::TransformOp::Type::DeleteMolecule:
+            if (op.patternIndex < reactionCenter.size()) {
+                reactionCenter[op.patternIndex].push_back(
+                    {op.patternIndex, op.moleculeIndex, false, 0});
+            }
+            break;
+        case ReactionRule::TransformOp::Type::AddMolecule:
+            break;
+        }
+    }
+    for (const auto& [rComp, pComp] : rule.getCrossBonds()) {
+        (void)pComp;
+        if (rComp.patternIndex < reactionCenter.size()) {
+            reactionCenter[rComp.patternIndex].push_back(
+                {rComp.patternIndex, rComp.moleculeIndex, true, rComp.componentIndex});
+        }
+    }
+    for (const auto& [pRef, rRef] : moleculeMappings) {
+        if (pRef.patternIndex >= productInfo.size() ||
+            pRef.moleculeIndex >= productInfo[pRef.patternIndex].molecules.size() ||
+            rRef.patternIndex >= reactantInfo.size() ||
+            rRef.moleculeIndex >= reactantInfo[rRef.patternIndex].molecules.size()) {
+            continue;
+        }
+        const std::string pComp = productInfo[pRef.patternIndex].molecules[pRef.moleculeIndex].node->get_compartment();
+        const std::string rComp = reactantInfo[rRef.patternIndex].molecules[rRef.moleculeIndex].node->get_compartment();
+        if (!pComp.empty() && rComp != pComp) {
+            reactionCenter[rRef.patternIndex].push_back(
+                {rRef.patternIndex, rRef.moleculeIndex, false, 0});
+        }
+    }
+    for (auto& refs : reactionCenter) {
+        std::sort(refs.begin(), refs.end(), [](const auto& lhs, const auto& rhs) {
+            return std::tie(lhs.patternIndex, lhs.moleculeIndex, lhs.isComponent, lhs.componentIndex) <
+                   std::tie(rhs.patternIndex, rhs.moleculeIndex, rhs.isComponent, rhs.componentIndex);
+        });
+        refs.erase(std::unique(refs.begin(), refs.end(), [](const auto& lhs, const auto& rhs) {
+            return std::tie(lhs.patternIndex, lhs.moleculeIndex, lhs.isComponent, lhs.componentIndex) ==
+                   std::tie(rhs.patternIndex, rhs.moleculeIndex, rhs.isComponent, rhs.componentIndex);
+        }), refs.end());
+    }
+
+    std::vector<std::optional<std::size_t>> speciesTransportTarget(reactantPatterns.size(), std::nullopt);
+    for (std::size_t rpi = 0; rpi < reactantPatterns.size(); ++rpi) {
+        const std::size_t rMolCount = reactantInfo[rpi].molecules.size();
+        if (rMolCount == 0) continue;
+        std::set<std::size_t> mappedProductPatterns;
+        std::size_t mappedReactantMols = 0;
+        for (const auto& [pRef, rRef] : moleculeMappings) {
+            if (rRef.patternIndex == rpi) {
+                mappedProductPatterns.insert(pRef.patternIndex);
+                ++mappedReactantMols;
+            }
+        }
+        if (mappedReactantMols != rMolCount || mappedProductPatterns.size() != 1) continue;
+        const std::size_t ppi = *mappedProductPatterns.begin();
+        if (ppi >= productInfo.size() || productInfo[ppi].molecules.size() != rMolCount) continue;
+        std::size_t mappedProductMolsFromRpi = 0;
+        for (const auto& [pRef, rRef] : moleculeMappings) {
+            if (pRef.patternIndex == ppi && rRef.patternIndex == rpi) ++mappedProductMolsFromRpi;
+        }
+        if (mappedProductMolsFromRpi != rMolCount) continue;
+        const auto& compR = reactantPatterns[rpi].getCompartment();
+        const auto& compP = productPatterns[ppi].getCompartment();
+        if (!compR.empty() && !compP.empty() && compR != compP) {
+            speciesTransportTarget[rpi] = ppi;
+        }
+    }
+
+    std::vector<bool> wholeSpeciesDeleted(reactantPatterns.size(), false);
+    for (std::size_t rpi = 0; rpi < reactantPatterns.size(); ++rpi) {
+        wholeSpeciesDeleted[rpi] = rule.deletesWholeReactantPattern(rpi);
+    }
+
+    return computeRuleSymmetryFactor(
+        reactantPatterns, productPatterns,
+        reactantInfo, productInfo,
+        moleculeMappings, componentMappings,
+        reactionCenter, speciesTransportTarget,
+        wholeSpeciesDeleted, hasModifier(rule.getModifiers(), "matchonce"));
 }
 
 } // namespace bng::ast

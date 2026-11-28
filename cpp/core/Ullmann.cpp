@@ -14,6 +14,37 @@
 #include "Ullmann.hpp"
 using namespace BNGcore;
 
+namespace {
+
+bool isSingleSiteWildcardBond(const Node* node) {
+    if (node == nullptr || node->in_degree() != 1) return false;
+    if (!(node->get_type() == BOND_NODE_TYPE)) return false;
+    const std::string state = node->get_state().get_BNG2_string();
+    return state == "!+" || state == "!?";
+}
+
+// Multiple bond nodes attached to the SAME pattern component (e.g. b!1!+ or
+// b!+!+) still require distinct target bond nodes, whereas wildcard bond nodes
+// on DISTINCT pattern components may witness the same shared target bond
+// (e.g. parallel double bonds, closed rings, or self-bonds).
+bool siblingBondAlreadyUsesTarget(const Node* bondNode,
+                                  const Node* targetBond,
+                                  const Map& currentMap) {
+    for (auto ci = bondNode->edges_in_begin(); ci != bondNode->edges_in_end(); ++ci) {
+        Node* parentComp = *ci;
+        if (parentComp->out_degree() <= 1) continue;
+        for (auto e = parentComp->edges_out_begin(); e != parentComp->edges_out_end(); ++e) {
+            Node* sibling = *e;
+            if (sibling == bondNode) continue;
+            if (!(sibling->get_type() == BOND_NODE_TYPE)) continue;
+            if (currentMap.mapf(sibling) == targetBond) return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
 
 
 /////////////////
@@ -212,14 +243,22 @@ UllmannSGIso::next_node ( size_t d, List <Map> & maps )
     // look for next way to map node Ga_d into graph Gb
     node_container_t  *possible_matches = row_iter->second;
     col_iter_t  col_iter = possible_matches->begin();
+    const bool wildcard_bond = isSingleSiteWildcardBond(node_a);
+    const bool is_bond = wildcard_bond || (node_a->get_type() == BOND_NODE_TYPE);
     
     // debug
     //if ( d == 4 ) print_M();
     
-    while (  find_next_match( col_iter, possible_matches->end() )  )
+    while ( wildcard_bond ? (col_iter != possible_matches->end())
+                          : find_next_match( col_iter, possible_matches->end() ) )
     {
         // get match node_b first (before we screw with possible_matches set)
         Node *node_b = *col_iter;
+        if ( is_bond && siblingBondAlreadyUsesTarget(node_a, node_b, map) )
+        {
+            ++col_iter;
+            continue;
+        }
 
         // Where node_b sits in this row. copy_M restores the row to exactly the
         // contents it had on entry to this level, so the slot is still valid
@@ -243,9 +282,14 @@ UllmannSGIso::next_node ( size_t d, List <Map> & maps )
          
             // extend subgraph isomorphism map
             map.insert( node_a, node_b );
-            // flag col_node as mapped
-            targets.push_back( node_b );
-            targets_mask[node_b->get_index()] = true;
+            // flag col_node as mapped (skip injectivity mask for single-site
+            // wildcard bond predicates so distinct sites may witness the same
+            // target bond)
+            if ( !wildcard_bond )
+            {
+                targets.push_back( node_b );
+                targets_mask[node_b->get_index()] = true;
+            }
         
             if ( d+1 < pa )
             {   // goto next row_node
@@ -262,8 +306,11 @@ UllmannSGIso::next_node ( size_t d, List <Map> & maps )
             // remove map of row_node
             map.erase( node_a );
             // free up col_node
-            targets.pop_back();
-            targets_mask[node_b->get_index()] = false;
+            if ( !wildcard_bond )
+            {
+                targets.pop_back();
+                targets_mask[node_b->get_index()] = false;
+            }
         }
         // Advance to the next candidate. Restoring M is only worth doing when
         // there is another candidate to try: on the last one the caller

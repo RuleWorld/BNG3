@@ -94,14 +94,35 @@ std::pair<std::size_t, bool> SpeciesList::addChecked(
         }
     }
 
-    // When check_iso is disabled (check_iso=>0), skip canonical Nauty labeling
-    // and graph isomorphism checks after exact-string deduplication.
+    // When check_iso is disabled (check_iso=>0), skip graph isomorphism checks
+    // after exact-string deduplication. Re-check the current printed dedup key
+    // (the caller may have canonicalized the graph after findExact()) so two
+    // species with identical printed strings are never inserted as duplicates.
     if (!checkIso_) {
+        const std::string currentExact = species.getSpeciesGraph().toStringForDedup();
+        if (!currentExact.empty() && currentExact != exact) {
+            const auto currentBucket = indicesByExactString_.find(currentExact);
+            if (currentBucket != indicesByExactString_.end()) {
+                for (const auto index : currentBucket->second) {
+                    auto& existingSpecies = species_[index];
+                    if (existingSpecies.getCompartment() != species.getCompartment()) {
+                        continue;
+                    }
+                    if (existingSpecies.getCompartment().empty() && !species.getCompartment().empty()) {
+                        existingSpecies.setCompartment(species.getCompartment());
+                    }
+                    return {index, false};
+                }
+            }
+        }
         const std::size_t index = species_.size();
         species.setIndex(index);
         species_.push_back(std::move(species));
         if (!exact.empty()) {
             indicesByExactString_[exact].push_back(index);
+        }
+        if (!currentExact.empty() && currentExact != exact) {
+            indicesByExactString_[currentExact].push_back(index);
         }
         return {index, true};
     }

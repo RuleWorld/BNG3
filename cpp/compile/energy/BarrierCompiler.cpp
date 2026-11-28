@@ -111,10 +111,30 @@ bool hasNonWildcardBondConstraint(const BNGcore::Node& componentNode) {
     return false;
 }
 
+bool hasBoundConstraintOnStateCenter(const BNGcore::Node& componentNode) {
+    for (auto edge = componentNode.edges_out_begin();
+         edge != componentNode.edges_out_end(); ++edge) {
+        if (!isBondNode(**edge)) continue;
+        const std::string bondState = (*edge)->get_state().get_BNG2_string();
+        if (bondState != "!?" && bondState != "!-") return true;
+    }
+    return false;
+}
+
+bool patternListHasCompartment(const std::vector<ast::SpeciesGraph>& patterns) {
+    for (const auto& pat : patterns) {
+        if (!pat.getCompartment().empty()) return true;
+        for (auto node = pat.getGraph().begin(); node != pat.getGraph().end(); ++node) {
+            if (isMoleculeNode(**node) && !(*node)->get_compartment().empty()) return true;
+        }
+    }
+    return false;
+}
+
 // A BarrierTable entry is keyed only by its single reaction center, so any
-// extra spectator molecule or non-wildcard context constraint on a barrier
-// pattern would be silently stripped and leak onto unrelated species. Fail
-// closed when such context is present on a barrier pattern.
+// extra spectator molecule, compartment, or non-wildcard context constraint on
+// a barrier pattern would be silently stripped and leak onto unrelated species.
+// Fail closed when such context is present on a barrier pattern.
 bool validateUnconditionalBarrierTransition(
     const ast::ReactionRule& transition,
     std::string& diagnostic) {
@@ -122,6 +142,12 @@ bool validateUnconditionalBarrierTransition(
     if (operations.size() != 1) return false;
     const auto& operation = operations.front();
     const auto& reactants = transition.getReactantPatterns();
+    const auto& products = transition.getProductPatterns();
+
+    if (patternListHasCompartment(reactants) || patternListHasCompartment(products)) {
+        diagnostic = "barrier pattern with compartment constraint is not supported";
+        return false;
+    }
 
     std::size_t totalMolecules = 0;
     std::vector<std::vector<FlatMolecule>> flatReactants;
@@ -142,8 +168,15 @@ bool validateUnconditionalBarrierTransition(
         const auto& molecule =
             flatReactants[operation.source.patternIndex][operation.source.moleculeIndex];
         for (std::size_t ci = 0; ci < molecule.components.size(); ++ci) {
-            if (ci == operation.source.componentIndex) continue;
             const auto& comp = molecule.components[ci];
+            if (ci == operation.source.componentIndex) {
+                if (hasBoundConstraintOnStateCenter(*comp.node)) {
+                    diagnostic = "barrier state transition with bond constraint on '" +
+                                 molecule.name + "." + comp.name + "' is not supported";
+                    return false;
+                }
+                continue;
+            }
             if (hasConcreteStateConstraint(*comp.node) ||
                 hasNonWildcardBondConstraint(*comp.node)) {
                 diagnostic = "barrier pattern with context constraint on '" +
@@ -156,9 +189,14 @@ bool validateUnconditionalBarrierTransition(
     case Type::AddBond:
     case Type::DeleteBond: {
         const bool intramolecular =
-            operation.source.patternIndex == operation.partner.patternIndex &&
-            operation.source.moleculeIndex == operation.partner.moleculeIndex;
-        const std::size_t expectedMolecules = intramolecular ? 1 : 2;
+            (operation.source.patternIndex == operation.partner.patternIndex &&
+             operation.source.moleculeIndex == operation.partner.moleculeIndex) ||
+            (reactants.size() == 1 && products.size() == 1);
+        if (intramolecular) {
+            diagnostic = "intramolecular barrier bond transition is not supported";
+            return false;
+        }
+        const std::size_t expectedMolecules = 2;
         if (totalMolecules != expectedMolecules) {
             diagnostic = "barrier bond transition with extra context molecules is not supported";
             return false;

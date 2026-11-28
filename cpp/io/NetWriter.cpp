@@ -21,6 +21,7 @@
 #include <antlr4-runtime.h>
 
 #include "core/List.hpp"
+#include "core/PatternMatching.hpp"
 #include "core/Ullmann.hpp"
 #include "generated/BNGLexer.h"
 #include "generated/BNGParser.h"
@@ -730,7 +731,13 @@ double evaluateScopedRateExpression(
       "unsupported expression in a local finite-network rate");
 }
 
-bool scopedRateExpressionUsesTime(
+bool isModelObservable(const ast::Model &model, const std::string &name) {
+  return std::any_of(model.getObservables().begin(),
+                     model.getObservables().end(),
+                     [&](const auto &obs) { return obs.getName() == name; });
+}
+
+bool scopedRateExpressionIsDynamic(
     const ast::Expression &expression, const ast::Model &model,
     std::unordered_set<std::string> &activeFunctions,
     std::unordered_set<std::string> boundNames = {},
@@ -745,8 +752,8 @@ bool scopedRateExpressionUsesTime(
         if (local != environment->end()) {
           if (local->second.expression.has_value()) {
             std::unordered_set<std::string> expressionFunctions;
-            return scopedRateExpressionUsesTime(*local->second.expression,
-                                                model, expressionFunctions);
+            return scopedRateExpressionIsDynamic(*local->second.expression,
+                                                 model, expressionFunctions);
           }
           return false;
         }
@@ -755,11 +762,19 @@ bool scopedRateExpressionUsesTime(
           model.getParameters().isTimeDependent(expression.name())) {
         return true;
       }
+      if (isModelObservable(model, expression.name())) {
+        return true;
+      }
     }
   }
   if ((expression.kind() == Kind::Function ||
        expression.kind() == Kind::ObservableRef) &&
       (expression.name() == "time" || expression.name() == "t")) {
+    return true;
+  }
+  if (expression.kind() == Kind::ObservableRef && expression.args().empty() &&
+      boundNames.find(expression.name()) == boundNames.end() &&
+      isModelObservable(model, expression.name())) {
     return true;
   }
 
@@ -775,17 +790,17 @@ bool scopedRateExpressionUsesTime(
       auto functionBoundNames = boundNames;
       functionBoundNames.insert(function->getArgs().begin(),
                                 function->getArgs().end());
-      const bool functionUsesTime = scopedRateExpressionUsesTime(
+      const bool functionIsDynamic = scopedRateExpressionIsDynamic(
           function->getExpression(), model, activeFunctions,
           std::move(functionBoundNames), environment);
       activeFunctions.erase(function->getName());
-      if (functionUsesTime)
+      if (functionIsDynamic)
         return true;
     }
   }
   for (const auto &argument : expression.args()) {
-    if (scopedRateExpressionUsesTime(argument, model, activeFunctions,
-                                     boundNames, environment))
+    if (scopedRateExpressionIsDynamic(argument, model, activeFunctions,
+                                      boundNames, environment))
       return true;
   }
   return false;
@@ -798,10 +813,10 @@ ast::Expression lowerScopedTimeRateExpression(
     std::unordered_set<std::string> &activeFunctions,
     bool foldStatic = true,
     bool specializeStaticConditionals = false) {
-  std::unordered_set<std::string> timeFunctions;
+  std::unordered_set<std::string> dynamicFunctions;
   if (foldStatic &&
-      !scopedRateExpressionUsesTime(expression, model, timeFunctions, {},
-                                    &environment)) {
+      !scopedRateExpressionIsDynamic(expression, model, dynamicFunctions, {},
+                                     &environment)) {
     return ast::Expression::number(evaluateScopedRateExpression(
         expression, model, localCounts, environment, activeFunctions));
   }
@@ -821,9 +836,10 @@ ast::Expression lowerScopedTimeRateExpression(
         return *local->second.expression;
       return ast::Expression::number(local->second.number);
     }
-    std::unordered_set<std::string> identifierTimeFunctions;
-    if (scopedRateExpressionUsesTime(expression, model,
-                                     identifierTimeFunctions, {}, &environment)) {
+    std::unordered_set<std::string> identifierDynamicFunctions;
+    if (scopedRateExpressionIsDynamic(expression, model,
+                                      identifierDynamicFunctions, {},
+                                      &environment)) {
       return expression;
     }
     return ast::Expression::number(
@@ -860,6 +876,10 @@ ast::Expression lowerScopedTimeRateExpression(
           ast::Expression::function(expression.name(), expression.args()),
           model, localCounts, environment, activeFunctions, foldStatic,
           specializeStaticConditionals);
+    }
+    if (expression.args().empty() &&
+        isModelObservable(model, expression.name())) {
+      return ast::Expression::identifier(expression.name());
     }
     if (expression.args().size() != 1 ||
         expression.args().front().kind() != Kind::Identifier) {
@@ -952,10 +972,10 @@ ast::Expression lowerScopedTimeRateExpression(
           specializeStaticConditionals, specializeStaticConditionals);
       if (specializeStaticConditionals &&
           loweredCondition.kind() != Kind::Number) {
-        std::unordered_set<std::string> conditionTimeFunctions;
-        if (!scopedRateExpressionUsesTime(loweredCondition, model,
-                                          conditionTimeFunctions, {},
-                                          &environment)) {
+        std::unordered_set<std::string> conditionDynamicFunctions;
+        if (!scopedRateExpressionIsDynamic(loweredCondition, model,
+                                           conditionDynamicFunctions, {},
+                                           &environment)) {
           loweredCondition = ast::Expression::number(
               evaluateScopedRateExpression(loweredCondition, model,
                                             localCounts, environment,
@@ -1131,27 +1151,6 @@ std::string formatSpeciesAmount(const ast::Species& species,
     return out.str();
 }
 
-// Check if a mapping respects node states (component states must match).
-// The Ullmann matcher only checks structural compatibility (types), not states.
-// Energy patterns like H(m~T) need state filtering to distinguish H(m~T) from H(m~R).
-bool mapRespectsNodeStates(const BNGcore::PatternGraph& pattern, const BNGcore::Map& map) {
-    for (auto nodeIter = pattern.begin(); nodeIter != pattern.end(); ++nodeIter) {
-        auto* target = map.mapf(*nodeIter);
-        if (target == nullptr) {
-            return false;
-        }
-        // Check type compatibility
-        if (!((*nodeIter)->get_type() == target->get_type())) {
-            return false;
-        }
-        // Check state compatibility (e.g., ~T vs ~R)
-        if (!((*nodeIter)->get_state() == target->get_state())) {
-            return false;
-        }
-    }
-    return true;
-}
-
 // Check if a self-mapping of a pattern is an exact automorphism:
 // wildcards ('?') only match wildcards, and bond degrees / compartments match.
 bool mapIsExactAutomorphism(const BNGcore::PatternGraph& pattern, const BNGcore::Map& map) {
@@ -1189,17 +1188,40 @@ std::size_t countPatternAutomorphisms(const BNGcore::PatternGraph& pattern) {
     return std::max<std::size_t>(1, aut);
 }
 
-std::size_t countPatternMatches(const ast::SpeciesGraph& pattern, const ast::Species& species) {
-    BNGcore::UllmannSGIso matcher(pattern.getGraph(), species.getSpeciesGraph().getGraph());
-    BNGcore::List<BNGcore::Map> maps;
-    matcher.find_maps(maps);
-    // Filter maps by node state compatibility (Ullmann only checks structure)
-    std::size_t count = 0;
-    for (auto mapIter = maps.begin(); mapIter != maps.end(); ++mapIter) {
-        if (mapRespectsNodeStates(pattern.getGraph(), *mapIter)) {
-            ++count;
+std::size_t countEnergyPatternMatches(const ast::EnergyPattern& energyPattern,
+                                      const ast::Species& species) {
+    const auto& pattern = energyPattern.getGraph();
+    std::string prefixComp;
+    if (!pattern.getCompartment().empty()) {
+        bool patternHasMoleculeComp = false;
+        for (auto it = pattern.getGraph().begin(); it != pattern.getGraph().end(); ++it) {
+            if (!(*it)->get_compartment().empty()) {
+                patternHasMoleculeComp = true;
+                break;
+            }
+        }
+        if (pattern.isCompartmentPrefix() || !patternHasMoleculeComp) {
+            prefixComp = pattern.getCompartment();
         }
     }
+    if (prefixComp.empty()) {
+        const std::string& raw = energyPattern.getPattern();
+        std::size_t start = 0;
+        while (start < raw.size() && std::isspace(static_cast<unsigned char>(raw[start])) != 0) {
+            ++start;
+        }
+        if (start < raw.size() && raw[start] == '@') {
+            const auto colon = raw.find(':', start + 1);
+            if (colon != std::string::npos && colon > start + 1) {
+                prefixComp = raw.substr(start + 1, colon - start - 1);
+            }
+        }
+    }
+    if (!prefixComp.empty() && species.getCompartment() != prefixComp) {
+        return 0;
+    }
+    const std::size_t count =
+        bng::core::countPatternMatches(pattern.getGraph(), species.getSpeciesGraph().getGraph());
     if (count == 0) {
         return 0;
     }
@@ -1282,10 +1304,10 @@ std::string energyDeltaExpression(
     for (const auto& energyPattern : model.getEnergyPatterns()) {
         long long delta = 0;
         for (const auto reactantIndex : reaction.getReactants()) {
-            delta -= static_cast<long long>(countPatternMatches(energyPattern.getGraph(), network.species.get(reactantIndex)));
+            delta -= static_cast<long long>(countEnergyPatternMatches(energyPattern, network.species.get(reactantIndex)));
         }
         for (const auto productIndex : reaction.getProducts()) {
-            delta += static_cast<long long>(countPatternMatches(energyPattern.getGraph(), network.species.get(productIndex)));
+            delta += static_cast<long long>(countEnergyPatternMatches(energyPattern, network.species.get(productIndex)));
         }
         if (delta == 0) {
             continue;
@@ -1603,15 +1625,18 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
     int rateLawCounter = 1;
     const compile::CompiledModel compiledModel(model);
 
-    // Helper: Check if expression is simple (just a parameter/constant name)
+    // Helper: Check if expression is a bare identifier (parameter or function name,
+    // NOT a bare numeric literal like 0.01 which BNG2 .net requires wrapped in a rateLaw parameter).
     auto isSimpleExpression = [&](const std::string& expr) -> bool {
-        std::string trimmed = expr;
-        trimmed.erase(0, trimmed.find_first_not_of(" \t"));
-        trimmed.erase(trimmed.find_last_not_of(" \t") + 1);
-
-        // Simple if it's just alphanumeric + underscore (no operators or parens)
+        const auto first = expr.find_first_not_of(" \t");
+        if (first == std::string::npos) return false;
+        const auto last = expr.find_last_not_of(" \t");
+        const std::string trimmed = expr.substr(first, last - first + 1);
+        if (trimmed.empty()) return false;
+        const unsigned char lead = static_cast<unsigned char>(trimmed.front());
+        if (std::isalpha(lead) == 0 && lead != '_') return false;
         return std::all_of(trimmed.begin(), trimmed.end(),
-            [](unsigned char c) { return std::isalnum(c) != 0 || c == '_' || c == '.'; });
+            [](unsigned char c) { return std::isalnum(c) != 0 || c == '_'; });
     };
 
     // Helper: Check if expression references observables
@@ -1838,9 +1863,9 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
 
               const std::string paramName =
                   info.paramName + std::to_string(sequence++);
-              std::unordered_set<std::string> timeFunctions;
-              if (scopedRateExpressionUsesTime(expression, model,
-                                               timeFunctions)) {
+              std::unordered_set<std::string> dynamicFunctions;
+              if (scopedRateExpressionIsDynamic(expression, model,
+                                                dynamicFunctions)) {
                 std::unordered_set<std::string> activeFunctions;
                 auto rateExpression = lowerScopedTimeRateExpression(
                     expression, model, localCounts, {}, activeFunctions);
@@ -1855,9 +1880,9 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                   info.perReactionRuntimeRateConstants[rxnIndex] =
                       runtimeExpression.numberValue();
                 } else {
-                  std::unordered_set<std::string> runtimeTimeFunctions;
-                  if (!scopedRateExpressionUsesTime(
-                          runtimeExpression, model, runtimeTimeFunctions)) {
+                  std::unordered_set<std::string> runtimeDynamicFunctions;
+                  if (!scopedRateExpressionIsDynamic(
+                          runtimeExpression, model, runtimeDynamicFunctions)) {
                     std::unordered_set<std::string> foldFunctions;
                     info.perReactionRuntimeRateConstants[rxnIndex] =
                         evaluateScopedRateExpression(
@@ -2310,23 +2335,49 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             }
         }
 
-        // Skip if rate expression is simple (just a parameter name)
-        if (isSimpleExpression(rateExpr)) {
-            // Check if it's a known parameter or function
-            bool isKnownParam = false;
-            for (const auto& param : model.getParameters().all()) {
-                if (param.getName() == rateExpr) {
-                    isKnownParam = true;
-                    break;
+        auto maybeDeriveReverseRate = [&]() {
+            if (!rule.isBidirectional() || rule.getRates().size() <= 1) return;
+            const std::string reverseRuleName = "_reverse__" + ruleName;
+            if (derived.find(reverseRuleName) != derived.end()) return;
+            const auto reverseRateExprObj = ast::partialEvaluate(
+                rule.getRates()[1], model.getFunctions());
+            if (reverseRateExprObj.kind() == ast::ExpressionKind::Function &&
+                builtinRateLawFunctions.count(reverseRateExprObj.name()) > 0) {
+                return;
+            }
+            bool reverseIsModelFunction = false;
+            if (reverseRateExprObj.kind() == ast::ExpressionKind::Function ||
+                reverseRateExprObj.kind() == ast::ExpressionKind::ObservableRef) {
+                for (const auto& function : model.getFunctions()) {
+                    if (function.getName() == reverseRateExprObj.name()) {
+                        reverseIsModelFunction = true;
+                        break;
+                    }
                 }
             }
-            if (isKnownParam) {
-                continue;  // Use parameter directly
+            const std::string reverseRateExpr = reverseRateExprObj.toBnglString();
+            if (!reverseIsModelFunction && !isSimpleExpression(reverseRateExpr)) {
+                const bool reverseAsFunction = isDynamicRateExpression(
+                    reverseRateExpr, reverseRateExprObj);
+                const std::string reverseParamName =
+                    (reverseAsFunction ? "_rateLaw" : "rateLaw") +
+                    std::to_string(rateLawCounter++);
+                derived.emplace(
+                    reverseRuleName,
+                    DerivedRateInfo {
+                        reverseParamName,
+                        reverseRateExpr,
+                        reverseRateExprObj,
+                        true,  // reverseDirection
+                        reverseAsFunction
+                    });
             }
-            // Check if it's a user-defined function name — if so, it will be
-            // resolved at runtime by the ODE integrator's function resolver.
-            // No derived parameter needed; the function is written to the
-            // functions block and evaluated each timestep.
+        };
+
+        // Skip forward derivation if rate expression is a simple identifier
+        // (parameter or function name), while still deriving complex reverse rates.
+        if (isSimpleExpression(rateExpr)) {
+            maybeDeriveReverseRate();
             continue;
         }
 
@@ -2347,28 +2398,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
             });
 
         // Handle bidirectional rules (reverse rate)
-        if (rule.isBidirectional() && rule.getRates().size() > 1) {
-            const std::string reverseRuleName = "_reverse__" + ruleName;
-            const auto reverseRateExprObj = ast::partialEvaluate(
-                rule.getRates()[1], model.getFunctions());
-            const std::string reverseRateExpr = reverseRateExprObj.toString();
-
-            if (!isSimpleExpression(reverseRateExpr)) {
-                bool reverseAsFunction = isDynamicRateExpression(
-                    reverseRateExpr, reverseRateExprObj);
-                std::string reverseParamName = (reverseAsFunction ? "_rateLaw" : "rateLaw") + std::to_string(rateLawCounter++);
-
-                derived.emplace(
-                    reverseRuleName,
-                    DerivedRateInfo {
-                        reverseParamName,
-                        reverseRateExpr,
-                        reverseRateExprObj,
-                        true,  // reverseDirection
-                        reverseAsFunction
-                    });
-            }
-        }
+        maybeDeriveReverseRate();
     }
 
     // Handle Arrhenius expressions with per-reaction energy-dependent rates.
@@ -2508,10 +2538,10 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 for (const auto& energyPattern : model.getEnergyPatterns()) {
                     long long delta = 0;
                     for (const auto reactantIndex : reaction.getReactants()) {
-                        delta -= static_cast<long long>(countPatternMatches(energyPattern.getGraph(), network.species.get(reactantIndex)));
+                        delta -= static_cast<long long>(countEnergyPatternMatches(energyPattern, network.species.get(reactantIndex)));
                     }
                     for (const auto productIndex : reaction.getProducts()) {
-                        delta += static_cast<long long>(countPatternMatches(energyPattern.getGraph(), network.species.get(productIndex)));
+                        delta += static_cast<long long>(countEnergyPatternMatches(energyPattern, network.species.get(productIndex)));
                     }
                     deltaFingerprint += std::to_string(delta) + ",";
                     if (delta != 0) {
@@ -2845,6 +2875,24 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     }
     out << "end parameters\n";
 
+    if (!model.getCompartments().empty()) {
+        out << "begin compartments\n";
+        for (const auto& comp : model.getCompartments()) {
+            out << "    " << comp.getName() << " " << comp.getDimension() << " ";
+            if (!writerOpts.evaluateExpressions && comp.getVolumeExpression().has_value()) {
+                out << formatNetExpression(*comp.getVolumeExpression(), model);
+            } else {
+                out << std::setprecision(std::numeric_limits<double>::max_digits10)
+                    << comp.getVolume();
+            }
+            if (!comp.getParent().empty()) {
+                out << " " << comp.getParent();
+            }
+            out << '\n';
+        }
+        out << "end compartments\n";
+    }
+
     // Write functions section: model-level named functions + derived rate laws
     bool hasDerivedFunctions = false;
     for (const auto& [ruleName, info] : derivedRateParams) {
@@ -3011,7 +3059,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
       const auto unitFactor = unitConversionFactor(reaction, model, network);
       const auto unitExpr = unitConversionExpression(reaction, model, network);
       double combinedFactor = totalRate ? 1.0 : reaction.getFactor();
-      if (!absoluteFlux && unitFactor.has_value())
+      if (!totalRate && !absoluteFlux && unitFactor.has_value())
         combinedFactor *= *unitFactor;
       if (std::abs(combinedFactor - 1.0) >= 1e-9) {
         out << formatDoubleScientific(combinedFactor) << "*";
@@ -3026,7 +3074,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                     : reaction.getOriginRuleName();
       writeDelayMetadata();
       out << " #" << ruleComment;
-      if (!absoluteFlux && unitExpr.has_value()) {
+      if (!totalRate && !absoluteFlux && unitExpr.has_value()) {
         out << " unit_conversion=" << *unitExpr;
       }
     } else if (derivedFound != derivedRateParams.end() && derivedFound->second.isPerReactionArrhenius) {
@@ -3039,7 +3087,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             const auto unitFactor = unitConversionFactor(reaction, model, network);
             const auto unitExpr = unitConversionExpression(reaction, model, network);
             double combinedFactor = totalRate ? 1.0 : reaction.getFactor();
-            if (!absoluteFlux && unitFactor.has_value()) combinedFactor *= *unitFactor;
+            if (!totalRate && !absoluteFlux && unitFactor.has_value()) combinedFactor *= *unitFactor;
             if (std::abs(combinedFactor - 1.0) >= 1e-9) {
                 out << formatDoubleScientific(combinedFactor) << "*";
             }
@@ -3051,7 +3099,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 : reaction.getOriginRuleName();
             writeDelayMetadata();
             out << " #" << ruleComment;
-            if (!absoluteFlux && unitExpr.has_value()) {
+            if (!totalRate && !absoluteFlux && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
             }
         } else if (derivedFound != derivedRateParams.end() && derivedFound->second.isLocalFunction) {
@@ -3078,7 +3126,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             const auto unitFactor = unitConversionFactor(reaction, model, network);
             const auto unitExpr = unitConversionExpression(reaction, model, network);
             bool wrotePrefix = false;
-            if (!absoluteFlux && unitFactor.has_value()) {
+            if (!totalRate && !absoluteFlux && unitFactor.has_value()) {
                 out << formatDoubleScientific(*unitFactor) << "*";
                 wrotePrefix = true;
             }
@@ -3098,7 +3146,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             } else {
                 out << (reaction.getOriginRuleName().rfind("_", 0) == 0 ? reaction.getOriginRuleName() : "_" + reaction.getOriginRuleName());
             }
-            if (!absoluteFlux && unitExpr.has_value()) {
+            if (!totalRate && !absoluteFlux && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
             }
         } else {

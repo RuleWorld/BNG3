@@ -574,7 +574,11 @@ Expression Expression::tableFunction(std::vector<double> xValues,
 }
 
 std::string Expression::tableFileKey() const {
-    return "file_hex_" + encodeHex(tableFilePath_);
+    const std::string base = "file_hex_" + encodeHex(tableFilePath_);
+    if (tableMethod_.empty() || tableMethod_ == "linear") {
+        return base;
+    }
+    return base + "_" + encodeHex(tableMethod_);
 }
 
 double Expression::evaluate(const std::function<double(const std::string&)>& resolveIdentifier, double t) const {

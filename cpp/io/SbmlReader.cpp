@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdint>
 #include <iomanip>
 #include <initializer_list>
 #include <map>
@@ -174,7 +175,51 @@ bool parseBool(const std::string& value) {
 constexpr int kMaxMathDepth = 256;
 constexpr int kMaxStoichiometry = 10000;
 
-std::string mathExpression(const TiXmlElement* element, int depth = 0);
+std::string mathExpression(
+    const TiXmlElement* element, int depth = 0,
+    const std::unordered_map<std::string, std::string>* idSubstitutions = nullptr);
+
+std::unordered_map<std::string, std::string> collectLocalParameters(
+    const TiXmlElement* kineticLaw) {
+    std::unordered_map<std::string, std::string> localParams;
+    if (kineticLaw == nullptr) {
+        return localParams;
+    }
+    const auto readList = [&](const char* listTag, const char* itemTag) {
+        const auto* list = kineticLaw->FirstChildElement(listTag);
+        if (list == nullptr) return;
+        for (auto* param = list->FirstChildElement(itemTag); param != nullptr;
+             param = param->NextSiblingElement(itemTag)) {
+            const auto id = attribute(param, "id");
+            const auto valueText = attribute(param, "value");
+            if (id.empty()) {
+                throw std::runtime_error(
+                    std::string("SBML ") + itemTag + " is missing required 'id' attribute");
+            }
+            if (valueText.empty()) {
+                throw std::runtime_error(
+                    "SBML local parameter '" + id + "' is missing required 'value' attribute");
+            }
+            double val = 0.0;
+            try {
+                std::size_t consumed = 0;
+                val = std::stod(valueText, &consumed);
+                if (consumed != valueText.size() || !std::isfinite(val)) {
+                    throw std::runtime_error("not finite");
+                }
+            } catch (...) {
+                throw std::runtime_error(
+                    "SBML local parameter '" + id + "' has invalid numeric value: " + valueText);
+            }
+            std::ostringstream oss;
+            oss << std::setprecision(17) << val;
+            localParams[id] = val < 0.0 ? "(" + oss.str() + ")" : oss.str();
+        }
+    };
+    readList("listOfLocalParameters", "localParameter");
+    readList("listOfParameters", "parameter");
+    return localParams;
+}
 
 std::vector<const TiXmlElement*> childElements(const TiXmlElement* element) {
     std::vector<const TiXmlElement*> children;
@@ -199,7 +244,9 @@ std::string join(const std::vector<std::string>& values, const std::string& op) 
     return result.str();
 }
 
-std::string mathExpression(const TiXmlElement* element, int depth) {
+std::string mathExpression(
+    const TiXmlElement* element, int depth,
+    const std::unordered_map<std::string, std::string>* idSubstitutions) {
     if (depth > kMaxMathDepth) {
         throw std::runtime_error(
             "SBML MathML nesting depth exceeds maximum supported limit (" +
@@ -210,7 +257,7 @@ std::string mathExpression(const TiXmlElement* element, int depth) {
     }
     const std::string tag = element->Value();
     if (tag == "math") {
-        return mathExpression(element->FirstChildElement(), depth + 1);
+        return mathExpression(element->FirstChildElement(), depth + 1, idSubstitutions);
     }
     if (tag == "cn") {
         const auto type = attribute(element, "type");
@@ -239,7 +286,14 @@ std::string mathExpression(const TiXmlElement* element, int depth) {
         return elementText(element);
     }
     if (tag == "ci" || tag == "csymbol") {
-        return elementText(element);
+        const auto text = elementText(element);
+        if (tag == "ci" && idSubstitutions != nullptr) {
+            if (const auto found = idSubstitutions->find(text);
+                found != idSubstitutions->end()) {
+                return found->second;
+            }
+        }
+        return text;
     }
     if (tag == "pi") {
         return "3.1415926535897932";
@@ -259,7 +313,7 @@ std::string mathExpression(const TiXmlElement* element, int depth) {
         for (auto* part = element->FirstChildElement(); part != nullptr;
              part = part->NextSiblingElement()) {
             if (std::string(part->Value()) == "otherwise") {
-                result = mathExpression(part->FirstChildElement(), depth + 1);
+                result = mathExpression(part->FirstChildElement(), depth + 1, idSubstitutions);
                 continue;
             }
             if (std::string(part->Value()) != "piece") {
@@ -269,8 +323,8 @@ std::string mathExpression(const TiXmlElement* element, int depth) {
             if (children.size() != 2) {
                 throw std::runtime_error("malformed MathML piecewise expression");
             }
-            const auto value = mathExpression(children[0], depth + 1);
-            const auto condition = mathExpression(children[1], depth + 1);
+            const auto value = mathExpression(children[0], depth + 1, idSubstitutions);
+            const auto condition = mathExpression(children[1], depth + 1, idSubstitutions);
             pieces.emplace_back(condition, value);
         }
         for (auto part = pieces.rbegin(); part != pieces.rend(); ++part) {
@@ -289,8 +343,8 @@ std::string mathExpression(const TiXmlElement* element, int depth) {
     const std::string op = children.front()->Value();
     if (op == "root") {
         if (children.size() == 3 && std::string(children[1]->Value()) == "degree") {
-            const auto degree = mathExpression(children[1]->FirstChildElement(), depth + 1);
-            const auto radicand = mathExpression(children[2], depth + 1);
+            const auto degree = mathExpression(children[1]->FirstChildElement(), depth + 1, idSubstitutions);
+            const auto radicand = mathExpression(children[2], depth + 1, idSubstitutions);
             if (degree.empty() || radicand.empty()) {
                 throw std::runtime_error("malformed MathML <root> with <degree>");
             }
@@ -300,15 +354,15 @@ std::string mathExpression(const TiXmlElement* element, int depth) {
             return "(" + radicand + "^(1/(" + degree + ")))";
         }
         if (children.size() == 2) {
-            const auto radicand = mathExpression(children[1], depth + 1);
+            const auto radicand = mathExpression(children[1], depth + 1, idSubstitutions);
             return "sqrt(" + radicand + ")";
         }
         throw std::runtime_error("malformed MathML <root> expression");
     }
     if (op == "log") {
         if (children.size() == 3 && std::string(children[1]->Value()) == "logbase") {
-            const auto base = mathExpression(children[1]->FirstChildElement(), depth + 1);
-            const auto arg = mathExpression(children[2], depth + 1);
+            const auto base = mathExpression(children[1]->FirstChildElement(), depth + 1, idSubstitutions);
+            const auto arg = mathExpression(children[2], depth + 1, idSubstitutions);
             if (base.empty() || arg.empty()) {
                 throw std::runtime_error("malformed MathML <log> with <logbase>");
             }
@@ -317,14 +371,14 @@ std::string mathExpression(const TiXmlElement* element, int depth) {
             return "(ln(" + arg + ")/ln(" + base + "))";
         }
         if (children.size() == 2) {
-            const auto arg = mathExpression(children[1], depth + 1);
+            const auto arg = mathExpression(children[1], depth + 1, idSubstitutions);
             return "log10(" + arg + ")";
         }
         throw std::runtime_error("malformed MathML <log> expression");
     }
     std::vector<std::string> args;
     for (std::size_t i = 1; i < children.size(); ++i) {
-        const auto value = mathExpression(children[i], depth + 1);
+        const auto value = mathExpression(children[i], depth + 1, idSubstitutions);
         if (!value.empty()) {
             args.push_back(value);
         }
@@ -534,10 +588,25 @@ bool tryExtractPositiveIntCn(const TiXmlElement* element, int& outValue) {
     }
 }
 
+bool isZeroCn(const TiXmlElement* element) {
+    if (element == nullptr || std::string(element->Value()) != "cn") return false;
+    const std::string text = mathExpression(element);
+    if (text.empty()) return false;
+    try {
+        std::size_t consumed = 0;
+        const double v = std::stod(text, &consumed);
+        return consumed == text.size() && std::isfinite(v) && v == 0.0;
+    } catch (...) {
+        return false;
+    }
+}
+
 // Extract a nonnegative integer linear combination of species (<ci>, k*<ci>,
-// and sums thereof) from an SBML assignmentRule MathML tree. Returns false for
-// any nonlinear or non-species expression so arbitrary rules are preserved as
-// functions instead of silently collapsed to species counts.
+// and sums thereof, allowing additive 0 identity terms such as BNG2's
+// <apply><plus/><cn>0</cn><ci>S1</ci></apply>) from an SBML assignmentRule
+// MathML tree. Returns false for any nonlinear, overflowing, or non-species
+// expression so arbitrary rules are preserved as functions instead of silently
+// collapsed to species counts.
 bool tryExtractLinearSpeciesGroup(const TiXmlElement* element,
                                   const std::unordered_map<std::string, int>& speciesIndices,
                                   std::map<int, int>& weights,
@@ -548,6 +617,16 @@ bool tryExtractLinearSpeciesGroup(const TiXmlElement* element,
             std::to_string(kMaxMathDepth) + ")");
     }
     if (element == nullptr) return false;
+    const auto addWeightChecked = [&](int speciesIdx, int delta) -> bool {
+        const std::int64_t next =
+            static_cast<std::int64_t>(weights[speciesIdx]) +
+            static_cast<std::int64_t>(delta);
+        if (next < 0 || next > std::numeric_limits<int>::max()) {
+            return false;
+        }
+        weights[speciesIdx] = static_cast<int>(next);
+        return true;
+    };
     const std::string tag = element->Value();
     if (tag == "math") {
         return tryExtractLinearSpeciesGroup(
@@ -556,8 +635,7 @@ bool tryExtractLinearSpeciesGroup(const TiXmlElement* element,
     if (tag == "ci") {
         const auto found = speciesIndices.find(elementText(element));
         if (found == speciesIndices.end()) return false;
-        weights[found->second] += 1;
-        return true;
+        return addWeightChecked(found->second, 1);
     }
     if (tag != "apply") return false;
     const auto children = childElements(element);
@@ -565,6 +643,9 @@ bool tryExtractLinearSpeciesGroup(const TiXmlElement* element,
     const std::string op = children.front()->Value();
     if (op == "plus") {
         for (std::size_t i = 1; i < children.size(); ++i) {
+            if (isZeroCn(children[i])) {
+                continue;
+            }
             if (!tryExtractLinearSpeciesGroup(children[i], speciesIndices, weights, depth + 1)) {
                 return false;
             }
@@ -585,8 +666,7 @@ bool tryExtractLinearSpeciesGroup(const TiXmlElement* element,
         }
         const auto found = speciesIndices.find(elementText(speciesChild));
         if (found == speciesIndices.end()) return false;
-        weights[found->second] += coeff;
-        return true;
+        return addWeightChecked(found->second, coeff);
     }
     return false;
 }
@@ -1074,26 +1154,69 @@ NetReader::ParseResult SbmlReader::parse(
             }
         }
 
+        if (!attribute(model, "conversionFactor").empty()) {
+            throw std::runtime_error(
+                "SBML model conversionFactor is not supported by native SbmlReader; "
+                "use bionetgen.from_sbml() for full SBML import");
+        }
+        if (const auto* initAssignments = model->FirstChildElement("listOfInitialAssignments");
+            initAssignments != nullptr &&
+            initAssignments->FirstChildElement("initialAssignment") != nullptr) {
+            throw std::runtime_error(
+                "SBML initialAssignment is not supported by native SbmlReader; "
+                "use bionetgen.from_sbml() for full SBML import");
+        }
+        if (const auto* events = model->FirstChildElement("listOfEvents");
+            events != nullptr && events->FirstChildElement("event") != nullptr) {
+            throw std::runtime_error(
+                "SBML events are not supported by native SbmlReader; "
+                "use bionetgen.from_sbml() for full SBML import");
+        }
+        if (const auto* funcDefs = model->FirstChildElement("listOfFunctionDefinitions");
+            funcDefs != nullptr &&
+            funcDefs->FirstChildElement("functionDefinition") != nullptr) {
+            throw std::runtime_error(
+                "SBML functionDefinition is not supported by native SbmlReader; "
+                "use bionetgen.from_sbml() for full SBML import");
+        }
+
         const auto* compartments = model->FirstChildElement("listOfCompartments");
         if (compartments != nullptr) {
             for (auto* compartment = compartments->FirstChildElement("compartment");
                  compartment != nullptr;
                  compartment = compartment->NextSiblingElement("compartment")) {
                 const auto id = attribute(compartment, "id");
+                if (id.empty()) {
+                    throw std::runtime_error(
+                        "SBML compartment is missing required 'id' attribute");
+                }
                 result.compartments.push_back(id);
                 const auto unit = attribute(compartment, "units");
                 if (!unit.empty()) result.compartmentUnits[id] = unit;
+                const auto sizeText = attribute(compartment, "size", "1");
+                const auto dimText = attribute(compartment, "spatialDimensions", "3");
                 try {
-                    result.compartmentSizes[id] =
-                        std::stod(attribute(compartment, "size", "1"));
-                    result.compartmentDimensions[id] =
-                        std::stoi(attribute(compartment, "spatialDimensions", "3"));
+                    std::size_t sizeConsumed = 0;
+                    const double size = std::stod(sizeText, &sizeConsumed);
+                    if (sizeConsumed != sizeText.size() || !std::isfinite(size) || size <= 0.0) {
+                        throw std::runtime_error("invalid size");
+                    }
+                    std::size_t dimConsumed = 0;
+                    const int dim = std::stoi(dimText, &dimConsumed);
+                    if (dimConsumed != dimText.size() || dim < 0 || dim > 3) {
+                        throw std::runtime_error("invalid dimension");
+                    }
+                    result.compartmentSizes[id] = size;
+                    result.compartmentDimensions[id] = dim;
                 } catch (...) {
-                    throw std::runtime_error("SBML compartment size or dimension is invalid");
+                    throw std::runtime_error(
+                        "SBML compartment '" + id +
+                        "' size must be finite and positive and spatialDimensions in [0, 3]");
                 }
             }
         }
 
+        std::unordered_map<std::string, double> speciesConcDivisors;
         const auto* speciesList = model->FirstChildElement("listOfSpecies");
         if (speciesList != nullptr) {
             int index = 0;
@@ -1102,6 +1225,15 @@ NetReader::ParseResult SbmlReader::parse(
                  species = species->NextSiblingElement("species")) {
                 ++index;
                 const auto id = attribute(species, "id");
+                if (id.empty()) {
+                    throw std::runtime_error(
+                        "SBML species is missing required 'id' attribute");
+                }
+                if (!attribute(species, "conversionFactor").empty()) {
+                    throw std::runtime_error(
+                        "SBML species conversionFactor is not supported by native SbmlReader; "
+                        "use bionetgen.from_sbml() for full SBML import");
+                }
                 const auto rawName = attribute(species, "name", id);
                 auto standardized = looksLikeBnglPattern(rawName)
                     ? trim(rawName) : sanitizeName(rawName);
@@ -1110,6 +1242,12 @@ NetReader::ParseResult SbmlReader::parse(
                     usedNames.insert(standardized);
                 }
                 const auto compartment = attribute(species, "compartment");
+                if (!compartment.empty() &&
+                    result.compartmentSizes.find(compartment) == result.compartmentSizes.end()) {
+                    throw std::runtime_error(
+                        "SBML species '" + id + "' references unknown compartment '" +
+                        compartment + "'");
+                }
                 std::string pattern;
                 if (!compartment.empty()) {
                     pattern = "@" + compartment + "::";
@@ -1127,10 +1265,36 @@ NetReader::ParseResult SbmlReader::parse(
                 if (amount.empty()) {
                     amount = attribute(species, "initialConcentration", "0");
                 }
+                const auto speciesUnit = attribute(
+                    species, "substanceUnits", attribute(species, "units"));
+                const bool unitlessModel =
+                    speciesUnit.empty() && result.unitDefaults.empty();
+                bool recordAsInitialConcentration = initialConcentration;
+                double compSize = 1.0;
+                if (!compartment.empty()) {
+                    compSize = result.compartmentSizes.at(compartment);
+                }
+                if (initialConcentration && unitlessModel) {
+                    std::size_t consumed = 0;
+                    const double concVal = std::stod(amount, &consumed);
+                    if (consumed != amount.size() || !std::isfinite(concVal)) {
+                        throw std::runtime_error(
+                            "SBML species '" + id + "' has invalid initialConcentration: " + amount);
+                    }
+                    std::ostringstream amtStream;
+                    amtStream << std::setprecision(17) << (concVal * compSize);
+                    amount = amtStream.str();
+                    recordAsInitialConcentration = false;
+                }
+                const bool hasOnlySubstanceUnits =
+                    parseBool(attribute(species, "hasOnlySubstanceUnits"));
+                if (!hasOnlySubstanceUnits && unitlessModel && !compartment.empty() &&
+                    std::abs(compSize - 1.0) > 1e-15) {
+                    speciesConcDivisors[id] = compSize;
+                }
                 result.species.emplace_back(pattern, amount);
-                result.speciesUnits.push_back(attribute(
-                    species, "substanceUnits", attribute(species, "units")));
-                result.speciesInitialConcentrations.push_back(initialConcentration);
+                result.speciesUnits.push_back(speciesUnit);
+                result.speciesInitialConcentrations.push_back(recordAsInitialConcentration);
             }
         }
         // A valid SBML model may contain only compartments, parameters, rules,
@@ -1231,9 +1395,33 @@ NetReader::ParseResult SbmlReader::parse(
                         static_cast<std::size_t>(index));
                     totalRate = true;
                 }
-                const auto expression = (absoluteFlux || totalRate)
-                    ? mathExpression(math)
-                    : stripReactantFactors(mathExpression(math), reactantIds);
+                auto idSubs = collectLocalParameters(kineticLaw);
+                for (const auto& [compId, compSize] : result.compartmentSizes) {
+                    if (idSubs.find(compId) == idSubs.end() &&
+                        speciesIndices.find(compId) == speciesIndices.end() &&
+                        result.parameters.find(compId) == result.parameters.end()) {
+                        std::ostringstream cs;
+                        cs << std::setprecision(17) << compSize;
+                        idSubs[compId] = cs.str();
+                    }
+                }
+                auto expression = (absoluteFlux || totalRate)
+                    ? mathExpression(math, 0, &idSubs)
+                    : stripReactantFactors(mathExpression(math, 0, &idSubs), reactantIds);
+                if (!absoluteFlux && !totalRate && !speciesConcDivisors.empty()) {
+                    double totalDivisor = 1.0;
+                    for (const auto& reactantId : reactantIds) {
+                        if (const auto it = speciesConcDivisors.find(reactantId);
+                            it != speciesConcDivisors.end()) {
+                            totalDivisor *= it->second;
+                        }
+                    }
+                    if (std::abs(totalDivisor - 1.0) > 1e-15) {
+                        std::ostringstream scaled;
+                        scaled << "(" << expression << ")/" << std::setprecision(17) << totalDivisor;
+                        expression = scaled.str();
+                    }
+                }
                 std::ostringstream line;
                 line << index << ' ' << indexList(reactantIndices) << ' '
                      << indexList(productIndices) << ' ' << expression;
@@ -1247,6 +1435,17 @@ NetReader::ParseResult SbmlReader::parse(
 
         const auto* rules = model->FirstChildElement("listOfRules");
         if (rules != nullptr) {
+            for (auto* anyRule = rules->FirstChildElement();
+                 anyRule != nullptr;
+                 anyRule = anyRule->NextSiblingElement()) {
+                const std::string ruleTag = anyRule->Value();
+                if (ruleTag == "rateRule" || ruleTag == "algebraicRule") {
+                    throw std::runtime_error(
+                        "SBML " + ruleTag +
+                        " is not supported by native SbmlReader; "
+                        "use bionetgen.from_sbml() for full SBML import");
+                }
+            }
             int groupIndex = 0;
             int functionIndex = 1;
             std::set<std::string> emittedGroupNames;

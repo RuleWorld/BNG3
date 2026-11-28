@@ -1202,6 +1202,7 @@ double parseNumberLiteral(std::string text) {
 }
 
 constexpr std::size_t kMaxExpressionNestingDepth = 256;
+constexpr std::size_t kMaxExpressionChainDepth = 512;
 
 void validateNestingDepth(std::string_view text) {
     std::size_t depth = 0;
@@ -1244,19 +1245,27 @@ void validateNestingDepth(std::string_view text) {
 }
 
 thread_local std::size_t g_expressionBuildDepth = 0;
+thread_local std::size_t g_expressionTotalDepth = 0;
 thread_local const std::unordered_set<std::string>* g_declaredUserCallables = nullptr;
 
 struct ExpressionDepthGuard {
     ExpressionDepthGuard() {
-        if (++g_expressionBuildDepth > kMaxExpressionNestingDepth) {
-            --g_expressionBuildDepth;
+        if (g_expressionBuildDepth + 1 > kMaxExpressionNestingDepth) {
             throw std::runtime_error(
                 "Maximum expression nesting depth (" +
                 std::to_string(kMaxExpressionNestingDepth) + ") exceeded");
         }
+        if (g_expressionTotalDepth + 1 > kMaxExpressionChainDepth) {
+            throw std::runtime_error(
+                "Maximum expression nesting depth (" +
+                std::to_string(kMaxExpressionChainDepth) + ") exceeded");
+        }
+        ++g_expressionBuildDepth;
+        ++g_expressionTotalDepth;
     }
     ~ExpressionDepthGuard() {
         --g_expressionBuildDepth;
+        --g_expressionTotalDepth;
     }
 };
 
@@ -1342,6 +1351,26 @@ ast::Expression buildLeftAssociativeExpression(
     const std::function<ast::Expression(ChildT*)>& buildChild) {
 
     auto children = ctx->template getRuleContexts<ChildT>();
+    if (children.empty()) {
+        throw std::runtime_error("Empty binary expression");
+    }
+    const std::size_t opCount = children.size() - 1;
+    if (opCount > kMaxExpressionChainDepth ||
+        g_expressionTotalDepth + opCount > kMaxExpressionChainDepth) {
+        throw std::runtime_error(
+            "Maximum expression nesting depth (" +
+            std::to_string(kMaxExpressionChainDepth) + ") exceeded");
+    }
+    struct ChainDepthGuard {
+        std::size_t delta;
+        explicit ChainDepthGuard(std::size_t d) : delta(d) {
+            g_expressionTotalDepth += delta;
+        }
+        ~ChainDepthGuard() {
+            g_expressionTotalDepth -= delta;
+        }
+    } chainGuard(opCount);
+
     ast::Expression expr = buildChild(children.front());
     for (std::size_t childIndex = 1, opIndex = 1; childIndex < ctx->children.size(); childIndex += 2, ++opIndex) {
         const std::string op = ctx->children[childIndex]->getText();
@@ -2019,12 +2048,62 @@ std::any BNGAstVisitor::visitCompartment_def(BNGParser::Compartment_defContext* 
         return {};
     }
 
+    const std::string compName = names.front()->getText();
+    const std::string parentName = names.size() > 1 ? names.back()->getText() : std::string {};
+    const std::string dimText = ctx->INT()->getText();
+    long long dimension = -1;
+    try {
+        std::size_t consumed = 0;
+        dimension = std::stoll(dimText, &consumed);
+        if (consumed != dimText.size()) {
+            dimension = -1;
+        }
+    } catch (const std::exception&) {
+        dimension = -1;
+    }
+    if (dimension < 0 || dimension > 3) {
+        throw std::runtime_error(
+            "Invalid spatial dimension '" + dimText + "' for compartment '" +
+            compName + "': must be an integer in [0, 3]");
+    }
+    if (!parentName.empty() && parentName == compName) {
+        throw std::runtime_error(
+            "Cyclic compartment parent hierarchy: compartment '" + compName +
+            "' cannot be its own parent");
+    }
+
     const auto expr = buildExpression(ctx->expression());
+    const double volume = evaluateExpression(expr, currentModel_->getParameters());
+    if (!std::isfinite(volume)) {
+        throw std::runtime_error(
+            "Compartment '" + compName + "' volume must be finite");
+    }
+
     currentModel_->addCompartment(ast::Compartment(
-        names.front()->getText(),
-        evaluateExpression(expr, currentModel_->getParameters()),
-        std::stoi(ctx->INT()->getText()),
-        names.size() > 1 ? names.back()->getText() : std::string {}));
+        compName,
+        volume,
+        static_cast<int>(dimension),
+        parentName));
+    {
+        std::map<std::string, std::string> parentOf;
+        for (const auto& existing : currentModel_->getCompartments()) {
+            parentOf[existing.getName()] = existing.getParent();
+        }
+        std::unordered_set<std::string> visited;
+        std::string cursor = compName;
+        while (!cursor.empty()) {
+            if (!visited.insert(cursor).second) {
+                throw std::runtime_error(
+                    "Cyclic compartment parent hierarchy detected involving compartment '" +
+                    cursor + "'");
+            }
+            const auto it = parentOf.find(cursor);
+            if (it == parentOf.end()) {
+                break;
+            }
+            cursor = it->second;
+        }
+    }
     auto& compartment = currentModel_->getCompartments().back();
     compartment.setVolumeExpression(expr);
     compartment.setVolumeTimeDependent(
@@ -2118,11 +2197,16 @@ std::any BNGAstVisitor::visitEnergy_pattern_def(BNGParser::Energy_pattern_defCon
         return {};
     }
 
+    ast::SpeciesGraph sg(buildPatternGraph(ctx->species_def(), *currentModel_, false));
+    if (isSpeciesCompartmentPrefix(ctx->species_def())) {
+        sg.setCompartment(extractSpeciesCompartment(ctx->species_def()));
+        sg.setCompartmentIsPrefix(true);
+    }
     currentModel_->addEnergyPattern(ast::EnergyPattern(
         ctx->STRING() != nullptr ? ctx->STRING()->getText() : std::string(),
         ctx->species_def()->getText(),
         buildExpression(ctx->expression()),
-        ast::SpeciesGraph(buildPatternGraph(ctx->species_def(), *currentModel_, false))));
+        std::move(sg)));
     return {};
 }
 

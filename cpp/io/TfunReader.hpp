@@ -58,23 +58,66 @@ public:
         }
 
         std::string line;
+        std::size_t lineNumber = 0;
         while (std::getline(file, line)) {
-            // Skip comments and empty lines
-            if (line.empty() || line[0] == '#') continue;
+            ++lineNumber;
+            // Strip comments starting with '#'
+            const auto hashPos = line.find('#');
+            if (hashPos != std::string::npos) {
+                line.erase(hashPos);
+            }
+            // Skip blank / whitespace-only lines
+            if (line.find_first_not_of(" \t\r\n") == std::string::npos) {
+                continue;
+            }
 
             std::istringstream iss(line);
-            double t, v;
-            if (iss >> t >> v) {
-                if (!std::isfinite(t) || !std::isfinite(v)) {
-                    throw std::runtime_error("TFUN file contains non-finite value: " + filePath);
-                }
-                if (!table.times.empty() && t < table.times.back()) {
-                    throw std::runtime_error(
-                        "TFUN file x-values must be monotonically non-decreasing: " + filePath);
-                }
-                table.times.push_back(t);
-                table.values.push_back(v);
+            std::string tTok;
+            std::string vTok;
+            std::string extraTok;
+            if (!(iss >> tTok >> vTok)) {
+                throw std::runtime_error(
+                    "TFUN file has malformed row (expected 2 numeric columns) at line " +
+                    std::to_string(lineNumber) + ": " + filePath);
             }
+            if (iss >> extraTok) {
+                throw std::runtime_error(
+                    "TFUN file has unexpected trailing token '" + extraTok + "' at line " +
+                    std::to_string(lineNumber) + ": " + filePath);
+            }
+
+            const auto parseFiniteDouble = [&](const std::string& tok) -> double {
+                std::size_t consumed = 0;
+                double val = 0.0;
+                try {
+                    val = std::stod(tok, &consumed);
+                } catch (const std::exception&) {
+                    throw std::runtime_error(
+                        "TFUN file contains invalid numeric token '" + tok + "' at line " +
+                        std::to_string(lineNumber) + ": " + filePath);
+                }
+                if (consumed != tok.size()) {
+                    throw std::runtime_error(
+                        "TFUN file contains invalid numeric token '" + tok + "' at line " +
+                        std::to_string(lineNumber) + ": " + filePath);
+                }
+                if (!std::isfinite(val)) {
+                    throw std::runtime_error(
+                        "TFUN file contains non-finite value '" + tok + "' at line " +
+                        std::to_string(lineNumber) + ": " + filePath);
+                }
+                return val;
+            };
+
+            const double t = parseFiniteDouble(tTok);
+            const double v = parseFiniteDouble(vTok);
+            if (!table.times.empty() && t < table.times.back()) {
+                throw std::runtime_error(
+                    "TFUN file x-values must be monotonically non-decreasing at line " +
+                    std::to_string(lineNumber) + ": " + filePath);
+            }
+            table.times.push_back(t);
+            table.values.push_back(v);
         }
 
         if (table.times.empty()) {

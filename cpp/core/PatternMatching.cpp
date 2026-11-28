@@ -1,5 +1,8 @@
 #include "core/PatternMatching.hpp"
 
+#include <set>
+#include <vector>
+
 #include "ast/SpeciesGraph.hpp"
 #include "core/BNGcore.hpp"
 #include "core/Ullmann.hpp"
@@ -9,6 +12,30 @@ namespace {
 
 bool isBondNode(const BNGcore::Node& node) {
     return node.get_type().get_type_name() == BNGcore::BOND_NODE_TYPE.get_type_name();
+}
+
+bool isWildcardBondNode(const BNGcore::Node& node) {
+    if (!isBondNode(node) || node.in_degree() != 1) return false;
+    const auto state = node.get_state().get_BNG2_string();
+    return state == "!+" || state == "!?";
+}
+
+// Collect pattern nodes whose target images distinguish distinct embeddings
+// (all molecule, component, explicit-bond, and unbound-marker nodes; single-site
+// wildcard bond predicates `!+` and `!?` are excluded so multi-bonded target
+// components are counted once per component mapping).
+std::vector<BNGcore::Node*> collectNonWildcardPatternNodes(
+    const BNGcore::PatternGraph& pattern, bool& hasWildcardBond) {
+    hasWildcardBond = false;
+    std::vector<BNGcore::Node*> keyNodes;
+    for (auto it = pattern.begin(); it != pattern.end(); ++it) {
+        if (isWildcardBondNode(**it)) {
+            hasWildcardBond = true;
+        } else {
+            keyNodes.push_back(*it);
+        }
+    }
+    return keyNodes;
 }
 
 bool isComponentNode(const BNGcore::Node& node) {
@@ -107,11 +134,26 @@ std::size_t countPatternMatches(const BNGcore::PatternGraph& pattern,
     BNGcore::UllmannSGIso matcher(pattern, target);
     BNGcore::List<BNGcore::Map> maps;
     matcher.find_maps(maps);
-    std::size_t count = 0;
-    for (auto it = maps.begin(); it != maps.end(); ++it) {
-        if (embeddingRespectsBioNetGenSemantics(pattern, *it)) ++count;
+    bool hasWildcardBond = false;
+    const auto keyNodes = collectNonWildcardPatternNodes(pattern, hasWildcardBond);
+    if (!hasWildcardBond) {
+        std::size_t count = 0;
+        for (auto it = maps.begin(); it != maps.end(); ++it) {
+            if (embeddingRespectsBioNetGenSemantics(pattern, *it)) ++count;
+        }
+        return count;
     }
-    return count;
+    std::set<std::vector<const BNGcore::Node*>> uniqueEmbeddings;
+    for (auto it = maps.begin(); it != maps.end(); ++it) {
+        if (!embeddingRespectsBioNetGenSemantics(pattern, *it)) continue;
+        std::vector<const BNGcore::Node*> key;
+        key.reserve(keyNodes.size());
+        for (BNGcore::Node* pn : keyNodes) {
+            key.push_back(it->mapf(pn));
+        }
+        uniqueEmbeddings.insert(std::move(key));
+    }
+    return uniqueEmbeddings.size();
 }
 
 std::size_t countPatternMatches(const ast::SpeciesGraph& patternSpecies,
@@ -147,12 +189,28 @@ std::size_t countPatternMatchesForScopedMolecule(
     BNGcore::UllmannSGIso matcher(pattern, target);
     BNGcore::List<BNGcore::Map> maps;
     matcher.find_maps(maps);
-    std::size_t count = 0;
+    bool hasWildcardBond = false;
+    const auto keyNodes = collectNonWildcardPatternNodes(pattern, hasWildcardBond);
+    if (!hasWildcardBond) {
+        std::size_t count = 0;
+        for (auto it = maps.begin(); it != maps.end(); ++it) {
+            if (!embeddingRespectsBioNetGenSemantics(pattern, *it)) continue;
+            if (it->mapf(firstPatternMolecule) == scopedMolecule) ++count;
+        }
+        return count;
+    }
+    std::set<std::vector<const BNGcore::Node*>> uniqueEmbeddings;
     for (auto it = maps.begin(); it != maps.end(); ++it) {
         if (!embeddingRespectsBioNetGenSemantics(pattern, *it)) continue;
-        if (it->mapf(firstPatternMolecule) == scopedMolecule) ++count;
+        if (it->mapf(firstPatternMolecule) != scopedMolecule) continue;
+        std::vector<const BNGcore::Node*> key;
+        key.reserve(keyNodes.size());
+        for (BNGcore::Node* pn : keyNodes) {
+            key.push_back(it->mapf(pn));
+        }
+        uniqueEmbeddings.insert(std::move(key));
     }
-    return count;
+    return uniqueEmbeddings.size();
 }
 
 } // namespace bng::core
