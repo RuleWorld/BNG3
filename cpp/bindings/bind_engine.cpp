@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <random>
 #include <set>
 #include <string>
 #include <stdexcept>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "ast/Model.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 #include "engine/NetworkGenerator.hpp"
 #include "engine/OdeIntegrator.hpp"
 #include "engine/PlaSimulator.hpp"
@@ -25,6 +27,7 @@
 #include "actions/ActionDispatch.hpp"
 #include "engine/BatchSsa.hpp"
 #include "engine/gpu/GpuSsaBackend.hpp"
+#include "io/NetWriter.hpp"
 
 namespace py = pybind11;
 using namespace bng::engine;
@@ -513,11 +516,25 @@ void bind_engine(py::module_& m) {
     }, py::arg("previous"), py::arg("regenerated"),
        "Carry a successful native trajectory into a regenerated network");
 
-    m.def("jax_ode_flatten", [](Model& model, GeneratedNetwork& network) {
+    m.def("jax_ode_flatten", [](Model& model, GeneratedNetwork& network,
+                                const std::vector<std::pair<std::string, std::string>>& algebraic_rules) {
         bng::compile::requireNoNativeEvents(model, "JAX ODE flattening");
+        bng::engine::requireNoDelayedSemantics(model, network, "JAX ODE flattening");
+        if (!algebraic_rules.empty()) {
+            throw std::runtime_error(
+                "SBML algebraic rules are not supported by JAX ODE flattening");
+        }
+        for (const auto& func : model.getFunctions()) {
+            if (func.getName().rfind("__algebraic_residual_", 0) == 0) {
+                throw std::runtime_error(
+                    "SBML algebraic rules are not supported by JAX ODE flattening");
+            }
+        }
         std::vector<double> initialState;
         std::vector<uint8_t> fixedSpecies;
         std::vector<double> rateConstants;
+        std::vector<double> volumeScales;
+        std::vector<double> effectiveStatFactors;
         std::vector<uint8_t> totalRates;
         std::vector<uint8_t> absoluteFluxes;
         std::vector<uint8_t> functionalRates;
@@ -537,6 +554,7 @@ void bind_engine(py::module_& m) {
             const auto& compiledReactions = integrator.getCompiledReactions();
             const auto& fixed = integrator.getFixedSpecies();
             const auto& groups = integrator.getCompiledGroups();
+            const auto& rawReactions = network.reactions.all();
             initialState.reserve(network.species.size());
             fixedSpecies.reserve(network.species.size());
             for (std::size_t i = 0; i < network.species.size(); ++i) {
@@ -545,12 +563,30 @@ void bind_engine(py::module_& m) {
             }
 
             rateConstants.reserve(compiledReactions.size());
+            volumeScales.reserve(compiledReactions.size());
+            effectiveStatFactors.reserve(compiledReactions.size());
             totalRates.reserve(compiledReactions.size());
             absoluteFluxes.reserve(compiledReactions.size());
             functionalRates.reserve(compiledReactions.size());
             timeDependentRates.reserve(compiledReactions.size());
-            for (const auto& reaction : compiledReactions) {
+            for (std::size_t i = 0; i < compiledReactions.size(); ++i) {
+                const auto& reaction = compiledReactions[i];
+                double volScale = 1.0;
+                if (!reaction.isTotalRate && !reaction.isAbsoluteFlux &&
+                    i < rawReactions.size()) {
+                    const auto unitFactor =
+                        bng::io::NetWriter::computeUnitConversionFactor(
+                            rawReactions[i], model, network);
+                    if (unitFactor.has_value()) {
+                        volScale = *unitFactor;
+                    }
+                }
+                const double effStat = (reaction.isTotalRate || reaction.isAbsoluteFlux)
+                    ? 1.0
+                    : (reaction.statFactor * volScale);
                 rateConstants.push_back(reaction.rateConstant);
+                volumeScales.push_back(volScale);
+                effectiveStatFactors.push_back(effStat);
                 totalRates.push_back(reaction.isTotalRate ? 1 : 0);
                 absoluteFluxes.push_back(reaction.isAbsoluteFlux ? 1 : 0);
                 functionalRates.push_back(reaction.isFunctional ? 1 : 0);
@@ -581,6 +617,8 @@ void bind_engine(py::module_& m) {
         result["initial_state"] = vector_to_array(initialState);
         result["fixed_species"] = vector_to_array(fixedSpecies);
         result["rate_constants"] = vector_to_array(rateConstants);
+        result["volume_scales"] = vector_to_array(volumeScales);
+        result["effective_stat_factors"] = vector_to_array(effectiveStatFactors);
         result["total_rate"] = vector_to_array(totalRates);
         result["absolute_flux"] = vector_to_array(absoluteFluxes);
         result["functional_rates"] = vector_to_array(functionalRates);
@@ -595,6 +633,7 @@ void bind_engine(py::module_& m) {
         result["group_weights"] = vector_to_array(groupWeights);
         return result;
     }, py::arg("model"), py::arg("network"),
+       py::arg("algebraic_rules") = std::vector<std::pair<std::string, std::string>>{},
        "Export the native compiled ODE reaction data used by the optional JAX ODE backend");
 
     // Private validation hook: parity tests need the engine's instantaneous
@@ -744,6 +783,19 @@ void bind_engine(py::module_& m) {
                              const std::string& batch_gpu_backend,
                              bool continue_simulation,
                              bool fresh_from_initial_state) {
+        if (seed < 0) {
+            throw std::invalid_argument("seed must be non-negative");
+        }
+        if (batch_size > 0 && output_step_interval > 0) {
+            throw std::invalid_argument(
+                "output_step_interval is not supported in batch SSA mode (batch_size > 0)");
+        }
+        unsigned int effectiveSeed = static_cast<unsigned int>(seed);
+        if (batch_size > 0 && effectiveSeed == 0u) {
+            std::random_device rd;
+            effectiveSeed = rd();
+            if (effectiveSeed == 0u) effectiveSeed = 1u;
+        }
         py::gil_scoped_release release;
 
         OdeOptions opts;
@@ -751,7 +803,7 @@ void bind_engine(py::module_& m) {
         opts.tEnd = t_end;
         opts.nSteps = n_steps;
         opts.method = "ssa";
-        opts.seed = seed;
+        opts.seed = effectiveSeed;
         opts.stopIf = stop_if;
         opts.sampleTimes = sample_times;
         opts.maxSimSteps = max_sim_steps;
@@ -808,13 +860,19 @@ void bind_engine(py::module_& m) {
 
     m.def("simulate_pla", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, const std::string& config_str,
-                             double t_start) {
+                             double t_start, int seed,
+                             const std::vector<double>& sample_times) {
+        if (seed < 0) {
+            throw std::invalid_argument("seed must be non-negative");
+        }
         py::gil_scoped_release release;
 
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
         opts.nSteps = n_steps;
+        opts.seed = static_cast<unsigned int>(seed);
+        opts.sampleTimes = sample_times;
 
         PlaConfig config;
         if (!config_str.empty()) {
@@ -833,20 +891,42 @@ void bind_engine(py::module_& m) {
         py::arg("n_steps") = 100,
         py::arg("config_str") = "",
         py::arg("t_start") = 0.0,
+        py::arg("seed") = 0,
+        py::arg("sample_times") = std::vector<double>{},
         "Run PLA simulation on a generated network");
 
     m.def("simulate_psa", [](Model& model, GeneratedNetwork& network,
                              double t_end, int n_steps, double poplevel,
-                             double t_start) {
+                             double t_start, int seed,
+                             const std::vector<double>& sample_times,
+                             py::object check_product_scale) {
+        if (seed < 0) {
+            throw std::invalid_argument("seed must be non-negative");
+        }
+        bool pScaleChecker = true;
+        if (!check_product_scale.is_none()) {
+            if (py::isinstance<py::bool_>(check_product_scale)) {
+                pScaleChecker = check_product_scale.cast<bool>();
+            } else {
+                const double scaleVal = check_product_scale.cast<double>();
+                if (!std::isfinite(scaleVal) || scaleVal < 0.0) {
+                    throw std::invalid_argument(
+                        "check_product_scale must be finite and non-negative");
+                }
+                pScaleChecker = (scaleVal != 0.0);
+            }
+        }
         py::gil_scoped_release release;
 
         OdeOptions opts;
         opts.tStart = t_start;
         opts.tEnd = t_end;
         opts.nSteps = n_steps;
+        opts.seed = static_cast<unsigned int>(seed);
+        opts.sampleTimes = sample_times;
 
         PsaSimulator simulator(model, network);
-        OdeResult result = simulator.simulate(opts, poplevel);
+        OdeResult result = simulator.simulate(opts, poplevel, pScaleChecker);
 
         py::gil_scoped_acquire acquire;
         return result_to_dict(result, model);
@@ -857,6 +937,9 @@ void bind_engine(py::module_& m) {
         py::arg("n_steps") = 100,
         py::arg("poplevel") = 100,
         py::arg("t_start") = 0.0,
+        py::arg("seed") = 0,
+        py::arg("sample_times") = std::vector<double>{},
+        py::arg("check_product_scale") = py::none(),
         "Run PSA simulation on a generated network");
 
     // --- Finite backend dispatch (BNGsim canonical backend) ---

@@ -135,6 +135,25 @@ bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view
 
 OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network), functionEvaluator_(model) {
+    // Check whether 't' is an explicitly declared user symbol (parameter,
+    // observable, or function) so simulation time never shadows user 't'.
+    tIsUserSymbol_ = model_.getParameters().contains("t");
+    if (!tIsUserSymbol_) {
+        for (const auto& obs : model_.getObservables()) {
+            if (obs.getName() == "t") {
+                tIsUserSymbol_ = true;
+                break;
+            }
+        }
+    }
+    if (!tIsUserSymbol_) {
+        for (const auto& fn : model_.getFunctions()) {
+            if (fn.getName() == "t") {
+                tIsUserSymbol_ = true;
+                break;
+            }
+        }
+    }
     for (const auto& reaction : network_.reactions.all()) {
         if (reaction.getDelayExpression()) {
             const double delay = delayedTime(*reaction.getDelayExpression(), model_);
@@ -144,6 +163,25 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
     const auto addExpressionDelays = [&](const ast::Expression& root) {
         std::function<void(const ast::Expression&)> visit;
         visit = [&](const ast::Expression& expression) {
+            if (expression.kind() == ast::ExpressionKind::TableFunction &&
+                expression.tableMethod() == "step" &&
+                !expression.tableXValues().empty()) {
+                bool indexedByTime = expression.args().empty();
+                if (!indexedByTime) {
+                    const auto& counter = expression.args().front();
+                    if ((counter.kind() == ast::ExpressionKind::Identifier ||
+                         (counter.kind() == ast::ExpressionKind::Function &&
+                          counter.args().empty())) &&
+                        isClockSymbol(counter.name())) {
+                        indexedByTime = true;
+                    }
+                }
+                if (indexedByTime) {
+                    const auto& xs = expression.tableXValues();
+                    tfunInlineStepKnots_.insert(
+                        tfunInlineStepKnots_.end(), xs.begin(), xs.end());
+                }
+            }
             if (expression.kind() == ast::ExpressionKind::Function &&
                 expression.name() == "delay") {
                 if (expression.args().size() != 2) {
@@ -154,7 +192,7 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                 std::function<bool(const ast::Expression&)> isStaticDuration;
                 isStaticDuration = [&](const ast::Expression& term) {
                     if (term.kind() == ast::ExpressionKind::Identifier) {
-                        if (term.name() == "time" || term.name() == "t") return false;
+                        if (isClockSymbol(term.name())) return false;
                         if (!model_.getParameters().contains(term.name())) {
                             // An identifier absent from the parameter list
                             // may be an observable or invalid. Neither case
@@ -172,7 +210,7 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                         return false;
                     }
                     if (term.kind() == ast::ExpressionKind::Function &&
-                        (term.name() == "time" || term.name() == "t" ||
+                        (isClockSymbol(term.name()) ||
                          term.name() == "tfun")) {
                         return false;
                     }
@@ -227,6 +265,9 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
             addExpressionDelays(expanded);
         }
     }
+    for (const auto& parameter : model_.getParameters().all()) {
+        addExpressionDelays(parameter.getExpression());
+    }
     ast::validateNativeEventSubset(model_);
     if (model_.getEventFormatVersion()) {
         const compile::CompiledModel compiled(model_);
@@ -254,7 +295,7 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                             dynamic = true;
                         }
                         if (expression.kind() == ast::ExpressionKind::Identifier &&
-                            (expression.name() == "time" || expression.name() == "t")) {
+                            isClockSymbol(expression.name())) {
                             dynamic = true;
                         }
                         for (const auto& child : expression.args()) {
@@ -456,6 +497,23 @@ void OdeIntegrator::correctAlgebraicState(std::vector<double>& state,
         std::vector<double> matrix = jacobian;
         std::vector<double> step(count);
         for (std::size_t i = 0; i < count; ++i) step[i] = -residual[i];
+        // Row-equilibrate the Jacobian so small-scaled nonsingular constraints
+        // (e.g. 1e-15 * (Z - 2*X) = 0) are not falsely rejected as singular.
+        for (std::size_t row = 0; row < count; ++row) {
+            double rowScale = 0.0;
+            for (std::size_t j = 0; j < count; ++j) {
+                rowScale = std::max(rowScale, std::abs(matrix[row * count + j]));
+            }
+            if (!std::isfinite(rowScale) ||
+                rowScale <= std::numeric_limits<double>::min()) {
+                throw std::runtime_error(
+                    "algebraic constraint Jacobian is singular or inconsistent");
+            }
+            for (std::size_t j = 0; j < count; ++j) {
+                matrix[row * count + j] /= rowScale;
+            }
+            step[row] /= rowScale;
+        }
         for (std::size_t column = 0; column < count; ++column) {
             std::size_t pivot = column;
             for (std::size_t row = column + 1; row < count; ++row) {
@@ -512,6 +570,80 @@ void OdeIntegrator::correctAlgebraicState(std::vector<double>& state,
     }
     throw std::runtime_error(
         "algebraic constraint solve did not converge to a consistent state");
+}
+
+bool OdeIntegrator::resolveTfunEntry(const std::string& tfunName, double value, double& out) const {
+    if (tfunRegistry_.has(tfunName)) {
+        out = tfunRegistry_.evaluate(tfunName, value);
+        return true;
+    }
+    static constexpr const char* kHexPrefix = "file_hex_";
+    constexpr std::size_t kHexPrefixLen = 9;
+    if (tfunName.rfind(kHexPrefix, 0) == 0 &&
+        (tfunName.size() - kHexPrefixLen) % 2 == 0) {
+        std::string decoded;
+        decoded.reserve((tfunName.size() - kHexPrefixLen) / 2);
+        auto hexVal = [](char c) -> int {
+            if (c >= '0' && c <= '9') return c - '0';
+            if (c >= 'a' && c <= 'f') return 10 + (c - 'a');
+            if (c >= 'A' && c <= 'F') return 10 + (c - 'A');
+            return -1;
+        };
+        bool ok = true;
+        for (std::size_t i = kHexPrefixLen; i < tfunName.size(); i += 2) {
+            const int hi = hexVal(tfunName[i]);
+            const int lo = hexVal(tfunName[i + 1]);
+            if (hi < 0 || lo < 0) {
+                ok = false;
+                break;
+            }
+            decoded.push_back(static_cast<char>((hi << 4) | lo));
+        }
+        if (ok && tfunRegistry_.has(decoded)) {
+            out = tfunRegistry_.evaluate(decoded, value);
+            return true;
+        }
+    } else {
+        static constexpr char kHexDigits[] = "0123456789abcdef";
+        std::string encoded = kHexPrefix;
+        encoded.reserve(kHexPrefixLen + tfunName.size() * 2);
+        for (unsigned char ch : tfunName) {
+            encoded.push_back(kHexDigits[ch >> 4]);
+            encoded.push_back(kHexDigits[ch & 0x0f]);
+        }
+        if (tfunRegistry_.has(encoded)) {
+            out = tfunRegistry_.evaluate(encoded, value);
+            return true;
+        }
+    }
+    return false;
+}
+
+std::vector<double> OdeIntegrator::collectStepKnots(double tStart, double tEnd) const {
+    std::vector<double> knots;
+    knots.reserve(tfunInlineStepKnots_.size() + tfunFileStepKnots_.size());
+    const auto addKnots = [&](const std::vector<double>& src) {
+        for (double x : src) {
+            if (std::isfinite(x) && x > tStart && x < tEnd) {
+                knots.push_back(x);
+            }
+        }
+    };
+    addKnots(tfunInlineStepKnots_);
+    addKnots(tfunFileStepKnots_);
+    if (knots.empty()) return knots;
+    std::sort(knots.begin(), knots.end());
+    std::vector<double> uniqueKnots;
+    uniqueKnots.reserve(knots.size());
+    for (double x : knots) {
+        if (uniqueKnots.empty() ||
+            std::abs(x - uniqueKnots.back()) >
+                64.0 * std::numeric_limits<double>::epsilon() *
+                    std::max(1.0, std::abs(x))) {
+            uniqueKnots.push_back(x);
+        }
+    }
+    return uniqueKnots;
 }
 
 void OdeIntegrator::compile() {
@@ -610,13 +742,22 @@ void OdeIntegrator::compile() {
         lowerFuncNames.push_back(std::move(name));
     }
 
-    std::unordered_map<std::string, bng::compile::RateLawKind> typedRateKinds;
+    struct RuleRateKinds {
+        bng::compile::RateLawKind forward = bng::compile::RateLawKind::Expression;
+        std::optional<bng::compile::RateLawKind> reverse;
+    };
+    std::unordered_map<std::string, RuleRateKinds> typedRateKinds;
     std::unordered_set<std::string> rateRuleOriginNames;
     for (const auto& rule : model_.getReactionRules()) {
         if (!rule.getRates().empty()) {
-            typedRateKinds.emplace(
-                rule.getRuleName(),
-                bng::compile::CompiledRateLaw::compile(rule.getRates().front()).kind);
+            RuleRateKinds kinds;
+            kinds.forward =
+                bng::compile::CompiledRateLaw::compile(rule.getRates().front()).kind;
+            if (rule.getRates().size() >= 2) {
+                kinds.reverse =
+                    bng::compile::CompiledRateLaw::compile(rule.getRates()[1]).kind;
+            }
+            typedRateKinds.emplace(rule.getRuleName(), kinds);
         }
         const auto& label = rule.getLabel();
         const auto& ruleName = rule.getRuleName();
@@ -633,23 +774,28 @@ void OdeIntegrator::compile() {
     }
     const auto typedRateKindForOrigin = [&](std::string origin)
         -> std::optional<bng::compile::RateLawKind> {
-        auto find = [&](const std::string& candidate)
-            -> std::optional<bng::compile::RateLawKind> {
-            const auto it = typedRateKinds.find(candidate);
-            if (it == typedRateKinds.end()) return std::nullopt;
-            return it->second;
-        };
-        if (auto kind = find(origin)) return kind;
+        if (const auto exact = typedRateKinds.find(origin);
+            exact != typedRateKinds.end()) {
+            return exact->second.forward;
+        }
+        bool isReverse = false;
         if (origin.rfind("_reverse__", 0) == 0) {
+            isReverse = true;
             origin = origin.substr(std::string("_reverse__").size());
+        } else if (origin.rfind("__reverse__", 0) == 0) {
+            isReverse = true;
+            origin = origin.substr(std::string("__reverse__").size());
         } else if (!origin.empty() && origin.front() == '_') {
             origin.erase(origin.begin());
         }
         if (origin.size() > std::string("_reverse").size() &&
             origin.rfind("_reverse") == origin.size() - std::string("_reverse").size()) {
+            isReverse = true;
             origin.erase(origin.size() - std::string("_reverse").size());
         }
-        return find(origin);
+        const auto it = typedRateKinds.find(origin);
+        if (it == typedRateKinds.end()) return std::nullopt;
+        return isReverse ? it->second.reverse : std::optional<bng::compile::RateLawKind>(it->second.forward);
     };
     const auto totalRateForOrigin = [&](const std::string& origin) {
         // The total-rate decision belongs to the shared capability owner,
@@ -668,14 +814,15 @@ void OdeIntegrator::compile() {
         switch (expression.kind()) {
         case ast::ExpressionKind::Identifier: {
             const auto& name = expression.name();
-            return name == "time" || name == "t" ||
-                   (model_.getParameters().contains(name) &&
-                    model_.getParameters().isTimeDependent(name));
+            if (model_.getParameters().contains(name)) {
+                return model_.getParameters().isTimeDependent(name);
+            }
+            return isClockSymbol(name);
         }
         case ast::ExpressionKind::Function: {
             const auto& name = expression.name();
             const auto& args = expression.args();
-            if (name == "time" || name == "t") {
+            if (isClockSymbol(name)) {
                 return true;
             }
             // TFUN(name) uses the simulation clock. With an explicit counter,
@@ -965,13 +1112,22 @@ void OdeIntegrator::compile() {
         std::string rateStr = rateStrBuilder.str();
         const std::string rawRateLaw = rxn.getRateLaw();
 
-        // --- Bug 1 fix: Detect Sat/MM/Hill rate law types ---
+        // --- Detect Sat/MM/Hill rate law types ---
         // Format in .net: "Sat kcat Km" or "MM kcat Km" or "Hill Vmax Kh n"
+        // Prefer the reaction's own parsed rateExpression when available so
+        // forward and reverse directions of reversible rules never bleed their
+        // rate law kinds into each other.
         bool isSatMMHill = false;
         bool isMM = false;  // True when rate law is MM (Michaelis-Menten), not Sat
         bool isHill = false;  // True only for the Hill law; Sat/MM must never take the Hill path
         std::size_t kwLen = 0;
-        if (const auto typedKind = typedRateKindForOrigin(originRuleName)) {
+        std::optional<bng::compile::RateLawKind> typedKind;
+        if (rxn.getRateExpression().has_value()) {
+            typedKind = bng::compile::CompiledRateLaw::compile(*rxn.getRateExpression()).kind;
+        } else {
+            typedKind = typedRateKindForOrigin(originRuleName);
+        }
+        if (typedKind.has_value()) {
             switch (*typedKind) {
             case bng::compile::RateLawKind::Saturation:
                 isSatMMHill = true;
@@ -1018,150 +1174,182 @@ void OdeIntegrator::compile() {
             }
         }
 
-        if (isSatMMHill && !crxn.reactantIndices.empty()) {
-            // Expand Sat/MM/Hill to functional rate with implicit substrate
-            // Sat kcat Km → rate = kcat * [S] / (Km + [S])  (TotalRate, no mass-action multiply)
-            // Hill Vmax Kh n → rate = Vmax * [S]^n / (Kh^n + [S]^n)
-            crxn.isFunctional = true;
-            crxn.isTotalRate = true;  // Don't multiply by reactant conc again
-            crxn.isAbsoluteFlux = true;
-            hasFunctionalRates_ = true;
-
-            // Parse parameters from the rate law string
-            // Handle both "Sat kcat Km" and "Sat(kcat, Km)" formats
-            std::vector<std::string> paramNames;
-            {
-                std::string cleaned = rawRateLaw;
-
-                // Trim leading whitespace
-                auto startP = cleaned.find_first_not_of(" \t\r\n");
-                if (startP != std::string::npos) cleaned = cleaned.substr(startP);
-                else cleaned.clear();
-
-                // Trim trailing whitespace
-                auto endP = cleaned.find_last_not_of(" \t\r\n");
-                if (endP != std::string::npos) cleaned = cleaned.substr(0, endP + 1);
-
-                // Remove keyword
-                cleaned = cleaned.substr(kwLen);
-
-                // Trim leading whitespace again
-                startP = cleaned.find_first_not_of(" \t\r\n");
-                if (startP != std::string::npos) cleaned = cleaned.substr(startP);
-                else cleaned.clear();
-
-                if (!cleaned.empty() && cleaned.front() == '(' && cleaned.back() == ')') {
-                    cleaned = cleaned.substr(1, cleaned.size() - 2);
-                    std::istringstream css(cleaned);
-                    std::string tok;
-                    while (std::getline(css, tok, ',')) {
-                        auto f = tok.find_first_not_of(" \t\r\n");
-                        if (f != std::string::npos) {
-                            tok.erase(0, f);
-                            tok.erase(tok.find_last_not_of(" \t\r\n") + 1);
-                            paramNames.push_back(tok);
-                        }
+        if (isSatMMHill) {
+            // Extract argument expressions from the parsed AST when available,
+            // preserving numeric literals, parameter expressions (e.g. 2*kcat,
+            // Km/2), and nested calls. Fall back to parsing .net space-separated
+            // syntax ("Sat kcat Km") when rxn.getRateExpression() is absent.
+            std::vector<ast::Expression> argExprs;
+            auto matchesKeyword = [&](const std::string& fnName) {
+                std::string lo = fnName;
+                std::transform(lo.begin(), lo.end(), lo.begin(), [](unsigned char c) {
+                    return static_cast<char>(std::tolower(c));
+                });
+                if (isHill) return lo == "hill";
+                if (isMM) return lo == "mm";
+                return lo == "sat";
+            };
+            if (rxn.getRateExpression().has_value() &&
+                rxn.getRateExpression()->kind() == ast::ExpressionKind::Function &&
+                matchesKeyword(rxn.getRateExpression()->name())) {
+                argExprs = rxn.getRateExpression()->args();
+            } else {
+                bool parsedCall = false;
+                try {
+                    const auto parsed = parser::parseExpression(rawRateLaw);
+                    if (parsed.kind() == ast::ExpressionKind::Function &&
+                        matchesKeyword(parsed.name())) {
+                        argExprs = parsed.args();
+                        parsedCall = true;
                     }
-                } else {
-                    std::istringstream rlStream(cleaned);
-                    std::string tok;
-                    while (rlStream >> tok) {
-                        paramNames.push_back(tok);
+                } catch (...) {}
+
+                if (!parsedCall) {
+                    auto parseArgToken = [](const std::string& text) -> ast::Expression {
+                        try {
+                            return parser::parseExpression(text);
+                        } catch (...) {
+                            char* end = nullptr;
+                            const double value = std::strtod(text.c_str(), &end);
+                            if (end != text.c_str() && end != nullptr && *end == '\0') {
+                                return ast::Expression::number(value);
+                            }
+                            return ast::Expression::identifier(text);
+                        }
+                    };
+
+                    std::string cleaned = rawRateLaw;
+                    auto startP = cleaned.find_first_not_of(" \t\r\n");
+                    if (startP != std::string::npos) cleaned = cleaned.substr(startP);
+                    else cleaned.clear();
+                    auto endP = cleaned.find_last_not_of(" \t\r\n");
+                    if (endP != std::string::npos) cleaned = cleaned.substr(0, endP + 1);
+
+                    if (cleaned.size() >= kwLen) {
+                        cleaned = cleaned.substr(kwLen);
+                    } else {
+                        cleaned.clear();
+                    }
+
+                    startP = cleaned.find_first_not_of(" \t\r\n");
+                    if (startP != std::string::npos) cleaned = cleaned.substr(startP);
+                    else cleaned.clear();
+
+                    if (!cleaned.empty() && cleaned.front() == '(' && cleaned.back() == ')') {
+                        cleaned = cleaned.substr(1, cleaned.size() - 2);
+                        // Split top-level commas respecting nested parentheses.
+                        int depth = 0;
+                        std::size_t segStart = 0;
+                        for (std::size_t ci = 0; ci <= cleaned.size(); ++ci) {
+                            if (ci < cleaned.size()) {
+                                if (cleaned[ci] == '(') ++depth;
+                                else if (cleaned[ci] == ')' && depth > 0) --depth;
+                            }
+                            if (ci == cleaned.size() || (cleaned[ci] == ',' && depth == 0)) {
+                                std::string tok = cleaned.substr(segStart, ci - segStart);
+                                auto f = tok.find_first_not_of(" \t\r\n");
+                                if (f != std::string::npos) {
+                                    tok.erase(0, f);
+                                    tok.erase(tok.find_last_not_of(" \t\r\n") + 1);
+                                    argExprs.push_back(parseArgToken(tok));
+                                }
+                                segStart = ci + 1;
+                            }
+                        }
+                    } else {
+                        std::istringstream rlStream(cleaned);
+                        std::string tok;
+                        while (rlStream >> tok) {
+                            argExprs.push_back(parseArgToken(tok));
+                        }
                     }
                 }
             }
 
-            // A rate-law argument is either a numeric literal or a symbol.
-            // Building it as a bare identifier made a literal unresolvable at
-            // evaluation time, which silently zeroed the whole rate.
-            auto rateLawArgument = [](const std::string& text) {
-                char* end = nullptr;
-                const double value = std::strtod(text.c_str(), &end);
-                if (end != text.c_str() && end != nullptr && *end == '\0') {
-                    return ast::Expression::number(value);
-                }
-                return ast::Expression::identifier(text);
-            };
+            const bool canExpand =
+                !crxn.reactantIndices.empty() ||
+                (!isMM && !isHill && argExprs.size() == 1);
 
-            // Store a lambda-like expression that will be evaluated in derivs()
-            // We build the expression text for the resolver
-            std::size_t substrateIdx = crxn.reactantIndices[0];
+            if (canExpand && !argExprs.empty()) {
+                // Expand Sat/MM/Hill to functional rate with implicit substrate
+                // Sat(k): rate = statFactor * k (zeroth order, canonical BNG2)
+                // Sat(k, K1, ..., KN): rate = statFactor * k * prod(R_i) / prod_{i=1..N}(K_i + R_i)
+                // MM(kcat, Km): self-consistent MM quadratic for 2 reactants
+                // Hill(Vmax, Kh, n): rate = statFactor * (S > 0 ? Vmax*S^n/(Kh^n+S^n) : 0) * prod_{i>=1} R_i
+                crxn.isFunctional = true;
+                crxn.isTotalRate = true;  // Don't multiply by reactant conc again
+                crxn.isAbsoluteFlux = true;
+                hasFunctionalRates_ = true;
 
-            // The reference to the reactant at `position` of the reaction's
-            // reactant list.
-            //
-            // A repeated identical reactant does not contribute the plain
-            // population: it contributes the number of *distinct* reactant
-            // pairs, `population - offset`, exactly as canonical BioNetGen
-            // 2.9.3's discrete branch does (`bng2/Network3/src/network.cpp`,
-            // `rxn_rate`: a repeated reactant is multiplied by `X - n`).  The
-            // offset travels with the reference, so the deterministic and the
-            // stochastic evaluations can read the same expression and still
-            // use the convention their own law calls for: the deterministic
-            // path resolves the reference to the plain population, the
-            // stochastic path to `population - offset`.
-            const auto reactantReference = [&crxn](std::size_t position) {
-                const std::size_t species = crxn.reactantIndices[position];
-                const std::size_t offset =
-                    identicalReactantOffset(crxn.reactantIndices, position);
-                if (offset == 0) {
+                const auto plainReactantRef = [&crxn](std::size_t position) {
                     return ast::Expression::identifier(
-                        "__substrate_" + std::to_string(species));
-                }
-                return ast::Expression::identifier(
-                    "__substrate_" + std::to_string(species) + "_off" +
-                    std::to_string(offset));
-            };
+                        "__substrate_" + std::to_string(crxn.reactantIndices[position]));
+                };
 
-            if (paramNames.size() >= 2) {
-                // Sat(kcat, Km): rate = kcat * [S] / (Km + [S]) * [other reactants]
-                // MM(kcat, Km):  rate = self-consistent MM with quadratic for free substrate
-                //   St=reactant[0], Et=reactant[1], b=St-Et-Km, S=0.5*(b+sqrt(b^2+4*St*Km))
-                //   rate = kcat * Et * S / (Km + S)   (total rate, no further mass-action multiply)
-                // Hill(Vmax, Kh, n): rate = Vmax * [S]^n / (Kh^n + [S]^n) * [other reactants]
-                std::string kcat = paramNames[0];
-                std::string Km = paramNames[1];
-
-                ast::Expression baseExpr = ast::Expression::number(0.0); // placeholder
-
-                // The keyword decides the shape of the argument list, NOT the
-                // argument count.  `Sat(Vmax, Km, S)` names its substrate in the
-                // third position, so routing every three-argument law to the
-                // Hill branch silently consumed that substrate as the Hill
-                // COEFFICIENT and changed the meaning of the model.  Only the
-                // Hill keyword may take the Hill branch.
-                if (isHill && paramNames.size() >= 3) {
-                    // Hill(Vmax, Kh, n): substrate is first reactant
-                    baseExpr = ast::Expression::function("Hill",
-                        {ast::Expression::identifier(kcat), ast::Expression::identifier(Km),
-                         rateLawArgument(paramNames[2]),
-                         ast::Expression::identifier("__substrate_" + std::to_string(substrateIdx))});
-                    // Multiply by non-substrate reactant concentrations
-                    for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
-                        baseExpr = ast::Expression::binary("*", std::move(baseExpr),
-                            reactantReference(ri));
+                // The reference to the reactant at `position` of the reaction's
+                // reactant list.
+                //
+                // A repeated identical reactant does not contribute the plain
+                // population: it contributes the number of *distinct* reactant
+                // pairs, `population - offset`, exactly as canonical BioNetGen
+                // 2.9.3's discrete branch does (`bng2/Network3/src/network.cpp`,
+                // `rxn_rate`: a repeated reactant is multiplied by `X - n`).  The
+                // offset travels with the reference, so the deterministic and the
+                // stochastic evaluations can read the same expression and still
+                // use the convention their own law calls for: the deterministic
+                // path resolves the reference to the plain population, the
+                // stochastic path to `population - offset`.
+                const auto reactantReference = [&crxn](std::size_t position) {
+                    const std::size_t species = crxn.reactantIndices[position];
+                    const std::size_t offset =
+                        identicalReactantOffset(crxn.reactantIndices, position);
+                    if (offset == 0) {
+                        return ast::Expression::identifier(
+                            "__substrate_" + std::to_string(species));
                     }
-                } else if (isHill) {
-                    // Hill(Vmax, Kh) with no exponent: Hill coefficient of one.
-                    baseExpr = ast::Expression::function("Hill",
-                        {ast::Expression::identifier(kcat), ast::Expression::identifier(Km),
-                         ast::Expression::number(1.0),
-                         ast::Expression::identifier("__substrate_" + std::to_string(substrateIdx))});
+                    return ast::Expression::identifier(
+                        "__substrate_" + std::to_string(species) + "_off" +
+                        std::to_string(offset));
+                };
+
+                ast::Expression baseExpr = ast::Expression::number(0.0);
+                bool builtBaseExpr = false;
+
+                if (isHill && argExprs.size() >= 2) {
+                    const ast::Expression& nExpr =
+                        (argExprs.size() >= 3) ? argExprs[2] : ast::Expression::number(1.0);
+                    const ast::Expression sRef = plainReactantRef(0);
+                    auto rawHill = ast::Expression::function(
+                        "Hill", {argExprs[0], argExprs[1], nExpr, sRef});
+                    // Guard S <= 0 -> 0.0 so Hill(Vmax, Kh, 0) never drives
+                    // substrate negative and fractional exponents never NaN.
+                    // For n <= 0, multiply by a smooth C^inf barrier S/(S+1e-9)
+                    // so CVODE integrates cleanly to S=0 without step discontinuity.
+                    auto smoothFactor = ast::Expression::function(
+                        "if", {ast::Expression::binary("<=", nExpr, ast::Expression::number(0.0)),
+                               ast::Expression::binary("/", sRef,
+                                   ast::Expression::binary("+", sRef, ast::Expression::number(1e-9))),
+                               ast::Expression::number(1.0)});
+                    baseExpr = ast::Expression::function(
+                        "if", {ast::Expression::binary(">", sRef, ast::Expression::number(0.0)),
+                               ast::Expression::binary("*", std::move(smoothFactor), std::move(rawHill)),
+                               ast::Expression::number(0.0)});
                     for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
-                        baseExpr = ast::Expression::binary("*", std::move(baseExpr),
-                            reactantReference(ri));
+                        baseExpr = ast::Expression::binary(
+                            "*", std::move(baseExpr), reactantReference(ri));
                     }
-                } else if (isMM && paramNames.size() >= 3) {
+                    builtBaseExpr = true;
+                } else if (isMM && argExprs.size() >= 3) {
                     // MM(Vmax, Km, S) with a named substrate: the simple
                     // saturating law, matching ast::Expression's 3-argument MM.
-                    baseExpr = ast::Expression::function("Sat",
-                        {ast::Expression::identifier(kcat), ast::Expression::identifier(Km),
-                         rateLawArgument(paramNames[2])});
+                    baseExpr = ast::Expression::function(
+                        "Sat", {argExprs[0], argExprs[1], argExprs[2]});
                     for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
-                        baseExpr = ast::Expression::binary("*", std::move(baseExpr),
-                            reactantReference(ri));
+                        baseExpr = ast::Expression::binary(
+                            "*", std::move(baseExpr), reactantReference(ri));
                     }
-                } else if (isMM && crxn.reactantIndices.size() >= 2) {
+                    builtBaseExpr = true;
+                } else if (isMM && argExprs.size() >= 2 && crxn.reactantIndices.size() >= 2) {
                     if (crxn.reactantIndices[0] == crxn.reactantIndices[1]) {
                         throw std::runtime_error(
                             "MM(kcat,Km) with identical substrate and enzyme "
@@ -1170,58 +1358,78 @@ void OdeIntegrator::compile() {
                     }
                     // MM(kcat, Km) with 2 reactants: self-consistent Michaelis-Menten
                     // Use 4-arg MM(kcat, Km, St, Et) which applies the quadratic formula
-                    std::size_t enzymeIdx = crxn.reactantIndices[1];
-                    baseExpr = ast::Expression::function("MM",
-                        {ast::Expression::identifier(kcat), ast::Expression::identifier(Km),
-                         ast::Expression::identifier("__substrate_" + std::to_string(substrateIdx)),
-                         ast::Expression::identifier("__substrate_" + std::to_string(enzymeIdx))});
-                    // No further mass-action multiply -- MM already includes enzyme
-                } else {
-                    // Sat(kcat, Km) or MM with single reactant: simple saturation
-                    baseExpr = ast::Expression::function("Sat",
-                        {ast::Expression::identifier(kcat), ast::Expression::identifier(Km),
-                         ast::Expression::identifier("__substrate_" + std::to_string(substrateIdx))});
-                    // Multiply by non-substrate reactant concentrations (e.g., enzyme [E])
-                    for (std::size_t ri = 1; ri < crxn.reactantIndices.size(); ++ri) {
-                        baseExpr = ast::Expression::binary("*", std::move(baseExpr),
-                            reactantReference(ri));
+                    baseExpr = ast::Expression::function(
+                        "MM", {argExprs[0], argExprs[1],
+                               plainReactantRef(0), plainReactantRef(1)});
+                    builtBaseExpr = true;
+                } else if (isMM && argExprs.size() >= 2) {
+                    // MM(kcat, Km) with single reactant: simple saturation
+                    baseExpr = ast::Expression::function(
+                        "Sat", {argExprs[0], argExprs[1], plainReactantRef(0)});
+                    builtBaseExpr = true;
+                } else if (!isHill && !isMM) {
+                    if (argExprs.size() == 1) {
+                        // 1-arg Sat(k): zeroth-order constant rate (canonical BNG2)
+                        baseExpr = argExprs[0];
+                        builtBaseExpr = true;
+                    } else {
+                        // Multi-constant Sat(k, K1, K2, ..., KN):
+                        // rate = k * prod_{i=0..M-1}(R_i - offset_i) / prod_{i=0..nDenom-1}(K_{i+1} + R_i)
+                        // where nDenom = min(argExprs.size() - 1, reactantIndices.size()).
+                        // (For a 1-reactant rule with 3 args like Sat(Vmax, Km, n),
+                        // nDenom = 1 preserves Sat(Vmax, Km, R_0).)
+                        const std::size_t nDenom =
+                            std::min(argExprs.size() - 1, crxn.reactantIndices.size());
+                        baseExpr = ast::Expression::function(
+                            "Sat", {argExprs[0], argExprs[1], plainReactantRef(0)});
+                        for (std::size_t ri = 1; ri < nDenom; ++ri) {
+                            auto denom = ast::Expression::binary(
+                                "+", argExprs[ri + 1], plainReactantRef(ri));
+                            auto satTerm = ast::Expression::function(
+                                "if",
+                                {ast::Expression::binary(
+                                     "!=", denom, ast::Expression::number(0.0)),
+                                 ast::Expression::binary("/", reactantReference(ri), denom),
+                                 ast::Expression::number(0.0)});
+                            baseExpr = ast::Expression::binary(
+                                "*", std::move(baseExpr), std::move(satTerm));
+                        }
+                        for (std::size_t ri = nDenom; ri < crxn.reactantIndices.size(); ++ri) {
+                            baseExpr = ast::Expression::binary(
+                                "*", std::move(baseExpr), reactantReference(ri));
+                        }
+                        builtBaseExpr = true;
                     }
                 }
 
-                // A special rate law is a complete flux: the engine does not
-                // multiply it by the reactant concentrations.  It does carry
-                // the rule's statistical factor and the compartment-volume
-                // conversion, because canonical Perl BNG2 2.9.3 writes both
-                // as a prefix on the rate law for every rate law type
-                // (RateLaw::toString in RateLaw.pm).  Its own network for
-                // ``@cell:A() + @cell:A() -> @cell:D() Sat(kcat,K)`` in a
-                // 100-unit volume reads ``0.005*Sat kcat K`` with
-                // ``unit_conversion=1/100.0``: 0.5 is the statistical factor
-                // of the two identical reactants and 0.01 is the volume
-                // conversion.  This engine's own network writer emits the
-                // same prefix, so the engine has to apply the same two
-                // factors or it disagrees with the network it exported.
-                //
-                // Authored TotalRate keeps the coefficient as written:
-                // canonical BioNetGen forces the statistical factor to one
-                // (Rxn.pm) and omits its unit conversion. Finite-network
-                // reactant dependence is applied later by reactionFlux().
-                double combinedFactor = 1.0;
-                if (!ruleIsTotalRate) {
-                    const auto uf =
-                        bng::io::NetWriter::computeUnitConversionFactor(
-                            rxn, model_, network_);
-                    if (uf.has_value()) combinedFactor *= *uf;
-                }
-                if (!ruleIsTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
-                    combinedFactor *= rxn.getFactor();
-                }
-                if (std::abs(combinedFactor - 1.0) >= 1e-9) {
-                    baseExpr = ast::Expression::binary("*",
-                        ast::Expression::number(combinedFactor), std::move(baseExpr));
-                }
+                if (builtBaseExpr) {
+                    // A special rate law is a complete flux: the engine does not
+                    // multiply it by the reactant concentrations.  It does carry
+                    // the rule's statistical factor and the compartment-volume
+                    // conversion, because canonical Perl BNG2 2.9.3 writes both
+                    // as a prefix on the rate law for every rate law type
+                    // (RateLaw::toString in RateLaw.pm).
+                    //
+                    // Authored TotalRate keeps the coefficient as written:
+                    // canonical BioNetGen forces the statistical factor to one
+                    // (Rxn.pm) and omits its unit conversion.
+                    double combinedFactor = 1.0;
+                    if (!ruleIsTotalRate) {
+                        const auto uf =
+                            bng::io::NetWriter::computeUnitConversionFactor(
+                                rxn, model_, network_);
+                        if (uf.has_value()) combinedFactor *= *uf;
+                    }
+                    if (!ruleIsTotalRate && std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
+                        combinedFactor *= rxn.getFactor();
+                    }
+                    if (std::abs(combinedFactor - 1.0) >= 1e-9) {
+                        baseExpr = ast::Expression::binary("*",
+                            ast::Expression::number(combinedFactor), std::move(baseExpr));
+                    }
 
-                crxn.functionalRateExpr = std::move(baseExpr);
+                    crxn.functionalRateExpr = std::move(baseExpr);
+                }
             }
         }
 
@@ -1257,7 +1465,7 @@ void OdeIntegrator::compile() {
                     // strings that the current expression parser cannot read.
                     ensureLowerRawRL();
                     if (lowerRawRL.find("time") != std::string::npos ||
-                        hasWordBoundaryMatch(lowerRawRL, "t")) {
+                        (!tIsUserSymbol_ && hasWordBoundaryMatch(lowerRawRL, "t"))) {
                         isFunctional = true;
                     }
                 }
@@ -1426,10 +1634,14 @@ void OdeIntegrator::compile() {
     compileGroups();
 
     // Build performance optimization structures
-    // 1. Observable name→index map for O(1) lookup in derivs()
+    // 1. Observable & function name→index maps for O(1) lookup in derivs()
     observableIndex_.clear();
     for (std::size_t i = 0; i < compiledGroups_.size(); ++i) {
         observableIndex_[compiledGroups_[i].name] = i;
+    }
+    functionIndex_.clear();
+    for (std::size_t i = 0; i < model_.getFunctions().size(); ++i) {
+        functionIndex_.emplace(model_.getFunctions()[i].getName(), i);
     }
 
     // Result functions are immutable for the lifetime of this integrator.
@@ -1821,7 +2033,7 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
     // evaluation used by derivs().
     std::function<double(const std::string&)> resolver;
     resolver = [&](const std::string& name) -> double {
-        if (name == "time") return t;
+        if (isClockSymbol(name)) return t;
 
         // TFUN resolution: __tfun_NAME__ -> interpolate at current time (or custom index value)
         if (name.rfind("__tfun_", 0) == 0 && name.size() > 9 && name.substr(name.size() - 2) == "__") {
@@ -1830,14 +2042,16 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
                 std::string tfunName = name.substr(7, atPos - 7);
                 try {
                     double val = std::stod(name.substr(atPos + 4, name.size() - atPos - 6));
-                    if (tfunRegistry_.has(tfunName)) {
-                        return tfunRegistry_.evaluate(tfunName, val);
+                    double tfunOut = 0.0;
+                    if (resolveTfunEntry(tfunName, val, tfunOut)) {
+                        return tfunOut;
                     }
                 } catch (...) {}
             }
             std::string tfunName = name.substr(7, name.size() - 9);
-            if (tfunRegistry_.has(tfunName)) {
-                return tfunRegistry_.evaluate(tfunName, t);
+            double tfunOut = 0.0;
+            if (resolveTfunEntry(tfunName, t, tfunOut)) {
+                return tfunOut;
             }
         }
 
@@ -1881,21 +2095,21 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
 
         // `t` must be passed: a parameter whose expression reads `time` is
         // evaluated at the current derivative time, not memoized at t=0.
+        // Check O(1) parameter and function maps directly to avoid throwing
+        // C++ exceptions and scanning functions linearly on every RHS call.
         static const std::unordered_map<std::string, double> noEventValues;
         const auto& eventValues = activeSimulationSession_
             ? activeSimulationSession_->eventParameterValues
             : noEventValues;
-        try {
+        if (eventValues.find(name) != eventValues.end() ||
+            model_.getParameters().contains(name)) {
             return evaluateParameterWithEventState(name, t, eventValues);
-        } catch (...) {
-            for (const auto& func : model_.getFunctions()) {
-                if (func.getName() == name) {
-                    return functionEvaluator_.evaluate(
-                        ast::Expression::identifier(name), resolver, t);
-                }
-            }
-            throw;
         }
+        if (functionIndex_.find(name) != functionIndex_.end()) {
+            return functionEvaluator_.evaluate(
+                ast::Expression::identifier(name), resolver, t);
+        }
+        throw std::runtime_error("Unknown parameter '" + name + "'");
     };
 
     // Every compiled functional rate at this time/state shares the same
@@ -1932,6 +2146,13 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
                 }
                 return functionEvaluator_.evaluate(
                     ast::Expression::function(funcName, argExprs), resolver, t);
+            };
+            ctx.resolveTable = [&](const std::string& tableFile, double counter) -> double {
+                double tfunOut = 0.0;
+                if (resolveTfunEntry(tableFile, counter, tfunOut)) {
+                    return tfunOut;
+                }
+                throw std::runtime_error("TFUN table '" + tableFile + "' is not loaded");
             };
             ctx.discreteReactantCounts = discreteReactantCounts;
             ctx.resolveReactantCount = [&](std::size_t reactantIdx) {
@@ -2240,6 +2461,21 @@ double OdeIntegrator::evaluateExpressionWithHistoryPrepared(
     const std::unordered_map<std::string, double>& parameters,
     const std::vector<double>& groupValues,
     bool discreteReactantCounts) const {
+    const auto* session = activeSimulationSession_;
+    double historyStart = 0.0;
+    if (session != nullptr) {
+        historyStart = !session->history.empty()
+            ? session->history.front().time
+            : session->startTime;
+    } else {
+        const auto fallback = network_.snapshotSimulationSession();
+        if (!fallback.history.empty()) {
+            historyStart = fallback.history.front().time;
+        } else if (fallback.initialized) {
+            historyStart = fallback.startTime;
+        }
+    }
+
     std::function<double(const ast::Expression&, double, const double*,
                          const std::unordered_map<std::string, double>&, bool,
                          const std::vector<double>*)> evaluateAt;
@@ -2255,7 +2491,7 @@ double OdeIntegrator::evaluateExpressionWithHistoryPrepared(
         }
         const auto& currentGroupValues = *presetGroupValues;
         const auto resolver = [&](const std::string& name) -> double {
-            if (name == "time" || name == "t") return currentTime;
+            if (isClockSymbol(name)) return currentTime;
             if (name.rfind("__substrate_", 0) == 0) {
                 const std::string rest = name.substr(12);
                 const auto marker = rest.find("_off");
@@ -2282,14 +2518,16 @@ double OdeIntegrator::evaluateExpressionWithHistoryPrepared(
                     try {
                         const double value = std::stod(
                             name.substr(atPos + 4, name.size() - atPos - 6));
-                        if (tfunRegistry_.has(tfunName)) {
-                            return tfunRegistry_.evaluate(tfunName, value);
+                        double tfunOut = 0.0;
+                        if (resolveTfunEntry(tfunName, value, tfunOut)) {
+                            return tfunOut;
                         }
                     } catch (...) {}
                 }
                 const auto tfunName = name.substr(7, name.size() - 9);
-                if (tfunRegistry_.has(tfunName)) {
-                    return tfunRegistry_.evaluate(tfunName, currentTime);
+                double tfunOut = 0.0;
+                if (resolveTfunEntry(tfunName, currentTime, tfunOut)) {
+                    return tfunOut;
                 }
             }
             const auto observable = observableIndex_.find(name);
@@ -2317,9 +2555,79 @@ double OdeIntegrator::evaluateExpressionWithHistoryPrepared(
         };
         const ast::Expression::DelayedEvaluator delayed =
             [&](const ast::Expression& delayedExpression, double delayedTime) {
-                const auto delayedState = historyStateAt(delayedTime);
-                const auto delayedParameters = historyParametersAt(delayedTime);
-                return evaluateAt(delayedExpression, delayedTime,
+                // SBML L3V2 Core Sec. 3.4.6: for t - tau <= t0, delay(x, tau)
+                // returns x evaluated at initial time t0 (not negative time).
+                const double clampedTime = std::max(historyStart, delayedTime);
+                std::vector<double> delayedState;
+                // When tau is smaller than CVODE's current step h, clampedTime
+                // lies strictly between the last accepted history point t1 and
+                // the current trial point (currentTime, currentState).
+                // Interpolate instead of clamping to stale history.back().state.
+                if (session != nullptr && !session->history.empty() &&
+                    currentState != nullptr &&
+                    clampedTime > session->history.back().time &&
+                    currentTime > session->history.back().time) {
+                    if (clampedTime >= currentTime) {
+                        delayedState.assign(currentState, currentState + nSpecies_);
+                    } else {
+                        const auto& history = session->history;
+                        const auto& p1 = history.back();
+                        const double t1 = p1.time;
+                        const double t2 = currentTime;
+                        const double h1 = t2 - t1;
+                        const double dt = clampedTime - t1;
+                        bool useCubic = false;
+                        double t0 = 0.0;
+                        double h0 = 0.0;
+                        if (history.size() >= 2) {
+                            t0 = history[history.size() - 2].time;
+                            h0 = t1 - t0;
+                            if (h0 > 1e-14 && h1 > 1e-14 &&
+                                h1 / h0 <= 10.0 && h0 / h1 <= 10.0) {
+                                useCubic = true;
+                            }
+                        }
+                        delayedState.resize(nSpecies_);
+                        if (useCubic) {
+                            // 4-point cubic Hermite Newton divided differences
+                            // on (t0, t1, t1, t2) matching y0, y1, y1', y2.
+                            const auto& p0 = history[history.size() - 2];
+                            const double invH1 = 1.0 / h1;
+                            const double invH0 = 1.0 / h0;
+                            const double invSpan = 1.0 / (t2 - t0);
+                            const double dt2 = dt * dt;
+                            const double dt2_m_t2 = dt2 * (clampedTime - t2);
+                            for (std::size_t i = 0; i < nSpecies_; ++i) {
+                                const double y0 = p0.state[i];
+                                const double y1 = p1.state[i];
+                                const double d1 = p1.derivative[i];
+                                const double y2 = currentState[i];
+                                const double f12 = (y2 - y1) * invH1;
+                                const double f112 = (f12 - d1) * invH1;
+                                const double f01 = (y1 - y0) * invH0;
+                                const double f011 = (d1 - f01) * invH0;
+                                const double f0112 = (f112 - f011) * invSpan;
+                                delayedState[i] =
+                                    y1 + d1 * dt + f112 * dt2 + f0112 * dt2_m_t2;
+                            }
+                        } else {
+                            // Quadratic Hermite on (t1, y1, y1') and (t2, y2).
+                            const double s = dt / h1;
+                            const double s2 = s * s;
+                            for (std::size_t i = 0; i < nSpecies_; ++i) {
+                                const double y1 = p1.state[i];
+                                const double d1 = p1.derivative[i];
+                                const double y2 = currentState[i];
+                                delayedState[i] =
+                                    y1 + dt * d1 + s2 * (y2 - y1 - h1 * d1);
+                            }
+                        }
+                    }
+                } else {
+                    delayedState = historyStateAt(clampedTime);
+                }
+                const auto delayedParameters = historyParametersAt(clampedTime);
+                return evaluateAt(delayedExpression, clampedTime,
                                   delayedState.data(), delayedParameters, false,
                                   nullptr);
             };
@@ -2466,26 +2774,8 @@ std::optional<ast::Expression> OdeIntegrator::parseStopIf(
 bool OdeIntegrator::stopConditionMet(const ast::Expression& condition,
                                      double time,
                                      const std::vector<double>& state) const {
-    std::vector<double> groupValues;
-    updateGroups(state.data(), groupValues);
-
-    const auto resolver = [&](const std::string& name) -> double {
-        if (name == "time") {
-            return time;
-        }
-        const auto observable = observableIndex_.find(name);
-        if (observable != observableIndex_.end()) {
-            return groupValues[observable->second];
-        }
-        static const std::unordered_map<std::string, double> noEventValues;
-        const auto& eventValues = activeSimulationSession_
-            ? activeSimulationSession_->eventParameterValues
-            : noEventValues;
-        return evaluateParameterWithEventState(name, time, eventValues);
-    };
-
     try {
-        return condition.evaluate(resolver, time) != 0.0;
+        return evaluateExpressionWithHistory(condition, time, state.data()) != 0.0;
     } catch (const std::exception& error) {
         throw std::runtime_error(
             "Failed to evaluate stop_if expression '" +
@@ -2563,7 +2853,7 @@ bool OdeIntegrator::isDiscreteConjunct(const ast::Expression& conjunct) const {
         if (node.kind() == ast::ExpressionKind::Identifier ||
             node.kind() == ast::ExpressionKind::ObservableRef) {
             const auto& name = node.name();
-            if (name == "time" || name == "t") {
+            if (isClockSymbol(name)) {
                 discrete = false;
                 return;
             }
@@ -2626,7 +2916,7 @@ bool OdeIntegrator::isProvablyStrictlyPositiveInvariant(
             }
             if (node.kind() == ast::ExpressionKind::Identifier ||
                 node.kind() == ast::ExpressionKind::ObservableRef) {
-                if (node.name() == "time" || node.name() == "t") return false;
+                if (isClockSymbol(node.name())) return false;
                 const auto obs = observableIndex_.find(node.name());
                 if (obs != observableIndex_.end()) {
                     if (obs->second >= compiledGroups_.size()) return false;
@@ -3406,8 +3696,9 @@ OdeIntegrator::HybridSsaPlan OdeIntegrator::analyzeHybridSsa() const {
         [&](const auto& self, const ast::Expression& expression) -> bool {
             if ((expression.kind() == ast::ExpressionKind::Identifier ||
                  expression.kind() == ast::ExpressionKind::Function) &&
-                (expression.name() == "time" || expression.name() == "t" ||
-                 model_.getParameters().isTimeDependent(expression.name()))) {
+                (isClockSymbol(expression.name()) ||
+                 (model_.getParameters().contains(expression.name()) &&
+                  model_.getParameters().isTimeDependent(expression.name())))) {
                 return true;
             }
             if (expression.kind() == ast::ExpressionKind::Identifier ||
@@ -3461,7 +3752,7 @@ bool OdeIntegrator::isAffineInTime(
             case ast::ExpressionKind::Identifier:
             case ast::ExpressionKind::ObservableRef: {
                 const auto& name = node.name();
-                if (name == "time" || name == "t") return 1;
+                if (isClockSymbol(name)) return 1;
                 const auto obsIt = observableIndex_.find(name);
                 if (obsIt != observableIndex_.end()) {
                     if (continuousSpecies != nullptr) {
@@ -3504,7 +3795,7 @@ bool OdeIntegrator::isAffineInTime(
                 return -1;
             }
             case ast::ExpressionKind::Function: {
-                if (node.name() == "time" || node.name() == "t") return 1;
+                if (isClockSymbol(node.name())) return 1;
                 if (node.name() == "delay" || node.name() == "tfun" ||
                     node.name() == "TFUN") {
                     return -1;
@@ -3533,7 +3824,7 @@ std::pair<double, double> OdeIntegrator::evaluateAffineInTime(
                 return {node.numberValue(), 0.0};
             case ast::ExpressionKind::Identifier:
             case ast::ExpressionKind::ObservableRef: {
-                if (node.name() == "time" || node.name() == "t") {
+                if (isClockSymbol(node.name())) {
                     return {time, 1.0};
                 }
                 double slope = 0.0;
@@ -3572,7 +3863,7 @@ std::pair<double, double> OdeIntegrator::evaluateAffineInTime(
                 return {eventValue(node, time, state), 0.0};
             }
             case ast::ExpressionKind::Function:
-                if (node.name() == "time" || node.name() == "t") {
+                if (isClockSymbol(node.name())) {
                     return {time, 1.0};
                 }
                 return {eventValue(node, time, state), 0.0};
@@ -3750,7 +4041,7 @@ double OdeIntegrator::eventSideDerivative(const ast::Expression& expression,
         return 0.0;
     case ast::ExpressionKind::Identifier:
     case ast::ExpressionKind::ObservableRef: {
-        if (expression.name() == "time" || expression.name() == "t") return 1.0;
+        if (isClockSymbol(expression.name())) return 1.0;
         const auto observable = observableIndex_.find(expression.name());
         if (observable == observableIndex_.end()) return 0.0;
         double total = 0.0;
@@ -4216,6 +4507,7 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         }
     }
     activeSimulationSession_ = &working;
+    interventionPreState_ = hasNetworkIntervention ? &stateBeforeIntervention : nullptr;
     try {
         if (!working.rngInitialized) {
             const std::mt19937_64::result_type seedValue =
@@ -4263,9 +4555,11 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         }
         working.initialized = true;
         network_.replaceSimulationSession(std::move(working));
+        interventionPreState_ = nullptr;
         activeSimulationSession_ = nullptr;
         return result;
     } catch (...) {
+        interventionPreState_ = nullptr;
         activeSimulationSession_ = nullptr;
         throw;
     }
@@ -4288,6 +4582,10 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
     if (options.method == "ssa" && options.batchSize > 0 &&
         !options.stopIf.empty()) {
         throw std::runtime_error("batch SSA does not support stop_if");
+    }
+    if (options.method == "ssa" && options.batchSize > 0 &&
+        options.outputStepInterval > 0) {
+        throw std::runtime_error("batch SSA does not support output_step_interval");
     }
     if (nSpecies_ == 0 &&
         (options.method == "euler" || options.method == "rk4" ||
@@ -4452,7 +4750,11 @@ OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
             derivs(currentTime, y.data(), dydt.data());
             for (std::size_t i = 0; i < nSpecies_; ++i) {
                 y[i] += dt * dydt[i];
-                if (y[i] < 0.0) y[i] = 0.0;
+                if (!std::isfinite(y[i])) {
+                    throw std::runtime_error(
+                        "Euler integration produced a non-finite state value");
+                }
+                if (opts.enforceNonnegative && y[i] < 0.0) y[i] = 0.0;
             }
             currentTime = targetTime;
         }
@@ -4520,31 +4822,32 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
                 // k2 = f(t + dt/2, y + dt*k1/2)
                 for (std::size_t i = 0; i < nSpecies_; ++i) {
                     yTemp[i] = y[i] + 0.5 * dt * k1[i];
-                    if (yTemp[i] < 0.0) yTemp[i] = 0.0;
+                    if (opts.enforceNonnegative && yTemp[i] < 0.0) yTemp[i] = 0.0;
                 }
                 derivs(t + 0.5 * dt, yTemp.data(), k2.data());
 
                 // k3 = f(t + dt/2, y + dt*k2/2)
                 for (std::size_t i = 0; i < nSpecies_; ++i) {
                     yTemp[i] = y[i] + 0.5 * dt * k2[i];
-                    if (yTemp[i] < 0.0) yTemp[i] = 0.0;
+                    if (opts.enforceNonnegative && yTemp[i] < 0.0) yTemp[i] = 0.0;
                 }
                 derivs(t + 0.5 * dt, yTemp.data(), k3.data());
 
                 // k4 = f(t + dt, y + dt*k3)
                 for (std::size_t i = 0; i < nSpecies_; ++i) {
                     yTemp[i] = y[i] + dt * k3[i];
-                    if (yTemp[i] < 0.0) yTemp[i] = 0.0;
+                    if (opts.enforceNonnegative && yTemp[i] < 0.0) yTemp[i] = 0.0;
                 }
                 derivs(t + dt, yTemp.data(), k4.data());
 
                 // y_next = y + dt/6 * (k1 + 2*k2 + 2*k3 + k4)
                 for (std::size_t i = 0; i < nSpecies_; ++i) {
                     y[i] += (dt / 6.0) * (k1[i] + 2.0 * k2[i] + 2.0 * k3[i] + k4[i]);
-                    if (y[i] < 0.0) y[i] = 0.0;  // Clamp negative concentrations
                     if (!std::isfinite(y[i])) {
-                        y[i] = 0.0;
+                        throw std::runtime_error(
+                            "RK4 integration produced a non-finite state value");
                     }
+                    if (opts.enforceNonnegative && y[i] < 0.0) y[i] = 0.0;
                 }
 
                 t += dt;
@@ -4808,13 +5111,16 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
         throw std::runtime_error("Failed to open " + prefix + ".gdat for writing");
     }
 
-    // Collect function names and expressions for print_functions output
+    // Collect zero-argument global function names and expressions for
+    // print_functions output (skip argument-bearing/local functions, matching
+    // canonical BNG2 and result.functions).
     std::vector<std::string> funcNames;
     std::vector<ast::Expression> funcExprs;
     if (printFunctions) {
         funcNames.reserve(model_.getFunctions().size());
         funcExprs.reserve(model_.getFunctions().size());
         for (const auto& function : model_.getFunctions()) {
+            if (!function.getArgs().empty()) continue;
             funcNames.push_back(function.getName());
             funcExprs.push_back(function.getExpression());
         }
@@ -4965,6 +5271,15 @@ void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeR
 // is large enough to pay for the launch; otherwise falls back to the CPU pool.
 // ---------------------------------------------------------------------------
 OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
+    if (opts.outputStepInterval > 0) {
+        throw std::runtime_error("batch SSA does not support output_step_interval");
+    }
+    unsigned int resolvedBaseSeed = opts.seed;
+    if (resolvedBaseSeed == 0) {
+        std::random_device rd;
+        resolvedBaseSeed = rd();
+        if (resolvedBaseSeed == 0) resolvedBaseSeed = 1u;
+    }
     const bool hasDelayedReactions = std::any_of(
         compiledRxns_.begin(), compiledRxns_.end(),
         [](const CompiledReaction& reaction) { return reaction.delay > 0.0; });
@@ -4995,7 +5310,7 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
                         batchOpts.tStart    = opts.tStart;
                         batchOpts.tEnd      = opts.tEnd;
                         batchOpts.nSteps    = static_cast<int>(opts.nSteps);
-                        batchOpts.baseSeed  = opts.seed;
+                        batchOpts.baseSeed  = resolvedBaseSeed;
                         batchOpts.maxSimSteps = opts.maxSimSteps;
                         auto metrics = backend->simulate(flat, batchOpts);
 
@@ -5054,11 +5369,17 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
     OdeOptions singleOpts = opts;
     singleOpts.batchSize = 0;
     singleOpts.isolatedTrajectory = true;
-    singleOpts.seed = (opts.seed == 0) ? 1u : opts.seed;
+    singleOpts.seed = resolvedBaseSeed;
     const auto refTimes = outputTimes(singleOpts);
     const std::size_t T = refTimes.size();
     const std::size_t S = nSpecies_;
     const std::size_t G = compiledGroups_.size();
+    const double gridScaleRef = std::max(
+        std::abs(opts.tEnd - opts.tStart),
+        std::max(std::abs(opts.tStart), std::abs(opts.tEnd)));
+    const double gridTol =
+        64.0 * std::numeric_limits<double>::epsilon() *
+        (gridScaleRef > 0.0 ? gridScaleRef : 1.0);
 
     // Accumulators (mean, M2 for Welford online variance)
     std::vector<std::vector<double>> sumSpec(T, std::vector<double>(S, 0.0));
@@ -5093,18 +5414,28 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
                 // batchTrajectorySeed in engine/BatchSsa.hpp for why this is a
                 // hash of (base, traj) rather than base + traj, and why it must
                 // match the GPU backends' derivation exactly.
-                const unsigned int base = (opts.seed == 0) ? 1u : opts.seed;
-                trajOpts.seed = batchTrajectoryEngineSeed(base, traj);
+                trajOpts.seed = batchTrajectoryEngineSeed(resolvedBaseSeed, traj);
                 OdeResult r = localInt.integrate(trajOpts);
                 locEvents += r.eventCount;
-                for (std::size_t t = 0; t < std::min(T, r.timePoints.size()); ++t) {
-                    for (std::size_t s = 0; s < std::min(S, r.concentrations[t].size()); ++s) {
-                        locSumSpec[t][s]   += r.concentrations[t][s];
-                        locSumSqSpec[t][s] += r.concentrations[t][s] * r.concentrations[t][s];
+                if (r.timePoints.empty()) continue;
+                // Map piecewise-constant trajectory samples onto refTimes:
+                // if max_sim_steps stops a trajectory early, hold its frozen
+                // final state through tEnd instead of zeroing remaining slots.
+                std::size_t sampleIdx = 0;
+                for (std::size_t t = 0; t < T; ++t) {
+                    while (sampleIdx + 1 < r.timePoints.size() &&
+                           r.timePoints[sampleIdx + 1] <= refTimes[t] + gridTol) {
+                        ++sampleIdx;
                     }
-                    for (std::size_t g = 0; g < std::min(G, r.observables[t].size()); ++g) {
-                        locSumObs[t][g]   += r.observables[t][g];
-                        locSumSqObs[t][g] += r.observables[t][g] * r.observables[t][g];
+                    const auto& conc = r.concentrations[sampleIdx];
+                    const auto& obs = r.observables[sampleIdx];
+                    for (std::size_t s = 0; s < std::min(S, conc.size()); ++s) {
+                        locSumSpec[t][s]   += conc[s];
+                        locSumSqSpec[t][s] += conc[s] * conc[s];
+                    }
+                    for (std::size_t g = 0; g < std::min(G, obs.size()); ++g) {
+                        locSumObs[t][g]   += obs[g];
+                        locSumSqObs[t][g] += obs[g] * obs[g];
                     }
                 }
             }
@@ -5326,6 +5657,37 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         times.insert(times.begin(), opts.tStart);
     }
     initializePeriodicEventClocks(initialState, opts.continueSimulation, opts.tStart);
+    const auto refreshLastRootValues = [&](double atTime, const std::vector<double>& atState) {
+        if (lastRootValues_.size() != nativeEventGroups_.size()) {
+            lastRootValues_.resize(nativeEventGroups_.size(), 0.0);
+        }
+        for (std::size_t g = 0; g < nativeEventGroups_.size(); ++g) {
+            lastRootValues_[g] = eventRootValue(
+                nativeEventGroups_[g].trigger, atTime, atState.data());
+        }
+    };
+    const auto triggerCrossedAtRoot = [&](const ast::Expression& trigger,
+                                          double atTime,
+                                          const double* atState,
+                                          const std::vector<double>& derivatives) -> bool {
+        bool hasRisingConjunct = false;
+        for (const auto* conjunct : triggerConjuncts(trigger)) {
+            if (discreteEventConjuncts_.count(conjunct)) {
+                if (!triggerHolds(*conjunct, atTime, atState)) return false;
+                continue;
+            }
+            const double cval = eventRootValue(*conjunct, atTime, atState);
+            const double ctol = 1e-9 * (1.0 + std::abs(cval));
+            if (cval < -ctol) return false;
+            if (std::abs(cval) <= ctol) {
+                if (eventRootDerivative(*conjunct, atTime, atState, derivatives) <= 0.0) {
+                    return false;
+                }
+                hasRisingConjunct = true;
+            }
+        }
+        return hasRisingConjunct;
+    };
     std::vector<double> tStartOutputState = initialState;
     if (!nativeEvents_.empty()) {
         // The root function value of every group at the start of the run.
@@ -5341,6 +5703,26 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
             lastRootValues_.push_back(initialRoot);
             zeroRootStrictGroups_[groupIndex] =
                 (initialRoot == 0.0 && isStrictTrigger(group.trigger));
+        }
+        // On a continued phase with an intervening setConcentration /
+        // addConcentration, test whether any trigger transitioned from
+        // false (pre-intervention) to true (post-intervention) at tStart.
+        if (opts.continueSimulation && interventionPreState_ != nullptr &&
+            interventionPreState_->size() == nSpecies_) {
+            std::vector<bool> heldBefore;
+            heldBefore.reserve(nativeEvents_.size());
+            for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
+                const auto& event = nativeEvents_[index];
+                const bool handledByClock =
+                    periodicClockTriggers_.count(&event.trigger) > 0;
+                const bool alreadyRose = triggerRoseAt_[index] >= opts.tStart;
+                heldBefore.push_back(
+                    handledByClock || alreadyRose ||
+                    triggerHolds(event.trigger, opts.tStart,
+                                 interventionPreState_->data()));
+            }
+            pruneNonPersistentEvents(opts.tStart, initialState);
+            retestTriggers(opts.tStart, initialState, heldBefore);
         }
         // First apply events that genuinely hold at tStart with initial_value=false
         // (SBML L3V2 Core Sec. 4.12.2). Their assignments belong to the t=tStart
@@ -5365,6 +5747,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         if (applyDueEvents(opts.tStart, initialState)) {
             recordHistoryJump(opts.tStart, initialState);
         }
+        refreshLastRootValues(opts.tStart, initialState);
         tStartOutputState = initialState;
         // Now queue strict triggers whose root starts at zero and is rising at
         // tStart (e.g. ``time > 0``). The trigger itself is false at tStart and
@@ -5421,6 +5804,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         if (applyDueEvents(opts.tStart, initialState)) {
             recordHistoryJump(opts.tStart, initialState);
         }
+        refreshLastRootValues(opts.tStart, initialState);
     }
 
     // The SUNDIALS handles used below are raw pointers with manual
@@ -5448,17 +5832,34 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
     }
 
     // Converted SBML models can legitimately combine sub-molecular amounts
-    // with molecule-number rate constants.  Integrating those raw values
-    // makes CVODE's initial Newton step ill-conditioned even when the source
-    // model and the generated network are finite.  Use a per-state scale
-    // based on the initial amount and one characteristic time of motion.
+    // with molecule-number rate constants.  Use a per-state scale based on
+    // initial nonzero amounts; for zero-initialized species, bound the
+    // derivative-based estimate by the maximum initial state so fast stiff
+    // transients (e.g. k=1e12 over t_end=1e10) never over-scale states by
+    // 1e22 and induce conservation drift or mxstep failures.
     derivs(opts.tStart, initialState.data(), initialDerivatives.data());
-    const double timeScale = std::max(std::abs(opts.tEnd - opts.tStart), 1.0);
+    const double span = (opts.tEnd > opts.tStart) ? (opts.tEnd - opts.tStart) : 1.0;
+    double maxInitialState = 0.0;
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        if (std::isfinite(initialState[i])) {
+            maxInitialState = std::max(maxInitialState, std::abs(initialState[i]));
+        }
+    }
     cvodeStateScale_.resize(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         double scale = std::abs(initialState[i]);
-        if (std::isfinite(initialDerivatives[i])) {
-            scale = std::max(scale, std::abs(initialDerivatives[i]) * timeScale);
+        if (scale < 1e-30) {
+            if (std::isfinite(initialDerivatives[i]) &&
+                std::abs(initialDerivatives[i]) > 0.0) {
+                const double derivScale = std::abs(initialDerivatives[i]) * span;
+                if (maxInitialState >= 1e-30) {
+                    scale = std::min(derivScale, maxInitialState);
+                } else {
+                    scale = std::min(derivScale, 1e6);
+                }
+            } else if (maxInitialState >= 1e-30) {
+                scale = maxInitialState;
+            }
         }
         if (!std::isfinite(scale) || scale < 1e-30) scale = 1.0;
         // Event-only propagation is exact; scaling would unnecessarily round
@@ -5549,14 +5950,24 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
     // Set user data
     CVodeSetUserData(cvode_mem, this);
     if (!nativeEventRoots_.empty()) {
-        // One root per trigger group.  The root function is positive exactly
-        // where the trigger holds, so an increasing crossing is the trigger's
-        // rising edge.
+        // One root per trigger conjunct. Monitor rising edges (+1) for
+        // persistent-only groups, and BOTH rising and falling edges (0) when
+        // any event in the group has persistent == false (SBML L3V2 §4.12.2).
         const auto roots = static_cast<int>(nativeEventRoots_.size());
         if (CVodeRootInit(cvode_mem, roots, cvodeEventRootWrapper) != CV_SUCCESS) {
             throw std::runtime_error("bng3_events CVodeRootInit failed");
         }
         std::vector<int> directions(static_cast<std::size_t>(roots), 1);
+        for (int r = 0; r < roots; ++r) {
+            const std::size_t groupIndex =
+                nativeEventRoots_[static_cast<std::size_t>(r)].first;
+            for (const auto eventIndex : nativeEventGroups_[groupIndex].events) {
+                if (!nativeEvents_[eventIndex].persistent) {
+                    directions[static_cast<std::size_t>(r)] = 0;
+                    break;
+                }
+            }
+        }
         CVodeSetRootDirection(cvode_mem, directions.data());
     }
 
@@ -5631,6 +6042,15 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         recordHistoryPoint(t, state);
     }
 
+    // Collect step-discontinuity knot times from any time-indexed
+    // tfun(..., method=>"step") within (tStart, tEnd) so CVODE never steps
+    // over narrow step pulses.
+    const std::vector<double> stepKnots = collectStepKnots(opts.tStart, opts.tEnd);
+    std::size_t nextStepKnotIdx = 0;
+    const double stepKnotTol =
+        64.0 * std::numeric_limits<double>::epsilon() *
+        std::max(1.0, std::max(std::abs(opts.tStart), std::abs(opts.tEnd)));
+
     // A strict trigger that starts with root exactly zero needs a right-limit
     // probe: CVODE cannot localize a crossing out of a root that starts at
     // zero, so the per-step poll would not run until the first requested output
@@ -5650,6 +6070,14 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 // A queued event executes at its own instant, so the solver
                 // stops there before the output grid continues.
                 double target = tOut;
+                while (nextStepKnotIdx < stepKnots.size() &&
+                       stepKnots[nextStepKnotIdx] <= t + stepKnotTol) {
+                    ++nextStepKnotIdx;
+                }
+                if (nextStepKnotIdx < stepKnots.size() &&
+                    stepKnots[nextStepKnotIdx] < target) {
+                    target = stepKnots[nextStepKnotIdx];
+                }
                 for (const auto& clock : periodicEventClocks_) {
                     if (clock.next > t && clock.next < target) target = clock.next;
                 }
@@ -5696,6 +6124,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         dueState[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
                     }
                     if (!applyDueEvents(t, dueState)) break;
+                    refreshLastRootValues(t, dueState);
                     for (std::size_t i = 0; i < nSpecies_; ++i) {
                         NV_Ith_S(y, i) = dueState[i] / cvodeStateScale_[i];
                     }
@@ -5706,16 +6135,22 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                     continue;
                 }
                 if (periodicEventClocks_.empty() &&
-                    (target < tOut - 1e-12 || recordsHistory())) {
+                    (target < tOut - stepKnotTol || recordsHistory() ||
+                     nextStepKnotIdx < stepKnots.size())) {
                     // CV_NORMAL may step past a returned output/root time.
-                    // If target is already inside that step, CVode interpolates
-                    // to it; a stop behind the internal time is invalid.
+                    // Never allow CVODE to step internally past a pending
+                    // stop target or an upcoming tfun step discontinuity.
+                    double stopAt = target;
+                    if (!(target < tOut - stepKnotTol || recordsHistory()) &&
+                        nextStepKnotIdx < stepKnots.size()) {
+                        stopAt = stepKnots[nextStepKnotIdx];
+                    }
                     sunrealtype internalTime;
                     if (CVodeGetCurrentTime(cvode_mem, &internalTime) != CV_SUCCESS) {
                         throw std::runtime_error("CVodeGetCurrentTime failed");
                     }
-                    if (target > internalTime &&
-                        CVodeSetStopTime(cvode_mem, target) != CV_SUCCESS) {
+                    if (stopAt > internalTime &&
+                        CVodeSetStopTime(cvode_mem, stopAt) != CV_SUCCESS) {
                         throw std::runtime_error("CVodeSetStopTime failed");
                     }
                 }
@@ -5782,15 +6217,48 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                     bool anyRisingRoot = std::any_of(
                         rootsFound.begin(), rootsFound.end(),
                         [](int rootDirection) { return rootDirection > 0; });
-                    if (anyRisingRoot) {
+                    bool anyFallingRoot = std::any_of(
+                        rootsFound.begin(), rootsFound.end(),
+                        [](int rootDirection) { return rootDirection < 0; });
+                    if (anyRisingRoot || anyFallingRoot) {
                         std::vector<double> state(nSpecies_);
                         for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
                         recordHistoryPoint(t, state);
-                        // The session owns the SUNDIALS handles: an
-                        // exception here unwinds the integration and the
-                        // session releases the linear solver, the matrix,
-                        // the solver memory, the vector and the context
-                        // exactly once.
+                        // Cancel any pending non-persistent events whose trigger
+                        // just crossed downward (SBML L3V2 Core §4.12.2).
+                        std::set<std::size_t> fallingGroups;
+                        if (anyFallingRoot) {
+                            std::unordered_set<std::size_t> fallingEvents;
+                            for (std::size_t rootIndex = 0; rootIndex < rootsFound.size(); ++rootIndex) {
+                                if (rootsFound[rootIndex] < 0) {
+                                    const auto group = nativeEventRoots_[rootIndex].first;
+                                    fallingGroups.insert(group);
+                                    for (const auto evIdx : nativeEventGroups_[group].events) {
+                                        if (!nativeEvents_[evIdx].persistent) {
+                                            fallingEvents.insert(evIdx);
+                                        }
+                                    }
+                                }
+                            }
+                            const double cancelTol =
+                                periodicEventClocks_.empty() ? 1e-12 : 0.0;
+                            if (!fallingEvents.empty()) {
+                                pendingEvents_.erase(
+                                    std::remove_if(
+                                        pendingEvents_.begin(), pendingEvents_.end(),
+                                        [&](const PendingEvent& pending) {
+                                            if (fallingEvents.count(pending.event) == 0) {
+                                                return false;
+                                            }
+                                            return pending.executionTime > t + cancelTol ||
+                                                   !triggerHolds(
+                                                       nativeEvents_[pending.event].trigger,
+                                                       t, state.data());
+                                        }),
+                                    pendingEvents_.end());
+                            }
+                            pruneNonPersistentEvents(t, state);
+                        }
                         std::vector<double> derivatives(nSpecies_);
                         derivs(t, state.data(), derivatives.data());
                         std::set<std::size_t> risingGroups;
@@ -5850,7 +6318,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         // root function had at the last instant the events
                         // were processed.
                         for (std::size_t other = 0; other < nativeEventGroups_.size(); ++other) {
-                            if (risingGroups.count(other)) continue;
+                            if (risingGroups.count(other) || fallingGroups.count(other)) continue;
                             const double value = eventRootValue(
                                 nativeEventGroups_[other].trigger, t, state.data());
                             const double previous = lastRootValues_[other];
@@ -5863,14 +6331,11 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                                 crossed = false;
                             } else {
                                 // The group is at its root, where the sign of
-                                // the root function is the interpolation
-                                // error.  Its rate of change decides the
-                                // direction of the crossing.
-                                std::vector<double> derivatives(nSpecies_);
-                                derivs(t, state.data(), derivatives.data());
-                                crossed = eventRootDerivative(
-                                    nativeEventGroups_[other].trigger, t, state.data(),
-                                    derivatives) > 0.0;
+                                // the root function is the interpolation error.
+                                // Check every conjunct (handling && properly).
+                                crossed = triggerCrossedAtRoot(
+                                    nativeEventGroups_[other].trigger, t,
+                                    state.data(), derivatives);
                             }
                             if (crossed) {
                                 if (other < zeroRootStrictGroups_.size()) {
@@ -5878,10 +6343,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                                 }
                                 queueTriggeredGroup(other, t, state);
                             }
-                        }
-                        for (std::size_t other = 0; other < nativeEventGroups_.size(); ++other) {
-                            lastRootValues_[other] = eventRootValue(
-                                nativeEventGroups_[other].trigger, t, state.data());
                         }
                         // The trigger just became true, so the events that
                         // execute at this instant run now.  A delayed event
@@ -5893,6 +6354,11 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                                 throw std::runtime_error("bng3_events CVodeReInit failed");
                             }
                         }
+                        // Refresh lastRootValues_ AFTER applyDueEvents so any
+                        // state change from discrete assignments or cascades
+                        // is reflected and previously triggered events cannot
+                        // spuriously re-fire on a later unrelated root return.
+                        refreshLastRootValues(t, state);
                     }
                     if (t >= tOut) break;
                     continue;
@@ -5907,6 +6373,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                     recordHistoryPoint(t, dueState);
                     queueDuePeriodicEventClocks(t, dueState);
                     if (applyDueEvents(t, dueState)) {
+                        refreshLastRootValues(t, dueState);
                         for (std::size_t i = 0; i < nSpecies_; ++i) {
                             NV_Ith_S(y, i) = dueState[i] / cvodeStateScale_[i];
                         }
@@ -5916,6 +6383,25 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                             throw std::runtime_error("bng3_events CVodeReInit failed");
                         }
                         continue;
+                    }
+                    bool reachedStepKnot = false;
+                    while (nextStepKnotIdx < stepKnots.size() &&
+                           stepKnots[nextStepKnotIdx] <= t + stepKnotTol) {
+                        ++nextStepKnotIdx;
+                        reachedStepKnot = true;
+                    }
+                    if (reachedStepKnot && t < opts.tEnd) {
+                        if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
+                            throw std::runtime_error("tfun step knot CVodeReInit failed");
+                        }
+                        if (activeSimulationSession_ && recordsHistory()) {
+                            auto& discontinuities =
+                                activeSimulationSession_->discontinuities;
+                            if (discontinuities.empty() ||
+                                std::abs(discontinuities.back() - t) > 1e-12) {
+                                discontinuities.push_back(t);
+                            }
+                        }
                     }
                     const double timeTolerance = periodicEventClocks_.empty() ? 1e-12 : 0.0;
                     if (t < target - timeTolerance) continue;
@@ -6071,15 +6557,91 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
             ? activeSimulationSession_->state[i]
             : network_.species.get(i).getAmount();
     }
-    correctAlgebraicState(initialState, opts.tStart,
-        std::max(opts.atol, 32.0 * std::numeric_limits<double>::epsilon()));
+    const double algebraicTol = opts.atol > 0.0
+        ? opts.atol
+        : 32.0 * std::numeric_limits<double>::epsilon();
+    correctAlgebraicState(initialState, opts.tStart, algebraicTol);
+    const auto refreshLastRootValues = [&](double atTime, const std::vector<double>& atState) {
+        if (lastRootValues_.size() != nativeEventGroups_.size()) {
+            lastRootValues_.resize(nativeEventGroups_.size(), 0.0);
+        }
+        for (std::size_t g = 0; g < nativeEventGroups_.size(); ++g) {
+            lastRootValues_[g] = eventRootValue(
+                nativeEventGroups_[g].trigger, atTime, atState.data());
+        }
+    };
+    const auto triggerCrossedAtRoot = [&](const ast::Expression& trigger,
+                                          double atTime,
+                                          const double* atState,
+                                          const std::vector<double>& derivatives) -> bool {
+        bool hasRisingConjunct = false;
+        for (const auto* conjunct : triggerConjuncts(trigger)) {
+            if (discreteEventConjuncts_.count(conjunct)) {
+                if (!triggerHolds(*conjunct, atTime, atState)) return false;
+                continue;
+            }
+            const double cval = eventRootValue(*conjunct, atTime, atState);
+            const double ctol = 1e-9 * (1.0 + std::abs(cval));
+            if (cval < -ctol) return false;
+            if (std::abs(cval) <= ctol) {
+                if (eventRootDerivative(*conjunct, atTime, atState, derivatives) <= 0.0) {
+                    return false;
+                }
+                hasRisingConjunct = true;
+            }
+        }
+        return hasRisingConjunct;
+    };
     lastRootValues_.clear();
     for (const auto& group : nativeEventGroups_) {
         lastRootValues_.push_back(
             eventRootValue(group.trigger, opts.tStart, initialState.data()));
     }
+    if (opts.continueSimulation && interventionPreState_ != nullptr &&
+        interventionPreState_->size() == nSpecies_ && !nativeEvents_.empty()) {
+        std::vector<bool> heldBefore;
+        heldBefore.reserve(nativeEvents_.size());
+        for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
+            const auto& event = nativeEvents_[index];
+            const bool alreadyRose = triggerRoseAt_[index] >= opts.tStart;
+            heldBefore.push_back(
+                alreadyRose ||
+                triggerHolds(event.trigger, opts.tStart,
+                             interventionPreState_->data()));
+        }
+        pruneNonPersistentEvents(opts.tStart, initialState);
+        retestTriggers(opts.tStart, initialState, heldBefore);
+    }
+    // First apply events that genuinely hold at tStart with initial_value=false
+    // (and any continuation intervention triggers). Their assignments belong to
+    // the t=tStart output state.
     for (std::size_t index = 0;
          !opts.continueSimulation && index < nativeEvents_.size(); ++index) {
+        const auto& event = nativeEvents_[index];
+        if (!event.initialValue &&
+            triggerHolds(event.trigger, opts.tStart, initialState.data())) {
+            PendingEvent pending;
+            pending.event = index;
+            pending.executionTime =
+                opts.tStart + eventDelay(event, opts.tStart, initialState.data());
+            if (event.useValuesFromTriggerTime) {
+                pending.values = eventValues(event, opts.tStart, initialState.data());
+            }
+            triggerRoseAt_[index] = opts.tStart;
+            pendingEvents_.push_back(std::move(pending));
+        }
+    }
+    if (applyDueEvents(opts.tStart, initialState)) {
+        correctAlgebraicState(initialState, opts.tStart, algebraicTol);
+    }
+    refreshLastRootValues(opts.tStart, initialState);
+    std::vector<double> tStartOutputState = initialState;
+    // Now queue strict triggers whose root starts at zero and is rising at
+    // tStart (e.g. ``time > 0``). The trigger is false at tStart and rises at
+    // tStart+, so tStartOutputState is preserved for the t=tStart output row.
+    for (std::size_t index = 0;
+         !opts.continueSimulation && index < nativeEvents_.size(); ++index) {
+        if (triggerRoseAt_[index] >= opts.tStart) continue;
         const auto& event = nativeEvents_[index];
         if (isStrictTrigger(event.trigger)) {
             const double rootValue = eventRootValue(
@@ -6115,31 +6677,30 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                 }
             }
         }
-        if (!event.initialValue &&
-            triggerHolds(event.trigger, opts.tStart, initialState.data())) {
-            PendingEvent pending;
-            pending.event = index;
-            pending.executionTime =
-                opts.tStart + eventDelay(event, opts.tStart, initialState.data());
-            if (event.useValuesFromTriggerTime) {
-                pending.values = eventValues(event, opts.tStart, initialState.data());
-            }
-            triggerRoseAt_[index] = opts.tStart;
-            pendingEvents_.push_back(std::move(pending));
-        }
     }
     if (!opts.continueSimulation && applyDueEvents(opts.tStart, initialState)) {
-        correctAlgebraicState(initialState, opts.tStart,
-            std::max(opts.atol, 32.0 * std::numeric_limits<double>::epsilon()));
-        for (std::size_t group = 0; group < nativeEventGroups_.size(); ++group) {
-            lastRootValues_[group] = eventRootValue(
-                nativeEventGroups_[group].trigger, opts.tStart, initialState.data());
-        }
+        correctAlgebraicState(initialState, opts.tStart, algebraicTol);
     }
+    refreshLastRootValues(opts.tStart, initialState);
     recordHistoryPoint(opts.tStart, initialState);
     std::vector<double> initialRhs(nSpecies_);
     derivs(opts.tStart, initialState.data(), initialRhs.data());
-    const double timeScale = std::max(std::abs(opts.tEnd - opts.tStart), 1.0);
+    const double span = std::abs(opts.tEnd - opts.tStart);
+    const double derivSpan = (span > 0.0) ? span : 1.0;
+    const double icDelta = (span > 0.0)
+        ? std::min(std::max(span * 1e-3, 1e-30), span)
+        : 1e-8;
+    const double stepScaleRef = std::max(
+        span, std::max(std::abs(opts.tStart), std::abs(opts.tEnd)));
+    const double stepTol =
+        64.0 * std::numeric_limits<double>::epsilon() *
+        (stepScaleRef > 0.0 ? stepScaleRef : 1.0);
+    double maxInitialState = 0.0;
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        if (std::isfinite(initialState[i])) {
+            maxInitialState = std::max(maxInitialState, std::abs(initialState[i]));
+        }
+    }
     cvodeStateScale_.resize(nSpecies_);
 
     IdaSession session;
@@ -6158,8 +6719,18 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
     for (const auto index : algebraicSpeciesIndices_) isAlgebraic[index] = true;
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         double scale = std::abs(initialState[i]);
-        if (std::isfinite(initialRhs[i])) {
-            scale = std::max(scale, std::abs(initialRhs[i]) * timeScale);
+        if (scale < 1e-30) {
+            if (std::isfinite(initialRhs[i]) &&
+                std::abs(initialRhs[i]) > 0.0) {
+                const double derivScale = std::abs(initialRhs[i]) * derivSpan;
+                if (maxInitialState >= 1e-30) {
+                    scale = std::min(derivScale, maxInitialState);
+                } else {
+                    scale = std::min(derivScale, 1e6);
+                }
+            } else if (maxInitialState >= 1e-30) {
+                scale = maxInitialState;
+            }
         }
         if (!std::isfinite(scale) || scale < 1e-30) scale = 1.0;
         cvodeStateScale_[i] = scale;
@@ -6199,17 +6770,30 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
     if (!nativeEventRoots_.empty()) {
         const int rootCount = static_cast<int>(nativeEventRoots_.size());
         std::vector<int> rootDirections(static_cast<std::size_t>(rootCount), 1);
+        for (int r = 0; r < rootCount; ++r) {
+            const std::size_t groupIndex =
+                nativeEventRoots_[static_cast<std::size_t>(r)].first;
+            for (const auto eventIndex : nativeEventGroups_[groupIndex].events) {
+                if (!nativeEvents_[eventIndex].persistent) {
+                    rootDirections[static_cast<std::size_t>(r)] = 0;
+                    break;
+                }
+            }
+        }
         if (IDARootInit(session.ida_mem, rootCount, idaEventRootWrapper) != IDA_SUCCESS ||
             IDASetRootDirection(session.ida_mem, rootDirections.data()) != IDA_SUCCESS) {
             throw std::runtime_error("DAE event root initialization failed");
         }
     }
-    double icTarget = opts.tStart + std::max(timeScale * 1e-3, 1e-8);
+    double icTarget = opts.tStart + icDelta;
     if (IDACalcIC(session.ida_mem, IDA_YA_YDP_INIT, icTarget) != IDA_SUCCESS ||
         IDAGetConsistentIC(session.ida_mem, session.y, session.ydot) != IDA_SUCCESS) {
         throw std::runtime_error(
             "DAE consistent initial conditions failed; algebraic constraint may be singular or inconsistent");
     }
+
+    const std::vector<double> stepKnots = collectStepKnots(opts.tStart, opts.tEnd);
+    std::size_t nextStepKnotIdx = 0;
 
     OdeResult result;
     result.timePoints.reserve(times.size());
@@ -6218,20 +6802,27 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
     for (std::size_t step = 0; step < times.size(); ++step) {
         const double outputTime = times[step];
         if (outputTime > time) {
-            while (time < outputTime - 1e-12) {
+            while (time < outputTime - stepTol) {
                 double target = outputTime;
+                while (nextStepKnotIdx < stepKnots.size() &&
+                       stepKnots[nextStepKnotIdx] <= time + stepTol) {
+                    ++nextStepKnotIdx;
+                }
+                if (nextStepKnotIdx < stepKnots.size() &&
+                    stepKnots[nextStepKnotIdx] < target) {
+                    target = stepKnots[nextStepKnotIdx];
+                }
                 for (const auto& pending : pendingEvents_) {
                     target = std::min(target, pending.executionTime);
                 }
-                if (target <= time + 1e-12) {
+                if (target <= time + stepTol) {
                     std::vector<double> dueState(nSpecies_);
                     for (std::size_t i = 0; i < nSpecies_; ++i) {
                         dueState[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
                     }
                     if (!applyDueEvents(time, dueState)) break;
-                    correctAlgebraicState(dueState, time,
-                        std::max(opts.atol,
-                            32.0 * std::numeric_limits<double>::epsilon()));
+                    correctAlgebraicState(dueState, time, algebraicTol);
+                    refreshLastRootValues(time, dueState);
                     for (std::size_t i = 0; i < nSpecies_; ++i) {
                         NV_Ith_S(session.y, i) = dueState[i] / cvodeStateScale_[i];
                     }
@@ -6240,7 +6831,7 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                         IDASetId(session.ida_mem, session.id) != IDA_SUCCESS) {
                         throw std::runtime_error("DAE event reinitialization failed");
                     }
-                    const double icTarget = time + std::max(timeScale * 1e-3, 1e-8);
+                    const double icTarget = time + icDelta;
                     if (IDACalcIC(session.ida_mem, IDA_YA_YDP_INIT, icTarget) !=
                             IDA_SUCCESS ||
                         IDAGetConsistentIC(session.ida_mem, session.y,
@@ -6261,100 +6852,136 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                     if (IDAGetRootInfo(session.ida_mem, rootsFound.data()) != IDA_SUCCESS) {
                         throw std::runtime_error("DAE event root information failed");
                     }
-                    std::vector<double> state(nSpecies_);
-                    for (std::size_t i = 0; i < nSpecies_; ++i) {
-                        state[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
-                    }
-                    recordHistoryPoint(time, state);
-                    std::set<std::size_t> risingGroups;
-                    std::vector<double> derivatives(nSpecies_);
-                    derivs(time, state.data(), derivatives.data());
-                    for (std::size_t root = 0; root < rootsFound.size(); ++root) {
-                        if (rootsFound[root] <= 0) continue;
-                        const auto [group, risingConjunct] = nativeEventRoots_[root];
-                        bool conjunctionHolds = true;
-                        for (const auto* conjunct : triggerConjuncts(
-                                 nativeEventGroups_[group].trigger)) {
-                            if (conjunct == risingConjunct) continue;
-                            if (discreteEventConjuncts_.count(conjunct)) {
-                                if (!triggerHolds(*conjunct, time, state.data())) {
+                    bool anyRisingRoot = std::any_of(
+                        rootsFound.begin(), rootsFound.end(),
+                        [](int rootDirection) { return rootDirection > 0; });
+                    bool anyFallingRoot = std::any_of(
+                        rootsFound.begin(), rootsFound.end(),
+                        [](int rootDirection) { return rootDirection < 0; });
+                    if (anyRisingRoot || anyFallingRoot) {
+                        std::vector<double> state(nSpecies_);
+                        for (std::size_t i = 0; i < nSpecies_; ++i) {
+                            state[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
+                        }
+                        recordHistoryPoint(time, state);
+                        std::set<std::size_t> fallingGroups;
+                        if (anyFallingRoot) {
+                            std::unordered_set<std::size_t> fallingEvents;
+                            for (std::size_t root = 0; root < rootsFound.size(); ++root) {
+                                if (rootsFound[root] < 0) {
+                                    const auto group = nativeEventRoots_[root].first;
+                                    fallingGroups.insert(group);
+                                    for (const auto evIdx : nativeEventGroups_[group].events) {
+                                        if (!nativeEvents_[evIdx].persistent) {
+                                            fallingEvents.insert(evIdx);
+                                        }
+                                    }
+                                }
+                            }
+                            if (!fallingEvents.empty()) {
+                                pendingEvents_.erase(
+                                    std::remove_if(
+                                        pendingEvents_.begin(), pendingEvents_.end(),
+                                        [&](const PendingEvent& pending) {
+                                            if (fallingEvents.count(pending.event) == 0) {
+                                                return false;
+                                            }
+                                            return pending.executionTime > time + 1e-12 ||
+                                                   !triggerHolds(
+                                                       nativeEvents_[pending.event].trigger,
+                                                       time, state.data());
+                                        }),
+                                    pendingEvents_.end());
+                            }
+                            pruneNonPersistentEvents(time, state);
+                        }
+                        std::set<std::size_t> risingGroups;
+                        std::vector<double> derivatives(nSpecies_);
+                        derivs(time, state.data(), derivatives.data());
+                        for (std::size_t root = 0; root < rootsFound.size(); ++root) {
+                            if (rootsFound[root] <= 0) continue;
+                            const auto [group, risingConjunct] = nativeEventRoots_[root];
+                            if (risingGroups.count(group)) continue;
+                            bool conjunctionHolds = true;
+                            for (const auto* conjunct : triggerConjuncts(
+                                     nativeEventGroups_[group].trigger)) {
+                                if (conjunct == risingConjunct) continue;
+                                if (discreteEventConjuncts_.count(conjunct)) {
+                                    if (!triggerHolds(*conjunct, time, state.data())) {
+                                        conjunctionHolds = false;
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                const double value = eventRootValue(
+                                    *conjunct, time, state.data());
+                                const double tolerance = 1e-9 * (1.0 + std::abs(value));
+                                if (value < -tolerance ||
+                                    (std::abs(value) <= tolerance &&
+                                     eventRootDerivative(*conjunct, time, state.data(),
+                                                         derivatives) <= 0.0)) {
                                     conjunctionHolds = false;
                                     break;
                                 }
-                                continue;
                             }
+                            if (conjunctionHolds) {
+                                risingGroups.insert(group);
+                                queueTriggeredGroup(group, time, state);
+                            }
+                        }
+                        for (std::size_t group = 0;
+                             group < nativeEventGroups_.size(); ++group) {
+                            if (risingGroups.count(group) || fallingGroups.count(group)) continue;
                             const double value = eventRootValue(
-                                *conjunct, time, state.data());
-                            const double tolerance = 1e-9 * (1.0 + std::abs(value));
-                            if (value < -tolerance ||
-                                (std::abs(value) <= tolerance &&
-                                 eventRootDerivative(*conjunct, time, state.data(),
-                                                     derivatives) <= 0.0)) {
-                                conjunctionHolds = false;
-                                break;
+                                nativeEventGroups_[group].trigger, time, state.data());
+                            const double previous = lastRootValues_[group];
+                            const double tolerance = 1e-9 * (1.0 + std::abs(previous));
+                            // Root localization can leave `previous` a tiny negative
+                            // interpolation artifact. Require it negative beyond the
+                            // same tolerance as `value` so a later, unrelated event
+                            // instant is not reported as a second rising edge.
+                            bool crossed = value > tolerance && previous <= -tolerance;
+                            if (std::abs(value) <= tolerance) {
+                                crossed = triggerCrossedAtRoot(
+                                    nativeEventGroups_[group].trigger, time, state.data(),
+                                    derivatives);
+                            }
+                            if (crossed) queueTriggeredGroup(group, time, state);
+                        }
+                        if (applyDueEvents(time, state)) {
+                            correctAlgebraicState(state, time, algebraicTol);
+                            for (std::size_t i = 0; i < nSpecies_; ++i) {
+                                NV_Ith_S(session.y, i) = state[i] / cvodeStateScale_[i];
+                            }
+                            recordHistoryJump(time, state);
+                            if (IDAReInit(session.ida_mem, time, session.y,
+                                          session.ydot) != IDA_SUCCESS ||
+                                IDASetId(session.ida_mem, session.id) != IDA_SUCCESS) {
+                                throw std::runtime_error("DAE event reinitialization failed");
+                            }
+                            const double icTarget = time + icDelta;
+                            const int icFlag = IDACalcIC(
+                                session.ida_mem, IDA_YA_YDP_INIT, icTarget);
+                            const int getIcFlag = icFlag == IDA_SUCCESS
+                                ? IDAGetConsistentIC(session.ida_mem, session.y,
+                                                     session.ydot)
+                                : IDA_SUCCESS;
+                            if (icFlag != IDA_SUCCESS || getIcFlag != IDA_SUCCESS) {
+                                std::ostringstream detail;
+                                detail << "DAE event reset left inconsistent algebraic state"
+                                       << " (IDA flags " << icFlag << ", " << getIcFlag
+                                       << ", time " << time << ", state";
+                                for (std::size_t i = 0; i < state.size(); ++i) {
+                                    detail << " " << state[i];
+                                }
+                                detail << ")";
+                                throw std::runtime_error(detail.str());
                             }
                         }
-                        if (conjunctionHolds) {
-                            risingGroups.insert(group);
-                            queueTriggeredGroup(group, time, state);
-                        }
-                    }
-                    for (std::size_t group = 0;
-                         group < nativeEventGroups_.size(); ++group) {
-                        if (risingGroups.count(group)) continue;
-                        const double value = eventRootValue(
-                            nativeEventGroups_[group].trigger, time, state.data());
-                        const double previous = lastRootValues_[group];
-                        const double tolerance = 1e-9 * (1.0 + std::abs(previous));
-                        // Root localization can leave `previous` a tiny negative
-                        // interpolation artifact. Require it negative beyond the
-                        // same tolerance as `value` so a later, unrelated event
-                        // instant is not reported as a second rising edge.
-                        bool crossed = value > tolerance && previous <= -tolerance;
-                        if (std::abs(value) <= tolerance) {
-                            crossed = eventRootDerivative(
-                                nativeEventGroups_[group].trigger, time, state.data(),
-                                derivatives) > 0.0;
-                        }
-                        if (crossed) queueTriggeredGroup(group, time, state);
-                    }
-                    for (std::size_t group = 0;
-                         group < nativeEventGroups_.size(); ++group) {
-                        lastRootValues_[group] = eventRootValue(
-                            nativeEventGroups_[group].trigger, time, state.data());
-                    }
-                    if (applyDueEvents(time, state)) {
-                        correctAlgebraicState(state, time,
-                            std::max(opts.atol,
-                                32.0 * std::numeric_limits<double>::epsilon()));
-                        for (std::size_t i = 0; i < nSpecies_; ++i) {
-                            NV_Ith_S(session.y, i) = state[i] / cvodeStateScale_[i];
-                        }
-                        recordHistoryJump(time, state);
-                        if (IDAReInit(session.ida_mem, time, session.y,
-                                      session.ydot) != IDA_SUCCESS ||
-                            IDASetId(session.ida_mem, session.id) != IDA_SUCCESS) {
-                            throw std::runtime_error("DAE event reinitialization failed");
-                        }
-                        const double icTarget = time +
-                            std::max(timeScale * 1e-3, 1e-8);
-                        const int icFlag = IDACalcIC(
-                            session.ida_mem, IDA_YA_YDP_INIT, icTarget);
-                        const int getIcFlag = icFlag == IDA_SUCCESS
-                            ? IDAGetConsistentIC(session.ida_mem, session.y,
-                                                 session.ydot)
-                            : IDA_SUCCESS;
-                        if (icFlag != IDA_SUCCESS || getIcFlag != IDA_SUCCESS) {
-                            std::ostringstream detail;
-                            detail << "DAE event reset left inconsistent algebraic state"
-                                   << " (IDA flags " << icFlag << ", " << getIcFlag
-                                   << ", time " << time << ", state";
-                            for (std::size_t i = 0; i < state.size(); ++i) {
-                                detail << " " << state[i];
-                            }
-                            detail << ")";
-                            throw std::runtime_error(detail.str());
-                        }
+                        // Refresh lastRootValues_ AFTER applyDueEvents and
+                        // algebraic state correction so discrete assignments
+                        // never cause stale spurious re-firing later.
+                        refreshLastRootValues(time, state);
                     }
                     continue;
                 }
@@ -6367,9 +6994,8 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                     dueState[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
                 }
                 if (applyDueEvents(time, dueState)) {
-                    correctAlgebraicState(dueState, time,
-                        std::max(opts.atol,
-                            32.0 * std::numeric_limits<double>::epsilon()));
+                    correctAlgebraicState(dueState, time, algebraicTol);
+                    refreshLastRootValues(time, dueState);
                     for (std::size_t i = 0; i < nSpecies_; ++i) {
                         NV_Ith_S(session.y, i) = dueState[i] / cvodeStateScale_[i];
                     }
@@ -6379,7 +7005,7 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                         IDASetId(session.ida_mem, session.id) != IDA_SUCCESS) {
                         throw std::runtime_error("DAE event reinitialization failed");
                     }
-                    const double icTarget = time + std::max(timeScale * 1e-3, 1e-8);
+                    const double icTarget = time + icDelta;
                     if (IDACalcIC(session.ida_mem, IDA_YA_YDP_INIT, icTarget) !=
                             IDA_SUCCESS ||
                         IDAGetConsistentIC(session.ida_mem, session.y,
@@ -6389,12 +7015,37 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                     }
                     continue;
                 }
+                bool reachedStepKnot = false;
+                while (nextStepKnotIdx < stepKnots.size() &&
+                       stepKnots[nextStepKnotIdx] <= time + stepTol) {
+                    ++nextStepKnotIdx;
+                    reachedStepKnot = true;
+                }
+                if (reachedStepKnot && time < opts.tEnd) {
+                    if (IDAReInit(session.ida_mem, time, session.y,
+                                  session.ydot) != IDA_SUCCESS ||
+                        IDASetId(session.ida_mem, session.id) != IDA_SUCCESS) {
+                        throw std::runtime_error("DAE tfun step knot reinitialization failed");
+                    }
+                    const double icTarget = time + icDelta;
+                    if (IDACalcIC(session.ida_mem, IDA_YA_YDP_INIT, icTarget) !=
+                            IDA_SUCCESS ||
+                        IDAGetConsistentIC(session.ida_mem, session.y,
+                                           session.ydot) != IDA_SUCCESS) {
+                        throw std::runtime_error(
+                            "DAE tfun step knot left inconsistent algebraic state");
+                    }
+                }
             }
         }
         result.timePoints.push_back(outputTime);
         std::vector<double> state(nSpecies_);
-        for (std::size_t i = 0; i < nSpecies_; ++i) {
-            state[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
+        if (step == 0 && outputTime == opts.tStart) {
+            state = tStartOutputState;
+        } else {
+            for (std::size_t i = 0; i < nSpecies_; ++i) {
+                state[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
+            }
         }
         result.concentrations.push_back(state);
         recordHistoryPoint(outputTime, state);
@@ -6423,6 +7074,12 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
     // degenerate self-pair as a null event.
     //
     // The stat_factor is already baked into rateConstant.
+    if (!std::isfinite(rateCoefficient)) {
+        throw std::runtime_error("SSA produced a non-finite reaction propensity");
+    }
+    if (rateCoefficient <= 0.0) {
+        return 0.0;
+    }
     double propensity = rateCoefficient;
 
     // Atomizer absolute fluxes already contain reactant dependence. Authored
@@ -6446,8 +7103,8 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
         return propensity;
     }
 
-    // Group identical reactants and apply the discrete formula.  BNG2 assumes
-    // reactant indices are sorted, so identical species are adjacent.
+    // Apply the discrete combinatorial formula for repeated reactants (even
+    // when reactantIndices is unsorted, e.g. A + B + A -> C).
     for (size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
         std::size_t idx = rxn.reactantIndices[i];
         const double n_offset =
@@ -6458,7 +7115,10 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
         propensity *= std::max(0.0, population - n_offset);
     }
 
-    return propensity;
+    if (!std::isfinite(propensity)) {
+        throw std::runtime_error("SSA produced a non-finite reaction propensity");
+    }
+    return std::max(0.0, propensity);
 }
 
 namespace {
@@ -6466,17 +7126,18 @@ namespace {
 // Per-thread scratch for integrateSSA.
 //
 // The batch pool drives one trajectory per call against a single shared
-// integrator, so the state vector, the propensity table, its prefix sums and
-// the species->reaction dependency graph are rebuilt once per trajectory --
-// a million times over a pool run -- while depending only on the compiled
-// network.  Holding them here makes that rebuild a resize instead of a
-// fresh allocation.  Every field is written in full before it is read, and
+// integrator, so the state vector, the propensity table, its prefix sums /
+// Fenwick tree, and the species->reaction dependency graph are rebuilt once
+// per trajectory -- a million times over a pool run -- while depending only on
+// the compiled network.  Holding them here makes that rebuild a resize instead
+// of a fresh allocation.  Every field is written in full before it is read, and
 // integrateSSA never recurses, so nothing leaks between trajectories or
 // between threads.
 struct SsaScratch {
     std::vector<double> state;
     std::vector<double> propensities;
     std::vector<double> prefixSums;
+    std::vector<double> fenwickTree;
     std::vector<std::size_t> depOffset;
     std::vector<std::size_t> depReactions;
     // Observable scratch for state-dependent rate laws.  It lives here, not on
@@ -6501,8 +7162,9 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         const auto readsClock = [&](const auto& self, const ast::Expression& expression) -> bool {
             if ((expression.kind() == ast::ExpressionKind::Identifier ||
                  expression.kind() == ast::ExpressionKind::Function) &&
-                (expression.name() == "time" || expression.name() == "t" ||
-                 model_.getParameters().isTimeDependent(expression.name()))) {
+                (isClockSymbol(expression.name()) ||
+                 (model_.getParameters().contains(expression.name()) &&
+                  model_.getParameters().isTimeDependent(expression.name())))) {
                 return true;
             }
             return std::any_of(expression.args().begin(), expression.args().end(),
@@ -6697,6 +7359,24 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
         syncTriggerHeldForAdvance(opts.tStart);
     } else {
+        if (interventionPreState_ != nullptr &&
+            interventionPreState_->size() == nSpecies_ && !nativeEvents_.empty()) {
+            std::vector<bool> heldBefore;
+            heldBefore.reserve(nativeEvents_.size());
+            for (const auto& event : nativeEvents_) {
+                heldBefore.push_back(
+                    triggerHolds(event.trigger, opts.tStart,
+                                 interventionPreState_->data()));
+            }
+            pruneNonPersistentEvents(opts.tStart, y, false, continuousRatesPtr,
+                                     continuousSpeciesPtr);
+            retestTriggers(opts.tStart, y, heldBefore);
+            if (applyDueEvents(opts.tStart, y, continuousRatesPtr,
+                               continuousSpeciesPtr)) {
+                markCurrentPopulations();
+                recomputeContinuousRates();
+            }
+        }
         syncTriggerHeldForAdvance(opts.tStart);
     }
     const bool stopAtInitial =
@@ -6712,6 +7392,13 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     std::size_t nextOutputTime = 0;
     std::size_t ssaStepCount = 0;  // track internal SSA steps for output_step_interval
     bool stoppedEarly = false;
+
+    const double timeSpan = std::abs(opts.tEnd - opts.tStart);
+    const double timeScaleRef = std::max(
+        timeSpan, std::max(std::abs(opts.tStart), std::abs(opts.tEnd)));
+    const double outputTimeTol =
+        64.0 * std::numeric_limits<double>::epsilon() *
+        (timeScaleRef > 0.0 ? timeScaleRef : 1.0);
 
     const auto pushScheduledSample = [&](double sampleTime) {
         result.timePoints.push_back(sampleTime);
@@ -6732,7 +7419,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
     const auto appendScheduledBefore = [&](double until) {
         while (nextOutputTime < times.size() &&
-               times[nextOutputTime] < until - 1e-12) {
+               times[nextOutputTime] < until - outputTimeTol) {
             pushScheduledSample(times[nextOutputTime]);
             ++nextOutputTime;
         }
@@ -6740,7 +7427,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
     const auto appendScheduledThrough = [&](double until) {
         while (nextOutputTime < times.size() &&
-               times[nextOutputTime] <= until + 1e-12) {
+               times[nextOutputTime] <= until + outputTimeTol) {
             pushScheduledSample(times[nextOutputTime]);
             ++nextOutputTime;
         }
@@ -6748,7 +7435,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
 
     const auto appendEventState = [&]() {
         if (result.timePoints.empty() ||
-            std::abs(result.timePoints.back() - t) > 1e-12) {
+            std::abs(result.timePoints.back() - t) > outputTimeTol) {
             result.timePoints.push_back(t);
             result.concentrations.push_back(y);
             result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
@@ -6760,16 +7447,26 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         }
     };
 
-    // Propensity table and the prefix sums the selector searches.  Both live
-    // in per-thread scratch: a batch pool drives one trajectory per call
-    // against a single shared integrator, so these are rebuilt once per
-    // trajectory -- a million times over a pool run -- while depending only
-    // on the compiled network.  Each is written in full before it is read.
+    // Propensity table and either prefix sums (small networks) or a Fenwick
+    // tree (networks using the dependency graph) so per-event updates and
+    // selection are O(deg * log R) instead of O(R).  Periodic exact rebuilds
+    // guarantee zero floating-point drift (Hlavacek #123).
     const std::size_t nRxns = compiledRxns_.size();
+    constexpr std::size_t dependencyGraphThreshold = 64;
+    const bool useDependencyGraph = nRxns > dependencyGraphThreshold;
     auto& propensities = scratch.propensities;
     auto& prefixSums = scratch.prefixSums;
+    auto& fenwickTree = scratch.fenwickTree;
     propensities.resize(nRxns);
-    prefixSums.resize(nRxns);
+    if (!useDependencyGraph) {
+        prefixSums.resize(nRxns);
+    } else {
+        fenwickTree.resize(nRxns + 1);
+    }
+    std::size_t fenwickBitMask = 1;
+    while ((fenwickBitMask << 1) <= nRxns) {
+        fenwickBitMask <<= 1;
+    }
     // Functional-rate coefficients are re-evaluated from the current state,
     // so they stay local to this trajectory; only the value tables are reused.
     std::vector<double> rateCoefficients;
@@ -6785,16 +7482,40 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                    : compiledRxns_[r].rateConstant;
     };
     double totalPropensity = 0.0;
+    double peakTotalPropensity = 0.0;
+    std::size_t fenwickUpdatesSinceRebuild = 0;
+    constexpr std::size_t kFenwickRebuildInterval = 4096;
 
-    // Reaction selection needs the first cumulative propensity that reaches
-    // the target.  Storing each running total while summing costs exactly the
-    // additions the total-propensity accumulation already performs, in the
-    // same order, so totalPropensity keeps its original bits.  If every rate
-    // constant is non-negative the prefix is non-decreasing and the first
-    // crossing can be found by binary search; a negative or non-finite rate
-    // constant falls back to a linear scan over the same prefix values, which
-    // reproduces the original cumulative scan exactly for any sign pattern.
-    bool monotonePrefix = true;
+    auto rebuildFenwickExact = [&]() {
+        std::fill(fenwickTree.begin(), fenwickTree.end(), 0.0);
+        double exactTotal = 0.0;
+        for (std::size_t r = 0; r < nRxns; ++r) {
+            const double p = propensities[r];
+            exactTotal += p;
+            const std::size_t idx = r + 1;
+            fenwickTree[idx] += p;
+            const std::size_t parent = idx + (idx & (~idx + 1));
+            if (parent <= nRxns) {
+                fenwickTree[parent] += fenwickTree[idx];
+            }
+        }
+        totalPropensity = exactTotal;
+        peakTotalPropensity = exactTotal;
+        fenwickUpdatesSinceRebuild = 0;
+    };
+
+    auto updateFenwickPoint = [&](std::size_t r, double newProp) {
+        const double delta = newProp - propensities[r];
+        if (delta == 0.0) return;
+        propensities[r] = newProp;
+        totalPropensity += delta;
+        if (totalPropensity > peakTotalPropensity) {
+            peakTotalPropensity = totalPropensity;
+        }
+        for (std::size_t idx = r + 1; idx <= nRxns; idx += idx & (~idx + 1)) {
+            fenwickTree[idx] += delta;
+        }
+    };
 
     auto recomputeAll = [&]() {
         if (hasFunctionalRates_) {
@@ -6803,21 +7524,21 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 /*discreteReactantCounts=*/true);
         }
         totalPropensity = 0.0;
-        monotonePrefix = true;
         for (std::size_t r = 0; r < nRxns; ++r) {
             if (hasContinuousRateRules && compiledRxns_[r].isRateRuleChannel) {
                 propensities[r] = 0.0;
-                prefixSums[r] = totalPropensity;
-                continue;
+            } else {
+                const double rateCoef = rateCoefficientFor(r);
+                propensities[r] = computePropensity(
+                    compiledRxns_[r], y, rateCoef);
             }
-            const double rateCoef = rateCoefficientFor(r);
-            if (!(rateCoef >= 0.0)) {
-                monotonePrefix = false;
-            }
-            propensities[r] = computePropensity(
-                compiledRxns_[r], y, rateCoef);
             totalPropensity += propensities[r];
-            prefixSums[r] = totalPropensity;
+            if (!useDependencyGraph) {
+                prefixSums[r] = totalPropensity;
+            }
+        }
+        if (useDependencyGraph) {
+            rebuildFenwickExact();
         }
     };
 
@@ -6828,18 +7549,6 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // reaction can only change propensities of reactions sharing a species
     // with its reactants or products.  Every other stored propensity is
     // already exact, and is what recomputeAll would re-derive.
-    //
-    // The graph earns its two setup passes only when the reactions it skips
-    // outnumber the reactions it refreshes.  On a small network most of the
-    // table is affected anyway, while the O(nRxns) prefix rebuild that follows
-    // every event is paid either way, so recomputeAll is cheaper both to set
-    // up and to run.  The threshold is the point past which skipping the
-    // unaffected reactions dominates: each one saved is a propensity
-    // evaluation the per-event pass no longer does, against a graph that
-    // costs two traversals of the whole reaction table per trajectory.
-    constexpr std::size_t dependencyGraphThreshold = 64;
-    const bool useDependencyGraph = nRxns > dependencyGraphThreshold;
-
     auto& depOffset = scratch.depOffset;
     auto& depReactions = scratch.depReactions;
     if (useDependencyGraph) {
@@ -6876,8 +7585,9 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 /*discreteReactantCounts=*/true);
             for (const auto r : functionalRxnIndices_) {
                 if (hasContinuousRateRules && compiledRxns_[r].isRateRuleChannel) continue;
-                propensities[r] = computePropensity(
+                const double newProp = computePropensity(
                     compiledRxns_[r], y, rateCoefficients[r]);
+                updateFenwickPoint(r, newProp);
             }
         }
         auto refreshSpecies = [&](std::size_t speciesIndex) {
@@ -6886,8 +7596,9 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 const std::size_t r = depReactions[p];
                 if (!compiledRxns_[r].isFunctional &&
                     !(hasContinuousRateRules && compiledRxns_[r].isRateRuleChannel)) {
-                    propensities[r] = computePropensity(
+                    const double newProp = computePropensity(
                         compiledRxns_[r], y, rateCoefficientFor(r));
+                    updateFenwickPoint(r, newProp);
                 }
             }
         };
@@ -6897,18 +7608,11 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         for (const auto idx : fired.productIndices) {
             refreshSpecies(idx);
         }
-        totalPropensity = 0.0;
-        monotonePrefix = true;
-        for (std::size_t r = 0; r < nRxns; ++r) {
-            if (hasContinuousRateRules && compiledRxns_[r].isRateRuleChannel) {
-                prefixSums[r] = totalPropensity;
-                continue;
-            }
-            if (!(rateCoefficientFor(r) >= 0.0)) {
-                monotonePrefix = false;
-            }
-            totalPropensity += propensities[r];
-            prefixSums[r] = totalPropensity;
+        ++fenwickUpdatesSinceRebuild;
+        if (fenwickUpdatesSinceRebuild >= kFenwickRebuildInterval ||
+            totalPropensity <= 0.0 ||
+            totalPropensity < 0.01 * peakTotalPropensity) {
+            rebuildFenwickExact();
         }
     };
 
@@ -6952,9 +7656,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             ? std::numeric_limits<double>::infinity()
             : nextSsaTimeTriggerTime(t, opts.tEnd, y, triggerHeld,
                                      continuousRatesPtr, continuousSpeciesPtr);
-        const double endpointRoundingTol =
-            64.0 * std::numeric_limits<double>::epsilon() *
-            std::max(1.0, std::abs(opts.tEnd));
+        const double endpointRoundingTol = outputTimeTol;
         const double nextWakeup = std::min(nextCompletion, nextTimeTrigger);
         if (t >= opts.tEnd && nextWakeup > opts.tEnd + endpointRoundingTol) {
             break;
@@ -7016,7 +7718,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             if (session) {
                 for (std::size_t i = 0;
                      i < session->pendingCompletions.size(); ++i) {
-                    if (std::abs(session->pendingCompletions[i].time - t) <= 1e-12) {
+                    if (std::abs(session->pendingCompletions[i].time - t) <= outputTimeTol) {
                         completed.push_back(i);
                     }
                 }
@@ -7096,14 +7798,46 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         // Select next reaction
         double r2 = uniform(rng);
         double target = r2 * totalPropensity;
-        std::size_t selectedRxn = compiledRxns_.size();
+        std::size_t selectedRxn = nRxns;
 
-        if (monotonePrefix) {
+        if (useDependencyGraph) {
+            auto selectFromFenwick = [&](double query) -> std::size_t {
+                std::size_t idx = 0;
+                double remaining = query;
+                for (std::size_t bit = fenwickBitMask; bit > 0; bit >>= 1) {
+                    const std::size_t next = idx + bit;
+                    if (next <= nRxns && fenwickTree[next] < remaining) {
+                        remaining -= fenwickTree[next];
+                        idx = next;
+                    }
+                }
+                while (idx < nRxns && propensities[idx] <= 0.0) {
+                    ++idx;
+                }
+                return idx;
+            };
+            selectedRxn = selectFromFenwick(target);
+            if (selectedRxn >= nRxns) {
+                // Re-sum cleanly in case incremental Fenwick roundoff left
+                // target slightly above the stored prefix sum.
+                rebuildFenwickExact();
+                if (totalPropensity > 0.0) {
+                    selectedRxn = selectFromFenwick(r2 * totalPropensity);
+                    if (selectedRxn >= nRxns) {
+                        for (std::size_t r = nRxns; r > 0; --r) {
+                            if (propensities[r - 1] > 0.0) {
+                                selectedRxn = r - 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
             // First index whose prefix sum reaches the target (binary search
-            // over a non-decreasing sequence: same first crossing the
-            // cumulative scan finds, including equal-value plateaus).
+            // over a non-decreasing sequence of nonnegative propensities).
             std::size_t lo = 0;
-            std::size_t hi = compiledRxns_.size();
+            std::size_t hi = nRxns;
             while (lo < hi) {
                 const std::size_t mid = lo + (hi - lo) / 2;
                 if (prefixSums[mid] >= target) {
@@ -7112,18 +7846,22 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                     lo = mid + 1;
                 }
             }
-            selectedRxn = lo;
-        } else {
-            for (std::size_t r = 0; r < compiledRxns_.size(); ++r) {
-                if (prefixSums[r] >= target) {
-                    selectedRxn = r;
-                    break;
+            while (lo < nRxns && propensities[lo] <= 0.0) {
+                ++lo;
+            }
+            if (lo >= nRxns && totalPropensity > 0.0) {
+                for (std::size_t r = nRxns; r > 0; --r) {
+                    if (propensities[r - 1] > 0.0) {
+                        lo = r - 1;
+                        break;
+                    }
                 }
             }
+            selectedRxn = lo;
         }
 
-        if (selectedRxn >= compiledRxns_.size()) {
-            // Shouldn't happen unless roundoff error
+        if (selectedRxn >= nRxns) {
+            // Shouldn't happen unless totalPropensity dropped to 0 on rebuild
             stoppedEarly = true;
             break;
         }

@@ -51,6 +51,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -379,22 +380,30 @@ __global__ void cuda_batch_direct_ssa(
     Pcg32 rng;
     rng.init(123456789ULL + params.baseSeed, static_cast<unsigned long long>(trajId));
 
-    float t = params.tStart;
+    // Relative elapsed time in [0, duration] in native double precision so
+    // large tStart offsets and small tau steps never suffer float32 clock stall.
+    const double duration = static_cast<double>(params.tEnd);
+    const double stepDt = (params.numOutputPoints > 1u)
+        ? (duration / static_cast<double>(params.numOutputPoints - 1u))
+        : duration;
+    const double timeTol = fmin(16.0 * 1.1920929e-7 * duration, 1e-3 * stepDt);
+
+    double t = 0.0;
     unsigned int nextOutputTime = 0;
     unsigned int ssaStepCount = 0;
 
     // Initial state output
     while (nextOutputTime < params.numOutputPoints &&
-           outputTimes[nextOutputTime] <= t + 1e-6f) {
+           static_cast<double>(outputTimes[nextOutputTime]) <= t + timeTol) {
         recordObservables(trajId, nextOutputTime, params, obsOffsets, obsSpecies, obsWeights,
                           y, trajectoryObservables, trajectorySpecies);
         ++nextOutputTime;
     }
 
     // Direct SSA main loop
-    while (t < params.tEnd) {
+    while (t < duration) {
         while (nextOutputTime < params.numOutputPoints &&
-               outputTimes[nextOutputTime] <= t + 1e-6f) {
+               static_cast<double>(outputTimes[nextOutputTime]) <= t + timeTol) {
             recordObservables(trajId, nextOutputTime, params, obsOffsets, obsSpecies, obsWeights,
                               y, trajectoryObservables, trajectorySpecies);
             ++nextOutputTime;
@@ -411,38 +420,57 @@ __global__ void cuda_batch_direct_ssa(
             }
         }
 
-        // Pass 1: compute total propensity
+        // Pass 1: compute total propensity in double precision and guard
+        // float32 / 24-bit RNG dynamic range so slow channels are never starved.
         bool ok = true;
-        float totalPropensity = 0.0f;
+        double totalPropensity = 0.0;
+        double minPosProp = 1.0e308;
         for (unsigned int r = 0; r < params.numReactions; ++r) {
-            totalPropensity += computePropensity(r, rateConstants, reactionFlags,
-                                                 rxnVmOffsets, rxnVmLens, vmCode, obsCache,
-                                                 obsOffsets, obsSpecies, obsWeights,
-                                                 reactantOffsets, reactantSpecies,
-                                                 reactantStoichOffsets, y, ok);
+            const float p = computePropensity(r, rateConstants, reactionFlags,
+                                              rxnVmOffsets, rxnVmLens, vmCode, obsCache,
+                                              obsOffsets, obsSpecies, obsWeights,
+                                              reactantOffsets, reactantSpecies,
+                                              reactantStoichOffsets, y, ok);
             if (!ok) {
                 errorFlags[trajId] = 1u;
                 trajectoryEventCounts[trajId] = ssaStepCount;
                 return;
             }
+            if (p > 0.0f) {
+                const double pd = static_cast<double>(p);
+                if (pd < minPosProp) minPosProp = pd;
+                totalPropensity += pd;
+            }
         }
 
-        if (totalPropensity <= 0.0f) {
-            t = params.tEnd;
+        if (!isfinite(totalPropensity) ||
+            (minPosProp < 1.0e308 && totalPropensity > minPosProp * 1e5)) {
+            errorFlags[trajId] = 2u;
+            trajectoryEventCounts[trajId] = ssaStepCount;
+            return;
+        }
+
+        if (totalPropensity <= 0.0) {
+            t = duration;
             break;
         }
 
         const float r1 = rng.next_float01();
-        const float tau = -logf(r1) / totalPropensity;
+        const double tau = -log(static_cast<double>(r1)) / totalPropensity;
+        if (!isfinite(tau) || tau < 0.0) {
+            errorFlags[trajId] = 2u;
+            trajectoryEventCounts[trajId] = ssaStepCount;
+            return;
+        }
 
-        if (t + tau > params.tEnd) {
-            t = params.tEnd;
+        if (t + tau > duration) {
+            t = duration;
             break;
         }
 
-        const float eventTime = t + tau;
+        const double eventTime = t + tau;
         while (nextOutputTime < params.numOutputPoints &&
-               outputTimes[nextOutputTime] < eventTime - 1e-6f) {
+               static_cast<double>(outputTimes[nextOutputTime]) < eventTime - timeTol) {
             recordObservables(trajId, nextOutputTime, params, obsOffsets, obsSpecies, obsWeights,
                               y, trajectoryObservables, trajectorySpecies);
             ++nextOutputTime;
@@ -452,24 +480,36 @@ __global__ void cuda_batch_direct_ssa(
 
         // Pass 2: reaction selection
         const float r2 = rng.next_float01();
-        const float target = r2 * totalPropensity;
-        float cum = 0.0f;
-        unsigned int selected = params.numReactions - 1;
+        const double target = static_cast<double>(r2) * totalPropensity;
+        double cum = 0.0;
+        unsigned int selected = params.numReactions;
+        unsigned int lastPositive = params.numReactions;
         for (unsigned int r = 0; r < params.numReactions; ++r) {
-            cum += computePropensity(r, rateConstants, reactionFlags,
-                                     rxnVmOffsets, rxnVmLens, vmCode, obsCache,
-                                     obsOffsets, obsSpecies, obsWeights,
-                                     reactantOffsets, reactantSpecies,
-                                     reactantStoichOffsets, y, ok);
+            const float p = computePropensity(r, rateConstants, reactionFlags,
+                                              rxnVmOffsets, rxnVmLens, vmCode, obsCache,
+                                              obsOffsets, obsSpecies, obsWeights,
+                                              reactantOffsets, reactantSpecies,
+                                              reactantStoichOffsets, y, ok);
             if (!ok) {
                 errorFlags[trajId] = 1u;
                 trajectoryEventCounts[trajId] = ssaStepCount;
                 return;
             }
-            if (cum >= target) {
-                selected = r;
-                break;
+            if (p > 0.0f) {
+                lastPositive = r;
+                cum += static_cast<double>(p);
+                if (cum >= target) {
+                    selected = r;
+                    break;
+                }
             }
+        }
+        if (selected == params.numReactions) {
+            selected = lastPositive;
+        }
+        if (selected >= params.numReactions) {
+            t = duration;
+            break;
         }
 
         // Fire reaction
@@ -489,7 +529,7 @@ __global__ void cuda_batch_direct_ssa(
         ++ssaStepCount;
 
         while (nextOutputTime < params.numOutputPoints &&
-               outputTimes[nextOutputTime] <= t + 1e-6f) {
+               static_cast<double>(outputTimes[nextOutputTime]) <= t + timeTol) {
             recordObservables(trajId, nextOutputTime, params, obsOffsets, obsSpecies, obsWeights,
                               y, trajectoryObservables, trajectorySpecies);
             ++nextOutputTime;
@@ -556,6 +596,67 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
 
     const auto tStartTotal = std::chrono::high_resolution_clock::now();
 
+    const double duration = options.tEnd - options.tStart;
+    const float durationF32 = static_cast<float>(duration);
+    if (duration > 0.0 && (!std::isfinite(durationF32) || durationF32 <= 0.0f)) {
+        throw std::runtime_error(
+            "CUDA backend: simulation duration outside float32 normal range; falling back to CPU");
+    }
+
+    // Host pre-check: guard against extreme initial propensity dynamic range
+    // exceeding float32 / 24-bit RNG selection resolution (> 1e5).
+    {
+        double initSumProp = 0.0;
+        double initMinPosProp = std::numeric_limits<double>::infinity();
+        for (uint32_t r = 0; r < net.numReactions; ++r) {
+            const uint8_t flags = (r < net.reactionFlags.size())
+                ? net.reactionFlags[r] : 0u;
+            if ((flags & kBatchRxnFlagFunctional) != 0u) continue;
+            double prop = static_cast<double>(net.rateConstants[r]);
+            const uint32_t rStart = net.reactantOffsets[r];
+            const uint32_t rEnd = net.reactantOffsets[r + 1];
+            if ((flags & kBatchRxnFlagAbsoluteFlux) != 0u) {
+                for (uint32_t i = rStart; i < rEnd; ++i) {
+                    const double pop = static_cast<double>(
+                        net.initialSpecies[net.reactantSpecies[i]]);
+                    if (pop <= static_cast<double>(net.reactantStoichOffsets[i])) {
+                        prop = 0.0;
+                        break;
+                    }
+                }
+            } else {
+                for (uint32_t i = rStart; i < rEnd; ++i) {
+                    const double pop = static_cast<double>(
+                        net.initialSpecies[net.reactantSpecies[i]]);
+                    const double eff = std::max(
+                        0.0, pop - static_cast<double>(net.reactantStoichOffsets[i]));
+                    prop *= eff;
+                }
+            }
+            if (!std::isfinite(prop)) {
+                throw std::runtime_error(
+                    "CUDA backend: initial propensity overflows float32; falling back to CPU");
+            }
+            if (prop > 0.0) {
+                initSumProp += prop;
+                if (prop < initMinPosProp) initMinPosProp = prop;
+            }
+        }
+        if (!std::isfinite(initSumProp) ||
+            (initMinPosProp < std::numeric_limits<double>::infinity() &&
+             initSumProp > initMinPosProp * 1e5)) {
+            throw std::runtime_error(
+                "CUDA backend: propensity dynamic range exceeds float32 resolution; falling back to CPU");
+        }
+    }
+
+    uint64_t effectiveSeed = options.baseSeed;
+    if (effectiveSeed == 0) {
+        std::random_device rd;
+        effectiveSeed = (static_cast<uint64_t>(rd()) << 32) ^ static_cast<uint64_t>(rd());
+        if (effectiveSeed == 0) effectiveSeed = 1ULL;
+    }
+
     BatchSsaMetrics metrics;
     metrics.batchSize = options.batchSize;
     metrics.observableNames = net.observableNames;
@@ -565,8 +666,24 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     const std::size_t numObs = net.numObservables;
     const std::size_t batchSize = options.batchSize;
 
+    // Shift GPU clock to relative elapsed time [0, duration] while keeping
+    // double-precision absolute output timestamps on the host.
     std::vector<float> outputTimes = detail::batchOutputTimes(options);
     metrics.timePoints = outputTimes;
+    metrics.timePointsDouble.resize(numPoints);
+    std::vector<float> relOutputTimes(numPoints, 0.0f);
+    const double stepDouble = (options.nSteps > 0)
+        ? (duration / static_cast<double>(options.nSteps))
+        : 0.0;
+    for (std::size_t i = 0; i < numPoints; ++i) {
+        const double rel = static_cast<double>(i) * stepDouble;
+        metrics.timePointsDouble[i] = options.tStart + rel;
+        relOutputTimes[i] = static_cast<float>(rel);
+        if (duration > 0.0 && i > 0 && relOutputTimes[i] <= relOutputTimes[i - 1]) {
+            throw std::runtime_error(
+                "CUDA backend: output time step underflows float32 resolution; falling back to CPU");
+        }
+    }
 
     GpuSimParams params;
     params.numSpecies = static_cast<uint32_t>(numSpecies);
@@ -575,9 +692,9 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     params.numOutputPoints = static_cast<uint32_t>(numPoints);
     params.batchSize = static_cast<uint32_t>(batchSize);
     params.maxSimSteps = static_cast<uint32_t>(options.maxSimSteps);
-    params.tStart = static_cast<float>(options.tStart);
-    params.tEnd = static_cast<float>(options.tEnd);
-    params.baseSeed = options.baseSeed;
+    params.tStart = 0.0f;
+    params.tEnd = durationF32;
+    params.baseSeed = effectiveSeed;
     params.hasFunctional = net.hasFunctional ? 1u : 0u;
     params.pad0 = 0u;
 
@@ -659,7 +776,7 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     dObsSpecies.upload(net.obsSpecies.data(), net.obsSpecies.size() * sizeof(uint32_t));
     dObsWeights.upload(net.obsWeights.data(), net.obsWeights.size() * sizeof(float));
     dInitialSpecies.upload(net.initialSpecies.data(), net.initialSpecies.size() * sizeof(int32_t));
-    dOutputTimes.upload(outputTimes.data(), timesBytes);
+    dOutputTimes.upload(relOutputTimes.data(), timesBytes);
     checkCuda(cudaMemset(dErrorFlags.get(), 0, errorBytes), "cudaMemset errorFlags failed");
     checkCudaLast("device setup failed");
     const auto tEndH2D = std::chrono::high_resolution_clock::now();
@@ -699,6 +816,11 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     std::vector<uint32_t> hErrorFlags(batchSize, 0u);
     dErrorFlags.download(hErrorFlags.data(), errorBytes);
     for (std::size_t b = 0; b < batchSize; ++b) {
+        if (hErrorFlags[b] == 2u) {
+            throw std::runtime_error(
+                "CUDA backend: runtime propensity dynamic range exceeded float32 resolution in trajectory " +
+                std::to_string(b) + "; falling back to CPU");
+        }
         if (hErrorFlags[b] != 0u) {
             throw std::runtime_error(
                 "CUDA backend: invalid/non-finite functional rate in trajectory " +

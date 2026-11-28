@@ -34,7 +34,7 @@ bool HybridModelGenerator::isIsomorphic(const std::string& pattern1,
         BNGParser parser1(&tokens1);
         auto* species1 = parser1.species_def();
         if (parser1.getNumberOfSyntaxErrors() != 0) return false;
-        const auto graph1 = bng::parser::buildPatternGraph(species1, mutableModel, true);
+        const auto graph1 = bng::parser::buildPatternGraph(species1, mutableModel, false);
 
         antlr4::ANTLRInputStream input2(pattern2);
         BNGLexer lexer2(&input2);
@@ -42,7 +42,7 @@ bool HybridModelGenerator::isIsomorphic(const std::string& pattern1,
         BNGParser parser2(&tokens2);
         auto* species2 = parser2.species_def();
         if (parser2.getNumberOfSyntaxErrors() != 0) return false;
-        const auto graph2 = bng::parser::buildPatternGraph(species2, mutableModel, true);
+        const auto graph2 = bng::parser::buildPatternGraph(species2, mutableModel, false);
 
         // A population lumps the particles of one compartment: @EC:L(r) and
         // @CP:L(r) are different species even though their graphs match.
@@ -77,7 +77,7 @@ std::size_t HybridModelGenerator::countMatches(const std::string& obsPattern,
         BNGParser parser1(&tokens1);
         auto* species1 = parser1.species_def();
         if (parser1.getNumberOfSyntaxErrors() != 0) return 0;
-        const auto pattern = bng::parser::buildPatternGraph(species1, mutableModel, true);
+        const auto pattern = bng::parser::buildPatternGraph(species1, mutableModel, false);
 
         antlr4::ANTLRInputStream input2(speciesPattern);
         BNGLexer lexer2(&input2);
@@ -85,7 +85,7 @@ std::size_t HybridModelGenerator::countMatches(const std::string& obsPattern,
         BNGParser parser2(&tokens2);
         auto* species2 = parser2.species_def();
         if (parser2.getNumberOfSyntaxErrors() != 0) return 0;
-        const auto target = bng::parser::buildPatternGraph(species2, mutableModel, true);
+        const auto target = bng::parser::buildPatternGraph(species2, mutableModel, false);
         const auto observableCompartment =
             bng::parser::extractSpeciesCompartment(species1);
         if (!observableCompartment.empty() &&

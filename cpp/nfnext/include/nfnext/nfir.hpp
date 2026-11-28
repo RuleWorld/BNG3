@@ -99,6 +99,9 @@ struct PatternIR {
     std::vector<std::pair<std::size_t, std::size_t>> aliases;
     std::vector<std::pair<std::size_t, std::size_t>> connected_to;
     std::vector<std::vector<std::size_t>> interchangeable;
+    // Species-level compartment constraints (e.g. 2D surface `@PM:L.R`) mapping a
+    // representative pattern node to the required complex species compartment.
+    std::vector<std::pair<std::size_t, CompartmentId>> species_compartments;
 
     std::size_t addNode(TypeId type) {
         nodes.push_back(Node{type, {}});
@@ -177,6 +180,22 @@ struct FilterIR {
     std::vector<PatternIR> patterns;
 };
 
+struct LocalObservableBinding {
+    std::uint32_t slot{0};
+    std::size_t observable_index{0};
+    std::size_t reactant_node{0};
+    bool molecule_scope{false};
+};
+
+struct RuntimeArrheniusInfo {
+    bool enabled{false};
+    double phi{0.5};
+    double ea{0.0};
+    double barrier{0.0};
+    double work{0.0};
+    bool reverse{false};
+};
+
 struct ExpandedRuleIR {
     RuleId id{0};
     std::string name;
@@ -192,6 +211,26 @@ struct ExpandedRuleIR {
     bool move_connected{false};
     double volume_factor{1.0};
     std::vector<FilterIR> filters;
+    // Post-transformation molecularity constraints (`+` vs `.` on product patterns).
+    std::vector<MolecularityConstraint> product_molecularity;
+    // Exact within-pattern / rule-action symmetry divisor (>= 1.0).
+    double symmetry_divisor{1.0};
+    // True when multi-reactant compartments are omitted on the rule pattern and
+    // must be scaled dynamically from matched complex compartments.
+    bool has_unqualified_compartments{false};
+    // Start node index of each '+'-separated reactant pattern.
+    std::vector<std::size_t> reactant_pattern_offsets;
+    // Reactant pattern indices that perform whole-species deletion (DestroyComplex).
+    std::vector<std::size_t> destroy_complex_patterns;
+    // Pairs of (created logical node ID, donor reactant node ID) for compartment
+    // inheritance when a created product omits an explicit compartment.
+    std::vector<std::pair<PatternNodeId, PatternNodeId>> created_compartment_inherit;
+    // Local observable references (%x:... f(x)) evaluated per candidate match.
+    std::vector<LocalObservableBinding> local_observable_bindings;
+    // Exact runtime per-match Arrhenius evaluation metadata when energy patterns
+    // involve partner identity/state, multi-molecule cooperativity, or homotypic
+    // neighbor couplings.
+    RuntimeArrheniusInfo runtime_arrhenius;
 };
 
 struct RuleFamilyIR {

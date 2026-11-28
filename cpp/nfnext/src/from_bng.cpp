@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
 #include <functional>
 #include <limits>
 #include <map>
@@ -22,6 +23,7 @@
 #include <set>
 #include <sstream>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -283,6 +285,7 @@ std::optional<double> constantExpression(
         case Binary::Subtract: return *left - *right;
         case Binary::Multiply: return *left * *right;
         case Binary::Divide: return *right == 0.0 ? std::nullopt : std::optional<double>(*left / *right);
+        case Binary::Modulo: return *right == 0.0 ? std::nullopt : std::optional<double>(std::fmod(*left, *right));
         case Binary::Power: return std::pow(*left, *right);
         case Binary::Less: return *left < *right ? 1.0 : 0.0;
         case Binary::LessEqual: return *left <= *right ? 1.0 : 0.0;
@@ -292,6 +295,7 @@ std::optional<double> constantExpression(
         case Binary::NotEqual: return *left != *right ? 1.0 : 0.0;
         case Binary::LogicalAnd: return (*left != 0.0 && *right != 0.0) ? 1.0 : 0.0;
         case Binary::LogicalOr: return (*left != 0.0 || *right != 0.0) ? 1.0 : 0.0;
+        case Binary::LogicalXor: return ((*left != 0.0) != (*right != 0.0)) ? 1.0 : 0.0;
         case Binary::Unknown: return std::nullopt;
         }
         return std::nullopt;
@@ -406,10 +410,18 @@ bool isDynamicEnergyFactor(const bng::compile::CompiledEnergyFactor& ep,
     return !constantExpression(ep.expression, source);
 }
 
+struct FlattenedPattern {
+    PatternIR pattern;
+    std::vector<std::size_t> patternOffsets;
+};
+
 std::optional<std::string> observableRateExpression(
     const bng::compile::ResolvedExpression& expression,
     const bng::compile::CompiledModel& model,
-    std::set<std::size_t>& observableIds) {
+    std::set<std::size_t>& observableIds,
+    const std::vector<bng::compile::CompiledLocalScope>* localScopes = nullptr,
+    const FlattenedPattern* flattened = nullptr,
+    std::vector<LocalObservableBinding>* localBindings = nullptr) {
     using Kind = bng::compile::ResolvedExpressionKind;
     using Unary = bng::compile::UnaryOp;
     using Binary = bng::compile::BinaryOp;
@@ -433,6 +445,41 @@ std::optional<std::string> observableRateExpression(
             (observable->kind != bng::compile::ObservableKind::Molecules &&
              observable->kind != bng::compile::ObservableKind::Species))
             return std::nullopt;
+        if (!expression.arguments.empty()) {
+            // Local observable reference: must bind to a reactant local scope.
+            if (expression.arguments.size() != 1 ||
+                expression.arguments.front().kind != Kind::LocalRef ||
+                localScopes == nullptr || flattened == nullptr || localBindings == nullptr) {
+                return std::nullopt;
+            }
+            const auto& localName = expression.arguments.front().localName;
+            const bng::compile::CompiledLocalScope* matchedScope = nullptr;
+            for (const auto& scope : *localScopes) {
+                if (scope.name == localName && scope.side == BngPatternSide::Reactant) {
+                    matchedScope = &scope;
+                    break;
+                }
+            }
+            if (!matchedScope || matchedScope->patternIndex >= flattened->patternOffsets.size()) {
+                return std::nullopt;
+            }
+            const bool isMolScope =
+                matchedScope->kind == bng::compile::LocalScopeKind::Molecule;
+            const std::size_t reactantNode =
+                flattened->patternOffsets[matchedScope->patternIndex] +
+                (isMolScope ? matchedScope->moleculeOccurrence.value_or(0) : 0);
+            if (reactantNode >= flattened->pattern.nodes.size()) return std::nullopt;
+            for (const auto& existing : *localBindings) {
+                if (existing.observable_index == index &&
+                    existing.reactant_node == reactantNode &&
+                    existing.molecule_scope == isMolScope) {
+                    return "local_obs_" + std::to_string(existing.slot);
+                }
+            }
+            const auto slot = static_cast<std::uint32_t>(localBindings->size());
+            localBindings->push_back(LocalObservableBinding{slot, index, reactantNode, isMolScope});
+            return "local_obs_" + std::to_string(slot);
+        }
         observableIds.insert(index);
         return "observable_" + std::to_string(index);
     }
@@ -440,7 +487,8 @@ std::optional<std::string> observableRateExpression(
         if (!expression.unaryOp || expression.arguments.size() != 1)
             return std::nullopt;
         const auto child = observableRateExpression(
-            expression.arguments.front(), model, observableIds);
+            expression.arguments.front(), model, observableIds,
+            localScopes, flattened, localBindings);
         if (!child) return std::nullopt;
         if (*expression.unaryOp == Unary::Negate) return "(-" + *child + ")";
         if (*expression.unaryOp == Unary::Plus) return "(" + *child + ")";
@@ -451,15 +499,20 @@ std::optional<std::string> observableRateExpression(
         if (!expression.binaryOp || expression.arguments.size() != 2)
             return std::nullopt;
         const auto left = observableRateExpression(
-            expression.arguments[0], model, observableIds);
+            expression.arguments[0], model, observableIds,
+            localScopes, flattened, localBindings);
         const auto right = observableRateExpression(
-            expression.arguments[1], model, observableIds);
+            expression.arguments[1], model, observableIds,
+            localScopes, flattened, localBindings);
         if (!left || !right) return std::nullopt;
         if (*expression.binaryOp == Binary::LogicalAnd) {
             return "if(" + *left + ",if(" + *right + ",1,0),0)";
         }
         if (*expression.binaryOp == Binary::LogicalOr) {
             return "if(" + *left + ",1,if(" + *right + ",1,0))";
+        }
+        if (*expression.binaryOp == Binary::LogicalXor) {
+            return "if(" + *left + ",if(" + *right + ",0,1),if(" + *right + ",1,0))";
         }
         const char* operation = nullptr;
         switch (*expression.binaryOp) {
@@ -483,14 +536,16 @@ std::optional<std::string> observableRateExpression(
         if (*expression.builtin == bng::compile::BuiltinFunction::Log10 &&
             expression.arguments.size() == 1) {
             const auto child = observableRateExpression(
-                expression.arguments.front(), model, observableIds);
+                expression.arguments.front(), model, observableIds,
+                localScopes, flattened, localBindings);
             if (!child) return std::nullopt;
             return "(log(" + *child + ")/log(10))";
         }
         if (*expression.builtin == bng::compile::BuiltinFunction::Log2 &&
             expression.arguments.size() == 1) {
             const auto child = observableRateExpression(
-                expression.arguments.front(), model, observableIds);
+                expression.arguments.front(), model, observableIds,
+                localScopes, flattened, localBindings);
             if (!child) return std::nullopt;
             return "(log(" + *child + ")/log(2))";
         }
@@ -517,7 +572,9 @@ std::optional<std::string> observableRateExpression(
         std::vector<std::string> arguments;
         arguments.reserve(arity);
         for (const auto& argument : expression.arguments) {
-            const auto child = observableRateExpression(argument, model, observableIds);
+            const auto child = observableRateExpression(
+                argument, model, observableIds,
+                localScopes, flattened, localBindings);
             if (!child) return std::nullopt;
             arguments.push_back(*child);
         }
@@ -535,23 +592,26 @@ std::optional<std::string> observableRateExpression(
     }
 }
 
-struct FlattenedPattern {
-    PatternIR pattern;
-    std::vector<std::size_t> patternOffsets;
-};
-
 bool appendPattern(const BngPattern& source, PatternIR& destination,
                    BngLoweringResult& result, const std::string& entity,
                    std::size_t& firstNode,
-                   bool unspecifiedBondIsUnbound = false) {
+                   bool unspecifiedBondIsUnbound = false,
+                   const bng::compile::CompiledModel* sourceModel = nullptr) {
     if (!source.isResolved()) {
         issue(result, BngLoweringSeverity::Error, entity,
               "pattern is not fully symbol-resolved");
         return false;
     }
     std::optional<CompartmentId> patternCompId;
+    bool isSurfaceSpeciesPrefix = false;
     if (source.compartmentId().has_value()) {
         patternCompId = static_cast<CompartmentId>(source.compartmentId()->value());
+        if (sourceModel && source.compartmentIsPrefix()) {
+            const auto* comp = sourceModel->compartment(*source.compartmentId());
+            if (comp && comp->dimension == 2) {
+                isSurfaceSpeciesPrefix = true;
+            }
+        }
     }
     firstNode = destination.nodes.size();
     std::map<std::size_t, std::vector<std::pair<std::size_t, std::uint32_t>>> exactBonds;
@@ -561,16 +621,23 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
             return false;
         }
         const auto node = destination.addNode(static_cast<TypeId>(molecule.moleculeTypeId->value()));
-        std::optional<CompartmentId> molCompId = molecule.compartmentId.has_value()
-            ? std::optional<CompartmentId>(static_cast<CompartmentId>(molecule.compartmentId->value()))
-            : patternCompId;
+        std::optional<CompartmentId> molCompId;
+        if (!molecule.compartment.empty() && molecule.compartmentId.has_value()) {
+            molCompId = static_cast<CompartmentId>(molecule.compartmentId->value());
+        } else if (!isSurfaceSpeciesPrefix) {
+            molCompId = molecule.compartmentId.has_value()
+                ? std::optional<CompartmentId>(static_cast<CompartmentId>(molecule.compartmentId->value()))
+                : patternCompId;
+        }
         destination.node(node).compartment = molCompId;
+        const auto* molDecl = sourceModel ? sourceModel->moleculeType(*molecule.moleculeTypeId) : nullptr;
         for (const auto& site : molecule.sites) {
             if (!site.componentType) {
                 issue(result, BngLoweringSeverity::Error, entity, "pattern site has no typed component ID");
                 return false;
             }
             const auto siteIndex = static_cast<std::uint32_t>(site.componentType->index);
+            bool emittedConstraintOrBond = false;
             const auto& state = site.stateConstraintResolved;
             if (state.kind == bng::compile::StateConstraintKind::Exact) {
                 if (!state.exact) {
@@ -578,6 +645,7 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
                     return false;
                 }
                 destination.node(node).siteState(siteIndex, static_cast<std::int32_t>(state.exact->index));
+                emittedConstraintOrBond = true;
             } else if (state.kind == bng::compile::StateConstraintKind::Set) {
                 std::vector<std::int32_t> states;
                 for (const auto& value : state.states) states.push_back(static_cast<std::int32_t>(value.index));
@@ -586,6 +654,7 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
                     return false;
                 }
                 destination.node(node).siteStateSet(siteIndex, std::move(states));
+                emittedConstraintOrBond = true;
             }
 
             const auto bonds = site.bondConstraints.empty()
@@ -595,28 +664,49 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
             for (const auto& bond : bonds) {
                 switch (bond.kind) {
                 case bng::compile::BondConstraintKind::Unspecified:
-                    // BNG2 treats a listed site with no bond notation as
-                    // unbound (the observable A(b) counts only free A), and
-                    // PatternLowering defaults Unspecified to UNBOUND. Scope
-                    // that correction to observables here so other lowered
-                    // pattern kinds keep their established constraints.
-                    if (unspecifiedBondIsUnbound)
+                    if (unspecifiedBondIsUnbound) {
                         destination.node(node).siteFree(siteIndex);
+                        emittedConstraintOrBond = true;
+                    }
                     break;
                 case bng::compile::BondConstraintKind::Any:
                     break;
                 case bng::compile::BondConstraintKind::Unbound:
                     destination.node(node).siteFree(siteIndex);
+                    emittedConstraintOrBond = true;
                     break;
                 case bng::compile::BondConstraintKind::Bound:
                     destination.node(node).siteBound(siteIndex);
+                    emittedConstraintOrBond = true;
                     break;
                 case bng::compile::BondConstraintKind::Exact:
                     exactBonds[bond.group.value].push_back({node, siteIndex});
+                    emittedConstraintOrBond = true;
                     break;
                 }
             }
+            // Safeguard for duplicate-named stateful sites with wildcard state & bond (e.g. A(p~?!?)):
+            // emit a full StateSet so GenericMatcher enumerates all equivalent site instances.
+            if (!emittedConstraintOrBond && molDecl != nullptr &&
+                siteIndex < molDecl->components.size() &&
+                !molDecl->components[siteIndex].stateNames.empty()) {
+                std::size_t sameNameCount = 0;
+                for (const auto& c : molDecl->components) {
+                    if (c.name == molDecl->components[siteIndex].name) ++sameNameCount;
+                }
+                if (sameNameCount > 1) {
+                    std::vector<std::int32_t> allStates;
+                    allStates.reserve(molDecl->components[siteIndex].stateNames.size());
+                    for (std::size_t si = 0; si < molDecl->components[siteIndex].stateNames.size(); ++si) {
+                        allStates.push_back(static_cast<std::int32_t>(si));
+                    }
+                    destination.node(node).siteStateSet(siteIndex, std::move(allStates));
+                }
+            }
         }
+    }
+    if (isSurfaceSpeciesPrefix && !source.molecules().empty()) {
+        destination.species_compartments.emplace_back(firstNode, *patternCompId);
     }
     for (const auto& [group, endpoints] : exactBonds) {
         if (endpoints.size() != 2) {
@@ -641,7 +731,8 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
 
 std::optional<FlattenedPattern> flattenReactants(
     const std::vector<BngPattern>& patterns, BngLoweringResult& result,
-    const std::string& entity, bool unspecifiedBondIsUnbound = false) {
+    const std::string& entity, bool unspecifiedBondIsUnbound = false,
+    const bng::compile::CompiledModel* sourceModel = nullptr) {
     const auto maxNodeIndex = static_cast<std::size_t>(
         std::numeric_limits<std::uint16_t>::max());
     const auto maxNodeCount = maxNodeIndex + 1;
@@ -663,7 +754,7 @@ std::optional<FlattenedPattern> flattenReactants(
         std::size_t first = 0;
         flattened.patternOffsets.push_back(flattened.pattern.nodes.size());
         if (!appendPattern(pattern, flattened.pattern, result, entity, first,
-                           unspecifiedBondIsUnbound))
+                           unspecifiedBondIsUnbound, sourceModel))
             return std::nullopt;
         representatives.push_back(first);
     }
@@ -788,10 +879,25 @@ std::optional<DirectionNodeMap> buildDirectionNodeMap(
 
 bool appendCreateActions(
     const bng::compile::CompiledRuleDirection& direction,
+    const bng::compile::CompiledModel& source,
+    const FlattenedPattern& reactants,
     const DirectionNodeMap& nodes,
     std::vector<ActionIR>& actions,
+    std::vector<std::pair<PatternNodeId, PatternNodeId>>& createdCompartmentInherit,
     BngLoweringResult& result,
     const std::string& entity) {
+    const auto effectiveMolComp = [&](const BngPattern& pat,
+                                      const bng::compile::PatternMoleculeDescriptor& mol)
+        -> std::optional<bng::compile::CompartmentId> {
+        if (!mol.compartment.empty() && mol.compartmentId) return mol.compartmentId;
+        if (pat.compartmentId()) {
+            const auto* c = source.compartment(*pat.compartmentId());
+            if (c && c->dimension == 2 && pat.compartmentIsPrefix()) return std::nullopt;
+            return pat.compartmentId();
+        }
+        return std::nullopt;
+    };
+    const std::size_t reactantNodeCount = reactants.pattern.nodes.size();
     for (const auto& key : nodes.createdProducts) {
         if (key.first >= direction.productPatterns.size() ||
             key.second >= direction.productPatterns[key.first].molecules().size()) {
@@ -799,7 +905,8 @@ bool appendCreateActions(
                   "created molecule occurrence is outside the product pattern");
             return false;
         }
-        const auto& molecule = direction.productPatterns[key.first].molecules()[key.second];
+        const auto& prodPattern = direction.productPatterns[key.first];
+        const auto& molecule = prodPattern.molecules()[key.second];
         if (!molecule.moleculeTypeId) {
             issue(result, BngLoweringSeverity::Error, entity,
                   "created product molecule has no typed molecule ID");
@@ -811,7 +918,43 @@ bool appendCreateActions(
         create.target_node = nodes.productNodes.at(key);
         actions.push_back(create);
 
-        const auto compId = molecule.compartmentId ? molecule.compartmentId : direction.productPatterns[key.first].compartmentId();
+        auto compId = effectiveMolComp(prodPattern, molecule);
+        if (!compId && !source.compartments().empty()) {
+            // Check if a surviving reactant in the same product pattern has an explicit compartment.
+            std::optional<PatternNodeId> samePatternReactant;
+            for (std::size_t mi = 0; mi < prodPattern.molecules().size(); ++mi) {
+                const MoleculeKey sibling{key.first, mi};
+                if (nodes.createdProducts.count(sibling) != 0) continue;
+                const auto siblingComp = effectiveMolComp(prodPattern, prodPattern.molecules()[mi]);
+                if (siblingComp) {
+                    compId = siblingComp;
+                    break;
+                }
+                const auto it = nodes.productNodes.find(sibling);
+                if (it != nodes.productNodes.end() && it->second < reactantNodeCount &&
+                    !samePatternReactant.has_value()) {
+                    samePatternReactant = it->second;
+                }
+            }
+            if (!compId) {
+                if (samePatternReactant.has_value()) {
+                    createdCompartmentInherit.emplace_back(create.target_node, *samePatternReactant);
+                } else if (reactantNodeCount > 0) {
+                    // Inherit from the first non-population reactant node (or node 0).
+                    PatternNodeId donor = 0;
+                    for (std::size_t ni = 0; ni < reactantNodeCount; ++ni) {
+                        const auto* mt = source.moleculeType(
+                            bng::compile::MoleculeTypeId::fromDenseIndex(
+                                static_cast<std::size_t>(reactants.pattern.nodes[ni].molecule_type)));
+                        if (mt && !mt->population) {
+                            donor = static_cast<PatternNodeId>(ni);
+                            break;
+                        }
+                    }
+                    createdCompartmentInherit.emplace_back(create.target_node, donor);
+                }
+            }
+        }
         if (compId) {
             ActionIR setComp;
             setComp.kind = ActionKind::SetCompartment;
@@ -1050,9 +1193,12 @@ bool appendDeletionActions(
 
 bool addActions(const bng::compile::CompiledRule& rule,
                 const bng::compile::CompiledRuleDirection& direction,
+                const bng::compile::CompiledModel& source,
                 const FlattenedPattern& pattern,
                 bool reverseDirection,
                 std::vector<ActionIR>& actions,
+                std::vector<std::pair<PatternNodeId, PatternNodeId>>& createdCompartmentInherit,
+                DirectionNodeMap& outNodes,
                 BngLoweringResult& result, const std::string& entity) {
     if (!direction.transformationsComplete) {
         issue(result, BngLoweringSeverity::Error, entity,
@@ -1063,9 +1209,15 @@ bool addActions(const bng::compile::CompiledRule& rule,
     const auto nodes = buildDirectionNodeMap(
         rule, direction, pattern, reverseDirection, result, entity);
     if (!nodes) return false;
-    if (!appendCreateActions(direction, *nodes, actions, result, entity)) return false;
+    outNodes = *nodes;
+    if (!appendCreateActions(direction, source, pattern, *nodes, actions,
+                             createdCompartmentInherit, result, entity)) return false;
 
     const bool deleteMolecules = hasDeleteMoleculesModifier(rule);
+    // RULEHUB-05: Always emit DeleteBond (Unbind) operations BEFORE AddBond (Bind)
+    // operations so simultaneous bond-break + bond-form rules (e.g. bond transfer)
+    // free the site before binding its new partner.
+    std::vector<ActionIR> deferredBinds;
     for (const auto& mutation : direction.mutations) {
         if (mutation.kind == BngMutationKind::DeleteBond && !deleteMolecules &&
             (isWholeSpeciesDeletion(direction, mutation.source.patternIndex) ||
@@ -1121,7 +1273,11 @@ bool addActions(const bng::compile::CompiledRule& rule,
                 return false;
             }
             action.partner_site = static_cast<std::uint16_t>(partnerMolecule.sites[mutation.partner.siteIndex].componentType->index);
-            actions.push_back(std::move(action));
+            if (mutation.kind == BngMutationKind::AddBond) {
+                deferredBinds.push_back(std::move(action));
+            } else {
+                actions.push_back(std::move(action));
+            }
             break;
         }
         case BngMutationKind::AddMolecule:
@@ -1132,6 +1288,21 @@ bool addActions(const bng::compile::CompiledRule& rule,
             break;
         }
     }
+    for (auto& bindAction : deferredBinds) {
+        actions.push_back(std::move(bindAction));
+    }
+
+    const auto effectiveMolComp = [&](const BngPattern& pat,
+                                      const bng::compile::PatternMoleculeDescriptor& mol)
+        -> std::optional<bng::compile::CompartmentId> {
+        if (!mol.compartment.empty() && mol.compartmentId) return mol.compartmentId;
+        if (pat.compartmentId()) {
+            const auto* c = source.compartment(*pat.compartmentId());
+            if (c && c->dimension == 2 && pat.compartmentIsPrefix()) return std::nullopt;
+            return pat.compartmentId();
+        }
+        return std::nullopt;
+    };
 
     // Compartment transport actions for mapped reactant molecules
     for (const auto& [productRef, reactantRef] :
@@ -1144,8 +1315,8 @@ bool addActions(const bng::compile::CompiledRule& rule,
             reactantRef.moleculeIndex >= reactPattern.molecules().size()) continue;
         const auto& prodMol = prodPattern.molecules()[productRef.moleculeIndex];
         const auto& reactMol = reactPattern.molecules()[reactantRef.moleculeIndex];
-        const auto prodComp = prodMol.compartmentId ? prodMol.compartmentId : prodPattern.compartmentId();
-        const auto reactComp = reactMol.compartmentId ? reactMol.compartmentId : reactPattern.compartmentId();
+        const auto prodComp = effectiveMolComp(prodPattern, prodMol);
+        const auto reactComp = effectiveMolComp(reactPattern, reactMol);
         if (prodComp.has_value() && prodComp != reactComp) {
             const auto node = nodeFor(reactantRef, pattern);
             if (node) {
@@ -1161,6 +1332,442 @@ bool addActions(const bng::compile::CompiledRule& rule,
 
     if (!appendCreatedProductBonds(direction, *nodes, actions, result, entity)) return false;
     return appendDeletionActions(rule, direction, pattern, *nodes, actions, result, entity);
+}
+
+bool filtersInvariantUnderReactantSwap(
+    const std::vector<bng::compile::CompiledFilter>& filters,
+    std::size_t firstPattern, std::size_t secondPattern) {
+    if (filters.empty()) return true;
+    for (const auto& f : filters) {
+        if (f.products) return false;
+    }
+    std::vector<bool> matched(filters.size(), false);
+    for (const auto& f : filters) {
+        const std::size_t mapped =
+            (f.patternIndex == firstPattern) ? secondPattern :
+            (f.patternIndex == secondPattern) ? firstPattern : f.patternIndex;
+        bool found = false;
+        for (std::size_t j = 0; j < filters.size(); ++j) {
+            if (matched[j]) continue;
+            const auto& g = filters[j];
+            if (g.include == f.include && g.products == f.products &&
+                g.patternIndex == mapped && g.patterns == f.patterns) {
+                matched[j] = true;
+                found = true;
+                break;
+            }
+        }
+        if (!found) return false;
+    }
+    return true;
+}
+
+// Compute within-pattern (node, site) rule-action symmetry divisor for a lowered rule.
+// Cross-pattern symmetries are handled by PatternIR::interchangeable; whole-species
+// deletions are deduplicated per complex at runtime. This computes the exact product
+// of within-pattern automorphism counts leaving the pattern and action multiset invariant.
+double computeWithinPatternSymmetry(
+    const PatternIR& pattern,
+    const std::vector<ActionIR>& actions,
+    const std::vector<std::size_t>& reactantPatternOffsets,
+    const std::vector<std::size_t>& destroyComplexPatterns,
+    const bng::compile::CompiledModel& source) {
+    const std::size_t n = pattern.nodes.size();
+    if (n == 0) return 1.0;
+
+    std::vector<std::size_t> offsets = reactantPatternOffsets;
+    if (offsets.empty()) offsets.push_back(0);
+    std::unordered_set<std::size_t> destroySet(
+        destroyComplexPatterns.begin(), destroyComplexPatterns.end());
+
+    // Precompute mentioned sites & per-site constraint signatures per node.
+    using ConstraintSig = std::vector<std::tuple<int, std::int32_t, std::vector<std::int32_t>>>;
+    std::vector<std::vector<std::uint16_t>> mentioned(n);
+    std::vector<std::map<std::uint16_t, ConstraintSig>> siteSigs(n);
+    for (std::size_t u = 0; u < n; ++u) {
+        for (const auto& c : pattern.nodes[u].constraints) {
+            const auto s = static_cast<std::uint16_t>(c.site);
+            mentioned[u].push_back(s);
+            siteSigs[u][s].emplace_back(static_cast<int>(c.kind), c.state, c.states);
+        }
+        for (auto& [_, sig] : siteSigs[u]) std::sort(sig.begin(), sig.end());
+    }
+    for (const auto& b : pattern.bonds) {
+        mentioned[b.first].push_back(static_cast<std::uint16_t>(b.first_site));
+        mentioned[b.second].push_back(static_cast<std::uint16_t>(b.second_site));
+    }
+    for (auto& m : mentioned) {
+        std::sort(m.begin(), m.end());
+        m.erase(std::unique(m.begin(), m.end()), m.end());
+    }
+
+    auto actionKeysFor = [&](const std::vector<std::size_t>& perm,
+                             const std::vector<std::vector<std::uint16_t>>& smaps) {
+        auto mapNode = [&](std::uint32_t node) -> std::uint32_t {
+            return node < perm.size() ? static_cast<std::uint32_t>(perm[node]) : node;
+        };
+        auto mapSite = [&](std::uint32_t node, std::uint16_t site) -> std::uint16_t {
+            if (node < smaps.size() && site < smaps[node].size()) return smaps[node][site];
+            return site;
+        };
+        std::vector<std::vector<int>> keys;
+        keys.reserve(actions.size());
+        for (const auto& a : actions) {
+            std::vector<int> k{static_cast<int>(a.kind), static_cast<int>(a.molecule_type)};
+            if (a.kind == ActionKind::Bind || a.kind == ActionKind::Unbind) {
+                std::pair<std::uint32_t, std::uint16_t> e1{mapNode(a.target_node), mapSite(a.target_node, a.site)};
+                std::pair<std::uint32_t, std::uint16_t> e2{mapNode(a.partner_node), mapSite(a.partner_node, a.partner_site)};
+                if (e2 < e1) std::swap(e1, e2);
+                k.push_back(static_cast<int>(e1.first));
+                k.push_back(static_cast<int>(e1.second));
+                k.push_back(static_cast<int>(e2.first));
+                k.push_back(static_cast<int>(e2.second));
+            } else {
+                k.push_back(static_cast<int>(mapNode(a.target_node)));
+                k.push_back(static_cast<int>(mapSite(a.target_node, a.site)));
+                k.push_back(static_cast<int>(a.value));
+                k.push_back(static_cast<int>(a.aux));
+            }
+            keys.push_back(std::move(k));
+        }
+        std::sort(keys.begin(), keys.end());
+        return keys;
+    };
+
+    std::vector<std::size_t> idPerm(n);
+    std::iota(idPerm.begin(), idPerm.end(), 0);
+    std::vector<std::vector<std::uint16_t>> idSiteMaps(n);
+    for (std::size_t u = 0; u < n; ++u) {
+        const auto* mt = source.moleculeType(
+            bng::compile::MoleculeTypeId::fromDenseIndex(pattern.nodes[u].molecule_type));
+        if (mt) {
+            idSiteMaps[u].resize(mt->components.size());
+            std::iota(idSiteMaps[u].begin(), idSiteMaps[u].end(), static_cast<std::uint16_t>(0));
+        }
+    }
+    const auto baseActionKeys = actionKeysFor(idPerm, idSiteMaps);
+
+    double divisor = 1.0;
+    for (std::size_t pi = 0; pi < offsets.size(); ++pi) {
+        if (destroySet.count(pi)) continue; // whole-species deletion deduplicated per complex
+        const std::size_t start = offsets[pi];
+        const std::size_t end = (pi + 1 < offsets.size()) ? offsets[pi + 1] : n;
+        const std::size_t len = end - start;
+        if (len == 0) continue;
+
+        // Fast skip: single node with no duplicate mentioned site names.
+        if (len == 1) {
+            const auto* mt = source.moleculeType(
+                bng::compile::MoleculeTypeId::fromDenseIndex(pattern.nodes[start].molecule_type));
+            bool hasDupMentioned = false;
+            if (mt && mentioned[start].size() >= 2) {
+                for (std::size_t i = 0; i < mentioned[start].size() && !hasDupMentioned; ++i) {
+                    for (std::size_t j = i + 1; j < mentioned[start].size(); ++j) {
+                        if (mt->components[mentioned[start][i]].name ==
+                            mt->components[mentioned[start][j]].name) {
+                            hasDupMentioned = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!hasDupMentioned) continue;
+        }
+
+        // Collect undirected bonds inside [start, end).
+        using UBond = std::tuple<std::size_t, std::uint16_t, std::size_t, std::uint16_t>;
+        auto makeUBond = [](std::size_t a, std::uint16_t sa, std::size_t b, std::uint16_t sb) -> UBond {
+            if (std::tie(b, sb) < std::tie(a, sa)) return {b, sb, a, sa};
+            return {a, sa, b, sb};
+        };
+        std::vector<UBond> subBonds;
+        std::vector<std::vector<std::size_t>> localAdj(len);
+        for (const auto& b : pattern.bonds) {
+            if (b.first >= start && b.first < end && b.second >= start && b.second < end) {
+                subBonds.push_back(makeUBond(b.first, static_cast<std::uint16_t>(b.first_site),
+                                             b.second, static_cast<std::uint16_t>(b.second_site)));
+                if (b.first != b.second) {
+                    localAdj[b.first - start].push_back(b.second - start);
+                    localAdj[b.second - start].push_back(b.first - start);
+                }
+            }
+        }
+        std::sort(subBonds.begin(), subBonds.end());
+        std::set<UBond> subBondSet(subBonds.begin(), subBonds.end());
+
+        // Order local nodes by BFS along bonds.
+        std::vector<std::size_t> order;
+        std::vector<std::optional<std::size_t>> parentLocal(len);
+        std::vector<bool> inOrder(len, false);
+        while (order.size() < len) {
+            std::size_t s0 = 0;
+            while (inOrder[s0]) ++s0;
+            std::vector<std::size_t> q{s0};
+            inOrder[s0] = true;
+            for (std::size_t h = 0; h < q.size(); ++h) {
+                const std::size_t c = q[h];
+                order.push_back(c);
+                for (const std::size_t nb : localAdj[c]) {
+                    if (!inOrder[nb]) {
+                        inOrder[nb] = true;
+                        parentLocal[nb] = c;
+                        q.push_back(nb);
+                    }
+                }
+            }
+        }
+
+        auto perm = idPerm;
+        auto smaps = idSiteMaps;
+        std::vector<bool> assigned(len, false);
+        std::vector<bool> used(len, false);
+        std::size_t autCount = 0;
+
+        auto enumSiteMaps = [&](std::size_t u, std::size_t pu, auto&& cb) {
+            const auto* mt = source.moleculeType(
+                bng::compile::MoleculeTypeId::fromDenseIndex(pattern.nodes[u].molecule_type));
+            if (!mt) return;
+            const auto& uSites = mentioned[u];
+            const auto& puSites = mentioned[pu];
+            if (uSites.size() != puSites.size()) return;
+            auto smap = idSiteMaps[u];
+            if (uSites.empty()) { cb(smap); return; }
+            std::vector<std::uint8_t> usedT(puSites.size(), 0);
+            std::function<void(std::size_t)> assignS = [&](std::size_t idx) {
+                if (idx == uSites.size()) { cb(smap); return; }
+                const auto us = uSites[idx];
+                const auto& uSig = siteSigs[u][us];
+                for (std::size_t j = 0; j < puSites.size(); ++j) {
+                    if (usedT[j]) continue;
+                    const auto ps = puSites[j];
+                    if (mt->components[us].name != mt->components[ps].name) continue;
+                    if (uSig != siteSigs[pu][ps]) continue;
+                    smap[us] = ps;
+                    usedT[j] = 1;
+                    assignS(idx + 1);
+                    usedT[j] = 0;
+                }
+            };
+            assignS(0);
+        };
+
+        auto checkSubBonds = [&](std::size_t lu) -> bool {
+            const std::size_t u = start + lu;
+            for (const auto& b : pattern.bonds) {
+                if (b.first != u && b.second != u) continue;
+                if (b.first < start || b.first >= end || b.second < start || b.second >= end) continue;
+                if (!assigned[b.first - start] || !assigned[b.second - start]) continue;
+                if (!subBondSet.count(makeUBond(
+                        perm[b.first], smaps[b.first][b.first_site],
+                        perm[b.second], smaps[b.second][b.second_site]))) {
+                    return false;
+                }
+            }
+            return true;
+        };
+
+        std::function<void(std::size_t)> dfs = [&](std::size_t depth) {
+            if (depth == len) {
+                if (actionKeysFor(perm, smaps) == baseActionKeys) ++autCount;
+                return;
+            }
+            const std::size_t lu = order[depth];
+            const std::size_t u = start + lu;
+            auto tryLocal = [&](std::size_t lpu) {
+                if (used[lpu]) return;
+                const std::size_t pu = start + lpu;
+                if (pattern.nodes[u].molecule_type != pattern.nodes[pu].molecule_type) return;
+                if (pattern.nodes[u].compartment != pattern.nodes[pu].compartment) return;
+                if (localAdj[lu].size() != localAdj[lpu].size()) return;
+                if (mentioned[u].size() != mentioned[pu].size()) return;
+                perm[u] = pu;
+                assigned[lu] = true;
+                used[lpu] = true;
+                enumSiteMaps(u, pu, [&](const std::vector<std::uint16_t>& sm) {
+                    smaps[u] = sm;
+                    if (checkSubBonds(lu)) dfs(depth + 1);
+                });
+                assigned[lu] = false;
+                used[lpu] = false;
+            };
+            if (parentLocal[lu].has_value()) {
+                const std::size_t pParent = perm[start + *parentLocal[lu]] - start;
+                std::unordered_set<std::size_t> tried;
+                for (const std::size_t nb : localAdj[pParent]) {
+                    if (tried.insert(nb).second) tryLocal(nb);
+                }
+            } else {
+                for (std::size_t lpu = 0; lpu < len; ++lpu) tryLocal(lpu);
+            }
+        };
+        dfs(0);
+        if (autCount > 1) divisor *= static_cast<double>(autCount);
+    }
+    return divisor;
+}
+
+std::vector<MolecularityConstraint> computeProductMolecularity(
+    const bng::compile::CompiledRuleDirection& direction,
+    const FlattenedPattern& reactants,
+    const DirectionNodeMap& nodes,
+    const std::vector<ActionIR>& actions) {
+    std::vector<MolecularityConstraint> result;
+    const std::size_t reactantCount = reactants.pattern.nodes.size();
+    if (reactantCount == 0 || direction.productPatterns.empty()) return result;
+
+    // Identify destroyed reactant nodes and deleted bonds.
+    std::unordered_set<PatternNodeId> destroyedNodes;
+    using BondPair = std::tuple<PatternNodeId, std::uint16_t, PatternNodeId, std::uint16_t>;
+    auto normBond = [](PatternNodeId a, std::uint16_t sa, PatternNodeId b, std::uint16_t sb) -> BondPair {
+        if (std::tie(b, sb) < std::tie(a, sa)) return {b, sb, a, sa};
+        return {a, sa, b, sb};
+    };
+    std::set<BondPair> deletedBonds;
+    PatternNodeId maxNode = static_cast<PatternNodeId>(reactantCount);
+    for (const auto& a : actions) {
+        if (a.kind == ActionKind::Destroy || a.kind == ActionKind::DestroyComplex) {
+            destroyedNodes.insert(a.target_node);
+        } else if (a.kind == ActionKind::Unbind) {
+            deletedBonds.insert(normBond(a.target_node, a.site, a.partner_node, a.partner_site));
+        } else if (a.kind == ActionKind::Create) {
+            maxNode = std::max(maxNode, a.target_node + 1);
+        }
+    }
+
+    // Union-Find for static product connectivity (bonds surviving or added).
+    std::vector<std::size_t> prodUf(maxNode);
+    std::iota(prodUf.begin(), prodUf.end(), 0);
+    auto findRoot = [](std::vector<std::size_t>& uf, std::size_t x) {
+        while (uf[x] != x) { uf[x] = uf[uf[x]]; x = uf[x]; }
+        return x;
+    };
+    auto unite = [&](std::vector<std::size_t>& uf, std::size_t a, std::size_t b) {
+        a = findRoot(uf, a); b = findRoot(uf, b);
+        if (a != b) uf[b] = a;
+    };
+    for (const auto& b : reactants.pattern.bonds) {
+        const auto u = static_cast<PatternNodeId>(b.first);
+        const auto v = static_cast<PatternNodeId>(b.second);
+        if (destroyedNodes.count(u) || destroyedNodes.count(v)) continue;
+        if (deletedBonds.count(normBond(u, static_cast<std::uint16_t>(b.first_site),
+                                        v, static_cast<std::uint16_t>(b.second_site)))) continue;
+        unite(prodUf, u, v);
+    }
+    for (const auto& a : actions) {
+        if (a.kind == ActionKind::Bind && a.target_node < maxNode && a.partner_node < maxNode) {
+            unite(prodUf, a.target_node, a.partner_node);
+        }
+    }
+
+    // Union-Find for reactant pattern connectivity (including any cross-reactant Bind).
+    std::vector<std::size_t> reactUf(maxNode);
+    std::iota(reactUf.begin(), reactUf.end(), 0);
+    for (std::size_t pi = 0; pi < reactants.patternOffsets.size(); ++pi) {
+        const std::size_t start = reactants.patternOffsets[pi];
+        const std::size_t end = (pi + 1 < reactants.patternOffsets.size())
+                                    ? reactants.patternOffsets[pi + 1]
+                                    : reactantCount;
+        for (std::size_t u = start + 1; u < end; ++u) unite(reactUf, start, u);
+    }
+    for (const auto& a : actions) {
+        if (a.kind == ActionKind::Bind && a.target_node < maxNode && a.partner_node < maxNode) {
+            unite(reactUf, a.target_node, a.partner_node);
+        }
+    }
+
+    // Collect surviving reactant nodes per product pattern.
+    std::vector<std::vector<PatternNodeId>> prodSurviving(direction.productPatterns.size());
+    for (std::size_t pi = 0; pi < direction.productPatterns.size(); ++pi) {
+        const auto& pat = direction.productPatterns[pi];
+        for (std::size_t mi = 0; mi < pat.molecules().size(); ++mi) {
+            const auto it = nodes.productNodes.find({pi, mi});
+            if (it == nodes.productNodes.end()) continue;
+            if (it->second < reactantCount && !destroyedNodes.count(it->second)) {
+                prodSurviving[pi].push_back(it->second);
+            }
+        }
+        // Within each product pattern, surviving reactants must end up in the same complex.
+        if (prodSurviving[pi].size() >= 2) {
+            const auto rep = prodSurviving[pi].front();
+            for (std::size_t k = 1; k < prodSurviving[pi].size(); ++k) {
+                const auto other = prodSurviving[pi][k];
+                if (findRoot(prodUf, rep) != findRoot(prodUf, other)) {
+                    result.push_back(MolecularityConstraint::sameComplex(
+                        static_cast<std::uint16_t>(rep), static_cast<std::uint16_t>(other)));
+                }
+            }
+        }
+    }
+
+    // Across distinct '+'-separated product patterns, surviving reactants must end up
+    // in different complexes whenever they could possibly be connected after transformation.
+    for (std::size_t pi = 0; pi < prodSurviving.size(); ++pi) {
+        if (prodSurviving[pi].empty()) continue;
+        for (std::size_t pj = pi + 1; pj < prodSurviving.size(); ++pj) {
+            if (prodSurviving[pj].empty()) continue;
+            const auto a = prodSurviving[pi].front();
+            const auto b = prodSurviving[pj].front();
+            if (findRoot(reactUf, a) == findRoot(reactUf, b)) {
+                result.push_back(MolecularityConstraint::differentComplex(
+                    static_cast<std::uint16_t>(a), static_cast<std::uint16_t>(b)));
+            }
+        }
+    }
+    return result;
+}
+
+// Helper for ETH-13: add a state or state-set branch constraint to a PatternIR::Node
+// while checking compatibility with any existing constraints from the rule pattern.
+bool tryAddBranchStateConstraint(PatternIR::Node& node, std::uint32_t site,
+                                 const std::vector<std::int32_t>& allowedStates) {
+    if (allowedStates.empty()) return false;
+    std::vector<std::int32_t> effective = allowedStates;
+    for (auto it = node.constraints.begin(); it != node.constraints.end();) {
+        if (it->site != site) { ++it; continue; }
+        if (it->kind == PatternIR::SiteConstraintKind::State) {
+            if (std::find(effective.begin(), effective.end(), it->state) == effective.end()) {
+                return false; // Contradicts existing rule state constraint!
+            }
+            effective = {it->state};
+            it = node.constraints.erase(it);
+            continue;
+        }
+        if (it->kind == PatternIR::SiteConstraintKind::StateSet) {
+            std::vector<std::int32_t> inter;
+            for (const auto s : effective) {
+                if (std::find(it->states.begin(), it->states.end(), s) != it->states.end()) {
+                    inter.push_back(s);
+                }
+            }
+            if (inter.empty()) return false;
+            effective = std::move(inter);
+            it = node.constraints.erase(it);
+            continue;
+        }
+        ++it;
+    }
+    if (effective.size() == 1) node.siteState(site, effective.front());
+    else node.siteStateSet(site, std::move(effective));
+    return true;
+}
+
+bool tryAddBranchBondConstraint(PatternIR& pattern, std::size_t nodeIdx,
+                                std::uint32_t site, bool requireBound) {
+    for (const auto& b : pattern.bonds) {
+        if ((b.first == nodeIdx && b.first_site == site) ||
+            (b.second == nodeIdx && b.second_site == site)) {
+            return requireBound; // Bond already implies bound; Free contradicts bond!
+        }
+    }
+    auto& node = pattern.nodes[nodeIdx];
+    for (const auto& c : node.constraints) {
+        if (c.site != site) continue;
+        if (c.kind == PatternIR::SiteConstraintKind::Free) return !requireBound;
+        if (c.kind == PatternIR::SiteConstraintKind::Bound) return requireBound;
+    }
+    if (requireBound) node.siteBound(site);
+    else node.siteFree(site);
+    return true;
 }
 
 // Swap-insensitive key for one action. Bind/Unbind are undirected, so their
@@ -1194,8 +1801,6 @@ std::vector<int> actionSymmetryKey(
         key.push_back(static_cast<int>(action.site));
         key.push_back(static_cast<int>(action.value));
         key.push_back(static_cast<int>(action.aux));
-        key.push_back(static_cast<int>(node(action.partner_node)));
-        key.push_back(static_cast<int>(action.partner_site));
     }
     return key;
 }
@@ -1226,27 +1831,32 @@ void addDirection(const bng::compile::CompiledRule& rule,
                   const bng::compile::CompiledModel& source,
                   BngLoweringResult& result) {
     const std::string entity = rule.name() + suffix;
-    const auto flattened = flattenReactants(direction.reactantPatterns, result, entity);
+    const auto flattened = flattenReactants(
+        direction.reactantPatterns, result, entity, false, &source);
     if (!flattened) return;
 
     // Lower filters into NFIR FilterIR. Filters constrain rule applicability
     // by requiring or excluding species matching specific patterns in the
-    // reactant or product set. The filter patterns are lowered to PatternIR.
+    // reactant or product set. The filter patterns are lowered to PatternIR
+    // with unspecifiedBondIsUnbound = true (NFN-07).
     std::vector<FilterIR> loweredFilters;
+    bool hasProductFilter = false;
     if (!direction.filters.empty()) {
         loweredFilters.reserve(direction.filters.size());
         for (const auto& filter : direction.filters) {
             FilterIR irFilter;
             irFilter.include = filter.include;
             irFilter.products = filter.products;
+            if (filter.products) hasProductFilter = true;
             irFilter.pattern_index = filter.patternIndex;
-            irFilter.reactant_node_offset = (filter.patternIndex < flattened->patternOffsets.size())
+            irFilter.reactant_node_offset = (!filter.products && filter.patternIndex < flattened->patternOffsets.size())
                 ? flattened->patternOffsets[filter.patternIndex]
                 : 0;
             irFilter.patterns.reserve(filter.patterns.size());
             for (const auto& pattern : filter.patterns) {
                 BngLoweringResult filterValidation;
-                const auto loweredPattern = flattenReactants({pattern}, filterValidation, entity);
+                const auto loweredPattern = flattenReactants(
+                    {pattern}, filterValidation, entity, true, &source);
                 if (loweredPattern && filterValidation.ok()) {
                     irFilter.patterns.push_back(loweredPattern->pattern);
                 } else {
@@ -1301,20 +1911,43 @@ void addDirection(const bng::compile::CompiledRule& rule,
     // a symmetric transformation leaves the action program invariant under
     // the exchange, and only then may ordered embeddings be collapsed.
     std::vector<ActionIR> loweredActions;
-    if (!addActions(rule, direction, *flattened, reverseDirection,
-                    loweredActions, result, entity)) return;
+    std::vector<std::pair<PatternNodeId, PatternNodeId>> createdCompartmentInherit;
+    DirectionNodeMap directionNodes;
+    if (!addActions(rule, direction, source, *flattened, reverseDirection,
+                    loweredActions, createdCompartmentInherit, directionNodes,
+                    result, entity)) return;
 
-    // Whole-species deletions have no identity-sensitive action. Other rules
-    // qualify when exchanging the duplicate reactants leaves the action
-    // program unchanged (e.g. a symmetric A+A -> A.A binding, but not
-    // A+A -> A(p)+A(u)). The whole pattern is compared first, so distinct
-    // state or bond constraints never share a symmetry group. BNG2 applies
-    // the same 1/n! combinatorial factor to identical reactants.
+    // Resolve product filter target logical node offsets (NFN-06).
+    for (auto& irFilter : loweredFilters) {
+        if (!irFilter.products) continue;
+        if (irFilter.pattern_index < direction.productPatterns.size() &&
+            !direction.productPatterns[irFilter.pattern_index].molecules().empty()) {
+            const auto it = directionNodes.productNodes.find({irFilter.pattern_index, 0});
+            if (it != directionNodes.productNodes.end()) {
+                irFilter.reactant_node_offset = it->second;
+            }
+        }
+    }
+
+    // Track which reactant patterns perform whole-species deletion (DestroyComplex).
+    std::vector<std::size_t> destroyComplexPatterns;
+    if (!hasDeleteMoleculesModifier(rule)) {
+        if (direction.productPatterns.empty()) {
+            for (std::size_t pi = 0; pi < direction.reactantPatterns.size(); ++pi) {
+                if (!direction.reactantPatterns[pi].molecules().empty())
+                    destroyComplexPatterns.push_back(pi);
+            }
+        } else {
+            destroyComplexPatterns = direction.wholeSpeciesDeletions;
+        }
+    }
+
+    // Cross-pattern reactant interchangeability (including DeleteMolecules and
+    // symmetric reactant filters — NFN-11).
     const bool wholeDeletionSymmetry =
         !hasDeleteMoleculesModifier(rule) &&
         direction.wholeSpeciesDeletions.size() == direction.reactantPatterns.size();
-    if (!hasDeleteMoleculesModifier(rule) && direction.filters.empty() &&
-        direction.localScopes.empty()) {
+    if (direction.localScopes.empty() && !hasProductFilter) {
         std::vector<bool> grouped(direction.reactantPatterns.size(), false);
         for (std::size_t first = 0; first < direction.reactantPatterns.size(); ++first) {
             if (grouped[first]) continue;
@@ -1340,9 +1973,14 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 grouped[other] = true;
             }
             if (duplicates.size() < 2) continue;
-            if (!wholeDeletionSymmetry) {
-                bool allExchangesSymmetric = true;
-                for (std::size_t dupIdx = 1; dupIdx < duplicates.size(); ++dupIdx) {
+            bool allExchangesSymmetric = true;
+            for (std::size_t dupIdx = 1; dupIdx < duplicates.size(); ++dupIdx) {
+                if (!filtersInvariantUnderReactantSwap(
+                        direction.filters, duplicates[0], duplicates[dupIdx])) {
+                    allExchangesSymmetric = false;
+                    break;
+                }
+                if (!wholeDeletionSymmetry) {
                     std::vector<std::pair<std::size_t, std::size_t>> swaps;
                     swaps.reserve(moleculeCount);
                     for (std::size_t m = 0; m < moleculeCount; ++m) {
@@ -1355,8 +1993,8 @@ void addDirection(const bng::compile::CompiledRule& rule,
                         break;
                     }
                 }
-                if (!allExchangesSymmetric) continue;
             }
+            if (!allExchangesSymmetric) continue;
             for (std::size_t molecule = 0; molecule < moleculeCount; ++molecule) {
                 std::vector<std::size_t> interchangeable;
                 interchangeable.reserve(duplicates.size());
@@ -1376,6 +2014,16 @@ void addDirection(const bng::compile::CompiledRule& rule,
     lowered.name = entity;
     lowered.pattern = std::move(loweredPattern);
     lowered.actions = std::move(loweredActions);
+    lowered.reactant_pattern_offsets = flattened->patternOffsets;
+    lowered.destroy_complex_patterns = std::move(destroyComplexPatterns);
+    lowered.created_compartment_inherit = std::move(createdCompartmentInherit);
+    lowered.product_molecularity = computeProductMolecularity(
+        direction, *flattened, directionNodes, lowered.actions);
+    if (direction.localScopes.empty()) {
+        lowered.symmetry_divisor = computeWithinPatternSymmetry(
+            lowered.pattern, lowered.actions, lowered.reactant_pattern_offsets,
+            lowered.destroy_complex_patterns, source);
+    }
     addPredicates(lowered.pattern, lowered.predicates);
 
     const auto partiallyExpandedRate = source.expandFunctions(
@@ -1452,7 +2100,9 @@ void addDirection(const bng::compile::CompiledRule& rule,
         }
         std::set<std::size_t> observableIds;
         const auto expression = observableRateExpression(
-            *expandedRate, source, observableIds);
+            *expandedRate, source, observableIds,
+            direction.localScopes.empty() ? nullptr : &direction.localScopes,
+            &*flattened, &lowered.local_observable_bindings);
         if (!expression) {
             issue(result, BngLoweringSeverity::Error, entity,
                   "dynamic rate expression could not be resolved to an NFIR arithmetic expression");
@@ -1468,6 +2118,20 @@ void addDirection(const bng::compile::CompiledRule& rule,
     lowered.move_connected = moveConnected;
     lowered.filters = std::move(loweredFilters);
 
+    // Honor NumberPerQuantityUnit even without typed physical units (NFN-09e).
+    double numberPerQuantityUnit = 1.0;
+    if (const auto option = source.metadata().options.find("NumberPerQuantityUnit");
+        option != source.metadata().options.end()) {
+        try {
+            std::size_t consumed = 0;
+            const double val = std::stod(option->second, &consumed);
+            if (consumed == option->second.size() && std::isfinite(val) && val > 0.0) {
+                numberPerQuantityUnit = val;
+            }
+        } catch (...) {
+        }
+    }
+
     double volumeFactor = 1.0;
     if (!source.compartments().empty()) {
         if (direction.reactantPatterns.empty()) {
@@ -1478,25 +2142,34 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 if (pCompId) {
                     const auto* comp = source.compartment(*pCompId);
                     if (comp && std::isfinite(comp->volume) && comp->volume > 0.0) {
-                        volumeFactor = comp->volume;
+                        volumeFactor = comp->volume * numberPerQuantityUnit;
                     }
                 }
             }
         } else if (direction.reactantPatterns.size() >= 2) {
             std::vector<bng::compile::ReactantCompartment> rcList;
+            bool anyUnqualified = false;
             for (const auto& rPat : direction.reactantPatterns) {
                 auto rCompId = rPat.compartmentId();
                 if (!rCompId && !rPat.molecules().empty()) rCompId = rPat.molecules().front().compartmentId;
                 if (rCompId) {
                     const auto* comp = source.compartment(*rCompId);
                     if (comp && std::isfinite(comp->volume) && comp->volume > 0.0) {
-                        rcList.push_back({comp->dimension, comp->volume});
+                        rcList.push_back({comp->dimension, comp->volume * numberPerQuantityUnit});
                     }
+                } else {
+                    anyUnqualified = true;
                 }
             }
-            const auto factor = bng::compile::reactantUnitConversionFactor(rcList);
-            if (factor) {
-                volumeFactor = *factor;
+            if (anyUnqualified) {
+                // Scale dynamically per candidate match from runtime complex compartments (NFN-09d).
+                lowered.has_unqualified_compartments = true;
+                volumeFactor = 1.0;
+            } else {
+                const auto factor = bng::compile::reactantUnitConversionFactor(rcList);
+                if (factor) {
+                    volumeFactor = *factor;
+                }
             }
         }
     }
@@ -1704,178 +2377,6 @@ void addDirection(const bng::compile::CompiledRule& rule,
         const auto centerSiteTypeId = reactantMol.sites[mutation.source.siteIndex].componentType->index;
         const auto fromStateId = reactantMol.sites[mutation.source.siteIndex].stateConstraintResolved.exact->index;
         const auto toStateId = mutation.newStateId->index;
-        const auto molName = source.moleculeType(*reactantMol.moleculeTypeId)->name;
-
-        struct Cond {
-            std::string compName;
-            std::uint32_t site{0};
-            std::vector<int> gated;
-        };
-        std::map<std::string, Cond> condMap;
-        std::vector<int> always;
-        std::vector<int> conditional;
-
-        struct CenterContribution {
-            bool has_center{false};
-            int coefficient{0};
-        };
-        // The signed energy delta is this coefficient times the pattern's
-        // energy value. Keeping the coefficient separate lets a dynamic
-        // expression be composed at runtime instead of folded to zero.
-        auto signedCenterContribution = [&](std::size_t patternIndex) -> CenterContribution {
-            const auto& ep = source.energyFactors()[patternIndex];
-            CenterContribution result;
-            for (const auto& mol : ep.pattern.molecules()) {
-                if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
-                for (const auto& site : mol.sites) {
-                    if (!site.componentType || site.componentType->index != centerSiteTypeId) continue;
-                    if (site.stateConstraintResolved.kind != bng::compile::StateConstraintKind::Exact ||
-                        !site.stateConstraintResolved.exact) continue;
-                    result.has_center = true;
-                    const auto st = site.stateConstraintResolved.exact->index;
-                    if (st == toStateId) ++result.coefficient;
-                    else if (st == fromStateId) --result.coefficient;
-                }
-            }
-            return result;
-        };
-        auto appendDynamicEnergyTerm = [&](int coefficient,
-                                           const bng::compile::CompiledEnergyFactor& ep,
-                                           std::vector<std::string>& terms) -> bool {
-            if (coefficient == 0) return true;
-            std::set<std::size_t> activeFunctions;
-            const auto expandedEp = expandZeroArgumentRateFunctions(
-                source.expandFunctions(ep.expression), source, activeFunctions);
-            if (!expandedEp) return false;
-            std::set<std::size_t> observableIds;
-            const auto expression = observableRateExpression(*expandedEp, source, observableIds);
-            if (!expression) return false;
-            std::ostringstream term;
-            term << '(' << coefficient << "*(" << *expression << "))";
-            terms.push_back(term.str());
-            return true;
-        };
-
-        struct StateCond {
-            std::string key;
-            std::uint32_t site{0};
-            std::int32_t state{0};
-            std::vector<std::int32_t> otherStates;
-            std::vector<int> gated;
-        };
-        std::map<std::string, StateCond> stateCondMap;
-
-        for (std::size_t pi = 0; pi < source.energyFactors().size(); ++pi) {
-            const auto& ep = source.energyFactors()[pi];
-            bool relevant = false;
-            for (const auto& mol : ep.pattern.molecules()) {
-                if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
-                for (const auto& site : mol.sites) {
-                    if (site.componentType && site.componentType->index == centerSiteTypeId &&
-                        site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact)
-                        relevant = true;
-                }
-            }
-            if (!relevant) continue;
-
-            bool hasExtra = false;
-            int weighted = 0;
-            for (const auto& mol : ep.pattern.molecules()) {
-                if (mol.moleculeTypeId && mol.moleculeTypeId->value() == molTypeId) ++weighted;
-                if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) {
-                    hasExtra = true;
-                    continue;
-                }
-                for (const auto& site : mol.sites) {
-                    if (site.componentType && site.componentType->index == centerSiteTypeId) continue;
-                    const bool isBound = site.bondKind == bng::compile::BondConstraintKind::Exact ||
-                        std::any_of(site.bondConstraints.begin(), site.bondConstraints.end(),
-                            [](const auto& b){ return b.kind == bng::compile::BondConstraintKind::Exact; });
-                    const bool hasState = site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact;
-                    if (isBound || hasState) { hasExtra = true; break; }
-                }
-                if (hasExtra) break;
-            }
-            if (weighted != 1) {
-                issue(result, BngLoweringSeverity::Error, entity,
-                      "energy-modulated state change requires one weighted reactant molecule per energy pattern");
-                return;
-            }
-            if (!signedCenterContribution(pi).has_center) {
-                issue(result, BngLoweringSeverity::Error, entity,
-                      "energy-modulated state change requires a reaction-center state constraint in relevant energy patterns");
-                return;
-            }
-
-            if (hasExtra) {
-                conditional.push_back(static_cast<int>(pi));
-                bool attachedCondition = false;
-                for (const auto& mol : ep.pattern.molecules()) {
-                    if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
-                    for (const auto& site : mol.sites) {
-                        if (!site.componentType || site.componentType->index == centerSiteTypeId) continue;
-                        const bool isBound = site.bondKind == bng::compile::BondConstraintKind::Exact ||
-                            std::any_of(site.bondConstraints.begin(), site.bondConstraints.end(),
-                                [](const auto& b){ return b.kind == bng::compile::BondConstraintKind::Exact; });
-                        if (isBound) {
-                            const auto cname = source.component(*site.componentType)->name;
-                            auto& cc = condMap[cname];
-                            cc.compName = cname;
-                            cc.site = static_cast<std::uint32_t>(site.componentType->index);
-                            cc.gated.push_back(static_cast<int>(pi));
-                            attachedCondition = true;
-                        }
-                        if (site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact &&
-                            site.stateConstraintResolved.exact.has_value()) {
-                            const auto* compDecl = source.component(*site.componentType);
-                            if (!compDecl || compDecl->stateNames.size() < 2) {
-                                issue(result, BngLoweringSeverity::Error, entity,
-                                      "state-conditioned energy pattern requires a multi-state site");
-                                return;
-                            }
-                            const auto requiredState = static_cast<std::int32_t>(
-                                site.stateConstraintResolved.exact->index);
-                            const auto key = compDecl->name + "~" + std::to_string(requiredState);
-                            auto& sc = stateCondMap[key];
-                            if (sc.key.empty()) {
-                                sc.key = key;
-                                sc.site = static_cast<std::uint32_t>(site.componentType->index);
-                                sc.state = requiredState;
-                                for (std::size_t si = 0; si < compDecl->stateNames.size(); ++si) {
-                                    if (static_cast<std::int32_t>(si) != requiredState)
-                                        sc.otherStates.push_back(static_cast<std::int32_t>(si));
-                                }
-                            }
-                            sc.gated.push_back(static_cast<int>(pi));
-                            attachedCondition = true;
-                        }
-                    }
-                }
-                if (!attachedCondition) {
-                    issue(result, BngLoweringSeverity::Error, entity,
-                          "energy pattern condition could not be lowered for state-change expansion");
-                    return;
-                }
-            } else {
-                always.push_back(static_cast<int>(pi));
-            }
-        }
-
-        double baseEnergy = 0.0;
-        std::vector<std::string> baseDynamicTerms;
-        for (int pi : always) {
-            const auto center = signedCenterContribution(static_cast<std::size_t>(pi));
-            const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
-            if (isDynamicEnergyFactor(ep, source)) {
-                if (!appendDynamicEnergyTerm(center.coefficient, ep, baseDynamicTerms)) {
-                    issue(result, BngLoweringSeverity::Error, entity,
-                          "dynamic energy expression could not be resolved to NFIR arithmetic");
-                    return;
-                }
-            } else {
-                baseEnergy += static_cast<double>(center.coefficient) * energyFactorValue(ep, source);
-            }
-        }
 
         double barrierContribution = 0.0;
         if (!source.barrierFactors().empty()) {
@@ -1908,28 +2409,292 @@ void addDirection(const bng::compile::CompiledRule& rule,
             }
         }
 
-        std::vector<StateCond> stateConditions;
-        stateConditions.reserve(stateCondMap.size());
-        for (auto& kv : stateCondMap) {
-            std::sort(kv.second.gated.begin(), kv.second.gated.end());
-            kv.second.gated.erase(std::unique(kv.second.gated.begin(), kv.second.gated.end()), kv.second.gated.end());
-            stateConditions.push_back(std::move(kv.second));
+        // Decide whether any relevant energy pattern requires exact runtime per-match
+        // deltaG evaluation (partner molecule/state, homotypic multi-molecule Ising
+        // couplings, duplicate-site patterns, or center-site bond constraints).
+        auto molTypeHasDupSites = [&](std::size_t mtId) -> bool {
+            const auto* mt = source.moleculeType(bng::compile::MoleculeTypeId::fromDenseIndex(mtId));
+            if (!mt) return false;
+            for (std::size_t i = 0; i < mt->components.size(); ++i)
+                for (std::size_t j = i + 1; j < mt->components.size(); ++j)
+                    if (mt->components[i].name == mt->components[j].name) return true;
+            return false;
+        };
+        bool useRuntimeArrhenius = molTypeHasDupSites(molTypeId);
+        if (!useRuntimeArrhenius) {
+            for (const auto& ep : source.energyFactors()) {
+                bool relevant = false;
+                int weighted = 0;
+                for (const auto& mol : ep.pattern.molecules()) {
+                    if (!mol.moleculeTypeId) continue;
+                    if (mol.moleculeTypeId->value() == molTypeId) {
+                        ++weighted;
+                        for (const auto& site : mol.sites) {
+                            if (site.componentType && site.componentType->index == centerSiteTypeId &&
+                                site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact) {
+                                relevant = true;
+                            }
+                        }
+                    }
+                }
+                if (!relevant) continue;
+                if (weighted != 1 || ep.pattern.molecules().size() > 1) {
+                    useRuntimeArrhenius = true;
+                    break;
+                }
+                // Check if center site itself has a bond constraint or any site has Exact bond.
+                for (const auto& site : ep.pattern.molecules().front().sites) {
+                    if (!site.componentType) continue;
+                    for (const auto& b : patternBonds(site)) {
+                        if (b.kind == bng::compile::BondConstraintKind::Exact) {
+                            useRuntimeArrhenius = true;
+                            break;
+                        }
+                        if (site.componentType->index == centerSiteTypeId &&
+                            (b.kind == bng::compile::BondConstraintKind::Bound ||
+                             b.kind == bng::compile::BondConstraintKind::Unbound)) {
+                            // Only requires runtime Arrhenius when the rule's own center site
+                            // does not already guarantee the exact same bond state (e.g. an
+                            // unbound energy pattern A(x~u) on rule A(x~u) -> A(x~p) is static!).
+                            bool ruleGuaranteesSame = false;
+                            for (const auto& rb : patternBonds(reactantMol.sites[mutation.source.siteIndex])) {
+                                if (rb.kind == b.kind) {
+                                    ruleGuaranteesSame = true;
+                                    break;
+                                }
+                            }
+                            if (!ruleGuaranteesSame) {
+                                useRuntimeArrhenius = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (useRuntimeArrhenius) break;
+                }
+                if (useRuntimeArrhenius) break;
+            }
         }
-        std::sort(stateConditions.begin(), stateConditions.end(), [](const auto& a, const auto& b){ return a.key < b.key; });
+        if (useRuntimeArrhenius) {
+            const double work = drivingWorkValue ? *drivingWorkValue : 0.0;
+            lowered.runtime_arrhenius = RuntimeArrheniusInfo{
+                true, *phi, *ea, barrierContribution, work, reverseDirection};
+            lowered.rate = 0.0;
+            lowered.rate_law.kind = RateLawKind::Elementary;
+            lowered.rate_law.expression = "0";
+            result.model.expanded_rules.push_back(std::move(lowered));
+            return;
+        }
 
-        std::vector<Cond> conditions;
+        struct BondCondSC {
+            std::string key;
+            std::uint32_t site{0};
+            bool requireBound{true};
+        };
+        struct StateCond {
+            std::string key;
+            std::uint32_t site{0};
+            std::int32_t state{0};
+            std::vector<std::int32_t> otherStates;
+        };
+        std::map<std::string, BondCondSC> condMap;
+        std::map<std::string, StateCond> stateCondMap;
+        std::vector<int> always;
+        // For each conditional energy pattern pi, track all required bond/state condition keys (AND semantics, ETH-08).
+        std::map<int, std::vector<std::pair<bool, std::string>>> epRequiredConds; // (isState, key)
+
+        struct CenterContribution {
+            bool has_center{false};
+            int coefficient{0};
+        };
+        auto signedCenterContribution = [&](std::size_t patternIndex) -> CenterContribution {
+            const auto& ep = source.energyFactors()[patternIndex];
+            CenterContribution res;
+            for (const auto& mol : ep.pattern.molecules()) {
+                if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
+                for (const auto& site : mol.sites) {
+                    if (!site.componentType || site.componentType->index != centerSiteTypeId) continue;
+                    if (site.stateConstraintResolved.kind != bng::compile::StateConstraintKind::Exact ||
+                        !site.stateConstraintResolved.exact) continue;
+                    res.has_center = true;
+                    const auto st = site.stateConstraintResolved.exact->index;
+                    if (st == toStateId) ++res.coefficient;
+                    else if (st == fromStateId) --res.coefficient;
+                }
+            }
+            return res;
+        };
+        auto appendDynamicEnergyTerm = [&](int coefficient,
+                                           const bng::compile::CompiledEnergyFactor& ep,
+                                           std::vector<std::string>& terms) -> bool {
+            if (coefficient == 0) return true;
+            std::set<std::size_t> activeFunctions;
+            const auto expandedEp = expandZeroArgumentRateFunctions(
+                source.expandFunctions(ep.expression), source, activeFunctions);
+            if (!expandedEp) return false;
+            std::set<std::size_t> observableIds;
+            const auto expression = observableRateExpression(*expandedEp, source, observableIds);
+            if (!expression) return false;
+            std::ostringstream term;
+            term << '(' << coefficient << "*(" << *expression << "))";
+            terms.push_back(term.str());
+            return true;
+        };
+
+        // Helper: returns true if (molTypeId, siteIdx) can ever hold a bond in any
+        // seed species or rule product pattern. If a site can never be bound in the
+        // model, an Unbound constraint on it is tautologically true and needs no
+        // branch split.
+        auto siteCanEverBeBound = [&](std::size_t mtId, std::size_t sIdx) -> bool {
+            auto checkPattern = [&](const bng::compile::Pattern& pat) -> bool {
+                for (const auto& pm : pat.molecules()) {
+                    if (!pm.moleculeTypeId || pm.moleculeTypeId->value() != mtId) continue;
+                    for (const auto& ps : pm.sites) {
+                        if (!ps.componentType || ps.componentType->index != sIdx) continue;
+                        for (const auto& pb : patternBonds(ps)) {
+                            if (pb.kind == bng::compile::BondConstraintKind::Exact ||
+                                pb.kind == bng::compile::BondConstraintKind::Bound) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                return false;
+            };
+            for (const auto& sd : source.seeds()) {
+                if (checkPattern(sd.pattern)) return true;
+            }
+            for (const auto& r : source.rules()) {
+                for (const auto& pp : r.forward().productPatterns) {
+                    if (checkPattern(pp)) return true;
+                }
+                if (r.reverse()) {
+                    for (const auto& pp : r.reverse()->productPatterns) {
+                        if (checkPattern(pp)) return true;
+                    }
+                }
+            }
+            return false;
+        };
+
+        for (std::size_t pi = 0; pi < source.energyFactors().size(); ++pi) {
+            const auto& ep = source.energyFactors()[pi];
+            bool relevant = false;
+            for (const auto& mol : ep.pattern.molecules()) {
+                if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
+                for (const auto& site : mol.sites) {
+                    if (site.componentType && site.componentType->index == centerSiteTypeId &&
+                        site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact)
+                        relevant = true;
+                }
+            }
+            if (!relevant) continue;
+
+            if (!signedCenterContribution(pi).has_center) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "energy-modulated state change requires a reaction-center state constraint in relevant energy patterns");
+                return;
+            }
+
+            std::vector<std::pair<bool, std::string>> reqs;
+            const auto& mol = ep.pattern.molecules().front();
+            for (const auto& site : mol.sites) {
+                if (!site.componentType || site.componentType->index == centerSiteTypeId) continue;
+                const auto bonds = patternBonds(site);
+                bool hasBound = false;
+                bool hasUnbound = false;
+                for (const auto& b : bonds) {
+                    if (b.kind == bng::compile::BondConstraintKind::Exact ||
+                        b.kind == bng::compile::BondConstraintKind::Bound) hasBound = true;
+                    else if (b.kind == bng::compile::BondConstraintKind::Unbound) hasUnbound = true;
+                }
+                if (hasBound || (hasUnbound && siteCanEverBeBound(molTypeId, site.componentType->index))) {
+                    const auto cname = source.component(*site.componentType)->name;
+                    const std::string key = cname + (hasBound ? "!+" : "!-");
+                    auto& cc = condMap[key];
+                    cc.key = key;
+                    cc.site = static_cast<std::uint32_t>(site.componentType->index);
+                    cc.requireBound = hasBound;
+                    reqs.emplace_back(false, key);
+                }
+                if (site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact &&
+                    site.stateConstraintResolved.exact.has_value()) {
+                    const auto* compDecl = source.component(*site.componentType);
+                    if (!compDecl || compDecl->stateNames.size() < 2) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "state-conditioned energy pattern requires a multi-state site");
+                        return;
+                    }
+                    const auto requiredState = static_cast<std::int32_t>(
+                        site.stateConstraintResolved.exact->index);
+                    const auto key = compDecl->name + "~" + std::to_string(requiredState);
+                    auto& sc = stateCondMap[key];
+                    if (sc.key.empty()) {
+                        sc.key = key;
+                        sc.site = static_cast<std::uint32_t>(site.componentType->index);
+                        sc.state = requiredState;
+                        for (std::size_t si = 0; si < compDecl->stateNames.size(); ++si) {
+                            if (static_cast<std::int32_t>(si) != requiredState)
+                                sc.otherStates.push_back(static_cast<std::int32_t>(si));
+                        }
+                    }
+                    reqs.emplace_back(true, key);
+                }
+            }
+            if (reqs.empty()) {
+                always.push_back(static_cast<int>(pi));
+            } else {
+                epRequiredConds[static_cast<int>(pi)] = std::move(reqs);
+            }
+        }
+
+        double baseEnergy = 0.0;
+        std::vector<std::string> baseDynamicTerms;
+        for (int pi : always) {
+            const auto center = signedCenterContribution(static_cast<std::size_t>(pi));
+            const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
+            if (isDynamicEnergyFactor(ep, source)) {
+                if (!appendDynamicEnergyTerm(center.coefficient, ep, baseDynamicTerms)) {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "dynamic energy expression could not be resolved to NFIR arithmetic");
+                    return;
+                }
+            } else {
+                baseEnergy += static_cast<double>(center.coefficient) * energyFactorValue(ep, source);
+            }
+        }
+
+        std::vector<BondCondSC> conditions;
         conditions.reserve(condMap.size());
+        std::map<std::string, std::size_t> bondCondBit;
         for (auto& kv : condMap) {
-            std::sort(kv.second.gated.begin(), kv.second.gated.end());
-            kv.second.gated.erase(std::unique(kv.second.gated.begin(), kv.second.gated.end()), kv.second.gated.end());
+            bondCondBit[kv.first] = conditions.size();
             conditions.push_back(std::move(kv.second));
         }
-        std::sort(conditions.begin(), conditions.end(), [](const auto& a, const auto& b){ return a.compName < b.compName; });
+        std::vector<StateCond> stateConditions;
+        stateConditions.reserve(stateCondMap.size());
+        std::map<std::string, std::size_t> stateCondBit;
+        for (auto& kv : stateCondMap) {
+            stateCondBit[kv.first] = conditions.size() + stateConditions.size();
+            stateConditions.push_back(std::move(kv.second));
+        }
+
         const std::size_t totalConditionCount = conditions.size() + stateConditions.size();
         if (totalConditionCount >= 20) {
             issue(result, BngLoweringSeverity::Error, entity,
                   "energy-modulated state change expansion too large for NFnext");
             return;
+        }
+
+        // Build per-EP required bitmasks (logical AND — ETH-08).
+        std::vector<std::pair<int, std::uint32_t>> epMasks;
+        epMasks.reserve(epRequiredConds.size());
+        for (const auto& [pi, reqs] : epRequiredConds) {
+            std::uint32_t mask = 0;
+            for (const auto& [isState, key] : reqs) {
+                const std::size_t bit = isState ? stateCondBit.at(key) : bondCondBit.at(key);
+                mask |= (std::uint32_t{1} << bit);
+            }
+            epMasks.emplace_back(pi, mask);
         }
 
         const std::size_t targetNode = mutation.source.moleculeIndex;
@@ -1939,35 +2704,32 @@ void addDirection(const bng::compile::CompiledRule& rule,
             variant.id = static_cast<RuleId>(id * 1024u + static_cast<RuleId>(combo));
             variant.name = entity + (reverseDirection ? "_rev_v" : "_v") + std::to_string(combo);
             variant.rate_law.kind = RateLawKind::Elementary;
-            std::set<int> active(always.begin(), always.end());
             if (targetNode >= variant.pattern.nodes.size()) continue;
-            for (std::size_t ci = 0; ci < conditions.size(); ++ci) {
+            bool feasible = true;
+            for (std::size_t ci = 0; ci < conditions.size() && feasible; ++ci) {
                 const bool met = (combo >> ci) & 1;
-                if (met) {
-                    variant.pattern.nodes[targetNode].siteBound(conditions[ci].site);
-                    for (int pi : conditions[ci].gated) active.insert(pi);
-                } else {
-                    variant.pattern.nodes[targetNode].siteFree(conditions[ci].site);
+                const bool wantBound = met ? conditions[ci].requireBound : !conditions[ci].requireBound;
+                if (!tryAddBranchBondConstraint(variant.pattern, targetNode, conditions[ci].site, wantBound)) {
+                    feasible = false;
                 }
             }
-            for (std::size_t si = 0; si < stateConditions.size(); ++si) {
+            for (std::size_t si = 0; si < stateConditions.size() && feasible; ++si) {
                 const bool met = (combo >> (conditions.size() + si)) & 1;
                 const auto& sc = stateConditions[si];
-                if (met) {
-                    variant.pattern.nodes[targetNode].siteState(sc.site, sc.state);
-                    for (int pi : sc.gated) active.insert(pi);
-                } else if (sc.otherStates.size() == 1) {
-                    variant.pattern.nodes[targetNode].siteState(sc.site, sc.otherStates.front());
-                } else {
-                    variant.pattern.nodes[targetNode].siteStateSet(sc.site, sc.otherStates);
+                const std::vector<std::int32_t> states =
+                    met ? std::vector<std::int32_t>{sc.state} : sc.otherStates;
+                if (!tryAddBranchStateConstraint(variant.pattern.nodes[targetNode], sc.site, states)) {
+                    feasible = false;
                 }
             }
+            if (!feasible) continue;
             variant.predicates.clear();
             addPredicates(variant.pattern, variant.predicates);
             double deltaG = baseEnergy;
             std::vector<std::string> dynamicTerms = baseDynamicTerms;
-            for (int pi : active) {
-                if (std::find(always.begin(), always.end(), pi) != always.end()) continue;
+            const auto comboMask = static_cast<std::uint32_t>(combo);
+            for (const auto& [pi, reqMask] : epMasks) {
+                if ((comboMask & reqMask) != reqMask) continue;
                 const auto center = signedCenterContribution(static_cast<std::size_t>(pi));
                 const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
                 if (isDynamicEnergyFactor(ep, source)) {
@@ -1981,11 +2743,6 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 }
             }
             const double work = drivingWorkValue ? *drivingWorkValue : 0.0;
-            // deltaG is computed for this direction's state change. For the
-            // reverse expansion, deltaG_dir = -deltaG_forward and the NFcore
-            // Arrhenius form with forward work W gives
-            // k_rev = exp(-(Ea+B + (phi-1)*(deltaG_forward-W)))
-            //       = exp(-(Ea+B + (1-phi)*deltaG_dir + (1-phi)*W)).
             const double phiEff = reverseDirection ? (1.0 - *phi) : *phi;
             const double constantPart = *ea + barrierContribution + phiEff * deltaG +
                                          (reverseDirection ? phiEff * work : -phiEff * work);
@@ -2005,8 +2762,6 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 rateText << rate;
                 variant.rate_law.expression = rateText.str();
             } else {
-                // Dynamic energy factors are evaluated from current observables
-                // by the same Function rate machinery used for dynamic rates.
                 std::ostringstream dynamicDelta;
                 for (std::size_t i = 0; i < dynamicTerms.size(); ++i) {
                     if (i != 0) dynamicDelta << '+';
@@ -2098,6 +2853,81 @@ void addDirection(const bng::compile::CompiledRule& rule,
             }
         }
 
+        auto declHasDupSites = [](const bng::compile::CompiledMoleculeType* mt) -> bool {
+            if (!mt) return false;
+            for (std::size_t i = 0; i < mt->components.size(); ++i)
+                for (std::size_t j = i + 1; j < mt->components.size(); ++j)
+                    if (mt->components[i].name == mt->components[j].name) return true;
+            return false;
+        };
+
+        // Route to exact runtime per-match deltaG evaluation when any energy pattern
+        // has >=3 molecules (cooperativity, ETH-11), duplicate component names (e.g.
+        // R(s,s) in energy_cooperativity_adh, ETH-13), wildcard !+ single-molecule
+        // patterns (ETH-11), extra bond context (ETH-09), or homodimer asymmetry.
+        bool useRuntimeArrhenius = declHasDupSites(molDeclA) || declHasDupSites(molDeclB);
+        if (!useRuntimeArrhenius) {
+            for (const auto& ep : source.energyFactors()) {
+                const auto& mols = ep.pattern.molecules();
+                if (mols.size() >= 3) {
+                    useRuntimeArrhenius = true;
+                    break;
+                }
+                if (mols.size() == 1 && mols[0].moleculeTypeId) {
+                    const auto mType = mols[0].moleculeTypeId->value();
+                    if (mType == molTypeA || mType == molTypeB) {
+                        for (const auto& s : mols[0].sites) {
+                            if (!s.componentType) continue;
+                            for (const auto& b : patternBonds(s)) {
+                                if (b.kind == bng::compile::BondConstraintKind::Bound) {
+                                    useRuntimeArrhenius = true;
+                                    break;
+                                }
+                            }
+                            if (mols[0].sites.size() > 1 ||
+                                s.stateConstraintResolved.kind != bng::compile::StateConstraintKind::Any) {
+                                useRuntimeArrhenius = true;
+                            }
+                            if (useRuntimeArrhenius) break;
+                        }
+                    }
+                } else if (mols.size() == 2) {
+                    for (const auto& m : mols) {
+                        if (!m.moleculeTypeId) continue;
+                        if (m.moleculeTypeId->value() == molTypeA || m.moleculeTypeId->value() == molTypeB) {
+                            // If a 2-mol EP has any extra bond constraint outside the center bond,
+                            // or asymmetric homodimer constraints, use exact runtime deltaG.
+                            std::size_t bondCount = 0;
+                            for (const auto& s : m.sites) {
+                                for (const auto& b : patternBonds(s)) {
+                                    if (b.kind == bng::compile::BondConstraintKind::Exact ||
+                                        b.kind == bng::compile::BondConstraintKind::Bound ||
+                                        b.kind == bng::compile::BondConstraintKind::Unbound) {
+                                        ++bondCount;
+                                    }
+                                }
+                            }
+                            if (bondCount > 1) {
+                                useRuntimeArrhenius = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (useRuntimeArrhenius) break;
+            }
+        }
+        if (useRuntimeArrhenius) {
+            const double work = drivingWorkValue ? *drivingWorkValue : 0.0;
+            lowered.runtime_arrhenius = RuntimeArrheniusInfo{
+                true, *phi, *ea, barrierContribution, work, reverseDirection};
+            lowered.rate = 0.0;
+            lowered.rate_law.kind = RateLawKind::Elementary;
+            lowered.rate_law.expression = "0";
+            result.model.expanded_rules.push_back(std::move(lowered));
+            return;
+        }
+
         auto appendDynamicEnergyTerm = [&](int coefficient,
                                            const bng::compile::CompiledEnergyFactor& ep,
                                            std::vector<std::string>& terms) -> bool {
@@ -2122,16 +2952,52 @@ void addDirection(const bng::compile::CompiledRule& rule,
             bool isState{false};
             std::int32_t state{0};
             std::vector<std::int32_t> otherStates;
-            std::vector<std::pair<int, int>> gated; // (energyPatternIndex, coeff)
         };
         std::map<std::string, BondCond> condMap;
         std::vector<std::pair<int, int>> alwaysTerms; // (energyPatternIndex, coeff)
+        // Per-EP required condition keys + coeff (logical AND — ETH-08).
+        std::vector<std::tuple<int, int, std::vector<std::string>>> conditionalTerms;
+
+        // Helper: returns true if (molTypeId, siteIdx) can ever hold a bond in any
+        // seed species or rule product pattern. If a site can never be bound in the
+        // model, an Unbound constraint on it is tautologically true and needs no
+        // branch split.
+        auto siteCanEverBeBound = [&](std::size_t mtId, std::size_t sIdx) -> bool {
+            auto checkPattern = [&](const bng::compile::Pattern& pat) -> bool {
+                for (const auto& pm : pat.molecules()) {
+                    if (!pm.moleculeTypeId || pm.moleculeTypeId->value() != mtId) continue;
+                    for (const auto& ps : pm.sites) {
+                        if (!ps.componentType || ps.componentType->index != sIdx) continue;
+                        for (const auto& pb : patternBonds(ps)) {
+                            if (pb.kind == bng::compile::BondConstraintKind::Exact ||
+                                pb.kind == bng::compile::BondConstraintKind::Bound) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                return false;
+            };
+            for (const auto& sd : source.seeds()) {
+                if (checkPattern(sd.pattern)) return true;
+            }
+            for (const auto& r : source.rules()) {
+                for (const auto& pp : r.forward().productPatterns) {
+                    if (checkPattern(pp)) return true;
+                }
+                if (r.reverse()) {
+                    for (const auto& pp : r.reverse()->productPatterns) {
+                        if (checkPattern(pp)) return true;
+                    }
+                }
+            }
+            return false;
+        };
 
         for (std::size_t pi = 0; pi < source.energyFactors().size(); ++pi) {
             const auto& ep = source.energyFactors()[pi];
             const auto& mols = ep.pattern.molecules();
             if (mols.size() == 2) {
-                // Collect exact bond groups connecting the two molecules.
                 struct EpEnd { std::size_t molIdx; std::size_t molType; std::size_t siteIdx; };
                 std::map<std::size_t, std::vector<EpEnd>> bondGroups;
                 for (std::size_t mi = 0; mi < 2; ++mi) {
@@ -2146,7 +3012,7 @@ void addDirection(const bng::compile::CompiledRule& rule,
                         }
                     }
                 }
-                int matchOrient = -1; // 0: mol0=A,mol1=B; 1: mol0=B,mol1=A
+                int matchOrient = -1;
                 for (const auto& [grp, ends] : bondGroups) {
                     if (ends.size() != 2 || ends[0].molIdx == ends[1].molIdx) continue;
                     const auto& e0 = ends[0].molIdx == 0 ? ends[0] : ends[1];
@@ -2164,7 +3030,6 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 }
                 if (matchOrient < 0) continue;
 
-                // Collect any extra state or bond constraints on the two molecules.
                 std::vector<BondCond> epConditions;
                 const std::array<std::size_t, 2> epToNode =
                     matchOrient == 0
@@ -2178,17 +3043,6 @@ void addDirection(const bng::compile::CompiledRule& rule,
                     for (const auto& s : mols[mi].sites) {
                         if (!s.componentType) continue;
                         if (s.componentType->index == epCenterSite[mi]) continue;
-                        const bool isExtraBound = s.bondKind == bng::compile::BondConstraintKind::Exact ||
-                            std::any_of(s.bondConstraints.begin(), s.bondConstraints.end(),
-                                [](const auto& b){ return b.kind == bng::compile::BondConstraintKind::Exact; });
-                        if (isExtraBound) {
-                            BondCond c;
-                            c.targetNode = epToNode[mi];
-                            c.site = static_cast<std::uint32_t>(s.componentType->index);
-                            c.isState = false;
-                            c.key = "n" + std::to_string(c.targetNode) + ":b:" + std::to_string(c.site);
-                            epConditions.push_back(std::move(c));
-                        }
                         if (s.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact &&
                             s.stateConstraintResolved.exact.has_value()) {
                             const auto* cDecl = source.component(*s.componentType);
@@ -2213,22 +3067,27 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 }
                 if (epConditions.empty()) {
                     alwaysTerms.emplace_back(static_cast<int>(pi), bondSign);
-                } else if (epConditions.size() == 1) {
+                } else {
                     if (molTypeA == molTypeB && siteA == siteB) {
-                        issue(result, BngLoweringSeverity::Error, entity,
-                              "asymmetric conditional energy pattern on homodimer bond is not supported in NFnext");
+                        // Homodimer conditional energy pattern -> route to exact runtime deltaG!
+                        const double work = drivingWorkValue ? *drivingWorkValue : 0.0;
+                        lowered.runtime_arrhenius = RuntimeArrheniusInfo{
+                            true, *phi, *ea, barrierContribution, work, reverseDirection};
+                        lowered.rate = 0.0;
+                        lowered.rate_law.kind = RateLawKind::Elementary;
+                        lowered.rate_law.expression = "0";
+                        result.model.expanded_rules.push_back(std::move(lowered));
                         return;
                     }
-                    auto& slot = condMap[epConditions.front().key];
-                    if (slot.key.empty()) slot = std::move(epConditions.front());
-                    slot.gated.emplace_back(static_cast<int>(pi), bondSign);
-                } else {
-                    issue(result, BngLoweringSeverity::Error, entity,
-                          "multi-condition bond energy pattern is not yet supported in NFnext");
-                    return;
+                    std::vector<std::string> reqKeys;
+                    for (auto& ec : epConditions) {
+                        reqKeys.push_back(ec.key);
+                        auto& slot = condMap[ec.key];
+                        if (slot.key.empty()) slot = std::move(ec);
+                    }
+                    conditionalTerms.emplace_back(static_cast<int>(pi), bondSign, std::move(reqKeys));
                 }
             } else if (mols.size() == 1 && mols[0].moleculeTypeId) {
-                // Free-site single-molecule energy pattern whose center site becomes bound/unbound.
                 const auto mType = mols[0].moleculeTypeId->value();
                 for (const auto& s : mols[0].sites) {
                     if (!s.componentType) continue;
@@ -2262,11 +3121,23 @@ void addDirection(const bng::compile::CompiledRule& rule,
 
         std::vector<BondCond> conditions;
         conditions.reserve(condMap.size());
-        for (auto& kv : condMap) conditions.push_back(std::move(kv.second));
+        std::map<std::string, std::size_t> condBit;
+        for (auto& kv : condMap) {
+            condBit[kv.first] = conditions.size();
+            conditions.push_back(std::move(kv.second));
+        }
         if (conditions.size() >= 20) {
             issue(result, BngLoweringSeverity::Error, entity,
                   "energy-modulated binding/unbinding expansion too large for NFnext");
             return;
+        }
+
+        std::vector<std::tuple<int, int, std::uint32_t>> condMasks;
+        condMasks.reserve(conditionalTerms.size());
+        for (const auto& [pi, coeff, keys] : conditionalTerms) {
+            std::uint32_t mask = 0;
+            for (const auto& k : keys) mask |= (std::uint32_t{1} << condBit.at(k));
+            condMasks.emplace_back(pi, coeff, mask);
         }
 
         const int combos = 1 << static_cast<int>(conditions.size());
@@ -2275,40 +3146,43 @@ void addDirection(const bng::compile::CompiledRule& rule,
             variant.id = static_cast<RuleId>(id * 1024u + static_cast<RuleId>(combo));
             variant.name = entity + (reverseDirection ? "_rev_v" : "_v") + std::to_string(combo);
             variant.rate_law.kind = RateLawKind::Elementary;
-            double deltaG = baseEnergy;
-            std::vector<std::string> dynamicTerms = baseDynamicTerms;
-            for (std::size_t ci = 0; ci < conditions.size(); ++ci) {
+            bool feasible = true;
+            for (std::size_t ci = 0; ci < conditions.size() && feasible; ++ci) {
                 const bool met = (combo >> ci) & 1;
                 const auto& c = conditions[ci];
                 if (c.targetNode >= variant.pattern.nodes.size()) continue;
-                if (met) {
-                    if (c.isState) variant.pattern.nodes[c.targetNode].siteState(c.site, c.state);
-                    else variant.pattern.nodes[c.targetNode].siteBound(c.site);
-                    for (const auto& [pi, coeff] : c.gated) {
-                        const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
-                        if (isDynamicEnergyFactor(ep, source)) {
-                            if (!appendDynamicEnergyTerm(coeff, ep, dynamicTerms)) {
-                                issue(result, BngLoweringSeverity::Error, entity,
-                                      "dynamic energy expression could not be resolved to NFIR arithmetic");
-                                return;
-                            }
-                        } else {
-                            deltaG += static_cast<double>(coeff) * energyFactorValue(ep, source);
-                        }
+                if (c.isState) {
+                    const std::vector<std::int32_t> states =
+                        met ? std::vector<std::int32_t>{c.state} : c.otherStates;
+                    if (!tryAddBranchStateConstraint(variant.pattern.nodes[c.targetNode], c.site, states)) {
+                        feasible = false;
                     }
                 } else {
-                    if (c.isState) {
-                        if (c.otherStates.size() == 1)
-                            variant.pattern.nodes[c.targetNode].siteState(c.site, c.otherStates.front());
-                        else
-                            variant.pattern.nodes[c.targetNode].siteStateSet(c.site, c.otherStates);
-                    } else {
-                        variant.pattern.nodes[c.targetNode].siteFree(c.site);
+                    if (!tryAddBranchBondConstraint(variant.pattern, c.targetNode, c.site, met)) {
+                        feasible = false;
                     }
                 }
             }
+            if (!feasible) continue;
             variant.predicates.clear();
             addPredicates(variant.pattern, variant.predicates);
+
+            double deltaG = baseEnergy;
+            std::vector<std::string> dynamicTerms = baseDynamicTerms;
+            const auto comboMask = static_cast<std::uint32_t>(combo);
+            for (const auto& [pi, coeff, reqMask] : condMasks) {
+                if ((comboMask & reqMask) != reqMask) continue;
+                const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
+                if (isDynamicEnergyFactor(ep, source)) {
+                    if (!appendDynamicEnergyTerm(coeff, ep, dynamicTerms)) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "dynamic energy expression could not be resolved to NFIR arithmetic");
+                        return;
+                    }
+                } else {
+                    deltaG += static_cast<double>(coeff) * energyFactorValue(ep, source);
+                }
+            }
 
             const double work = drivingWorkValue ? *drivingWorkValue : 0.0;
             const double phiEff = reverseDirection ? (1.0 - *phi) : *phi;
@@ -2384,7 +3258,8 @@ TransformationIR buildRuleTransformation(const ExpandedRuleIR& rule) {
         transformation.createMoleculeWithId(cid, created_types[node], created_states[node], comp);
     }
 
-    // 2. Perform state updates, unbinding, and binding
+    // 2. Perform state updates and unbinding BEFORE binding (RULEHUB-05).
+    std::vector<ActionIR> binds;
     std::vector<ActionIR> destructions;
     for (const auto& action : rule.actions) {
         switch (action.kind) {
@@ -2401,33 +3276,37 @@ TransformationIR buildRuleTransformation(const ExpandedRuleIR& rule) {
             transformation.deleteBond(action.target_node, action.site,
                                       action.partner_node, action.partner_site);
             break;
-        case ActionKind::Bind: {
-            const bool first_created = (action.target_node >= reactant_node_count);
-            const bool second_created = (action.partner_node >= reactant_node_count);
-            if (!first_created && !second_created) {
-                transformation.addBond(action.target_node, action.site,
-                                       action.partner_node, action.partner_site);
-            } else if (!first_created && second_created) {
-                transformation.addBondExistingToCreated(
-                    action.target_node, action.site,
-                    node_to_created.at(action.partner_node), action.partner_site);
-            } else if (first_created && !second_created) {
-                transformation.addBondExistingToCreated(
-                    action.partner_node, action.partner_site,
-                    node_to_created.at(action.target_node), action.site);
-            } else {
-                transformation.addBondCreated(
-                    node_to_created.at(action.target_node), action.site,
-                    node_to_created.at(action.partner_node), action.partner_site);
-            }
+        case ActionKind::Bind:
+            binds.push_back(action);
             break;
-        }
         case ActionKind::Destroy:
         case ActionKind::DestroyComplex:
             destructions.push_back(action);
             break;
         case ActionKind::MovePosition:
             throw std::runtime_error("NFnext MovePosition action not supported in standard BNG");
+        }
+    }
+
+    // 2b. Perform bindings after all unbindings have freed their sites.
+    for (const auto& action : binds) {
+        const bool first_created = (action.target_node >= reactant_node_count);
+        const bool second_created = (action.partner_node >= reactant_node_count);
+        if (!first_created && !second_created) {
+            transformation.addBond(action.target_node, action.site,
+                                   action.partner_node, action.partner_site);
+        } else if (!first_created && second_created) {
+            transformation.addBondExistingToCreated(
+                action.target_node, action.site,
+                node_to_created.at(action.partner_node), action.partner_site);
+        } else if (first_created && !second_created) {
+            transformation.addBondExistingToCreated(
+                action.partner_node, action.partner_site,
+                node_to_created.at(action.target_node), action.site);
+        } else {
+            transformation.addBondCreated(
+                node_to_created.at(action.target_node), action.site,
+                node_to_created.at(action.partner_node), action.partner_site);
         }
     }
 
@@ -2526,7 +3405,8 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
                       "by expression and evaluated at runtime when it modulates a rule");
             }
             BngLoweringResult patternValidation;
-            const auto pattern = flattenReactants({factor.pattern}, patternValidation, factor.label);
+            const auto pattern = flattenReactants(
+                {factor.pattern}, patternValidation, factor.label, true, &source);
             if (pattern && patternValidation.ok()) {
                 irEnergy.pattern = pattern->pattern;
             } else {
@@ -2559,7 +3439,8 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             irPopMap.population_name = popMap.populationName;
             irPopMap.rate_expression = popMap.sourceRate + (popMap.totalRate ? " TotalRate" : "");
             BngLoweringResult patternValidation;
-            const auto pattern = flattenReactants({popMap.pattern}, patternValidation, popMap.populationName);
+            const auto pattern = flattenReactants(
+                {popMap.pattern}, patternValidation, popMap.populationName, false, &source);
             if (pattern && patternValidation.ok()) {
                 irPopMap.pattern = pattern->pattern;
             } else {
@@ -2742,6 +3623,9 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             mapRule.actions.push_back(setCompartment);
         }
 
+        mapRule.reactant_pattern_offsets = {0};
+        mapRule.symmetry_divisor = computeWithinPatternSymmetry(
+            mapRule.pattern, mapRule.actions, mapRule.reactant_pattern_offsets, {}, source);
         mapRule.annotations["bng.population_map_index"] = std::to_string(accepted.index);
         result.model.expanded_rules.push_back(std::move(mapRule));
     }
@@ -3006,7 +3890,6 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         }
     };
     reconcilePopulationThresholds();
-    const std::vector<bng::compile::CompiledSeed> noSeeds;
     bng::units::ConversionContext seedUnitContext;
     if (const auto option = source.metadata().options.find("NumberPerQuantityUnit");
         option != source.metadata().options.end()) {
@@ -3018,11 +3901,20 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         } catch (...) {
         }
     }
-    for (const auto& seed : continuation ? noSeeds : source.seeds()) {
+    const double numberPerQuantityUnit = seedUnitContext.numberPerQuantityUnit.value_or(1.0);
+
+    struct ConstantSeedSpec {
+        bool is_population{false};
+        PopulationLocation pop_location{};
+        PatternIR pattern;
+        CompartmentId default_compartment{0};
+        std::size_t target_count{0};
+    };
+    std::vector<ConstantSeedSpec> constantSeeds;
+
+    for (const auto& seed : source.seeds()) {
+        if (continuation && !seed.constant) continue;
         auto amount = constantExpression(seed.amount, source);
-        // A constant seed species only marks the species as immutable for
-        // concentration-assignment actions; it still initializes particles
-        // exactly like a non-constant seed, including a zero-count sink.
         if (!amount || !std::isfinite(*amount) || *amount < 0.0)
             refuse("seeds require bounded static integer particle counts");
         if (seed.declaredUnit.has_value()) {
@@ -3081,7 +3973,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             }
         }
         BngLoweringResult validation;
-        const auto pattern = flattenReactants({seed.pattern}, validation, "seed");
+        const auto pattern = flattenReactants({seed.pattern}, validation, "seed", false, &source);
         if (!pattern || !validation.ok()) refuse("seeds require valid patterns");
 
         const auto& pat = pattern->pattern;
@@ -3093,8 +3985,19 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (*amount >= std::ldexp(1.0, std::numeric_limits<std::uint64_t>::digits))
                 refuse("population seed count exceeds native capacity");
             const auto key = location(pat.nodes.front());
-            if (key.second) compartmentalized_populations.insert(key.first);
-            incrementPopulation(key, static_cast<std::uint64_t>(*amount));
+            if (!continuation) {
+                if (key.second) compartmentalized_populations.insert(key.first);
+                incrementPopulation(key, static_cast<std::uint64_t>(*amount));
+            }
+            if (seed.constant) {
+                ConstantSeedSpec spec;
+                spec.is_population = true;
+                spec.pop_location = key;
+                spec.target_count = continuation
+                    ? static_cast<std::size_t>(populationCount(key))
+                    : static_cast<std::size_t>(*amount);
+                constantSeeds.push_back(std::move(spec));
+            }
             continue;
         }
 
@@ -3113,34 +4016,84 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     refuse("seeds must explicitly initialize every stateful site");
         }
 
-        const std::size_t available_particles =
-            request.max_particles - state.liveCount();
-        if (*amount > static_cast<double>(available_particles))
-            refuse("particle budget exceeded by seeds");
-        const std::size_t copy_count = static_cast<std::size_t>(*amount);
-        if (pat.nodes.empty() ||
-            copy_count > available_particles / pat.nodes.size())
-            refuse("particle budget exceeded by seeds");
+        const CompartmentId seedDefaultComp = seed.compartmentId
+            ? static_cast<CompartmentId>(seed.compartmentId->value())
+            : (seed.pattern.compartmentId()
+                   ? static_cast<CompartmentId>(seed.pattern.compartmentId()->value())
+                   : 0);
 
-        for (std::size_t count = 0; count < copy_count; ++count) {
-            std::vector<ParticleId> particles;
-            particles.reserve(pat.nodes.size());
-            for (std::size_t nodeIdx = 0; nodeIdx < pat.nodes.size(); ++nodeIdx) {
-                const auto& node = pat.nodes[nodeIdx];
-                const CompartmentId comp = node.compartment.value_or(
-                    seed.compartmentId ? static_cast<CompartmentId>(seed.compartmentId->value()) : 0);
-                const auto particle = state.create(node.molecule_type, comp);
-                particles.push_back(particle);
-                for (const auto& constraint : node.constraints) {
-                    if (constraint.kind == PatternIR::SiteConstraintKind::State) {
-                        state.setSiteState(particle, static_cast<std::uint16_t>(constraint.site), constraint.state);
+        std::size_t copy_count = 0;
+        if (!continuation) {
+            const std::size_t available_particles =
+                request.max_particles - state.liveCount();
+            if (*amount > static_cast<double>(available_particles))
+                refuse("particle budget exceeded by seeds");
+            copy_count = static_cast<std::size_t>(*amount);
+            if (pat.nodes.empty() ||
+                copy_count > available_particles / pat.nodes.size())
+                refuse("particle budget exceeded by seeds");
+
+            for (std::size_t count = 0; count < copy_count; ++count) {
+                std::vector<ParticleId> particles;
+                particles.reserve(pat.nodes.size());
+                for (std::size_t nodeIdx = 0; nodeIdx < pat.nodes.size(); ++nodeIdx) {
+                    const auto& node = pat.nodes[nodeIdx];
+                    const CompartmentId comp = node.compartment.value_or(seedDefaultComp);
+                    const auto particle = state.create(node.molecule_type, comp);
+                    particles.push_back(particle);
+                    for (const auto& constraint : node.constraints) {
+                        if (constraint.kind == PatternIR::SiteConstraintKind::State) {
+                            state.setSiteState(particle, static_cast<std::uint16_t>(constraint.site), constraint.state);
+                        }
                     }
                 }
+                for (const auto& bond : pat.bonds) {
+                    state.bind(particles.at(bond.first), static_cast<std::uint16_t>(bond.first_site),
+                               particles.at(bond.second), static_cast<std::uint16_t>(bond.second_site));
+                }
             }
-            for (const auto& bond : pat.bonds) {
-                state.bind(particles.at(bond.first), static_cast<std::uint16_t>(bond.first_site),
-                           particles.at(bond.second), static_cast<std::uint16_t>(bond.second_site));
+        }
+
+        // NFN-05: Track constant ($) particle seed species so their copy number is
+        // preserved after every reaction event.
+        if (seed.constant) {
+            BngLoweringResult constVal;
+            const auto constFlat = flattenReactants({seed.pattern}, constVal, "seed", true, &source);
+            if (!constFlat || !constVal.ok()) refuse("constant seed pattern invalid");
+            PatternIR exactPat = constFlat->pattern;
+            exactPat.species_compartments.clear();
+            for (std::size_t nodeIdx = 0; nodeIdx < exactPat.nodes.size(); ++nodeIdx) {
+                auto& node = exactPat.nodes[nodeIdx];
+                if (!model.compartments.empty()) {
+                    node.compartment = node.compartment.value_or(seedDefaultComp);
+                }
+                const auto& type = model.molecule_types.at(node.molecule_type);
+                for (std::size_t s = 0; s < type.sites.size(); ++s) {
+                    bool isBoundInPat = false;
+                    for (const auto& b : exactPat.bonds) {
+                        if ((b.first == nodeIdx && b.first_site == s) ||
+                            (b.second == nodeIdx && b.second_site == s)) {
+                            isBoundInPat = true;
+                            break;
+                        }
+                    }
+                    if (isBoundInPat) continue;
+                    bool hasFree = false;
+                    for (const auto& c : node.constraints) {
+                        if (c.site == s && c.kind == PatternIR::SiteConstraintKind::Free) {
+                            hasFree = true;
+                            break;
+                        }
+                    }
+                    if (!hasFree) node.siteFree(static_cast<std::uint32_t>(s));
+                }
             }
+            ConstantSeedSpec spec;
+            spec.is_population = false;
+            spec.pattern = std::move(exactPat);
+            spec.default_compartment = seedDefaultComp;
+            spec.target_count = copy_count;
+            constantSeeds.push_back(std::move(spec));
         }
     }
     struct ObservableTermDef {
@@ -3165,7 +4118,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         for (const auto& term : observable.terms) {
             BngLoweringResult validation;
             const auto pattern = flattenReactants({term.pattern}, validation,
-                                                  observable.name, true);
+                                                  observable.name, true, &source);
             if (!pattern || !validation.ok())
                 refuse("invalid observable pattern");
             terms.push_back({pattern->pattern, term.relation, term.quantity});
@@ -3182,6 +4135,21 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         const auto obsId = static_cast<ObservableId>(source.observables()[i].id.value());
         observableIdToDefIndex[obsId] = i;
         functionEnvironment.addObservable("observable_" + std::to_string(obsId), 0.0, obsId);
+    }
+    // NFN-03: Register local observable slot parameters for rules with local functions.
+    std::uint32_t maxLocalObsSlot = 0;
+    bool hasAnyLocalObs = false;
+    for (const auto& rule : model.expanded_rules) {
+        for (const auto& binding : rule.local_observable_bindings) {
+            hasAnyLocalObs = true;
+            if (binding.slot > maxLocalObsSlot) maxLocalObsSlot = binding.slot;
+        }
+    }
+    if (hasAnyLocalObs) {
+        for (std::uint32_t slot = 0; slot <= maxLocalObsSlot; ++slot) {
+            functionEnvironment.addParameter(
+                "local_obs_" + std::to_string(slot), 0.0, static_cast<ParameterId>(slot));
+        }
     }
 
     struct PreparedRuleRate {
@@ -3209,12 +4177,64 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
 
     std::vector<CompiledTransformation> compiled_transformations;
     compiled_transformations.reserve(model.expanded_rules.size());
-    for (const auto& rule : model.expanded_rules) {
+    std::vector<std::map<PatternNodeId, CreatedMoleculeId>> ruleCreatedIds(model.expanded_rules.size());
+    for (std::size_t ri = 0; ri < model.expanded_rules.size(); ++ri) {
+        const auto& rule = model.expanded_rules[ri];
         compiled_transformations.push_back(
             compileTransformation(buildRuleTransformation(rule), model));
+        CreatedMoleculeId nextCid = 0;
+        for (const auto& action : rule.actions) {
+            if (action.kind == ActionKind::Create &&
+                !ruleCreatedIds[ri].count(action.target_node)) {
+                ruleCreatedIds[ri][action.target_node] = nextCid++;
+            }
+        }
     }
 
     GenericMatcher matcher(model);
+
+    // Prepare exact runtime energy patterns when any rule uses runtime Arrhenius evaluation.
+    struct PreparedEnergyPattern {
+        PatternIR pattern;
+        double aut{1.0};
+        bool isDynamic{false};
+        double staticEnergy{0.0};
+        std::optional<CompiledFunction> compiledFunction;
+    };
+    std::vector<PreparedEnergyPattern> preparedEnergyPatterns;
+    const bool anyRuntimeArrhenius = std::any_of(
+        model.expanded_rules.begin(), model.expanded_rules.end(),
+        [](const ExpandedRuleIR& r) { return r.runtime_arrhenius.enabled; });
+    if (anyRuntimeArrhenius) {
+        preparedEnergyPatterns.reserve(source.energyFactors().size());
+        for (const auto& ep : source.energyFactors()) {
+            BngLoweringResult epVal;
+            const auto epFlat = flattenReactants({ep.pattern}, epVal, ep.label, true, &source);
+            if (!epFlat || !epVal.ok()) refuse("runtime energy pattern could not be lowered");
+            PreparedEnergyPattern pep;
+            pep.pattern = epFlat->pattern;
+            pep.aut = static_cast<double>(std::max<std::size_t>(1, matcher.fullAutomorphismCount(pep.pattern)));
+            if (isDynamicEnergyFactor(ep, source)) {
+                std::set<std::size_t> activeFunctions;
+                const auto expandedEp = expandZeroArgumentRateFunctions(
+                    source.expandFunctions(ep.expression), source, activeFunctions);
+                if (!expandedEp) refuse("dynamic energy expression could not be resolved");
+                std::set<std::size_t> obsIds;
+                const auto expr = observableRateExpression(*expandedEp, source, obsIds);
+                if (!expr) refuse("dynamic energy expression could not be resolved");
+                try {
+                    pep.isDynamic = true;
+                    pep.compiledFunction = FunctionCompiler().compile(*expr, functionEnvironment);
+                } catch (const std::exception& e) {
+                    refuse("invalid dynamic energy expression: " + std::string(e.what()));
+                }
+            } else {
+                pep.staticEnergy = energyFactorValue(ep, source);
+            }
+            preparedEnergyPatterns.push_back(std::move(pep));
+        }
+    }
+
     const auto coversWholeComplex = [&](const Embedding& match) {
         const auto& particles = match.particles();
         // The matcher already requires one connected complex. A bond to
@@ -3232,32 +4252,23 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         return !particles.empty();
     };
 
-    // BNG2/native NFsim multiply observable pattern counts by the pattern's
-    // automorphism multiplicity. Node swaps are reported by MatchPlan; swaps
-    // of identically constrained same-name sites must be counted here.
-    auto observableAutomorphismWeight = [&](const PatternIR& pattern) -> std::size_t {
-        std::size_t weight = compileMatchPlan(pattern, model).automorphismCount();
-        for (const auto& node : pattern.nodes) {
-            const auto& type = model.molecule_types.at(node.molecule_type);
-            std::map<std::string, std::size_t> classes;
-            for (const auto& constraint : node.constraints) {
-                std::ostringstream key;
-                const std::string site_name =
-                    constraint.site < type.sites.size()
-                        ? type.sites[constraint.site].name
-                        : std::to_string(constraint.site);
-                key << site_name << ':' << static_cast<int>(constraint.kind) << ':';
-                for (const auto state : constraint.states) key << state << ',';
-                key << constraint.state;
-                ++classes[key.str()];
+    // On continuation, initialize particle constant seed targets from current state.
+    if (continuation && !constantSeeds.empty()) {
+        for (auto& spec : constantSeeds) {
+            if (spec.is_population) continue;
+            std::unordered_set<std::uint32_t> seenComplexes;
+            for (const auto& m : matcher.enumerate(spec.pattern, state)) {
+                if (!m.particles().empty() && coversWholeComplex(m)) {
+                    seenComplexes.insert(state.complexId(m.particle(0)));
+                }
             }
-            for (const auto& [_, count] : classes) {
-                for (std::size_t factor = 2; factor <= count; ++factor) weight *= factor;
-            }
+            spec.target_count = seenComplexes.size();
         }
-        return weight;
-    };
+    }
 
+    // NFN-08 / PERF-02: GenericMatcher::enumerate() already returns every ordered
+    // (node, duplicate-site) embedding, which equals count * aut(pattern) with no
+    // extra automorphism multiplication (eliminating aut^2 and k!*k! double-counting).
     auto evaluateObservable = [&](const ObservableDef& obs) -> double {
         double value = 0.0;
         if (obs.kind == bng::compile::ObservableKind::Molecules) {
@@ -3265,7 +4276,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 if (term.pattern.nodes.size() == 1 && term.pattern.bonds.empty() &&
                     term.pattern.nodes.front().constraints.empty() &&
                     term.pattern.molecularity.empty() && term.pattern.aliases.empty() &&
-                    term.pattern.connected_to.empty() &&
+                    term.pattern.connected_to.empty() && term.pattern.species_compartments.empty() &&
                     model.molecule_types.at(term.pattern.nodes.front().molecule_type).is_population) {
                     const auto count = observedPopulation(term.pattern.nodes.front());
                     if (term.relation.empty()) value += static_cast<double>(count);
@@ -3275,12 +4286,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     continue;
                 }
                 const auto count = matcher.enumerate(term.pattern, state).size();
-                // BNG2/native NFsim weight observable pattern counts by the
-                // pattern's automorphism multiplicity (XML `automorphisms`).
-                const std::size_t weight = observableAutomorphismWeight(term.pattern);
-                const std::size_t weighted = count * weight;
-                if (term.relation.empty()) value += static_cast<double>(weighted);
-                else if (bng::compile::observablePatternCountMatches(weighted, term.relation, term.quantity))
+                if (term.relation.empty()) value += static_cast<double>(count);
+                else if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
                     value += 1.0;
             }
         } else if (obs.kind == bng::compile::ObservableKind::Species) {
@@ -3289,7 +4296,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 if (term.pattern.nodes.size() == 1 && term.pattern.bonds.empty() &&
                     term.pattern.nodes.front().constraints.empty() &&
                     term.pattern.molecularity.empty() && term.pattern.aliases.empty() &&
-                    term.pattern.connected_to.empty() &&
+                    term.pattern.connected_to.empty() && term.pattern.species_compartments.empty() &&
                     model.molecule_types.at(term.pattern.nodes.front().molecule_type).is_population) {
                     const auto count = observedPopulation(term.pattern.nodes.front());
                     if (bng::compile::observablePatternCountMatches(1, term.relation, term.quantity))
@@ -3305,6 +4312,37 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     if (bng::compile::observablePatternCountMatches(c, term.relation, term.quantity))
                         value += 1.0;
                 }
+            }
+        }
+        return value;
+    };
+
+    // NFN-03: Evaluate an observable locally over the connected complex of a matched particle
+    // (or restricted to embeddings containing that particle when molecule-scoped).
+    auto evaluateObservableLocally = [&](const ObservableDef& obs,
+                                         const std::vector<ParticleId>& complexParts,
+                                         ParticleId anchor,
+                                         bool moleculeScope) -> double {
+        double value = 0.0;
+        for (const auto& term : obs.terms) {
+            const auto localMatches = matcher.enumerateInParticles(term.pattern, state, complexParts);
+            std::size_t count = 0;
+            if (moleculeScope) {
+                for (const auto& lm : localMatches) {
+                    if (std::find(lm.particles().begin(), lm.particles().end(), anchor) != lm.particles().end()) {
+                        ++count;
+                    }
+                }
+            } else {
+                count = localMatches.size();
+            }
+            if (obs.kind == bng::compile::ObservableKind::Molecules) {
+                if (term.relation.empty()) value += static_cast<double>(count);
+                else if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
+                    value += 1.0;
+            } else if (obs.kind == bng::compile::ObservableKind::Species) {
+                if (count > 0 && bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
+                    value += 1.0;
             }
         }
         return value;
@@ -3350,7 +4388,6 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             }
         }
         if (!hasPop || !hasParticle || !allPopSimple) continue;
-        if (rule.match_once) continue; // keep conservative for now
         MixedLumpedInfo info;
         info.enabled = true;
         std::map<std::size_t, std::size_t> oldToNew;
@@ -3389,6 +4426,12 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             info.particlePattern.connected_to.push_back({oldToNew.at(pair.first), oldToNew.at(pair.second)});
         }
         if (!info.enabled) continue;
+        for (const auto& sc : rule.pattern.species_compartments) {
+            auto it = oldToNew.find(sc.first);
+            if (it != oldToNew.end()) {
+                info.particlePattern.species_compartments.emplace_back(it->second, sc.second);
+            }
+        }
         for (const auto& group : rule.pattern.interchangeable) {
             bool anyPop = false;
             std::vector<std::size_t> ng;
@@ -3430,11 +4473,12 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         }
     }
 
+    // NFN-14a: Population-only rules support MatchOnce too.
     auto populationOnlyReactants = [&](const ExpandedRuleIR& rule) {
         return !rule.pattern.nodes.empty() &&
                std::all_of(rule.pattern.nodes.begin(), rule.pattern.nodes.end(), [&](const auto& node) {
                    return model.molecule_types.at(node.molecule_type).is_population;
-               }) && rule.pattern.bonds.empty() && rule.filters.empty() && !rule.match_once;
+               }) && rule.pattern.bonds.empty() && rule.filters.empty();
     };
     auto populationCombinationFactor = [&](const PopulationCounts& required) {
         double comb = 1.0;
@@ -3475,6 +4519,524 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         }
     };
 
+    // NFN-05: Preserve constant ($) seed species counts after every reaction event.
+    std::vector<ParticleId> scratchMembers;
+    const auto enforceConstantSeeds = [&]() {
+        if (constantSeeds.empty()) return;
+        for (const auto& spec : constantSeeds) {
+            if (spec.is_population) {
+                population_counts[spec.pop_location] =
+                    static_cast<std::uint64_t>(spec.target_count);
+                continue;
+            }
+            std::map<std::uint32_t, ParticleId> matchedRoots;
+            for (const auto& m : matcher.enumerate(spec.pattern, state)) {
+                if (!m.particles().empty() && coversWholeComplex(m)) {
+                    matchedRoots.emplace(state.complexId(m.particle(0)), m.particle(0));
+                }
+            }
+            const std::size_t current = matchedRoots.size();
+            if (current < spec.target_count) {
+                const std::size_t missing = spec.target_count - current;
+                const auto& pat = spec.pattern;
+                if (pat.nodes.empty()) continue;
+                if (state.liveCount() + missing * pat.nodes.size() > request.max_particles) {
+                    refuse("particle budget exhausted");
+                }
+                for (std::size_t c = 0; c < missing; ++c) {
+                    std::vector<ParticleId> created;
+                    created.reserve(pat.nodes.size());
+                    for (const auto& node : pat.nodes) {
+                        const CompartmentId comp = node.compartment.value_or(spec.default_compartment);
+                        const auto pid = state.create(node.molecule_type, comp);
+                        created.push_back(pid);
+                        for (const auto& constraint : node.constraints) {
+                            if (constraint.kind == PatternIR::SiteConstraintKind::State) {
+                                state.setSiteState(pid, static_cast<std::uint16_t>(constraint.site), constraint.state);
+                            }
+                        }
+                    }
+                    for (const auto& bond : pat.bonds) {
+                        state.bind(created.at(bond.first), static_cast<std::uint16_t>(bond.first_site),
+                                   created.at(bond.second), static_cast<std::uint16_t>(bond.second_site));
+                    }
+                }
+            } else if (current > spec.target_count) {
+                std::size_t excess = current - spec.target_count;
+                for (const auto& [_, root] : matchedRoots) {
+                    if (excess == 0) break;
+                    if (!state.alive(root)) continue;
+                    state.complexMembers(root, scratchMembers);
+                    for (const auto p : scratchMembers) {
+                        if (state.alive(p)) state.destroy(p);
+                    }
+                    --excess;
+                }
+            }
+        }
+    };
+
+    // NFN-09b / NFN-09d: Compartment hierarchy & species-compartment helpers.
+    const bool has2DCompartment = std::any_of(
+        model.compartments.begin(), model.compartments.end(),
+        [](const CompartmentIR& c) { return c.dimensions == 2; });
+
+    auto complexSpeciesCompartmentLocal = [&](ParticleId root, std::vector<ParticleId>& buf) -> CompartmentId {
+        if (model.compartments.empty()) return 0;
+        state.complexMembers(root, buf);
+        for (const auto p : buf) {
+            const auto cid = state.compartment(p);
+            if (cid < model.compartments.size() && model.compartments[cid].dimensions == 2) {
+                return cid;
+            }
+        }
+        return state.compartment(root);
+    };
+
+    auto compartmentsFormInteractingSetLocal = [&](const std::vector<CompartmentId>& comps) -> bool {
+        if (model.compartments.empty() || comps.size() < 2) return true;
+        bool allSame = true;
+        for (std::size_t i = 1; i < comps.size(); ++i) {
+            if (comps[i] != comps[0]) { allSame = false; break; }
+        }
+        if (allSame) return true;
+        // In cBNGL, distinct reactant compartments can interact iff a 2D surface
+        // present in the reactant set is adjacent to every other reactant compartment.
+        for (const auto surf : comps) {
+            if (surf >= model.compartments.size() || model.compartments[surf].dimensions != 2) continue;
+            const auto& surfDecl = model.compartments[surf];
+            bool allAdjacent = true;
+            for (const auto other : comps) {
+                if (other == surf) continue;
+                if (other >= model.compartments.size()) { allAdjacent = false; break; }
+                const bool isOutside = surfDecl.parent.has_value() && *surfDecl.parent == other;
+                const bool isInside = model.compartments[other].parent.has_value() &&
+                                      *model.compartments[other].parent == surf;
+                if (!isOutside && !isInside) {
+                    allAdjacent = false;
+                    break;
+                }
+            }
+            if (allAdjacent) return true;
+        }
+        return false;
+    };
+
+    auto is3DSeparatedByHierarchy = [&](CompartmentId src, CompartmentId dst) -> bool {
+        return has2DCompartment && src != dst &&
+               src < model.compartments.size() && dst < model.compartments.size() &&
+               model.compartments[src].dimensions == 3 && model.compartments[dst].dimensions == 3;
+    };
+
+    auto unqualifiedVolumeFactor = [&](const ExpandedRuleIR& rule,
+                                       const Embedding& match,
+                                       std::vector<ParticleId>& buf) -> double {
+        if (!rule.has_unqualified_compartments || rule.total_rate ||
+            model.compartments.empty() || rule.reactant_pattern_offsets.size() < 2) {
+            return 1.0;
+        }
+        std::vector<bng::compile::ReactantCompartment> rcList;
+        rcList.reserve(rule.reactant_pattern_offsets.size());
+        for (const auto offset : rule.reactant_pattern_offsets) {
+            if (offset >= match.particles().size()) continue;
+            const auto cid = complexSpeciesCompartmentLocal(match.particle(offset), buf);
+            if (cid < model.compartments.size()) {
+                const auto& comp = model.compartments[cid];
+                if (std::isfinite(comp.volume) && comp.volume > 0.0) {
+                    rcList.push_back({comp.dimensions, comp.volume * numberPerQuantityUnit});
+                }
+            }
+        }
+        const auto factor = bng::compile::reactantUnitConversionFactor(rcList);
+        return factor.value_or(1.0);
+    };
+
+    // NFN-02: Verify post-transformation product molecularity ('+' vs '.') locally in O(|complex|).
+    auto satisfiesProductMolecularity = [&](const ExpandedRuleIR& rule,
+                                            const Embedding& match) -> bool {
+        if (rule.product_molecularity.empty()) return true;
+        const std::size_t reactantCount = rule.pattern.nodes.size();
+        std::vector<ParticleId> subParticles;
+        std::unordered_map<std::uint32_t, std::size_t> slotToVertex;
+        std::vector<ParticleId> buf;
+        for (const auto root : match.particles()) {
+            if (slotToVertex.count(root.index)) continue;
+            state.complexMembers(root, buf);
+            for (const auto p : buf) {
+                if (slotToVertex.emplace(p.index, subParticles.size()).second) {
+                    subParticles.push_back(p);
+                }
+            }
+        }
+        const std::size_t existingCount = subParticles.size();
+        std::unordered_map<PatternNodeId, std::size_t> createdToVertex;
+        std::size_t totalVertices = existingCount;
+        for (const auto& action : rule.actions) {
+            if (action.kind == ActionKind::Create && !createdToVertex.count(action.target_node)) {
+                createdToVertex[action.target_node] = totalVertices++;
+            }
+        }
+
+        std::vector<std::uint8_t> dead(totalVertices, 0);
+        using DirectedEnd = std::pair<std::uint32_t, std::uint16_t>;
+        std::set<std::pair<DirectedEnd, DirectedEnd>> deletedBonds;
+        auto normBondKey = [](std::uint32_t p1, std::uint16_t s1,
+                              std::uint32_t p2, std::uint16_t s2) {
+            DirectedEnd a{p1, s1};
+            DirectedEnd b{p2, s2};
+            if (b < a) std::swap(a, b);
+            return std::make_pair(a, b);
+        };
+        for (const auto& action : rule.actions) {
+            if (action.kind == ActionKind::Destroy && action.target_node < reactantCount) {
+                const auto it = slotToVertex.find(match.particle(action.target_node).index);
+                if (it != slotToVertex.end()) dead[it->second] = 1;
+            } else if (action.kind == ActionKind::DestroyComplex && action.target_node < reactantCount) {
+                state.complexMembers(match.particle(action.target_node), buf);
+                for (const auto p : buf) {
+                    const auto it = slotToVertex.find(p.index);
+                    if (it != slotToVertex.end()) dead[it->second] = 1;
+                }
+            } else if (action.kind == ActionKind::Unbind &&
+                       action.target_node < reactantCount && action.partner_node < reactantCount) {
+                const auto p1 = match.particle(action.target_node);
+                const auto p2 = match.particle(action.partner_node);
+                const auto s1 = match.mappedSite(action.target_node, action.site);
+                const auto s2 = match.mappedSite(action.partner_node, action.partner_site);
+                deletedBonds.insert(normBondKey(p1.index, s1, p2.index, s2));
+            }
+        }
+
+        std::vector<std::vector<std::size_t>> adj(totalVertices);
+        for (std::size_t u = 0; u < existingCount; ++u) {
+            if (dead[u]) continue;
+            const auto p = subParticles[u];
+            const std::size_t siteCount = model.molecule_types.at(state.type(p)).sites.size();
+            for (std::size_t si = 0; si < siteCount; ++si) {
+                const auto site = static_cast<std::uint16_t>(si);
+                if (!state.bound(p, site)) continue;
+                const auto partner = state.bond(p, site);
+                if (deletedBonds.count(normBondKey(p.index, site, partner.particle.index, partner.site))) {
+                    continue;
+                }
+                const auto it = slotToVertex.find(partner.particle.index);
+                if (it == slotToVertex.end() || dead[it->second]) continue;
+                adj[u].push_back(it->second);
+            }
+        }
+        auto resolveVertex = [&](PatternNodeId node) -> std::optional<std::size_t> {
+            if (node < reactantCount) {
+                const auto it = slotToVertex.find(match.particle(node).index);
+                if (it == slotToVertex.end() || dead[it->second]) return std::nullopt;
+                return it->second;
+            }
+            const auto it = createdToVertex.find(node);
+            if (it == createdToVertex.end()) return std::nullopt;
+            return it->second;
+        };
+        for (const auto& action : rule.actions) {
+            if (action.kind != ActionKind::Bind) continue;
+            const auto u = resolveVertex(action.target_node);
+            const auto v = resolveVertex(action.partner_node);
+            if (u && v) {
+                adj[*u].push_back(*v);
+                adj[*v].push_back(*u);
+            }
+        }
+
+        std::vector<std::size_t> comp(totalVertices, totalVertices);
+        std::size_t nextComp = 0;
+        std::vector<std::size_t> q;
+        for (std::size_t start = 0; start < totalVertices; ++start) {
+            if (dead[start] || comp[start] != totalVertices) continue;
+            comp[start] = nextComp;
+            q.clear();
+            q.push_back(start);
+            for (std::size_t head = 0; head < q.size(); ++head) {
+                for (const auto nb : adj[q[head]]) {
+                    if (!dead[nb] && comp[nb] == totalVertices) {
+                        comp[nb] = nextComp;
+                        q.push_back(nb);
+                    }
+                }
+            }
+            ++nextComp;
+        }
+
+        for (const auto& mc : rule.product_molecularity) {
+            const auto u = resolveVertex(mc.left);
+            const auto v = resolveVertex(mc.right);
+            if (!u || !v) return false;
+            const bool same = (comp[*u] == comp[*v]);
+            if (mc.kind == MolecularityKind::DifferentComplex && same) return false;
+            if (mc.kind == MolecularityKind::SameComplex && !same) return false;
+        }
+        return true;
+    };
+
+    // Extract a tiny local GenericGraphState containing only the connected complex(es)
+    // participating in `match`, shared by product filters (NFN-06) and runtime Arrhenius (NFN-10).
+    auto extractLocalSubState = [&](const Embedding& match,
+                                    GenericGraphState& subState,
+                                    MatchEmbedding& subEmb,
+                                    std::vector<ParticleId>& subParticles) {
+        std::vector<ParticleId> origParticles;
+        std::unordered_map<std::uint32_t, ParticleId> origToSub;
+        std::vector<ParticleId> buf;
+        for (const auto root : match.particles()) {
+            if (origToSub.count(root.index)) continue;
+            state.complexMembers(root, buf);
+            for (const auto p : buf) {
+                if (origToSub.count(p.index)) continue;
+                const auto sp = subState.create(state.type(p), state.compartment(p));
+                const std::size_t siteCount = model.molecule_types.at(state.type(p)).sites.size();
+                for (std::size_t si = 0; si < siteCount; ++si) {
+                    const auto site = static_cast<std::uint16_t>(si);
+                    if (!model.molecule_types.at(state.type(p)).sites[si].states.empty()) {
+                        subState.setSiteState(sp, site, state.siteState(p, site));
+                    }
+                }
+                origToSub.emplace(p.index, sp);
+                origParticles.push_back(p);
+                subParticles.push_back(sp);
+            }
+        }
+        for (const auto p : origParticles) {
+            const auto sp = origToSub.at(p.index);
+            const std::size_t siteCount = model.molecule_types.at(state.type(p)).sites.size();
+            for (std::size_t si = 0; si < siteCount; ++si) {
+                const auto site = static_cast<std::uint16_t>(si);
+                if (!state.bound(p, site)) continue;
+                const auto partner = state.bond(p, site);
+                if (partner.particle.index < p.index ||
+                    (partner.particle.index == p.index && partner.site < site)) {
+                    continue;
+                }
+                const auto it = origToSub.find(partner.particle.index);
+                if (it != origToSub.end() && !subState.bound(sp, site) &&
+                    !subState.bound(it->second, partner.site)) {
+                    subState.bind(sp, site, it->second, partner.site);
+                }
+            }
+        }
+        for (std::size_t ni = 0; ni < match.particles().size(); ++ni) {
+            subEmb.bindNode(ni, origToSub.at(match.particle(ni).index));
+        }
+        if (match.hasSiteMaps()) {
+            subEmb.setSiteMaps(match.siteMaps());
+        }
+    };
+
+    // NFN-06: Evaluate include_products / exclude_products on post-transformation product complexes.
+    auto passesProductFilters = [&](const ExpandedRuleIR& rule,
+                                    std::size_t ruleIdx,
+                                    const Embedding& match) -> bool {
+        bool hasProductFilter = false;
+        for (const auto& f : rule.filters) {
+            if (f.products) { hasProductFilter = true; break; }
+        }
+        if (!hasProductFilter) return true;
+
+        GenericGraphState subState(model);
+        MatchEmbedding subEmb;
+        std::vector<ParticleId> subParticles;
+        extractLocalSubState(match, subState, subEmb, subParticles);
+
+        std::vector<std::pair<CreatedMoleculeId, CompartmentId>> inheritedComps;
+        for (const auto& [createdNode, donorNode] : rule.created_compartment_inherit) {
+            auto cidIt = ruleCreatedIds[ruleIdx].find(createdNode);
+            if (cidIt != ruleCreatedIds[ruleIdx].end() && donorNode < match.particles().size()) {
+                inheritedComps.emplace_back(cidIt->second, subState.compartment(subEmb.particle(donorNode)));
+            }
+        }
+        std::vector<CompartmentId> subBeforeComps;
+        std::set<ParticleId> subExplicit;
+        if (rule.move_connected || has2DCompartment) {
+            subBeforeComps.reserve(match.particles().size());
+            for (std::size_t ni = 0; ni < match.particles().size(); ++ni) {
+                const auto sp = subEmb.particle(ni);
+                subBeforeComps.push_back(subState.compartment(sp));
+                subExplicit.insert(sp);
+            }
+        }
+
+        TransformationResult txRes;
+        try {
+            txRes = applyTransformation(compiled_transformations[ruleIdx], subEmb, subState);
+        } catch (...) {
+            return false;
+        }
+        for (const auto& [cid, comp] : inheritedComps) {
+            const auto cp = txRes.created(cid);
+            if (subState.alive(cp)) subState.setCompartment(cp, comp);
+        }
+        for (const auto& action : rule.actions) {
+            if (action.kind == ActionKind::SetCompartment && action.target_node < match.particles().size()) {
+                const auto sp = subEmb.particle(action.target_node);
+                if (subState.alive(sp)) subState.setCompartment(sp, static_cast<CompartmentId>(action.value));
+            }
+        }
+        if (rule.move_connected || has2DCompartment) {
+            for (std::size_t ni = 0; ni < match.particles().size(); ++ni) {
+                const auto sp = subEmb.particle(ni);
+                if (!subState.alive(sp)) continue;
+                const auto srcComp = subBeforeComps[ni];
+                const auto dstComp = subState.compartment(sp);
+                if (dstComp == srcComp) continue;
+                if (!rule.move_connected && !is3DSeparatedByHierarchy(srcComp, dstComp)) continue;
+                std::queue<ParticleId> q;
+                std::set<ParticleId> visited;
+                q.push(sp);
+                visited.insert(sp);
+                while (!q.empty()) {
+                    const auto curr = q.front();
+                    q.pop();
+                    const auto& type = model.molecule_types.at(subState.type(curr));
+                    for (std::size_t si = 0; si < type.sites.size(); ++si) {
+                        const auto site = static_cast<std::uint16_t>(si);
+                        if (!subState.bound(curr, site)) continue;
+                        const auto partner = subState.bond(curr, site).particle;
+                        if (!visited.insert(partner).second) continue;
+                        if (!subExplicit.count(partner) && subState.alive(partner) &&
+                            subState.compartment(partner) == srcComp) {
+                            subState.setCompartment(partner, dstComp);
+                            q.push(partner);
+                        }
+                    }
+                }
+            }
+        }
+
+        std::vector<ParticleId> prodMembers;
+        for (const auto& filter : rule.filters) {
+            if (!filter.products) continue;
+            ParticleId targetPid{};
+            bool hasTarget = false;
+            if (filter.reactant_node_offset < rule.pattern.nodes.size()) {
+                targetPid = subEmb.particle(filter.reactant_node_offset);
+                hasTarget = subState.alive(targetPid);
+            } else {
+                const auto cidIt = ruleCreatedIds[ruleIdx].find(static_cast<PatternNodeId>(filter.reactant_node_offset));
+                if (cidIt != ruleCreatedIds[ruleIdx].end()) {
+                    try {
+                        targetPid = txRes.created(cidIt->second);
+                        hasTarget = subState.alive(targetPid);
+                    } catch (...) {
+                        hasTarget = false;
+                    }
+                }
+            }
+            bool anyMatched = false;
+            if (hasTarget) {
+                subState.complexMembers(targetPid, prodMembers);
+                for (const auto& fPat : filter.patterns) {
+                    if (matcher.hasMatchInParticles(fPat, subState, prodMembers)) {
+                        anyMatched = true;
+                        break;
+                    }
+                }
+            }
+            if (filter.include && !anyMatched) return false;
+            if (!filter.include && anyMatched) return false;
+        }
+        return true;
+    };
+
+    // NFN-10 / ETH-08..11 / ETH-13: Exact per-match Arrhenius rate via G_after - G_before
+    // on the local complex substate.
+    auto evaluateRuntimeArrheniusRate = [&](const ExpandedRuleIR& rule,
+                                            std::size_t ruleIdx,
+                                            const Embedding& match,
+                                            std::unordered_map<ObservableId, double>& currentObservableValues) -> double {
+        GenericGraphState subState(model);
+        MatchEmbedding subEmb;
+        std::vector<ParticleId> beforeParticles;
+        extractLocalSubState(match, subState, subEmb, beforeParticles);
+
+        std::vector<double> epValues(preparedEnergyPatterns.size(), 0.0);
+        for (std::size_t epi = 0; epi < preparedEnergyPatterns.size(); ++epi) {
+            const auto& pep = preparedEnergyPatterns[epi];
+            if (pep.isDynamic) {
+                for (const auto depId : pep.compiledFunction->observableDependencies()) {
+                    auto obsIt = currentObservableValues.find(depId);
+                    if (obsIt == currentObservableValues.end()) {
+                        const auto def = observableIdToDefIndex.find(depId);
+                        if (def == observableIdToDefIndex.end())
+                            refuse("unresolved observable dependency in energy pattern");
+                        obsIt = currentObservableValues.emplace(
+                            depId, evaluateObservable(observables[def->second])).first;
+                    }
+                    functionEnvironment.set("observable_" + std::to_string(depId), obsIt->second);
+                }
+                epValues[epi] = pep.compiledFunction->evaluate(functionEnvironment);
+            } else {
+                epValues[epi] = pep.staticEnergy;
+            }
+        }
+
+        double gBefore = 0.0;
+        for (std::size_t epi = 0; epi < preparedEnergyPatterns.size(); ++epi) {
+            const auto& pep = preparedEnergyPatterns[epi];
+            if (epValues[epi] == 0.0) continue;
+            const auto cnt = matcher.enumerateInParticles(pep.pattern, subState, beforeParticles).size();
+            if (cnt > 0) gBefore += (static_cast<double>(cnt) / pep.aut) * epValues[epi];
+        }
+
+        applyTransformation(compiled_transformations[ruleIdx], subEmb, subState);
+        const auto afterParticles = subState.liveParticles();
+        double gAfter = 0.0;
+        for (std::size_t epi = 0; epi < preparedEnergyPatterns.size(); ++epi) {
+            const auto& pep = preparedEnergyPatterns[epi];
+            if (epValues[epi] == 0.0) continue;
+            const auto cnt = matcher.enumerateInParticles(pep.pattern, subState, afterParticles).size();
+            if (cnt > 0) gAfter += (static_cast<double>(cnt) / pep.aut) * epValues[epi];
+        }
+
+        const auto& info = rule.runtime_arrhenius;
+        const double deltaG = gAfter - gBefore;
+        const double phiEff = info.reverse ? (1.0 - info.phi) : info.phi;
+        const double exponent = info.ea + info.barrier + phiEff * deltaG +
+                                (info.reverse ? phiEff * info.work : -phiEff * info.work);
+        if (!std::isfinite(exponent)) refuse("runtime Arrhenius rate exponent is nonfinite");
+        const double k = std::exp(-exponent);
+        if (!std::isfinite(k) || k < 0.0) refuse("runtime Arrhenius rate is invalid");
+        return k;
+    };
+
+    // Helper: canonical MatchOnce complex-ID key for a reactant embedding (NFN-12).
+    auto matchOnceKeyFor = [&](const ExpandedRuleIR& rule,
+                               const std::vector<std::size_t>& offsets,
+                               const Embedding& match) -> std::vector<std::uint32_t> {
+        std::vector<std::uint32_t> key;
+        if (offsets.empty()) {
+            if (!match.particles().empty()) key.push_back(state.complexId(match.particle(0)));
+            return key;
+        }
+        key.reserve(offsets.size());
+        for (const auto off : offsets) {
+            if (off < match.particles().size()) key.push_back(state.complexId(match.particle(off)));
+        }
+        // Sort interchangeable reactant pattern slots so swapped complex pairs deduplicate.
+        for (const auto& group : rule.pattern.interchangeable) {
+            std::vector<std::size_t> patSlots;
+            for (const auto nodeIdx : group) {
+                for (std::size_t pi = 0; pi < offsets.size(); ++pi) {
+                    if (offsets[pi] == nodeIdx) { patSlots.push_back(pi); break; }
+                }
+            }
+            if (patSlots.size() > 1) {
+                std::vector<std::uint32_t> vals;
+                vals.reserve(patSlots.size());
+                for (const auto s : patSlots) {
+                    if (s < key.size()) vals.push_back(key[s]);
+                }
+                std::sort(vals.begin(), vals.end());
+                for (std::size_t k = 0; k < vals.size(); ++k) key[patSlots[k]] = vals[k];
+            }
+        }
+        return key;
+    };
+
     const auto layout = RngLayout::exactSSA();
     double time = request.start_time;
     double next_time = std::numeric_limits<double>::infinity();
@@ -3488,6 +5050,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (!pending) reconcilePopulationThresholds();
             if (!pending) {
                 std::vector<std::vector<Embedding>> matches;
+                std::vector<std::vector<double>> matchWeights(model.expanded_rules.size());
                 std::vector<double> rulePropensities(model.expanded_rules.size(), 0.0);
                 std::vector<double> currentRates(model.expanded_rules.size(), 0.0);
                 std::vector<double> populationFactors(model.expanded_rules.size(), 1.0);
@@ -3496,8 +5059,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 for (std::size_t index = 0; index < model.expanded_rules.size(); ++index) {
                     const auto& rule = model.expanded_rules[index];
                     const auto& prep = preparedRates[index];
+                    const bool hasLocalFuncs = !rule.local_observable_bindings.empty();
                     double rate = prep.elementaryRate;
-                    if (prep.isDynamic) {
+                    if (prep.isDynamic && !hasLocalFuncs) {
                         for (const auto depId : prep.compiledFunction->observableDependencies()) {
                             auto obsIt = currentObservableValues.find(depId);
                             if (obsIt == currentObservableValues.end()) {
@@ -3514,7 +5078,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                             refuse("dynamic rate must be finite and non-negative");
                         }
                     }
-                    rate *= rule.volume_factor;
+                    // NFN-13: TotalRate specifies the total macroscopic propensity
+                    // independent of compartment volume scaling.
+                    if (!rule.total_rate) {
+                        rate *= rule.volume_factor;
+                    }
                     currentRates[index] = rate;
                     if (populationOnlyReactants(rule)) {
                         matches.emplace_back();
@@ -3537,94 +5105,191 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                             continue;
                         }
                         auto rawMatches = matcher.enumerate(info.particlePattern, state);
-                        // Apply include/exclude reactant filters relative to particle reactant nodes.
-                        if (!rule.filters.empty()) {
+                        // Apply include/exclude reactant filters scoped to each matched complex (PERF-05).
+                        if (!rule.filters.empty() && !rawMatches.empty()) {
                             std::map<std::size_t, std::size_t> oldToNewParticle;
                             for (std::size_t pi = 0; pi < info.particleReactantNodes.size(); ++pi)
                                 oldToNewParticle[info.particleReactantNodes[pi]] = pi;
+                            std::vector<std::unordered_map<std::uint32_t, bool>> filterCache(rule.filters.size());
                             std::vector<Embedding> passedMatches;
+                            passedMatches.reserve(rawMatches.size());
                             for (const auto& match : rawMatches) {
                                 bool matchPassed = true;
-                                for (const auto& filter : rule.filters) {
+                                for (std::size_t fi = 0; fi < rule.filters.size(); ++fi) {
+                                    const auto& filter = rule.filters[fi];
                                     if (filter.products) continue;
-                                    // Map filter's reactant node offset back to original node index
-                                    // by finding which particle reactant node corresponds.
-                                    std::size_t origNode = filter.reactant_node_offset;
-                                    // If offset is not a direct particle node index in info, try identity.
-                                    auto itNode = oldToNewParticle.find(origNode);
+                                    auto itNode = oldToNewParticle.find(filter.reactant_node_offset);
                                     if (itNode == oldToNewParticle.end()) continue;
                                     const auto partId = match.particle(itNode->second);
                                     const auto compId = state.complexId(partId);
-                                    bool anyMatched = false;
-                                    for (const auto& fPat : filter.patterns) {
-                                        const auto fMatches = matcher.enumerate(fPat, state);
-                                        for (const auto& fm : fMatches) {
-                                            if (!fm.particles().empty() && state.complexId(fm.particle(0)) == compId) {
+                                    auto cit = filterCache[fi].find(compId);
+                                    bool ok = true;
+                                    if (cit != filterCache[fi].end()) {
+                                        ok = cit->second;
+                                    } else {
+                                        state.complexMembers(partId, scratchMembers);
+                                        bool anyMatched = false;
+                                        for (const auto& fPat : filter.patterns) {
+                                            if (matcher.hasMatchInParticles(fPat, state, scratchMembers)) {
                                                 anyMatched = true;
                                                 break;
                                             }
                                         }
-                                        if (anyMatched) break;
+                                        ok = filter.include ? anyMatched : !anyMatched;
+                                        filterCache[fi].emplace(compId, ok);
                                     }
-                                    if (filter.include && !anyMatched) { matchPassed = false; break; }
-                                    if (!filter.include && anyMatched) { matchPassed = false; break; }
+                                    if (!ok) { matchPassed = false; break; }
                                 }
                                 if (matchPassed) passedMatches.push_back(match);
                             }
                             rawMatches = std::move(passedMatches);
                         }
-                        if (rule.match_once) {
+                        // NFN-12: MatchOnce deduplicates by complex ID tuple (not particle set).
+                        if (rule.match_once && !rawMatches.empty()) {
+                            std::vector<std::size_t> partOffsets;
+                            std::map<std::size_t, std::size_t> oldToNewParticle;
+                            for (std::size_t pi = 0; pi < info.particleReactantNodes.size(); ++pi)
+                                oldToNewParticle[info.particleReactantNodes[pi]] = pi;
+                            for (const auto off : rule.reactant_pattern_offsets) {
+                                auto it = oldToNewParticle.find(off);
+                                if (it != oldToNewParticle.end()) partOffsets.push_back(it->second);
+                            }
+                            if (partOffsets.empty()) partOffsets.push_back(0);
                             std::vector<Embedding> uniqueMatches;
-                            std::set<std::vector<std::uint32_t>> seenParticleSets;
+                            std::set<std::vector<std::uint32_t>> seenKeys;
                             for (const auto& match : rawMatches) {
                                 std::vector<std::uint32_t> key;
-                                key.reserve(match.particles().size());
-                                for (const auto& p : match.particles()) key.push_back(p.index);
-                                std::sort(key.begin(), key.end());
-                                if (seenParticleSets.insert(key).second) uniqueMatches.push_back(match);
+                                key.reserve(partOffsets.size());
+                                for (const auto off : partOffsets) {
+                                    if (off < match.particles().size())
+                                        key.push_back(state.complexId(match.particle(off)));
+                                }
+                                if (seenKeys.insert(key).second) uniqueMatches.push_back(match);
                             }
                             rawMatches = std::move(uniqueMatches);
                         }
                         matches.push_back(std::move(rawMatches));
+                        // NFN-14b: TotalRate must NOT be multiplied by popFactor!
+                        const double effDiv = rule.match_once ? 1.0 : rule.symmetry_divisor;
                         double prop = 0.0;
                         if (rule.total_rate) {
-                            prop = matches.back().empty() ? 0.0 : rate * popFactor;
+                            prop = matches.back().empty() ? 0.0 : rate;
                         } else {
-                            prop = rate * popFactor * static_cast<double>(matches.back().size());
+                            prop = rate * popFactor * static_cast<double>(matches.back().size()) / effDiv;
                         }
                         rulePropensities[index] = prop;
                         total += prop;
                         continue;
                     }
-                    // Disconnected reactant patterns with no cross-node
-                    // topology or symmetry factor exactly into a product of
-                    // per-molecule match counts. Sampling one embedding from
-                    // that product preserves the propensity and the uniform
-                    // event distribution without materializing every pair.
+                    // PERF-01 / RULEHUB-06: O(N) independent counting & exact uniform
+                    // sampling for disconnected single-molecule reactants (including
+                    // same-type pairs, interchangeable pairs, duplicate sites, and
+                    // DifferentComplex molecularity).
                     const bool populationMap = rule.annotations.count("bng.population_map_index") != 0;
-                    if (!populationMap && !rule.total_rate && !rule.match_once && rule.filters.empty()) {
+                    const bool canUseIndependent =
+                        !populationMap && !rule.match_once && rule.filters.empty() &&
+                        rule.product_molecularity.empty() && !rule.has_unqualified_compartments &&
+                        rule.destroy_complex_patterns.empty() && !hasLocalFuncs &&
+                        !rule.runtime_arrhenius.enabled &&
+                        (model.compartments.empty() || rule.pattern.nodes.size() <= 1);
+                    if (canUseIndependent) {
                         if (const auto independent = matcher.countIndependent(rule.pattern, state)) {
                             std::vector<Embedding> sampled;
                             if (independent->count > 0) {
+                                std::uint64_t auxWord = output.event_count * 65536ULL +
+                                                        static_cast<std::uint64_t>(index) * 128ULL;
+                                auto drawIndex = [&](std::size_t bound) -> std::size_t {
+                                    const double u = rng.uniformOpen01(
+                                        layout.word(RngPurpose::Auxiliary, auxWord++));
+                                    std::size_t pick = static_cast<std::size_t>(
+                                        u * static_cast<double>(bound));
+                                    if (pick >= bound) pick = bound - 1;
+                                    return pick;
+                                };
+                                const std::size_t nNodes = rule.pattern.nodes.size();
+                                std::vector<std::size_t> picks(nNodes, 0);
+                                if (nNodes == 2 &&
+                                    (independent->different_complex || independent->same_type_pair)) {
+                                    const auto& c0 = independent->candidates[0];
+                                    const auto& c1 = independent->candidates[1];
+                                    auto pairKey = [&](ParticleId p) -> std::uint32_t {
+                                        return independent->different_complex
+                                            ? state.complexId(p) : p.index;
+                                    };
+                                    bool picked = false;
+                                    for (int attempt = 0; attempt < 32; ++attempt) {
+                                        const std::size_t i0 = drawIndex(c0.size());
+                                        const std::size_t i1 = drawIndex(c1.size());
+                                        if (pairKey(c0[i0]) != pairKey(c1[i1])) {
+                                            picks[0] = i0;
+                                            picks[1] = i1;
+                                            picked = true;
+                                            break;
+                                        }
+                                    }
+                                    if (!picked) {
+                                        // Exact O(N) bucket-weighted fallback (zero bias even near gelation).
+                                        std::unordered_map<std::uint32_t, std::size_t> freq1;
+                                        freq1.reserve(c1.size());
+                                        for (const auto p : c1) ++freq1[pairKey(p)];
+                                        const std::size_t orderedTotal = independent->interchangeable_pair
+                                            ? (independent->count * 2) : independent->count;
+                                        std::size_t target = drawIndex(orderedTotal);
+                                        std::size_t chosen0 = 0;
+                                        for (std::size_t i = 0; i < c0.size(); ++i) {
+                                            const auto it = freq1.find(pairKey(c0[i]));
+                                            const std::size_t validPartners =
+                                                c1.size() - (it == freq1.end() ? 0 : it->second);
+                                            if (target < validPartners) {
+                                                chosen0 = i;
+                                                break;
+                                            }
+                                            target -= validPartners;
+                                        }
+                                        const auto key0 = pairKey(c0[chosen0]);
+                                        std::size_t chosen1 = 0;
+                                        for (std::size_t j = 0; j < c1.size(); ++j) {
+                                            if (pairKey(c1[j]) == key0) continue;
+                                            if (target == 0) {
+                                                chosen1 = j;
+                                                break;
+                                            }
+                                            --target;
+                                        }
+                                        picks[0] = chosen0;
+                                        picks[1] = chosen1;
+                                    }
+                                } else {
+                                    for (std::size_t node = 0; node < nNodes; ++node) {
+                                        picks[node] = drawIndex(independent->candidates[node].size());
+                                    }
+                                }
                                 std::vector<ParticleId> selected;
                                 std::vector<TypeId> types;
-                                selected.reserve(rule.pattern.nodes.size());
-                                types.reserve(rule.pattern.nodes.size());
-                                for (std::size_t node = 0; node < rule.pattern.nodes.size(); ++node) {
-                                    const auto& candidates = independent->candidates[node];
-                                    const double draw = rng.uniformOpen01(
-                                        layout.word(RngPurpose::Auxiliary,
-                                                    output.event_count * 8 + node));
-                                    std::size_t pick = static_cast<std::size_t>(
-                                        draw * static_cast<double>(candidates.size()));
-                                    if (pick >= candidates.size()) pick = candidates.size() - 1;
-                                    const auto particle = candidates[pick];
+                                selected.reserve(nNodes);
+                                types.reserve(nNodes);
+                                bool anyMaps = false;
+                                for (std::size_t node = 0; node < nNodes; ++node) {
+                                    const auto particle = independent->candidates[node][picks[node]];
                                     selected.push_back(particle);
                                     types.push_back(state.type(particle));
+                                    if (!independent->candidate_site_maps[node].empty()) anyMaps = true;
                                 }
-                                sampled.emplace_back(std::move(selected), std::move(types));
+                                if (anyMaps) {
+                                    std::vector<std::vector<std::uint16_t>> smaps(nNodes);
+                                    for (std::size_t node = 0; node < nNodes; ++node) {
+                                        if (!independent->candidate_site_maps[node].empty()) {
+                                            smaps[node] = independent->candidate_site_maps[node][picks[node]];
+                                        }
+                                    }
+                                    sampled.emplace_back(std::move(selected), std::move(types), std::move(smaps));
+                                } else {
+                                    sampled.emplace_back(std::move(selected), std::move(types));
+                                }
                             }
-                            const double prop = rate * static_cast<double>(independent->count);
+                            const double prop = rule.total_rate
+                                ? (independent->count > 0 ? rate : 0.0)
+                                : (rate * static_cast<double>(independent->count) / rule.symmetry_divisor);
                             currentRates[index] = prop;
                             matches.push_back(std::move(sampled));
                             rulePropensities[index] = prop;
@@ -3632,6 +5297,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                             continue;
                         }
                     }
+
                     auto rawMatches = matcher.enumerate(rule.pattern, state);
                     if (populationMap) {
                         const auto firstPartialMatch = std::remove_if(
@@ -3639,127 +5305,273 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                             [&](const auto& match) { return !coversWholeComplex(match); });
                         rawMatches.erase(firstPartialMatch, rawMatches.end());
                     }
-                    if (!rule.filters.empty()) {
+                    // NFN-09b: Enforce cBNGL compartment adjacency across multi-reactant complexes.
+                    if (!model.compartments.empty() && rule.reactant_pattern_offsets.size() >= 2 &&
+                        !rawMatches.empty()) {
+                        std::vector<CompartmentId> reactantComps;
+                        reactantComps.reserve(rule.reactant_pattern_offsets.size());
+                        const auto endIt = std::remove_if(
+                            rawMatches.begin(), rawMatches.end(),
+                            [&](const Embedding& match) {
+                                reactantComps.clear();
+                                for (const auto offset : rule.reactant_pattern_offsets) {
+                                    if (offset < match.particles().size()) {
+                                        reactantComps.push_back(
+                                            complexSpeciesCompartmentLocal(match.particle(offset), scratchMembers));
+                                    }
+                                }
+                                return !compartmentsFormInteractingSetLocal(reactantComps);
+                            });
+                        rawMatches.erase(endIt, rawMatches.end());
+                    }
+                    // NFN-02: Filter out matches violating product molecularity ('+' vs '.') BEFORE propensity!
+                    if (!rule.product_molecularity.empty() && !rawMatches.empty()) {
+                        const auto endIt = std::remove_if(
+                            rawMatches.begin(), rawMatches.end(),
+                            [&](const Embedding& match) {
+                                return !satisfiesProductMolecularity(rule, match);
+                            });
+                        rawMatches.erase(endIt, rawMatches.end());
+                    }
+                    // NFN-06 / NFN-07 / PERF-05: Evaluate reactant filters (scoped to matched complex)
+                    // AND product filters (evaluated on post-transformation product complexes).
+                    if (!rule.filters.empty() && !rawMatches.empty()) {
+                        std::vector<std::unordered_map<std::uint32_t, bool>> filterCache(rule.filters.size());
+                        bool hasProductFilters = false;
+                        for (const auto& f : rule.filters) {
+                            if (f.products) { hasProductFilters = true; break; }
+                        }
                         std::vector<Embedding> passedMatches;
+                        passedMatches.reserve(rawMatches.size());
                         for (const auto& match : rawMatches) {
                             bool matchPassed = true;
-                            for (const auto& filter : rule.filters) {
+                            for (std::size_t fi = 0; fi < rule.filters.size(); ++fi) {
+                                const auto& filter = rule.filters[fi];
                                 if (filter.products) continue;
                                 const auto nodeIdx = filter.reactant_node_offset;
                                 if (nodeIdx >= match.particles().size()) continue;
                                 const auto partId = match.particle(nodeIdx);
                                 const auto compId = state.complexId(partId);
-                                bool anyMatched = false;
-                                for (const auto& fPat : filter.patterns) {
-                                    const auto fMatches = matcher.enumerate(fPat, state);
-                                    for (const auto& fm : fMatches) {
-                                        if (!fm.particles().empty() && state.complexId(fm.particle(0)) == compId) {
+                                auto cit = filterCache[fi].find(compId);
+                                bool ok = true;
+                                if (cit != filterCache[fi].end()) {
+                                    ok = cit->second;
+                                } else {
+                                    state.complexMembers(partId, scratchMembers);
+                                    bool anyMatched = false;
+                                    for (const auto& fPat : filter.patterns) {
+                                        if (matcher.hasMatchInParticles(fPat, state, scratchMembers)) {
                                             anyMatched = true;
                                             break;
                                         }
                                     }
-                                    if (anyMatched) break;
+                                    ok = filter.include ? anyMatched : !anyMatched;
+                                    filterCache[fi].emplace(compId, ok);
                                 }
-                                if (filter.include && !anyMatched) {
+                                if (!ok) {
                                     matchPassed = false;
                                     break;
                                 }
-                                if (!filter.include && anyMatched) {
-                                    matchPassed = false;
-                                    break;
-                                }
+                            }
+                            if (matchPassed && hasProductFilters) {
+                                matchPassed = passesProductFilters(rule, index, match);
                             }
                             if (matchPassed) passedMatches.push_back(match);
                         }
                         rawMatches = std::move(passedMatches);
                     }
-                    if (rule.match_once) {
+                    // NFN-04 #5: Whole-species deletion (DestroyComplex) deduplicates matches
+                    // per deleted target complex (preserving non-deleted reactant embeddings).
+                    if (!rule.destroy_complex_patterns.empty() && !rawMatches.empty()) {
+                        std::vector<bool> nodeInDeletedPat(rule.pattern.nodes.size(), false);
+                        std::unordered_set<std::size_t> delPatSet(
+                            rule.destroy_complex_patterns.begin(), rule.destroy_complex_patterns.end());
+                        const auto& offs = rule.reactant_pattern_offsets;
+                        for (std::size_t pi = 0; pi < offs.size(); ++pi) {
+                            if (!delPatSet.count(pi)) continue;
+                            const std::size_t start = offs[pi];
+                            const std::size_t end = (pi + 1 < offs.size()) ? offs[pi + 1] : rule.pattern.nodes.size();
+                            for (std::size_t u = start; u < end && u < nodeInDeletedPat.size(); ++u) {
+                                nodeInDeletedPat[u] = true;
+                            }
+                        }
                         std::vector<Embedding> uniqueMatches;
-                        std::set<std::vector<std::uint32_t>> seenParticleSets;
+                        uniqueMatches.reserve(rawMatches.size());
+                        using DelKey = std::pair<std::vector<std::uint32_t>, std::vector<std::uint32_t>>;
+                        std::set<DelKey> seenDelKeys;
                         for (const auto& match : rawMatches) {
-                            std::vector<std::uint32_t> key;
-                            key.reserve(match.particles().size());
-                            for (const auto& p : match.particles()) key.push_back(p.index);
-                            std::sort(key.begin(), key.end());
-                            if (seenParticleSets.insert(key).second) {
+                            std::vector<std::uint32_t> keptKey;
+                            for (std::size_t ni = 0; ni < match.particles().size(); ++ni) {
+                                if (ni < nodeInDeletedPat.size() && nodeInDeletedPat[ni]) continue;
+                                keptKey.push_back(match.particle(ni).index);
+                                if (match.hasSiteMaps() && ni < match.siteMaps().size()) {
+                                    keptKey.push_back(static_cast<std::uint32_t>(match.siteMaps()[ni].size()));
+                                    for (const auto s : match.siteMaps()[ni]) keptKey.push_back(s);
+                                }
+                            }
+                            std::vector<std::uint32_t> delCompKey;
+                            delCompKey.reserve(rule.destroy_complex_patterns.size());
+                            for (const auto pi : rule.destroy_complex_patterns) {
+                                const std::size_t off = (pi < offs.size()) ? offs[pi] : 0;
+                                if (off < match.particles().size()) {
+                                    delCompKey.push_back(state.complexId(match.particle(off)));
+                                }
+                            }
+                            if (!rule.pattern.interchangeable.empty() && delCompKey.size() > 1) {
+                                std::sort(delCompKey.begin(), delCompKey.end());
+                            }
+                            if (seenDelKeys.emplace(std::move(keptKey), std::move(delCompKey)).second) {
                                 uniqueMatches.push_back(match);
                             }
                         }
                         rawMatches = std::move(uniqueMatches);
                     }
-                    matches.push_back(std::move(rawMatches));
-                    double prop = 0.0;
-                    if (rule.total_rate) {
-                        prop = matches.back().empty() ? 0.0 : rate;
-                    } else {
-                        prop = rate * matches.back().size();
+                    // NFN-12: MatchOnce deduplicates by reactant complex-ID tuple (not particle set).
+                    if (rule.match_once && !rawMatches.empty()) {
+                        std::vector<Embedding> uniqueMatches;
+                        uniqueMatches.reserve(rawMatches.size());
+                        std::set<std::vector<std::uint32_t>> seenComplexKeys;
+                        for (const auto& match : rawMatches) {
+                            auto key = matchOnceKeyFor(rule, rule.reactant_pattern_offsets, match);
+                            if (seenComplexKeys.insert(std::move(key)).second) {
+                                uniqueMatches.push_back(match);
+                            }
+                        }
+                        rawMatches = std::move(uniqueMatches);
                     }
-                    rulePropensities[index] = prop;
-                    total += prop;
+
+                    const bool hasPerMatchRate =
+                        rule.runtime_arrhenius.enabled || hasLocalFuncs ||
+                        (rule.has_unqualified_compartments && !rule.total_rate);
+                    const double effectiveDiv = rule.match_once ? 1.0 : rule.symmetry_divisor;
+
+                    if (hasPerMatchRate && !rawMatches.empty()) {
+                        // Refresh any global observable dependencies once before per-match evaluation.
+                        if (hasLocalFuncs && prep.isDynamic) {
+                            for (const auto depId : prep.compiledFunction->observableDependencies()) {
+                                auto obsIt = currentObservableValues.find(depId);
+                                if (obsIt == currentObservableValues.end()) {
+                                    const auto def = observableIdToDefIndex.find(depId);
+                                    if (def == observableIdToDefIndex.end())
+                                        refuse("unresolved observable dependency");
+                                    obsIt = currentObservableValues.emplace(
+                                        depId, evaluateObservable(observables[def->second])).first;
+                                }
+                                functionEnvironment.set("observable_" + std::to_string(depId), obsIt->second);
+                            }
+                        }
+                        auto& weights = matchWeights[index];
+                        weights.reserve(rawMatches.size());
+                        double prop = 0.0;
+                        const double matchCountD = static_cast<double>(rawMatches.size());
+                        for (const auto& match : rawMatches) {
+                            double mRate = rate;
+                            if (rule.runtime_arrhenius.enabled) {
+                                mRate = evaluateRuntimeArrheniusRate(
+                                    rule, index, match, currentObservableValues);
+                                if (!rule.total_rate) mRate *= rule.volume_factor;
+                            } else if (hasLocalFuncs && prep.isDynamic) {
+                                for (const auto& lb : rule.local_observable_bindings) {
+                                    if (lb.reactant_node >= match.particles().size() ||
+                                        lb.observable_index >= observables.size()) {
+                                        refuse("invalid local observable binding");
+                                    }
+                                    const auto anchor = match.particle(lb.reactant_node);
+                                    state.complexMembers(anchor, scratchMembers);
+                                    const double localVal = evaluateObservableLocally(
+                                        observables[lb.observable_index], scratchMembers, anchor, lb.molecule_scope);
+                                    functionEnvironment.set("local_obs_" + std::to_string(lb.slot), localVal);
+                                }
+                                mRate = prep.compiledFunction->evaluate(functionEnvironment);
+                                if (!std::isfinite(mRate) || mRate < 0.0) {
+                                    refuse("local function rate must be finite and non-negative");
+                                }
+                                if (!rule.total_rate) mRate *= rule.volume_factor;
+                            }
+                            if (rule.has_unqualified_compartments && !rule.total_rate) {
+                                mRate *= unqualifiedVolumeFactor(rule, match, scratchMembers);
+                            }
+                            const double w = rule.total_rate
+                                ? (mRate / matchCountD)
+                                : (mRate / effectiveDiv);
+                            weights.push_back(w);
+                            prop += w;
+                        }
+                        matches.push_back(std::move(rawMatches));
+                        rulePropensities[index] = prop;
+                        total += prop;
+                    } else {
+                        matches.push_back(std::move(rawMatches));
+                        double prop = 0.0;
+                        if (rule.total_rate) {
+                            prop = matches.back().empty() ? 0.0 : rate;
+                        } else {
+                            prop = rate * static_cast<double>(matches.back().size()) / effectiveDiv;
+                        }
+                        rulePropensities[index] = prop;
+                        total += prop;
+                    }
                 }
                 if (!std::isfinite(total)) refuse("nonfinite total propensity");
                 next_time = total > 0.0
                     ? time + rng.exponential(layout.word(RngPurpose::WaitingTime, output.event_count), total)
                     : std::numeric_limits<double>::infinity();
                 if (total > 0.0) {
+                    // PERF-01 / NFN-14b: O(R) reaction selection with O(1) uniform match pick
+                    // (eliminating matches.front() bias and O(total matches) linear scan).
                     double choice = rng.uniformOpen01(
                         layout.word(RngPurpose::FamilyChoice, output.event_count)) * total;
                     bool found = false;
-                    for (std::size_t index = 0; index < model.expanded_rules.size() && !found; ++index) {
-                        const auto& rule = model.expanded_rules[index];
-                        if (populationOnlyReactants(rule)) {
-                            choice -= rulePropensities[index];
-                            if (choice < 0.0) {
-                                selected_rule = index;
+                    std::optional<std::size_t> lastPositive;
+                    for (std::size_t index = 0; index < model.expanded_rules.size(); ++index) {
+                        const double rProp = rulePropensities[index];
+                        if (rProp <= 0.0) continue;
+                        lastPositive = index;
+                        if (choice < rProp) {
+                            const auto& rule = model.expanded_rules[index];
+                            selected_rule = index;
+                            if (populationOnlyReactants(rule)) {
                                 selected_population_rule = true;
                                 selected_mixed_lumped_rule = false;
                                 found = true;
                                 break;
                             }
-                            continue;
-                        }
-                        if (mixedLumped[index].enabled) {
-                            if (rule.total_rate) {
-                                choice -= rulePropensities[index];
-                                if (choice < 0.0) {
-                                    selected_rule = index;
-                                    selected_population_rule = false;
-                                    selected_mixed_lumped_rule = true;
-                                    selected_match = matches[index].empty() ? Embedding{} : matches[index].front();
-                                    found = true;
-                                    break;
+                            selected_population_rule = false;
+                            selected_mixed_lumped_rule = mixedLumped[index].enabled;
+                            if (!matchWeights[index].empty()) {
+                                std::size_t pick = matchWeights[index].size() - 1;
+                                for (std::size_t k = 0; k < matchWeights[index].size(); ++k) {
+                                    if (choice < matchWeights[index][k]) {
+                                        pick = k;
+                                        break;
+                                    }
+                                    choice -= matchWeights[index][k];
                                 }
-                                continue;
+                                selected_match = matches[index][pick];
+                            } else {
+                                const std::size_t mCount = matches[index].size();
+                                if (mCount == 0) refuse("selected rule has no candidate match");
+                                std::size_t pick = static_cast<std::size_t>(
+                                    (choice / rProp) * static_cast<double>(mCount));
+                                if (pick >= mCount) pick = mCount - 1;
+                                selected_match = matches[index][pick];
                             }
-                            const double matchWeight = currentRates[index] * populationFactors[index];
-                            for (const auto& match : matches[index]) {
-                                choice -= matchWeight;
-                                if (choice < 0.0) {
-                                    selected_rule = index;
-                                    selected_match = match;
-                                    selected_population_rule = false;
-                                    selected_mixed_lumped_rule = true;
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            if (found) break;
-                            continue;
+                            found = true;
+                            break;
                         }
-                        const double matchWeight = rule.total_rate
-                            ? (matches[index].empty() ? 0.0 : currentRates[index] / matches[index].size())
-                            : currentRates[index];
-                        for (const auto& match : matches[index]) {
-                            choice -= matchWeight;
-                            if (choice < 0.0) {
-                                selected_rule = index;
-                                selected_match = match;
-                                selected_population_rule = false;
-                                selected_mixed_lumped_rule = false;
-                                found = true;
-                                break;
-                            }
+                        choice -= rProp;
+                    }
+                    if (!found && lastPositive.has_value()) {
+                        const std::size_t index = *lastPositive;
+                        const auto& rule = model.expanded_rules[index];
+                        selected_rule = index;
+                        selected_population_rule = populationOnlyReactants(rule);
+                        selected_mixed_lumped_rule = !selected_population_rule && mixedLumped[index].enabled;
+                        if (!selected_population_rule) {
+                            if (matches[index].empty()) refuse("selected rule has no candidate match");
+                            selected_match = matches[index].back();
                         }
+                        found = true;
                     }
                     if (!found) refuse("reaction selection lost floating-point mass");
                 }
@@ -3795,6 +5607,13 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         created_states[action.target_node].push_back({action.site, action.value});
                     } else if (action.kind == ActionKind::SetCompartment && action.target_node >= rule.pattern.nodes.size()) {
                         created_compartments[action.target_node] = static_cast<CompartmentId>(action.value);
+                    }
+                }
+                for (const auto& [createdNode, donorNode] : rule.created_compartment_inherit) {
+                    if (!created_compartments.count(createdNode) &&
+                        donorNode < rule.pattern.nodes.size() &&
+                        rule.pattern.nodes[donorNode].compartment.has_value()) {
+                        created_compartments[createdNode] = *rule.pattern.nodes[donorNode].compartment;
                     }
                 }
                 std::map<CreatedMoleculeId, ParticleId> created_particles;
@@ -3841,6 +5660,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     }
                 }
                 restoreRetainedPopulations(rule);
+                enforceConstantSeeds();
                 if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
                 ++output.event_count;
                 pending = false;
@@ -3856,8 +5676,29 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 }
 
                 MatchEmbedding full_embedding;
+                std::vector<std::vector<std::uint16_t>> fullSiteMaps;
+                if (selected_match.hasSiteMaps()) fullSiteMaps.resize(rule.pattern.nodes.size());
                 for (std::size_t pi = 0; pi < info.particleReactantNodes.size() && pi < selected_match.particles().size(); ++pi) {
-                    full_embedding.bindNode(info.particleReactantNodes[pi], selected_match.particle(pi));
+                    const auto origNode = info.particleReactantNodes[pi];
+                    full_embedding.bindNode(origNode, selected_match.particle(pi));
+                    if (selected_match.hasSiteMaps() && pi < selected_match.siteMaps().size()) {
+                        fullSiteMaps[origNode] = selected_match.siteMaps()[pi];
+                    }
+                }
+                if (!fullSiteMaps.empty()) full_embedding.setSiteMaps(std::move(fullSiteMaps));
+
+                // NFN-14c: Capture beforeCompartments BEFORE SetCompartment runs!
+                std::vector<CompartmentId> beforeCompartments;
+                std::set<ParticleId> explicitParticles;
+                if (rule.move_connected || has2DCompartment) {
+                    beforeCompartments.assign(info.particleReactantNodes.size(), 0);
+                    for (std::size_t i = 0; i < info.particleReactantNodes.size(); ++i) {
+                        try {
+                            const auto p = full_embedding.particle(info.particleReactantNodes[i]);
+                            explicitParticles.insert(p);
+                            if (state.alive(p)) beforeCompartments[i] = state.compartment(p);
+                        } catch (...) {}
+                    }
                 }
 
                 std::map<PatternNodeId, CreatedMoleculeId> node_to_created;
@@ -3875,6 +5716,23 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         created_states[action.target_node].push_back({action.site, action.value});
                     } else if (action.kind == ActionKind::SetCompartment && action.target_node >= rule.pattern.nodes.size()) {
                         created_compartments[action.target_node] = static_cast<CompartmentId>(action.value);
+                    }
+                }
+                auto isPopReactant = [&](PatternNodeId node) {
+                    return node < rule.pattern.nodes.size() &&
+                           model.molecule_types.at(rule.pattern.nodes[node].molecule_type).is_population;
+                };
+                for (const auto& [createdNode, donorNode] : rule.created_compartment_inherit) {
+                    if (created_compartments.count(createdNode) || donorNode >= rule.pattern.nodes.size()) continue;
+                    if (isPopReactant(donorNode)) {
+                        if (rule.pattern.nodes[donorNode].compartment.has_value()) {
+                            created_compartments[createdNode] = *rule.pattern.nodes[donorNode].compartment;
+                        }
+                    } else {
+                        try {
+                            const auto dp = full_embedding.particle(donorNode);
+                            if (state.alive(dp)) created_compartments[createdNode] = state.compartment(dp);
+                        } catch (...) {}
                     }
                 }
                 std::map<CreatedMoleculeId, ParticleId> created_particles;
@@ -3902,15 +5760,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     }
                 }
 
-                auto isPopReactant = [&](PatternNodeId node) {
-                    return node < rule.pattern.nodes.size() &&
-                           model.molecule_types.at(rule.pattern.nodes[node].molecule_type).is_population;
-                };
                 auto resolveEndpoint = [&](PatternNodeId node, std::uint16_t site, ParticleId& pid, std::uint16_t& outSite) -> bool {
                     if (node < rule.pattern.nodes.size()) {
                         if (isPopReactant(node)) return false;
                         try { pid = full_embedding.particle(node); } catch (...) { return false; }
-                        outSite = site;
+                        outSite = full_embedding.mappedSite(node, site);
                         return state.alive(pid);
                     }
                     auto it = node_to_created.find(node);
@@ -3932,7 +5786,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                             if (isPopReactant(action.target_node)) refuse("state changes on population reactants are not supported");
                             try {
                                 const auto pid = full_embedding.particle(action.target_node);
-                                if (state.alive(pid)) state.setSiteState(pid, action.site, action.value);
+                                const auto mapped = full_embedding.mappedSite(action.target_node, action.site);
+                                if (state.alive(pid)) state.setSiteState(pid, mapped, action.value);
                             } catch (...) { refuse("invalid embedding for SetSiteState"); }
                         } else {
                             auto it = node_to_created.find(action.target_node);
@@ -3979,10 +5834,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         try {
                             const auto root = full_embedding.particle(action.target_node);
                             if (state.alive(root)) {
-                                std::vector<ParticleId> members;
-                                for (const auto particle : state.liveParticles())
-                                    if (state.sameComplex(root, particle)) members.push_back(particle);
-                                for (const auto particle : members) if (state.alive(particle)) state.destroy(particle);
+                                state.complexMembers(root, scratchMembers);
+                                for (const auto particle : scratchMembers)
+                                    if (state.alive(particle)) state.destroy(particle);
                             }
                         } catch (...) { refuse("invalid embedding for DestroyComplex"); }
                         break;
@@ -4001,16 +5855,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     }
                 }
 
-                if (rule.move_connected) {
-                    std::vector<CompartmentId> beforeCompartments(info.particleReactantNodes.size(), 0);
-                    std::set<ParticleId> explicitParticles;
-                    for (std::size_t i = 0; i < info.particleReactantNodes.size(); ++i) {
-                        try {
-                            const auto p = full_embedding.particle(info.particleReactantNodes[i]);
-                            explicitParticles.insert(p);
-                            if (state.alive(p)) beforeCompartments[i] = state.compartment(p);
-                        } catch (...) {}
-                    }
+                if (rule.move_connected || has2DCompartment) {
                     for (std::size_t i = 0; i < info.particleReactantNodes.size(); ++i) {
                         ParticleId p{};
                         try { p = full_embedding.particle(info.particleReactantNodes[i]); } catch (...) { continue; }
@@ -4018,6 +5863,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         const auto sourceComp = beforeCompartments[i];
                         const auto targetComp = state.compartment(p);
                         if (targetComp == sourceComp) continue;
+                        if (!rule.move_connected && !is3DSeparatedByHierarchy(sourceComp, targetComp)) continue;
                         std::queue<ParticleId> q;
                         std::set<ParticleId> visited;
                         q.push(p); visited.insert(p);
@@ -4039,6 +5885,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 }
 
                 restoreRetainedPopulations(rule);
+                enforceConstantSeeds();
                 if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
                 ++output.event_count;
                 pending = false;
@@ -4063,6 +5910,14 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 }
             }
             if (hasSimplePopulationActionEffect) {
+                MatchEmbedding match_embedding;
+                for (std::size_t node = 0; node < selected_match.particles().size(); ++node) {
+                    match_embedding.bindNode(node, selected_match.particle(node));
+                }
+                if (selected_match.hasSiteMaps()) {
+                    match_embedding.setSiteMaps(selected_match.siteMaps());
+                }
+
                 // Manual action interpretation with lumped population handling.
                 std::map<PatternNodeId, CreatedMoleculeId> node_to_created;
                 std::map<PatternNodeId, TypeId> created_types;
@@ -4079,6 +5934,13 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         created_states[action.target_node].push_back({action.site, action.value});
                     } else if (action.kind == ActionKind::SetCompartment && action.target_node >= rule.pattern.nodes.size()) {
                         created_compartments[action.target_node] = static_cast<CompartmentId>(action.value);
+                    }
+                }
+                for (const auto& [createdNode, donorNode] : rule.created_compartment_inherit) {
+                    if (!created_compartments.count(createdNode) &&
+                        donorNode < selected_match.particles().size()) {
+                        const auto dp = selected_match.particle(donorNode);
+                        if (state.alive(dp)) created_compartments[createdNode] = state.compartment(dp);
                     }
                 }
                 std::map<CreatedMoleculeId, ParticleId> created_particles;
@@ -4106,11 +5968,6 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     }
                 }
 
-                MatchEmbedding match_embedding;
-                for (std::size_t node = 0; node < selected_match.particles().size(); ++node) {
-                    match_embedding.bindNode(node, selected_match.particle(node));
-                }
-
                 auto isPopReactantType = [&](PatternNodeId node) {
                     return node < rule.pattern.nodes.size() &&
                            model.molecule_types.at(rule.pattern.nodes[node].molecule_type).is_population;
@@ -4119,7 +5976,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     if (node < rule.pattern.nodes.size()) {
                         if (isPopReactantType(node)) return false;
                         try { pid = match_embedding.particle(node); } catch (...) { return false; }
-                        outSite = site;
+                        outSite = match_embedding.mappedSite(node, site);
                         return state.alive(pid);
                     }
                     auto it = node_to_created.find(node);
@@ -4141,7 +5998,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                             if (isPopReactantType(action.target_node)) refuse("state changes on population reactants are not supported");
                             try {
                                 const auto pid = match_embedding.particle(action.target_node);
-                                if (state.alive(pid)) state.setSiteState(pid, action.site, action.value);
+                                const auto mapped = match_embedding.mappedSite(action.target_node, action.site);
+                                if (state.alive(pid)) state.setSiteState(pid, mapped, action.value);
                             } catch (...) { refuse("invalid embedding for SetSiteState"); }
                         } else {
                             auto it = node_to_created.find(action.target_node);
@@ -4196,10 +6054,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         try {
                             const auto root = match_embedding.particle(action.target_node);
                             if (state.alive(root)) {
-                                std::vector<ParticleId> members;
-                                for (const auto particle : state.liveParticles())
-                                    if (state.sameComplex(root, particle)) members.push_back(particle);
-                                for (const auto particle : members) if (state.alive(particle)) state.destroy(particle);
+                                state.complexMembers(root, scratchMembers);
+                                for (const auto particle : scratchMembers)
+                                    if (state.alive(particle)) state.destroy(particle);
                             }
                         } catch (...) { refuse("invalid embedding for DestroyComplex"); }
                         break;
@@ -4217,9 +6074,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         } catch (...) {}
                     }
                 }
-                // move_connected for this path not yet handled; refuse if requested
                 if (rule.move_connected) refuse("move_connected with lumped population actions not yet supported");
 
+                enforceConstantSeeds();
                 if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
                 ++output.event_count;
                 pending = false;
@@ -4228,11 +6085,24 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
 
             std::vector<CompartmentId> beforeCompartments;
             std::set<ParticleId> explicitParticles;
-            if (rule.move_connected) {
+            if (rule.move_connected || has2DCompartment) {
                 beforeCompartments.reserve(selected_match.particles().size());
                 for (const auto& p : selected_match.particles()) {
                     beforeCompartments.push_back(state.compartment(p));
                     explicitParticles.insert(p);
+                }
+            }
+            // NFN-09a: Capture donor compartments for created molecules BEFORE transformation.
+            std::vector<std::pair<CreatedMoleculeId, CompartmentId>> inheritedCompartments;
+            if (!rule.created_compartment_inherit.empty()) {
+                inheritedCompartments.reserve(rule.created_compartment_inherit.size());
+                for (const auto& [createdNode, donorNode] : rule.created_compartment_inherit) {
+                    const auto cidIt = ruleCreatedIds[selected_rule].find(createdNode);
+                    if (cidIt != ruleCreatedIds[selected_rule].end() &&
+                        donorNode < selected_match.particles().size()) {
+                        inheritedCompartments.emplace_back(
+                            cidIt->second, state.compartment(selected_match.particle(donorNode)));
+                    }
                 }
             }
 
@@ -4240,7 +6110,16 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             for (std::size_t node = 0; node < selected_match.particles().size(); ++node) {
                 match_embedding.bindNode(node, selected_match.particle(node));
             }
-            applyTransformation(compiled_transformations[selected_rule], match_embedding, state);
+            if (selected_match.hasSiteMaps()) {
+                match_embedding.setSiteMaps(selected_match.siteMaps());
+            }
+            const auto txResult = applyTransformation(
+                compiled_transformations[selected_rule], match_embedding, state);
+
+            for (const auto& [cid, comp] : inheritedCompartments) {
+                const auto createdPid = txResult.created(cid);
+                if (state.alive(createdPid)) state.setCompartment(createdPid, comp);
+            }
 
             for (const auto& action : rule.actions) {
                 if (action.kind == ActionKind::SetCompartment) {
@@ -4253,31 +6132,33 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 }
             }
 
-            if (rule.move_connected) {
+            // NFN-09b: Propagate compartment transport to connected cargo when MoveConnected
+            // is requested OR when transporting across a 2D membrane separating two 3D volumes.
+            if (rule.move_connected || has2DCompartment) {
                 for (std::size_t node = 0; node < selected_match.particles().size(); ++node) {
                     const auto p = selected_match.particle(node);
                     if (!state.alive(p)) continue;
                     const auto sourceComp = beforeCompartments[node];
                     const auto targetComp = state.compartment(p);
-                    if (targetComp != sourceComp) {
-                        std::queue<ParticleId> q;
-                        std::set<ParticleId> visited;
-                        q.push(p);
-                        visited.insert(p);
-                        while (!q.empty()) {
-                            const auto curr = q.front();
-                            q.pop();
-                            const auto& type = model.molecule_types.at(state.type(curr));
-                            for (std::size_t s = 0; s < type.sites.size(); ++s) {
-                                const auto site = static_cast<std::uint16_t>(s);
-                                if (state.bound(curr, site)) {
-                                    const auto partner = state.bond(curr, site).particle;
-                                    if (visited.insert(partner).second) {
-                                        if (!explicitParticles.count(partner)) {
-                                            if (state.compartment(partner) == sourceComp) {
-                                                state.setCompartment(partner, targetComp);
-                                                q.push(partner);
-                                            }
+                    if (targetComp == sourceComp) continue;
+                    if (!rule.move_connected && !is3DSeparatedByHierarchy(sourceComp, targetComp)) continue;
+                    std::queue<ParticleId> q;
+                    std::set<ParticleId> visited;
+                    q.push(p);
+                    visited.insert(p);
+                    while (!q.empty()) {
+                        const auto curr = q.front();
+                        q.pop();
+                        const auto& type = model.molecule_types.at(state.type(curr));
+                        for (std::size_t s = 0; s < type.sites.size(); ++s) {
+                            const auto site = static_cast<std::uint16_t>(s);
+                            if (state.bound(curr, site)) {
+                                const auto partner = state.bond(curr, site).particle;
+                                if (visited.insert(partner).second) {
+                                    if (!explicitParticles.count(partner)) {
+                                        if (state.compartment(partner) == sourceComp) {
+                                            state.setCompartment(partner, targetComp);
+                                            q.push(partner);
                                         }
                                     }
                                 }
@@ -4287,6 +6168,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 }
             }
 
+            enforceConstantSeeds();
             if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
             ++output.event_count;
             pending = false;
@@ -4319,55 +6201,280 @@ std::string formatFinalSpecies(const BngExecutionState& state) {
         return {};
     };
 
+    auto siteStateString = [&](ParticleId p, std::size_t si) -> std::string {
+        const auto& type = model.molecule_types.at(graph.type(p));
+        if (si >= type.sites.size() || type.sites[si].states.empty()) return {};
+        const auto st = graph.siteState(p, static_cast<std::uint16_t>(si));
+        if (st >= 0 && static_cast<std::size_t>(st) < type.sites[si].states.size()) {
+            return type.sites[si].states[static_cast<std::size_t>(st)];
+        }
+        return {};
+    };
+
+    // NFN-15: Canonicalize complex molecule order & duplicate-site order via
+    // Weisfeiler-Lehman color refinement + exact tie-breaking so isomorphic
+    // species always format identically and merge into one .species line.
     std::map<std::string, std::uint64_t> speciesCounts;
-    for (auto& [_, members] : complexes) {
-        std::sort(members.begin(), members.end(), [&](ParticleId a, ParticleId b) {
-            const auto& ta = model.molecule_types.at(graph.type(a)).name;
-            const auto& tb = model.molecule_types.at(graph.type(b)).name;
-            if (ta != tb) return ta < tb;
-            return a.index < b.index;
-        });
+    for (auto& complexEntry : complexes) {
+        auto& members = complexEntry.second;
+        const std::size_t k = members.size();
+        if (k == 0) continue;
+        std::unordered_map<std::uint32_t, std::size_t> slotToLocal;
+        slotToLocal.reserve(k * 2);
+        for (std::size_t i = 0; i < k; ++i) slotToLocal[members[i].index] = i;
 
-        using EndpointKey = std::pair<std::uint32_t, std::uint16_t>;
-        std::map<std::pair<EndpointKey, EndpointKey>, std::size_t> bondIds;
-        std::size_t nextBond = 1;
-        auto bondIdFor = [&](ParticleId a, std::uint16_t sa, ParticleId b, std::uint16_t sb) {
-            EndpointKey k1{a.index, sa};
-            EndpointKey k2{b.index, sb};
-            if (k2 < k1) std::swap(k1, k2);
-            auto [it, inserted] = bondIds.emplace(std::make_pair(k1, k2), nextBond);
-            if (inserted) ++nextBond;
-            return it->second;
-        };
+        auto formatOrder = [&](const std::vector<std::size_t>& order) -> std::string {
+            std::vector<std::size_t> posOf(k, k);
+            for (std::size_t pos = 0; pos < k; ++pos) posOf[order[pos]] = pos;
 
-        std::ostringstream complexText;
-        for (std::size_t mi = 0; mi < members.size(); ++mi) {
-            if (mi != 0) complexText << '.';
-            const auto p = members[mi];
-            const auto& type = model.molecule_types.at(graph.type(p));
-            complexText << type.name << '(';
-            for (std::size_t si = 0; si < type.sites.size(); ++si) {
-                if (si != 0) complexText << ',';
-                const auto site = static_cast<std::uint16_t>(si);
-                complexText << type.sites[si].name;
-                if (!type.sites[si].states.empty()) {
-                    const auto st = graph.siteState(p, site);
-                    if (st >= 0 && static_cast<std::size_t>(st) < type.sites[si].states.size()) {
-                        complexText << '~' << type.sites[si].states[static_cast<std::size_t>(st)];
+            using EndpointKey = std::pair<std::uint32_t, std::uint16_t>;
+            std::map<std::pair<EndpointKey, EndpointKey>, std::size_t> bondIds;
+            std::size_t nextBond = 1;
+            auto bondIdFor = [&](ParticleId a, std::uint16_t sa, ParticleId b, std::uint16_t sb) {
+                EndpointKey k1{a.index, sa};
+                EndpointKey k2{b.index, sb};
+                if (k2 < k1) std::swap(k1, k2);
+                auto [it, inserted] = bondIds.emplace(std::make_pair(k1, k2), nextBond);
+                if (inserted) ++nextBond;
+                return it->second;
+            };
+
+            std::ostringstream complexText;
+            for (std::size_t pos = 0; pos < k; ++pos) {
+                if (pos != 0) complexText << '.';
+                const auto p = members[order[pos]];
+                const auto& type = model.molecule_types.at(graph.type(p));
+                // Group sites by name preserving declaration order of distinct names,
+                // and sort duplicate-named sites canonically.
+                std::vector<std::string> nameOrder;
+                std::map<std::string, std::vector<std::size_t>> byName;
+                for (std::size_t si = 0; si < type.sites.size(); ++si) {
+                    const auto& sname = type.sites[si].name;
+                    if (!byName.count(sname)) nameOrder.push_back(sname);
+                    byName[sname].push_back(si);
+                }
+                std::vector<std::size_t> siteOrder;
+                siteOrder.reserve(type.sites.size());
+                for (const auto& sname : nameOrder) {
+                    auto& group = byName[sname];
+                    if (group.size() > 1) {
+                        std::sort(group.begin(), group.end(), [&](std::size_t a, std::size_t b) {
+                            const auto sa = siteStateString(p, a);
+                            const auto sb = siteStateString(p, b);
+                            if (sa != sb) return sa < sb;
+                            const bool ba = graph.bound(p, static_cast<std::uint16_t>(a));
+                            const bool bb = graph.bound(p, static_cast<std::uint16_t>(b));
+                            if (ba != bb) return ba < bb;
+                            if (ba && bb) {
+                                const auto pa = graph.bond(p, static_cast<std::uint16_t>(a));
+                                const auto pb = graph.bond(p, static_cast<std::uint16_t>(b));
+                                const auto posA = posOf[slotToLocal.at(pa.particle.index)];
+                                const auto posB = posOf[slotToLocal.at(pb.particle.index)];
+                                if (posA != posB) return posA < posB;
+                                const auto& tpa = model.molecule_types.at(graph.type(pa.particle));
+                                const auto& tpb = model.molecule_types.at(graph.type(pb.particle));
+                                const std::string psa = pa.site < tpa.sites.size() ? tpa.sites[pa.site].name : "";
+                                const std::string psb = pb.site < tpb.sites.size() ? tpb.sites[pb.site].name : "";
+                                if (psa != psb) return psa < psb;
+                            }
+                            return a < b;
+                        });
+                    }
+                    for (const auto si : group) siteOrder.push_back(si);
+                }
+
+                complexText << type.name << '(';
+                for (std::size_t oi = 0; oi < siteOrder.size(); ++oi) {
+                    if (oi != 0) complexText << ',';
+                    const std::size_t si = siteOrder[oi];
+                    const auto site = static_cast<std::uint16_t>(si);
+                    complexText << type.sites[si].name;
+                    const auto stStr = siteStateString(p, si);
+                    if (!stStr.empty()) complexText << '~' << stStr;
+                    if (graph.bound(p, site)) {
+                        const auto partner = graph.bond(p, site);
+                        complexText << '!' << bondIdFor(p, site, partner.particle, partner.site);
                     }
                 }
-                if (graph.bound(p, site)) {
-                    const auto partner = graph.bond(p, site);
-                    complexText << '!' << bondIdFor(p, site, partner.particle, partner.site);
+                complexText << ')';
+                if (!model.compartments.empty()) {
+                    const auto cname = compartmentName(graph.compartment(p));
+                    if (!cname.empty()) complexText << '@' << cname;
                 }
             }
-            complexText << ')';
-            if (!model.compartments.empty()) {
-                const auto cname = compartmentName(graph.compartment(p));
-                if (!cname.empty()) complexText << '@' << cname;
+            return complexText.str();
+        };
+
+        if (k == 1) {
+            ++speciesCounts[formatOrder({0})];
+            continue;
+        }
+
+        // Initial local color per molecule (invariant under ParticleId and duplicate-site order).
+        std::vector<std::string> color(k);
+        for (std::size_t i = 0; i < k; ++i) {
+            const auto p = members[i];
+            const auto& type = model.molecule_types.at(graph.type(p));
+            std::vector<std::string> siteTokens;
+            siteTokens.reserve(type.sites.size());
+            for (std::size_t si = 0; si < type.sites.size(); ++si) {
+                std::string tok = type.sites[si].name;
+                const auto stStr = siteStateString(p, si);
+                if (!stStr.empty()) tok += "~" + stStr;
+                tok += graph.bound(p, static_cast<std::uint16_t>(si)) ? "!1" : "!0";
+                siteTokens.push_back(std::move(tok));
+            }
+            std::sort(siteTokens.begin(), siteTokens.end());
+            std::ostringstream sig;
+            sig << type.name;
+            if (!model.compartments.empty()) sig << '@' << compartmentName(graph.compartment(p));
+            sig << '(';
+            for (std::size_t si = 0; si < siteTokens.size(); ++si) {
+                if (si != 0) sig << ',';
+                sig << siteTokens[si];
+            }
+            sig << ')';
+            color[i] = sig.str();
+        }
+
+        std::vector<std::size_t> rank(k, 0);
+        auto compressColors = [&]() {
+            std::vector<std::string> sortedUnique = color;
+            std::sort(sortedUnique.begin(), sortedUnique.end());
+            sortedUnique.erase(std::unique(sortedUnique.begin(), sortedUnique.end()), sortedUnique.end());
+            for (std::size_t i = 0; i < k; ++i) {
+                rank[i] = static_cast<std::size_t>(
+                    std::lower_bound(sortedUnique.begin(), sortedUnique.end(), color[i]) -
+                    sortedUnique.begin());
+            }
+        };
+        compressColors();
+        for (int round = 0; round < 3; ++round) {
+            std::vector<std::string> nextColor(k);
+            for (std::size_t i = 0; i < k; ++i) {
+                const auto p = members[i];
+                const auto& type = model.molecule_types.at(graph.type(p));
+                std::vector<std::string> nbTokens;
+                for (std::size_t si = 0; si < type.sites.size(); ++si) {
+                    const auto site = static_cast<std::uint16_t>(si);
+                    if (!graph.bound(p, site)) continue;
+                    const auto partner = graph.bond(p, site);
+                    const auto nb = slotToLocal.at(partner.particle.index);
+                    const auto& nbType = model.molecule_types.at(graph.type(partner.particle));
+                    std::ostringstream nt;
+                    nt << type.sites[si].name << '~' << siteStateString(p, si) << '-'
+                       << (partner.site < nbType.sites.size() ? nbType.sites[partner.site].name : "")
+                       << ':' << rank[nb];
+                    nbTokens.push_back(nt.str());
+                }
+                std::sort(nbTokens.begin(), nbTokens.end());
+                std::ostringstream nc;
+                nc << rank[i] << '|';
+                for (const auto& t : nbTokens) nc << t << ';';
+                nextColor[i] = nc.str();
+            }
+            color = std::move(nextColor);
+            compressColors();
+        }
+
+        std::vector<std::size_t> baseOrder(k);
+        for (std::size_t i = 0; i < k; ++i) baseOrder[i] = i;
+        std::sort(baseOrder.begin(), baseOrder.end(), [&](std::size_t a, std::size_t b) {
+            if (rank[a] != rank[b]) return rank[a] < rank[b];
+            return a < b;
+        });
+
+        // Partition into tied rank groups and count exact within-group permutations.
+        std::vector<std::pair<std::size_t, std::size_t>> groups;
+        std::size_t permBudget = 1;
+        for (std::size_t i = 0; i < k;) {
+            std::size_t j = i + 1;
+            while (j < k && rank[baseOrder[j]] == rank[baseOrder[i]]) ++j;
+            groups.emplace_back(i, j);
+            const std::size_t gSize = j - i;
+            for (std::size_t f = 2; f <= gSize && permBudget <= 64; ++f) permBudget *= f;
+            i = j;
+        }
+
+        std::string best;
+        if (permBudget <= 64) {
+            std::vector<std::size_t> cur = baseOrder;
+            std::function<void(std::size_t)> enumGroups = [&](std::size_t gIdx) {
+                if (gIdx == groups.size()) {
+                    std::string formatted = formatOrder(cur);
+                    if (best.empty() || formatted < best) best = std::move(formatted);
+                    return;
+                }
+                const auto [gs, ge] = groups[gIdx];
+                if (ge - gs <= 1) {
+                    enumGroups(gIdx + 1);
+                    return;
+                }
+                std::sort(cur.begin() + static_cast<std::ptrdiff_t>(gs),
+                          cur.begin() + static_cast<std::ptrdiff_t>(ge));
+                do {
+                    enumGroups(gIdx + 1);
+                } while (std::next_permutation(cur.begin() + static_cast<std::ptrdiff_t>(gs),
+                                               cur.begin() + static_cast<std::ptrdiff_t>(ge)));
+            };
+            enumGroups(0);
+        } else {
+            // Large symmetric polymer: canonical BFS from up to 16 rank-0 roots.
+            const auto [g0s, g0e] = groups.front();
+            const std::size_t rootLimit = std::min<std::size_t>(g0e - g0s, 16);
+            for (std::size_t ri = 0; ri < rootLimit; ++ri) {
+                const std::size_t root = baseOrder[g0s + ri];
+                std::vector<std::uint8_t> visited(k, 0);
+                std::vector<std::size_t> order;
+                order.reserve(k);
+                visited[root] = 1;
+                order.push_back(root);
+                for (std::size_t head = 0; head < order.size(); ++head) {
+                    const std::size_t u = order[head];
+                    const auto p = members[u];
+                    const auto& type = model.molecule_types.at(graph.type(p));
+                    struct EdgeCand {
+                        std::size_t nbRank;
+                        std::string mySite;
+                        std::string nbSite;
+                        std::size_t nb;
+                    };
+                    std::vector<EdgeCand> cands;
+                    for (std::size_t si = 0; si < type.sites.size(); ++si) {
+                        const auto site = static_cast<std::uint16_t>(si);
+                        if (!graph.bound(p, site)) continue;
+                        const auto partner = graph.bond(p, site);
+                        const auto nb = slotToLocal.at(partner.particle.index);
+                        if (visited[nb]) continue;
+                        const auto& nbType = model.molecule_types.at(graph.type(partner.particle));
+                        cands.push_back({
+                            rank[nb], type.sites[si].name,
+                            partner.site < nbType.sites.size() ? nbType.sites[partner.site].name : "",
+                            nb
+                        });
+                    }
+                    std::sort(cands.begin(), cands.end(), [](const EdgeCand& a, const EdgeCand& b) {
+                        return std::tie(a.nbRank, a.mySite, a.nbSite, a.nb) <
+                               std::tie(b.nbRank, b.mySite, b.nbSite, b.nb);
+                    });
+                    for (const auto& c : cands) {
+                        if (!visited[c.nb]) {
+                            visited[c.nb] = 1;
+                            order.push_back(c.nb);
+                        }
+                    }
+                }
+                for (const auto idx : baseOrder) {
+                    if (!visited[idx]) {
+                        visited[idx] = 1;
+                        order.push_back(idx);
+                    }
+                }
+                std::string formatted = formatOrder(order);
+                if (best.empty() || formatted < best) best = std::move(formatted);
             }
         }
-        ++speciesCounts[complexText.str()];
+        ++speciesCounts[best];
     }
 
     for (const auto& [loc, count] : state.populations) {

@@ -8,6 +8,7 @@
 #include <future>
 #include <limits>
 #include <optional>
+#include <random>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -80,6 +81,25 @@ int32_t recordFinalSpeciesPopulation(double value, bool allowContinuousEventRang
     return static_cast<int32_t>(std::clamp(rounded, kMin, kMax));
 }
 
+uint64_t resolveBatchBaseSeed(uint64_t baseSeed) {
+    if (baseSeed != 0) return baseSeed;
+    std::random_device rd;
+    uint64_t s = (static_cast<uint64_t>(rd()) << 32) ^ static_cast<uint64_t>(rd());
+    return s == 0 ? 1ULL : s;
+}
+
+std::vector<double> batchOutputTimesDouble(const BatchSsaOptions& options) {
+    const std::size_t numPoints = static_cast<std::size_t>(options.nSteps) + 1;
+    std::vector<double> times(numPoints);
+    const double step = (options.nSteps > 0)
+        ? (options.tEnd - options.tStart) / static_cast<double>(options.nSteps)
+        : 0.0;
+    for (std::size_t i = 0; i < numPoints; ++i) {
+        times[i] = options.tStart + static_cast<double>(i) * step;
+    }
+    return times;
+}
+
 } // namespace
 
 namespace detail {
@@ -98,14 +118,17 @@ std::vector<float> batchOutputTimes(const BatchSsaOptions& options) {
 
 // Populate the double-precision mean/std fields in BatchSsaMetrics from the
 // float observableMeans/StdDevs already computed, so OdeIntegrator can consume
-// them directly without a redundant conversion loop at the call site.
+// them directly without a redundant conversion loop at the call site. Shared by
+// every backend, hence declared here rather than kept in a translation unit.
 void fillDoubleFields(BatchSsaMetrics& m) {
     const std::size_t T = m.timePoints.size();
     const std::size_t G = m.observableMeans.empty() ? 0 : m.observableMeans[0].size();
 
-    m.timePointsDouble.resize(T);
-    for (std::size_t t = 0; t < T; ++t)
-        m.timePointsDouble[t] = static_cast<double>(m.timePoints[t]);
+    if (m.timePointsDouble.size() != T) {
+        m.timePointsDouble.resize(T);
+        for (std::size_t t = 0; t < T; ++t)
+            m.timePointsDouble[t] = static_cast<double>(m.timePoints[t]);
+    }
 
     m.meanObservables.resize(T, std::vector<double>(G));
     m.stdObservables.resize(T, std::vector<double>(G));
@@ -941,8 +964,9 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
     OdeIntegrator integrator(model_, network_);
     const auto& compiledGroups = integrator.getCompiledGroups();
     std::size_t numObs = compiledGroups.size();
-    std::size_t numPoints = options.nSteps + 1;
+    std::size_t numPoints = static_cast<std::size_t>(options.nSteps) + 1;
     std::size_t numSpecies = network_.species.size();
+    const uint64_t effectiveBaseSeed = resolveBatchBaseSeed(options.baseSeed);
 
     auto tEndPrep = std::chrono::high_resolution_clock::now();
     double prepMs = std::chrono::duration<double, std::milli>(tEndPrep - tStartPrep).count();
@@ -950,6 +974,8 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
     BatchSsaMetrics metrics;
     metrics.batchSize = options.batchSize;
     metrics.modelPrepTimeMs = prepMs;
+    metrics.timePoints = detail::batchOutputTimes(options);
+    metrics.timePointsDouble = batchOutputTimesDouble(options);
     metrics.observableNames.reserve(numObs);
     for (const auto& g : compiledGroups) {
         metrics.observableNames.push_back(g.name);
@@ -971,27 +997,21 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
     odeOpts.maxSimSteps = options.maxSimSteps;
     odeOpts.isolatedTrajectory = true;
 
+    const double timeTol = 1e-12 * std::max(0.0, options.tEnd - options.tStart);
+    const bool hasNativeEvents = model_.getEventFormatVersion().has_value();
     uint64_t totalEvents = 0;
 
     for (std::size_t b = 0; b < options.batchSize; ++b) {
         // Decorrelated per-trajectory seed, shared with integrateBatchSSA's CPU
         // pool and the GPU backends. `baseSeed + b` aliased: batch runs whose
         // base seeds differ by delta shared batchSize - delta trajectories.
-        odeOpts.seed = batchTrajectoryEngineSeed(options.baseSeed, b);
+        odeOpts.seed = batchTrajectoryEngineSeed(effectiveBaseSeed, b);
         OdeResult res = integrator.integrate(odeOpts);
-
-        if (b == 0) {
-            metrics.timePoints.resize(res.timePoints.size());
-            for (std::size_t i = 0; i < res.timePoints.size(); ++i) {
-                metrics.timePoints[i] = static_cast<float>(res.timePoints[i]);
-            }
-        }
 
         totalEvents += res.eventCount;
         metrics.trajectoryEventCounts[b] = static_cast<uint32_t>(res.eventCount);
 
         // Record final species
-        const bool hasNativeEvents = model_.getEventFormatVersion().has_value();
         if (!res.concentrations.empty()) {
             const auto& finalConc = res.concentrations.back();
             for (std::size_t s = 0; s < numSpecies && s < finalConc.size(); ++s) {
@@ -1000,13 +1020,23 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
             }
         }
 
-        // Record observables
-        for (std::size_t step = 0; step < numPoints && step < res.observables.size(); ++step) {
-            for (std::size_t g = 0; g < numObs && g < res.observables[step].size(); ++g) {
-                double val = res.observables[step][g];
-                moments[step][g].add(val);
-                if (step == numPoints - 1) {
-                    metrics.finalObservables[b * numObs + g] = static_cast<float>(val);
+        // Sample observables onto the uniform batch grid, holding the frozen
+        // final state through tEnd when max_sim_steps terminates a trajectory early.
+        if (!res.observables.empty()) {
+            std::size_t srcStep = 0;
+            for (std::size_t step = 0; step < numPoints; ++step) {
+                const double gridTime = metrics.timePointsDouble[step];
+                while (srcStep + 1 < res.observables.size() &&
+                       srcStep + 1 < res.timePoints.size() &&
+                       res.timePoints[srcStep + 1] <= gridTime + timeTol) {
+                    ++srcStep;
+                }
+                for (std::size_t g = 0; g < numObs && g < res.observables[srcStep].size(); ++g) {
+                    const double val = res.observables[srcStep][g];
+                    moments[step][g].add(val);
+                    if (step == numPoints - 1) {
+                        metrics.finalObservables[b * numObs + g] = static_cast<float>(val);
+                    }
                 }
             }
         }
@@ -1049,34 +1079,12 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
     }
     if (numThreads == 0) numThreads = 1;
 
-    // One compiled model for the whole pool. Constructing an OdeIntegrator
-    // recompiles every reaction and observable from the AST, so the previous
-    // one-per-worker layout paid numThreads+1 model compiles per batch (15+1
-    // here) and held numThreads copies of the compiled network alive at once.
-    //
-    // Sharing is safe because the SSA path is re-entrant on this class:
-    // integrate() dispatches to integrateSSA(), which reads only the compiled
-    // reaction/group tables and writes exclusively to its own locals and the
-    // OdeResult it returns. Every helper it reaches (outputTimes, parseStopIf,
-    // updateGroups, stopConditionMet, computePropensity) is const and takes
-    // its output through an out-parameter.
-    //
-    // The mutable members of OdeIntegrator are NOT safe to share, and the SSA
-    // path reaches none of them: groupValues_ and functionalRateCoefficients_
-    // are scratch for derivs(), which only the single-threaded ODE/CVODE path
-    // calls, and cvodePhysicalState_/cvodePhysicalDerivatives_ belong to
-    // cvodeDerivs(). A state-dependent rate law used to break this rule:
-    // evaluateFunctionalRateCoefficients() filled groupValues_ from the
-    // current state, so two workers sharing the integrator could resolve a
-    // rate expression against another trajectory's observable values. The
-    // observable scratch is now an explicit argument, and the SSA path passes
-    // its own per-thread buffer (SsaScratch::groupValues), so a fixed seed
-    // reproduces the same ensemble on every worker count.
     OdeIntegrator integrator(model_, network_);
     const auto& compiledGroups = integrator.getCompiledGroups();
     std::size_t numObs = compiledGroups.size();
-    std::size_t numPoints = options.nSteps + 1;
+    std::size_t numPoints = static_cast<std::size_t>(options.nSteps) + 1;
     std::size_t numSpecies = network_.species.size();
+    const uint64_t effectiveBaseSeed = resolveBatchBaseSeed(options.baseSeed);
 
     auto tEndPrep = std::chrono::high_resolution_clock::now();
     double prepMs = std::chrono::duration<double, std::milli>(tEndPrep - tStartPrep).count();
@@ -1084,6 +1092,8 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
     BatchSsaMetrics metrics;
     metrics.batchSize = options.batchSize;
     metrics.modelPrepTimeMs = prepMs;
+    metrics.timePoints = detail::batchOutputTimes(options);
+    metrics.timePointsDouble = batchOutputTimesDouble(options);
     metrics.observableNames.reserve(numObs);
     for (const auto& g : compiledGroups) {
         metrics.observableNames.push_back(g.name);
@@ -1095,13 +1105,14 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
     struct WorkerResult {
         uint64_t workerEvents = 0;
         std::vector<std::vector<RunningMoments>> moments;
-        std::vector<float> timePoints;
     };
 
     auto tStartSim = std::chrono::high_resolution_clock::now();
 
     std::size_t batchSize = options.batchSize;
     std::size_t chunkSize = (batchSize + numThreads - 1) / numThreads;
+    const double timeTol = 1e-12 * std::max(0.0, options.tEnd - options.tStart);
+    const bool hasNativeEvents = model_.getEventFormatVersion().has_value();
 
     std::vector<std::future<WorkerResult>> futures;
     futures.reserve(numThreads);
@@ -1111,10 +1122,10 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
         std::size_t endIdx = std::min(startIdx + chunkSize, batchSize);
         if (startIdx >= endIdx) continue;
 
-        futures.push_back(std::async(std::launch::async, [this, &options, startIdx, endIdx, numPoints, numObs, numSpecies, &metrics]() {
+        futures.push_back(std::async(std::launch::async, [this, &options, effectiveBaseSeed, timeTol, hasNativeEvents, startIdx, endIdx, numPoints, numObs, numSpecies, &metrics]() {
             WorkerResult wRes;
             wRes.moments.resize(numPoints, std::vector<RunningMoments>(numObs));
-            OdeIntegrator integrator(model_, network_);
+            OdeIntegrator workerIntegrator(model_, network_);
 
             OdeOptions odeOpts;
             odeOpts.tStart = options.tStart;
@@ -1126,20 +1137,12 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
 
             for (std::size_t b = startIdx; b < endIdx; ++b) {
                 // Same derivation as the single-worker loop above.
-                odeOpts.seed = batchTrajectoryEngineSeed(options.baseSeed, b);
-                OdeResult res = integrator.integrate(odeOpts);
-
-                if (wRes.timePoints.empty() && !res.timePoints.empty()) {
-                    wRes.timePoints.resize(res.timePoints.size());
-                    for (std::size_t i = 0; i < res.timePoints.size(); ++i) {
-                        wRes.timePoints[i] = static_cast<float>(res.timePoints[i]);
-                    }
-                }
+                odeOpts.seed = batchTrajectoryEngineSeed(effectiveBaseSeed, b);
+                OdeResult res = workerIntegrator.integrate(odeOpts);
 
                 wRes.workerEvents += res.eventCount;
                 metrics.trajectoryEventCounts[b] = static_cast<uint32_t>(res.eventCount);
 
-                const bool hasNativeEvents = model_.getEventFormatVersion().has_value();
                 if (!res.concentrations.empty()) {
                     const auto& finalConc = res.concentrations.back();
                     for (std::size_t s = 0; s < numSpecies && s < finalConc.size(); ++s) {
@@ -1148,12 +1151,21 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
                     }
                 }
 
-                for (std::size_t step = 0; step < numPoints && step < res.observables.size(); ++step) {
-                    for (std::size_t g = 0; g < numObs && g < res.observables[step].size(); ++g) {
-                        double val = res.observables[step][g];
-                        wRes.moments[step][g].add(val);
-                        if (step == numPoints - 1) {
-                            metrics.finalObservables[b * numObs + g] = static_cast<float>(val);
+                if (!res.observables.empty()) {
+                    std::size_t srcStep = 0;
+                    for (std::size_t step = 0; step < numPoints; ++step) {
+                        const double gridTime = metrics.timePointsDouble[step];
+                        while (srcStep + 1 < res.observables.size() &&
+                               srcStep + 1 < res.timePoints.size() &&
+                               res.timePoints[srcStep + 1] <= gridTime + timeTol) {
+                            ++srcStep;
+                        }
+                        for (std::size_t g = 0; g < numObs && g < res.observables[srcStep].size(); ++g) {
+                            const double val = res.observables[srcStep][g];
+                            wRes.moments[step][g].add(val);
+                            if (step == numPoints - 1) {
+                                metrics.finalObservables[b * numObs + g] = static_cast<float>(val);
+                            }
                         }
                     }
                 }
@@ -1169,9 +1181,6 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
     for (auto& f : futures) {
         WorkerResult wRes = f.get();
         totalEvents += wRes.workerEvents;
-        if (metrics.timePoints.empty() && !wRes.timePoints.empty()) {
-            metrics.timePoints = std::move(wRes.timePoints);
-        }
         for (std::size_t step = 0; step < numPoints; ++step) {
             for (std::size_t g = 0; g < numObs; ++g) {
                 moments[step][g].merge(wRes.moments[step][g]);

@@ -35,10 +35,14 @@ inline std::size_t identicalReactantOffset(
     if (position == 0 || position >= reactantIndices.size()) {
         return 0;
     }
-    if (reactantIndices[position] != reactantIndices[position - 1]) {
-        return 0;
+    const std::size_t target = reactantIndices[position];
+    std::size_t count = 0;
+    for (std::size_t i = 0; i < position; ++i) {
+        if (reactantIndices[i] == target) {
+            ++count;
+        }
     }
-    return identicalReactantOffset(reactantIndices, position - 1) + 1;
+    return count;
 }
 
 struct OdeOptions {
@@ -124,7 +128,13 @@ public:
     void loadTfun(const std::string& name,
                   const std::string& filePath,
                   const std::string& method = "linear") {
-        tfunRegistry_.load(name, filePath, method);
+        auto table = io::TfunReader::read(filePath);
+        if (!method.empty()) table.method = method;
+        if (table.method == "step") {
+            tfunFileStepKnots_.insert(
+                tfunFileStepKnots_.end(), table.times.begin(), table.times.end());
+        }
+        tfunRegistry_.addTable(name, std::move(table));
     }
     io::TfunRegistry& getTfunRegistry() { return tfunRegistry_; }
 
@@ -202,6 +212,11 @@ private:
     mutable std::vector<double> groupValues_;                  // Pre-allocated for derivs()
     mutable std::vector<double> functionalRateCoefficients_;  // Pre-allocated for derivs()
     std::unordered_map<std::string, std::size_t> observableIndex_; // O(1) observable lookup
+    std::unordered_map<std::string, std::size_t> functionIndex_;   // O(1) function lookup
+    bool tIsUserSymbol_ = false;                                   // true if model declares param/obs/fn named 't'
+    std::vector<double> tfunInlineStepKnots_;                      // knot times of inline method=>"step" tfuns
+    std::vector<double> tfunFileStepKnots_;                        // knot times of file-backed method=>"step" tfuns
+    const std::vector<double>* interventionPreState_ = nullptr;    // pre-intervention state on continue=>1
     std::vector<std::size_t> constantRxnIndices_;              // Fallback indices for small networks
     std::vector<CompiledConstantReaction> constantReactions_;  // Compact constant-rate reaction data
     std::vector<std::size_t> constantReactantIndices_;         // Flattened reactant species indices
@@ -402,6 +417,11 @@ private:
     double evaluateParameterWithEventState(
         const std::string& name, double time,
         const std::unordered_map<std::string, double>& eventValues) const;
+    bool isClockSymbol(const std::string& name) const {
+        return name == "time" || (name == "t" && !tIsUserSymbol_);
+    }
+    bool resolveTfunEntry(const std::string& tfunName, double value, double& out) const;
+    std::vector<double> collectStepKnots(double tStart, double tEnd) const;
     void compile();
     void compileGroups();
     // Evaluate the runtime rate coefficients of every functional-rate reaction
