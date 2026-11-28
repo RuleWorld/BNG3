@@ -753,7 +753,11 @@ end model
     hpp_text = hpp.read_text(encoding="utf-8")
     obs_block = hpp_text.split("begin observables", 1)[1].split("end observables", 1)[0]
     obs_lines = {
-        line.split()[1]: [p.strip() for p in " ".join(line.split()[2:]).replace(",", " ").split() if p.strip()]
+        line.split()[1]: [
+            p.strip()
+            for p in " ".join(line.split()[2:]).replace(",", " ").split()
+            if p.strip()
+        ]
         for line in obs_block.splitlines()
         if line.strip() and not line.strip().startswith("#")
     }

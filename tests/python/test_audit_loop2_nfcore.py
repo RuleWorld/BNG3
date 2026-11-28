@@ -310,13 +310,17 @@ end reaction rules
 end model
 """
     ode_ex = _run_ode_final(excl_x, ["AB_with_X", "AB_no_X"], t_end=2.0)
-    ens_ex = _run_nfcore_ensemble(excl_x, ["AB_with_X", "AB_no_X"], t_end=2.0, n_runs=15)
+    ens_ex = _run_nfcore_ensemble(
+        excl_x, ["AB_with_X", "AB_no_X"], t_end=2.0, n_runs=15
+    )
     assert ens_ex["AB_with_X"][0] == 0.0
     _assert_close_to_oracle(*ens_ex["AB_no_X"], ode_ex["AB_no_X"])
 
     incl_x = excl_x.replace("exclude_products(1,X())", "include_products(1,X())")
     ode_in = _run_ode_final(incl_x, ["AB_with_X", "AB_no_X"], t_end=2.0)
-    ens_in = _run_nfcore_ensemble(incl_x, ["AB_with_X", "AB_no_X"], t_end=2.0, n_runs=15)
+    ens_in = _run_nfcore_ensemble(
+        incl_x, ["AB_with_X", "AB_no_X"], t_end=2.0, n_runs=15
+    )
     _assert_close_to_oracle(*ens_in["AB_with_X"], ode_in["AB_with_X"])
     assert ens_in["AB_no_X"][0] == 0.0
 
@@ -344,7 +348,9 @@ end reaction rules
 end model
 """
     ode_st = _run_ode_final(excl_stateful, ["AB_p0", "AB_p1"], t_end=2.0)
-    ens_st = _run_nfcore_ensemble(excl_stateful, ["AB_p0", "AB_p1"], t_end=2.0, n_runs=15)
+    ens_st = _run_nfcore_ensemble(
+        excl_stateful, ["AB_p0", "AB_p1"], t_end=2.0, n_runs=15
+    )
     _assert_close_to_oracle(*ens_st["AB_p0"], ode_st["AB_p0"])
     assert ens_st["AB_p1"][0] == 0.0
 
@@ -411,9 +417,9 @@ end model
     res = cpp.simulate_nf(model, t_end=2.0, n_steps=2, seed=1, require_direct=True)
     obs = res["observables"]
     # Sp_gt1 must equal Sp_both identically at every time point!
-    assert np.allclose(obs["Sp_gt1"], obs["Sp_both"]), (
-        f"Sp_gt1={obs['Sp_gt1']} != Sp_both={obs['Sp_both']}"
-    )
+    assert np.allclose(
+        obs["Sp_gt1"], obs["Sp_both"]
+    ), f"Sp_gt1={obs['Sp_gt1']} != Sp_both={obs['Sp_both']}"
     assert obs["Sp_gt1"][-1] > 50.0
     assert obs["Sp_gt0"][-1] >= obs["Sp_gt1"][-1]
     assert obs["MolAbound"][-1] >= 2.0 * obs["Sp_both"][-1]
@@ -462,7 +468,9 @@ end reaction rules
 end model
 """
     model_mod = cpp.parse_string(mod_source)
-    res_mod = cpp.simulate_nf(model_mod, t_end=2.0, n_steps=2, seed=1, require_direct=True)
+    res_mod = cpp.simulate_nf(
+        model_mod, t_end=2.0, n_steps=2, seed=1, require_direct=True
+    )
     # 101 % 2 == 1 -> decays by 1 to 100, then 100 % 2 == 0 -> stops at 100!
     assert float(res_mod["observables"]["Atot"][-1]) == 100.0
 
@@ -531,9 +539,7 @@ simulate_nf({{param=>"-rnf {rnf_path}"}})
         rnf_file = tmp_path / rnf_name
         rnf_file.write_text(rnf_content, encoding="utf-8")
         bngl_file = tmp_path / f"{rnf_file.stem}.bngl"
-        bngl_file.write_text(
-            base_bngl.format(rnf_path=str(rnf_file)), encoding="utf-8"
-        )
+        bngl_file.write_text(base_bngl.format(rnf_path=str(rnf_file)), encoding="utf-8")
         model = cpp.parse_file(str(bngl_file))
         with pytest.raises(Exception):
             cpp.execute(model, str(bngl_file), False)
@@ -649,7 +655,9 @@ end model
         cpp.simulate_nf(cpp.parse_string(ring_source), t_end=1.0, n_steps=2, seed=1)
 
 
-def test_l2_08_12_pure_kinetic_barrier_pattern_in_nfcore(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_l2_08_12_pure_kinetic_barrier_pattern_in_nfcore(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """L2-08-12: Pure kinetic barrier patterns (without energy patterns) work in NFcore."""
     monkeypatch.setenv("BNG_NFSIM_GENERAL_ENERGY", "1")
     source = """

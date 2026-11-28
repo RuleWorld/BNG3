@@ -158,8 +158,101 @@ def run_all_checks(bng_cpp: Path) -> int:
         )
         _run_case(bng_cpp, d6, ["neg.bngl"], expect_ok=False)
 
-        # 7. Positive semantic smoke under ASan+UBSan: eBNGL |Aut(P)|, asymmetric homodimer,
-        # explicit bond cardinality, compartments, ODE+SSA+PLA+PSA+NF.
+        # 8. L2-11-01: Flat binary expression chain (1+1+...+1) must fail cleanly without stack overflow.
+        d8 = root / "l2_11_01_flat_chain"
+        d8.mkdir()
+        flat_chain = "+".join(["1"] * 2000)
+        (d8 / "flat.bngl").write_text(
+            f"begin model\nbegin parameters\n  k {flat_chain}\nend parameters\n"
+            "begin molecule types\n  A()\nend molecule types\n"
+            "begin seed species\n  A() 1\nend seed species\n"
+            "end model\n",
+            encoding="utf-8",
+        )
+        _run_case(bng_cpp, d8, ["flat.bngl"], expect_ok=False)
+
+        # 9. L2-11-02: Large observable weight sum in SBML must not trigger UBSan signed int overflow.
+        d9 = root / "l2_11_02_sbml_overflow"
+        d9.mkdir()
+        (d9 / "overflow.xml").write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<sbml xmlns="http://www.sbml.org/sbml/level2/version4" level="2" version="4">\n'
+            '  <model id="ovf">\n'
+            '    <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>\n'
+            '    <listOfSpecies><species id="S1" compartment="c" initialAmount="1" name="A()"/></listOfSpecies>\n'
+            '    <listOfParameters><parameter id="O1" constant="false"/></listOfParameters>\n'
+            '    <listOfRules><assignmentRule variable="O1">\n'
+            '      <math xmlns="http://www.w3.org/1998/Math/MathML">\n'
+            "        <apply><plus/>\n"
+            "          <apply><times/><cn>2000000000</cn><ci>S1</ci></apply>\n"
+            "          <apply><times/><cn>2000000000</cn><ci>S1</ci></apply>\n"
+            "        </apply>\n"
+            "      </math>\n"
+            "    </assignmentRule></listOfRules>\n"
+            "  </model>\n"
+            "</sbml>\n",
+            encoding="utf-8",
+        )
+        (d9 / "driver.bngl").write_text(
+            'readFile({file=>"overflow.xml"})\n', encoding="utf-8"
+        )
+        _run_case(bng_cpp, d9, ["driver.bngl"], expect_ok=True)
+
+        # 10. L2-11-05: Cyclic compartment parent hierarchy must fail cleanly without hanging.
+        d10 = root / "l2_11_05_comp_cycle"
+        d10.mkdir()
+        (d10 / "cycle.bngl").write_text(
+            "begin model\n"
+            "begin compartments\n  C1 3 1 C2\n  C2 2 1 C1\nend compartments\n"
+            "begin molecule types\n  A()\nend molecule types\n"
+            "begin seed species\n  @C1:A() 1\nend seed species\n"
+            "end model\n",
+            encoding="utf-8",
+        )
+        _run_case(bng_cpp, d10, ["cycle.bngl"], expect_ok=False)
+
+        # 11. L2-11-08: Tfun table with NaN value must fail cleanly (not silently drop rows).
+        d11 = root / "l2_11_08_tfun_nan"
+        d11.mkdir()
+        (d11 / "nan.tfun").write_text(
+            "# t val\n0.0 1.0\n0.5 nan\n1.0 2.0\n", encoding="utf-8"
+        )
+        (d11 / "m.bngl").write_text(
+            "begin model\n"
+            "begin molecule types\n  A()\nend molecule types\n"
+            "begin seed species\n  A() 10\nend seed species\n"
+            "begin observables\n  Molecules Atot A()\nend observables\n"
+            "begin functions\n  f() = tfun('nan.tfun', time)\nend functions\n"
+            "begin reaction rules\n  A() -> 0 f()\nend reaction rules\n"
+            "end model\n"
+            "generate_network({overwrite=>1})\n"
+            'simulate({method=>"ode",t_end=>1,n_steps=>5})\n',
+            encoding="utf-8",
+        )
+        _run_case(bng_cpp, d11, ["m.bngl"], expect_ok=False)
+
+        # 12. L2-11-04: generate_hybrid_model --outdir confinement bypass must be blocked.
+        d12 = root / "l2_11_04_hybrid_outdir"
+        sub12 = d12 / "work"
+        sub12.mkdir(parents=True)
+        (sub12 / "hyb.bngl").write_text(
+            "begin model\n"
+            "begin parameters\n  k 1\n  kr 100\nend parameters\n"
+            "begin molecule types\n  A()\nend molecule types\n"
+            "begin seed species\n  A() 10\nend seed species\n"
+            "begin population maps\n  A() -> Apop() kr\nend population maps\n"
+            "begin reaction rules\n  A() -> 0 k\nend reaction rules\n"
+            "end model\n"
+            'generate_hybrid_model({prefix=>"../escaped_hyb",overwrite=>1})\n',
+            encoding="utf-8",
+        )
+        _run_case(bng_cpp, sub12, ["--outdir", str(sub12), "hyb.bngl"], expect_ok=False)
+        assert not (
+            d12 / "escaped_hyb_hpp.bngl"
+        ).exists(), "hybrid path traversal wrote outside outdir"
+
+        # 13. Positive semantic smoke under ASan+UBSan: eBNGL |Aut(P)|, asymmetric homodimer,
+        # explicit bond cardinality, compartments, ODE+SSA+PLA+PSA+NFnext.
         d7 = root / "sem_smoke"
         d7.mkdir()
         (d7 / "smoke.bngl").write_text(
@@ -192,13 +285,14 @@ def run_all_checks(bng_cpp: Path) -> int:
             'simulate({method=>"ode",t_end=>1,n_steps=>5})\n'
             'simulate({method=>"ssa",t_end=>1,n_steps=>5,seed=>42})\n'
             'simulate({method=>"pla",t_end=>1,n_steps=>5,seed=>42})\n'
-            'simulate({method=>"psa",t_end=>1,n_steps=>5,seed=>42})\n',
+            'simulate({method=>"psa",t_end=>1,n_steps=>5,seed=>42})\n'
+            'simulate({method=>"nf",t_end=>1,n_steps=>5,seed=>42})\n',
             encoding="utf-8",
         )
         _run_case(bng_cpp, d7, ["smoke.bngl"], expect_ok=True)
 
     print(
-        "PASS: all 7 ASan+UBSan security, memory-safety, and semantic CLI checks passed"
+        "PASS: all 12 ASan+UBSan security, memory-safety, and semantic CLI checks passed"
     )
     return 0
 

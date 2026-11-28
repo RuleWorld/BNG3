@@ -2324,9 +2324,7 @@ def _species_pattern_from_multi(
                 expanded.extend(queue)
             branch_assignments = expanded
         if symmetric_groups:
-            symmetric_slot_set = {
-                pos for group in symmetric_groups for pos in group
-            }
+            symmetric_slot_set = {pos for group in symmetric_groups for pos in group}
             seen_signatures: Set[Tuple[Any, ...]] = set()
             deduped: List[Dict[Tuple[int, int], str]] = []
             for branch in branch_assignments:

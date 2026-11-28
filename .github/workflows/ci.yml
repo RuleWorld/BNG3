@@ -1079,7 +1079,7 @@ jobs:
           SYMPY_USE_GMPY: "0"
 
       - name: Run adversarial audit regression suites
-        run: pytest tests/python/test_audit_wave*.py -v --tb=short --maxfail=1 --junitxml=audit-results.xml
+        run: pytest tests/python/test_audit_wave*.py tests/python/test_audit_loop2_*.py -v --tb=short --maxfail=1 --junitxml=audit-results.xml
         env:
           SYMPY_USE_GMPY: "0"
 

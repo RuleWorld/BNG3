@@ -124,7 +124,9 @@ def test_simulation_bindings_reject_negative_n_steps(bad_steps: int):
     with pytest.raises(ValueError, match="n_steps"):
         cpp.simulate_pla(model, net, t_end=1.0, n_steps=bad_steps, seed=1)
     with pytest.raises(ValueError, match="n_steps"):
-        cpp.simulate_psa(model, net, t_end=1.0, n_steps=bad_steps, poplevel=10.0, seed=1)
+        cpp.simulate_psa(
+            model, net, t_end=1.0, n_steps=bad_steps, poplevel=10.0, seed=1
+        )
     with pytest.raises(ValueError, match="n_steps"):
         cpp.simulate_ode_bngsim(model, net, t_end=1.0, n_steps=bad_steps)
     with pytest.raises(ValueError, match="n_steps"):
@@ -225,9 +227,7 @@ end model
     flat = cpp.jax_ode_flatten(model, net)
     # MM, Sat, and Hill are bimolecular in V_CP=5 -> volume_scales = 1/5 = 0.2;
     # authored TotalRate rule retains volume_scales = 1.0.
-    np.testing.assert_allclose(
-        flat["volume_scales"], [0.2, 0.2, 0.2, 1.0], rtol=1e-12
-    )
+    np.testing.assert_allclose(flat["volume_scales"], [0.2, 0.2, 0.2, 1.0], rtol=1e-12)
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +467,9 @@ simulate({method=>"ode", t_end=>5, n_steps=>10})
     cpp.execute(model, str(bngl_path), False)
     rows = [
         [float(x) for x in line.split()]
-        for line in (tmp_path / "m_tfun_methods.gdat").read_text(encoding="utf-8").splitlines()
+        for line in (tmp_path / "m_tfun_methods.gdat")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip() and not line.lstrip().startswith("#")
     ]
     # Row at t = 0.5:

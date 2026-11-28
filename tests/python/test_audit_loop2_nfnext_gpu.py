@@ -62,11 +62,13 @@ def _load_model(tmp_path: Path, name: str, source: str):
     return bionetgen.load(str(path))
 
 
-def _assert_close(mean: float, se: float, expected: float, z_max: float = 4.5, min_tol: float = 1.0):
+def _assert_close(
+    mean: float, se: float, expected: float, z_max: float = 4.5, min_tol: float = 1.0
+):
     tol = max(z_max * se, min_tol)
-    assert abs(mean - expected) <= tol, (
-        f"mean={mean:.3f} +/- {se:.3f} deviates from expected={expected:.3f} (tol={tol:.3f})"
-    )
+    assert (
+        abs(mean - expected) <= tol
+    ), f"mean={mean:.3f} +/- {se:.3f} deviates from expected={expected:.3f} (tol={tol:.3f})"
 
 
 # ---------------------------------------------------------------------------
@@ -149,7 +151,9 @@ end model
         [0.0, 1.0], seed=8103, batch_size=512, backend=backend, mode="graph"
     )
     assert np.all(gpu_c.observables["Ring2"] == 0.0)
-    cpu_c = _run_nfnext_cpu_ensemble(src_chain, ["FreeL"], 1.0, n_runs=128, seed_base=8103)
+    cpu_c = _run_nfnext_cpu_ensemble(
+        src_chain, ["FreeL"], 1.0, n_runs=128, seed_base=8103
+    )
     gpu_mean = float(np.mean(gpu_c.observables["FreeL"][:, -1]))
     gpu_se = float(np.std(gpu_c.observables["FreeL"][:, -1], ddof=1) / math.sqrt(512))
     comb_se = math.sqrt(gpu_se**2 + cpu_c["FreeL"][1] ** 2)
@@ -249,9 +253,12 @@ end model
     cpu = _run_nfnext_cpu_ensemble(src, ["FreeSites"], 0.5, n_runs=128, seed_base=8301)
     gpu_vals = gpu.observables["FreeSites"][:, -1]
     comb_se = math.sqrt(
-        (float(np.std(gpu_vals, ddof=1)) ** 2) / len(gpu_vals) + cpu["FreeSites"][1] ** 2
+        (float(np.std(gpu_vals, ddof=1)) ** 2) / len(gpu_vals)
+        + cpu["FreeSites"][1] ** 2
     )
-    _assert_close(float(np.mean(gpu_vals)), comb_se, cpu["FreeSites"][0], z_max=4.5, min_tol=0.4)
+    _assert_close(
+        float(np.mean(gpu_vals)), comb_se, cpu["FreeSites"][0], z_max=4.5, min_tol=0.4
+    )
 
 
 def test_l2_06_04_gpu_two_hop_anchor_refresh_on_delete(tmp_path: Path):
@@ -402,7 +409,9 @@ end model
     )
 
 
-def test_l2_06_07_gpu_dynamic_observables_over_32_safe_and_over_64_refused(tmp_path: Path):
+def test_l2_06_07_gpu_dynamic_observables_over_32_safe_and_over_64_refused(
+    tmp_path: Path,
+):
     backend = _usable_gpu_backend()
     if backend is None:
         return
@@ -443,7 +452,9 @@ end model
     comb_se = math.sqrt(
         (float(np.std(arr_36, ddof=1)) ** 2) / len(arr_36) + cpu_36["O35"][1] ** 2
     )
-    _assert_close(float(np.mean(arr_36)), comb_se, cpu_36["O35"][0], z_max=4.5, min_tol=0.6)
+    _assert_close(
+        float(np.mean(arr_36)), comb_se, cpu_36["O35"][0], z_max=4.5, min_tol=0.6
+    )
 
     # 66 observables (>64) with dynamic rate: cleanly refused (no OOB)!
     src_66 = make_model_with_n_obs(66)
@@ -518,14 +529,18 @@ end model
     gpu = m.simulate_nfnext_gpu(
         [0.0, 1.0], seed=8901, batch_size=16, backend=backend, mode="graph"
     )
-    cpu = _run_nfnext_cpu_ensemble(src, ["D", "Ap2", "Star", "Aany"], 1.0, n_runs=1, seed_base=8901)
+    cpu = _run_nfnext_cpu_ensemble(
+        src, ["D", "Ap2", "Star", "Aany"], 1.0, n_runs=1, seed_base=8901
+    )
     assert np.all(gpu.observables["D"] == 10.0) and cpu["D"][0] == 10.0
     assert np.all(gpu.observables["Ap2"] == 10.0) and cpu["Ap2"][0] == 10.0
     assert np.all(gpu.observables["Star"] == 8.0) and cpu["Star"][0] == 8.0
     assert np.all(gpu.observables["Aany"] == 14.0) and cpu["Aany"][0] == 14.0
 
 
-def test_l2_06_10_gpu_constant_seed_refused_when_mutated_and_allowed_as_catalyst(tmp_path: Path):
+def test_l2_06_10_gpu_constant_seed_refused_when_mutated_and_allowed_as_catalyst(
+    tmp_path: Path,
+):
     backend = _usable_gpu_backend()
     if backend is None:
         return
@@ -744,10 +759,18 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens_8c = _run_nfnext_cpu_ensemble(src_8c, ["A1_bound", "A1_free"], 0.5, n_runs=48, seed_base=9203)
+    ens_8c = _run_nfnext_cpu_ensemble(
+        src_8c, ["A1_bound", "A1_free"], 0.5, n_runs=48, seed_base=9203
+    )
     assert ens_8c["A1_free"][0] == 0.0
     expected_bound = 40.0 * (1.0 - math.exp(-0.2 * 10.0 * 0.5))
-    _assert_close(ens_8c["A1_bound"][0], ens_8c["A1_bound"][1], expected_bound, z_max=4.5, min_tol=1.0)
+    _assert_close(
+        ens_8c["A1_bound"][0],
+        ens_8c["A1_bound"][1],
+        expected_bound,
+        z_max=4.5,
+        min_tol=1.0,
+    )
 
     # 8d: Homodimer DestroyComplex deduplication in mixed-lumped rule (no 2x rate).
     src_8d = """begin model
@@ -862,13 +885,17 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens = _run_nfnext_cpu_ensemble(src, ["Modified_t0", "Modified_t1"], 0.4, n_runs=64, seed_base=9401)
+    ens = _run_nfnext_cpu_ensemble(
+        src, ["Modified_t0", "Modified_t1"], 0.4, n_runs=64, seed_base=9401
+    )
     m0, se0 = ens["Modified_t0"]
     m1, se1 = ens["Modified_t1"]
     # Both t~0 and t~1 must receive ~50% of events (previously 100% / 0%).
     assert m0 > 5.0 and m1 > 5.0
     diff_se = math.sqrt(se0**2 + se1**2)
-    assert abs(m0 - m1) < max(4.5 * diff_se, 2.0), f"biased MatchOnce: t0={m0:.2f}, t1={m1:.2f}"
+    assert abs(m0 - m1) < max(
+        4.5 * diff_se, 2.0
+    ), f"biased MatchOnce: t0={m0:.2f}, t1={m1:.2f}"
 
 
 def test_l2_06_15_nfnext_totalrate_with_scoped_function_refused():
@@ -958,7 +985,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-        ens = _run_nfnext_cpu_ensemble(src_yes, ["A_CP", "B_CP"], 1.0, n_runs=24, seed_base=9610)
+        ens = _run_nfnext_cpu_ensemble(
+            src_yes, ["A_CP", "B_CP"], 1.0, n_runs=24, seed_base=9610
+        )
         expected = 50.0 * (1.0 - math.exp(-2.0))
         _assert_close(ens["A_CP"][0], ens["A_CP"][1], expected, z_max=4.5, min_tol=1.5)
         _assert_close(ens["B_CP"][0], ens["B_CP"][1], expected, z_max=4.5, min_tol=1.5)
@@ -988,9 +1017,15 @@ end reaction rules
 end model
 """
     ode = _run_ode_final(src_mixed, ["Dim_CC", "Dim_CF"], 1.0)
-    ens = _run_nfnext_cpu_ensemble(src_mixed, ["Dim_CC", "Dim_CF"], 1.0, n_runs=64, seed_base=9701)
-    _assert_close(ens["Dim_CC"][0], ens["Dim_CC"][1], ode["Dim_CC"], z_max=4.5, min_tol=1.5)
-    _assert_close(ens["Dim_CF"][0], ens["Dim_CF"][1], ode["Dim_CF"], z_max=4.5, min_tol=1.5)
+    ens = _run_nfnext_cpu_ensemble(
+        src_mixed, ["Dim_CC", "Dim_CF"], 1.0, n_runs=64, seed_base=9701
+    )
+    _assert_close(
+        ens["Dim_CC"][0], ens["Dim_CC"][1], ode["Dim_CC"], z_max=4.5, min_tol=1.5
+    )
+    _assert_close(
+        ens["Dim_CF"][0], ens["Dim_CF"][1], ode["Dim_CF"], z_max=4.5, min_tol=1.5
+    )
 
 
 def test_l2_08_02_and_04_nfnext_compartment_and_unbound_energy_patterns():
@@ -1030,7 +1065,9 @@ begin reaction rules
 end reaction rules
 end model
 """
-    ens_c = _run_nfnext_cpu_ensemble(src_comp, ["AP_pm", "AP_cp"], 5.0, n_runs=16, seed_base=9801)
+    ens_c = _run_nfnext_cpu_ensemble(
+        src_comp, ["AP_pm", "AP_cp"], 5.0, n_runs=16, seed_base=9801
+    )
     exp_pm = 400.0 / (1.0 + math.exp(-2.0))
     exp_cp = 400.0 / (1.0 + math.exp(2.0))
     _assert_close(ens_c["AP_pm"][0], ens_c["AP_pm"][1], exp_pm, z_max=4.5, min_tol=4.0)

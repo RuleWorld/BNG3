@@ -158,7 +158,9 @@ simulate({method=>"ode",t_end=>1,n_steps=>2,suffix=>"post"})
     # Check A0 sensitivity: dA(1)/dA0 = exp(-1.0)
     a0_gsc_lines = [
         line.split()
-        for line in (tmp_path / "lps_dep_A0_s.gsc").read_text(encoding="utf-8").splitlines()
+        for line in (tmp_path / "lps_dep_A0_s.gsc")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
     a0_sens_at_1 = float(a0_gsc_lines[0][-1])
@@ -168,7 +170,9 @@ simulate({method=>"ode",t_end=>1,n_steps=>2,suffix=>"post"})
     # (100*exp(-2*0.55) - 100*exp(-2*0.5)) / 0.05
     k1_gsc_lines = [
         line.split()
-        for line in (tmp_path / "lps_dep_k1_s.gsc").read_text(encoding="utf-8").splitlines()
+        for line in (tmp_path / "lps_dep_k1_s.gsc")
+        .read_text(encoding="utf-8")
+        .splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
     expected_k1_sens = (100.0 * math.exp(-1.1) - 100.0 * math.exp(-1.0)) / 0.05
@@ -293,7 +297,9 @@ simulate_protocol({prefix=>"proto_run"})
     assert proto_rows[-1][1] == pytest.approx(expected, rel=1e-4)
 
 
-def test_l2_02_05_net_reload_actions_setparameter_scan_bifurcate(tmp_path: Path) -> None:
+def test_l2_02_05_net_reload_actions_setparameter_scan_bifurcate(
+    tmp_path: Path,
+) -> None:
     net_file = tmp_path / "m.net"
     net_file.write_text(
         """begin parameters
@@ -715,7 +721,9 @@ simulate({method=>"nf",t_end=>2,n_steps=>2,continue=>1,seed=>8,suffix=>"post"})
     )
     bionetgen.load(str(bngl)).execute()
     _, pre_rows = _read_table(tmp_path / "nf_neg_tstart_pre.gdat")
-    assert [row[0] for row in pre_rows] == pytest.approx([-10.0, -8.0, -6.0, -4.0, -2.0, 0.0])
+    assert [row[0] for row in pre_rows] == pytest.approx(
+        [-10.0, -8.0, -6.0, -4.0, -2.0, 0.0]
+    )
     assert pre_rows[0][1] == pytest.approx(200.0)
     assert pre_rows[-1][2] == pytest.approx(200.0)
 

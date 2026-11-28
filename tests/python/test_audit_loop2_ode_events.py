@@ -58,11 +58,17 @@ end bng3_events
 end model
 """
     m, n = _parse_and_generate(bngl_immediate)
-    res = cpp.simulate_ode(m, n, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12)
-    assert math.isclose(res["observables"]["Y_obs"][-1], 10.0, rel_tol=1e-9, abs_tol=1e-9)
+    res = cpp.simulate_ode(
+        m, n, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12
+    )
+    assert math.isclose(
+        res["observables"]["Y_obs"][-1], 10.0, rel_tol=1e-9, abs_tol=1e-9
+    )
     # Post-integration function replay must preserve pre-event p=1 at t=0 and post-event p=10 at t=2.
     assert math.isclose(res["functions"]["p_view"][0], 1.0, rel_tol=1e-9, abs_tol=1e-9)
-    assert math.isclose(res["functions"]["p_view"][-1], 10.0, rel_tol=1e-9, abs_tol=1e-9)
+    assert math.isclose(
+        res["functions"]["p_view"][-1], 10.0, rel_tol=1e-9, abs_tol=1e-9
+    )
 
     bngl_delayed = """
 begin model
@@ -107,8 +113,12 @@ end bng3_events
 end model
 """
     m2, n2 = _parse_and_generate(bngl_delayed)
-    res2 = cpp.simulate_ode(m2, n2, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12)
-    assert math.isclose(res2["observables"]["Y_obs"][-1], 42.0, rel_tol=1e-9, abs_tol=1e-9)
+    res2 = cpp.simulate_ode(
+        m2, n2, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12
+    )
+    assert math.isclose(
+        res2["observables"]["Y_obs"][-1], 42.0, rel_tol=1e-9, abs_tol=1e-9
+    )
 
     bngl_same_instant_prio = """
 begin model
@@ -159,8 +169,12 @@ end bng3_events
 end model
 """
     m3, n3 = _parse_and_generate(bngl_same_instant_prio)
-    res3 = cpp.simulate_ode(m3, n3, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12)
-    assert math.isclose(res3["observables"]["Out_obs"][-1], 2.0, rel_tol=1e-9, abs_tol=1e-9)
+    res3 = cpp.simulate_ode(
+        m3, n3, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12
+    )
+    assert math.isclose(
+        res3["observables"]["Out_obs"][-1], 2.0, rel_tol=1e-9, abs_tol=1e-9
+    )
 
 
 def test_l2_04_02_parameter_dependent_event_priority():
@@ -213,9 +227,13 @@ end bng3_events
 end model
 """
     m, n = _parse_and_generate(bngl)
-    res = cpp.simulate_ode(m, n, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12)
+    res = cpp.simulate_ode(
+        m, n, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12
+    )
     # p becomes 20 at t=0.5, so E_B (prio 20) runs before E_C (prio 10) at t=1.0 -> Out = 2.
-    assert math.isclose(res["observables"]["Out_obs"][-1], 2.0, rel_tol=1e-9, abs_tol=1e-9)
+    assert math.isclose(
+        res["observables"]["Out_obs"][-1], 2.0, rel_tol=1e-9, abs_tol=1e-9
+    )
 
 
 def test_l2_04_03_same_instant_false_to_true_retriggering():
@@ -270,9 +288,15 @@ end bng3_events
 end model
 """
     m, n = _parse_and_generate(bngl)
-    res = cpp.simulate_ode(m, n, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12)
-    assert math.isclose(res["observables"]["C_obs"][-1], 2.0, rel_tol=1e-9, abs_tol=1e-9)
-    assert math.isclose(res["observables"]["X_obs"][-1], 0.0, rel_tol=1e-9, abs_tol=1e-9)
+    res = cpp.simulate_ode(
+        m, n, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12
+    )
+    assert math.isclose(
+        res["observables"]["C_obs"][-1], 2.0, rel_tol=1e-9, abs_tol=1e-9
+    )
+    assert math.isclose(
+        res["observables"]["X_obs"][-1], 0.0, rel_tol=1e-9, abs_tol=1e-9
+    )
 
 
 def test_l2_04_04_ida_algebraic_reenforced_between_cascading_events():
@@ -329,11 +353,21 @@ end model
 """
     m, n = _parse_and_generate(bngl)
     res = cpp.simulate_ode(
-        m, n, method="cvode", t_end=2.0, n_steps=4, rtol=1e-10, atol=1e-12,
+        m,
+        n,
+        method="cvode",
+        t_end=2.0,
+        n_steps=4,
+        rtol=1e-10,
+        atol=1e-12,
         algebraic_rules=[("Z_obs", "Z_obs - 2 * X_obs")],
     )
-    assert math.isclose(res["observables"]["Y_obs"][-1], 10.0, rel_tol=1e-7, abs_tol=1e-7)
-    assert math.isclose(res["observables"]["Trig_obs"][-1], 1.0, rel_tol=1e-9, abs_tol=1e-9)
+    assert math.isclose(
+        res["observables"]["Y_obs"][-1], 10.0, rel_tol=1e-7, abs_tol=1e-7
+    )
+    assert math.isclose(
+        res["observables"]["Trig_obs"][-1], 1.0, rel_tol=1e-9, abs_tol=1e-9
+    )
 
 
 def test_l2_04_05_delay_only_in_event_delay_enables_dense_history():
@@ -371,9 +405,13 @@ end bng3_events
 end model
 """
     m, n = _parse_and_generate(bngl)
-    res = cpp.simulate_ode(m, n, method="cvode", t_end=2.0, n_steps=2, rtol=1e-10, atol=1e-12)
+    res = cpp.simulate_ode(
+        m, n, method="cvode", t_end=2.0, n_steps=2, rtol=1e-10, atol=1e-12
+    )
     # X(t) = t^4, so delay(X_obs, 0.5) at t=1.0 is 0.5^4 = 0.0625 -> T_exec = 1.0625.
-    assert math.isclose(res["observables"]["T_exec_obs"][-1], 1.0625, rel_tol=1e-6, abs_tol=1e-6)
+    assert math.isclose(
+        res["observables"]["T_exec_obs"][-1], 1.0625, rel_tol=1e-6, abs_tol=1e-6
+    )
 
 
 def test_l2_04_13_ida_rejects_delay_in_algebraic_residual():
@@ -403,7 +441,11 @@ end model
     m, n = _parse_and_generate(bngl)
     with pytest.raises(RuntimeError, match="delayed expressions is not supported"):
         cpp.simulate_ode(
-            m, n, method="cvode", t_end=2.0, n_steps=2,
+            m,
+            n,
+            method="cvode",
+            t_end=2.0,
+            n_steps=2,
             algebraic_rules=[("Z_obs", "Z_obs - delay(X_obs, 0.5)")],
         )
 
@@ -437,10 +479,18 @@ end model
     for residual, expected in cases:
         m, n = _parse_and_generate(bngl)
         res = cpp.simulate_ode(
-            m, n, method="cvode", t_end=3.0, n_steps=15, rtol=1e-10, atol=1e-12,
+            m,
+            n,
+            method="cvode",
+            t_end=3.0,
+            n_steps=15,
+            rtol=1e-10,
+            atol=1e-12,
             algebraic_rules=[("Z_obs", residual)],
         )
-        assert math.isclose(res["observables"]["Z_obs"][-1], expected, rel_tol=1e-7, abs_tol=1e-7)
+        assert math.isclose(
+            res["observables"]["Z_obs"][-1], expected, rel_tol=1e-7, abs_tol=1e-7
+        )
 
 
 def test_l2_04_08_cvode_root_and_pending_event_coincidence():
@@ -491,12 +541,24 @@ end model
     for max_step in (0.5, 1.0, 2.0):
         m, n = _parse_and_generate(bngl)
         res = cpp.simulate_ode(
-            m, n, method="cvode", t_end=2.5, n_steps=25, max_step=max_step,
-            rtol=1e-10, atol=1e-12,
+            m,
+            n,
+            method="cvode",
+            t_end=2.5,
+            n_steps=25,
+            max_step=max_step,
+            rtol=1e-10,
+            atol=1e-12,
         )
-        assert math.isclose(res["observables"]["T1_obs"][-1], 1.5, rel_tol=1e-6, abs_tol=1e-6)
-        assert math.isclose(res["observables"]["T2_obs"][-1], 1.5, rel_tol=1e-6, abs_tol=1e-6)
-        assert math.isclose(res["observables"]["Y_obs"][-1], 1.3, rel_tol=1e-6, abs_tol=1e-6)
+        assert math.isclose(
+            res["observables"]["T1_obs"][-1], 1.5, rel_tol=1e-6, abs_tol=1e-6
+        )
+        assert math.isclose(
+            res["observables"]["T2_obs"][-1], 1.5, rel_tol=1e-6, abs_tol=1e-6
+        )
+        assert math.isclose(
+            res["observables"]["Y_obs"][-1], 1.3, rel_tol=1e-6, abs_tol=1e-6
+        )
 
 
 def test_l2_04_09_event_mutated_compartment_volume_and_scoped_rate():
@@ -538,9 +600,13 @@ end bng3_events
 end model
 """
     m, n = _parse_and_generate(bngl_vol)
-    res = cpp.simulate_ode(m, n, method="cvode", t_end=1.0, n_steps=10, rtol=1e-10, atol=1e-12)
+    res = cpp.simulate_ode(
+        m, n, method="cvode", t_end=1.0, n_steps=10, rtol=1e-10, atol=1e-12
+    )
     # Exact: 1/A(0.5) = 1/10 + 0.5/1 = 0.6; 1/A(1.0) = 0.6 + 0.5/10 = 0.65 -> A(1.0) = 1/0.65.
-    assert math.isclose(res["observables"]["A_obs"][-1], 1.0 / 0.65, rel_tol=1e-6, abs_tol=1e-6)
+    assert math.isclose(
+        res["observables"]["A_obs"][-1], 1.0 / 0.65, rel_tol=1e-6, abs_tol=1e-6
+    )
 
     bngl_scoped = """
 begin model
@@ -577,9 +643,13 @@ end bng3_events
 end model
 """
     m2, n2 = _parse_and_generate(bngl_scoped)
-    res2 = cpp.simulate_ode(m2, n2, method="cvode", t_end=2.0, n_steps=10, rtol=1e-10, atol=1e-12)
+    res2 = cpp.simulate_ode(
+        m2, n2, method="cvode", t_end=2.0, n_steps=10, rtol=1e-10, atol=1e-12
+    )
     # Exact: 10 * 2 * 1.0 * 1.0 + 10 * 2 * 10.0 * 1.0 = 220.0.
-    assert math.isclose(res2["observables"]["B_obs"][-1], 220.0, rel_tol=1e-6, abs_tol=1e-6)
+    assert math.isclose(
+        res2["observables"]["B_obs"][-1], 220.0, rel_tol=1e-6, abs_tol=1e-6
+    )
 
 
 def test_l2_08_06_events_mutating_arrhenius_energy_parameters():
@@ -618,12 +688,18 @@ end bng3_events
 end model
 """
     m, n = _parse_and_generate(bngl)
-    res_ode = cpp.simulate_ode(m, n, method="cvode", t_end=15.0, n_steps=15, rtol=1e-10, atol=1e-12)
+    res_ode = cpp.simulate_ode(
+        m, n, method="cvode", t_end=15.0, n_steps=15, rtol=1e-10, atol=1e-12
+    )
     eq_before = 1000.0 * math.exp(2.0) / (1.0 + math.exp(2.0))
     eq_after = 1000.0 * math.exp(-2.0) / (1.0 + math.exp(-2.0))
     # At t=4 (index 4), equilibrium is ~880.80; at t=15 (index 15), equilibrium shifts to ~119.20.
-    assert math.isclose(res_ode["observables"]["AP"][4], eq_before, rel_tol=1e-3, abs_tol=0.5)
-    assert math.isclose(res_ode["observables"]["AP"][-1], eq_after, rel_tol=1e-3, abs_tol=0.5)
+    assert math.isclose(
+        res_ode["observables"]["AP"][4], eq_before, rel_tol=1e-3, abs_tol=0.5
+    )
+    assert math.isclose(
+        res_ode["observables"]["AP"][-1], eq_after, rel_tol=1e-3, abs_tol=0.5
+    )
 
     m_ssa, n_ssa = _parse_and_generate(bngl)
     res_ssa = cpp.simulate_ssa(m_ssa, n_ssa, t_end=15.0, n_steps=15, seed=42)
@@ -656,7 +732,11 @@ end model
         m, n = _parse_and_generate(bngl)
         with pytest.raises(RuntimeError, match="DAE algebraic rules require"):
             cpp.simulate_ode(
-                m, n, method=method, t_end=2.0, n_steps=10,
+                m,
+                n,
+                method=method,
+                t_end=2.0,
+                n_steps=10,
                 algebraic_rules=[("Z_obs", "Z_obs - 2 * X_obs")],
             )
 
@@ -683,11 +763,20 @@ end model
         m, n = _parse_and_generate(bngl_decay)
         r1 = cpp.simulate_ode(m, n, method=method, t_start=0.0, t_end=1.0, n_steps=100)
         r2 = cpp.simulate_ode(
-            m, n, method=method, t_start=1.0, t_end=2.0, n_steps=100,
+            m,
+            n,
+            method=method,
+            t_start=1.0,
+            t_end=2.0,
+            n_steps=100,
             continue_simulation=True,
         )
-        assert math.isclose(r2["observables"]["A_obs"][0], r1["observables"]["A_obs"][-1], rel_tol=1e-12)
-        assert math.isclose(r2["observables"]["A_obs"][-1], 100.0 * math.exp(-2.0), rel_tol=tol)
+        assert math.isclose(
+            r2["observables"]["A_obs"][0], r1["observables"]["A_obs"][-1], rel_tol=1e-12
+        )
+        assert math.isclose(
+            r2["observables"]["A_obs"][-1], 100.0 * math.exp(-2.0), rel_tol=tol
+        )
 
     bngl_pulse = """
 begin model
@@ -711,9 +800,16 @@ end model
     for method in ("euler", "rk4"):
         m, n = _parse_and_generate(bngl_pulse)
         res = cpp.simulate_ode(
-            m, n, method=method, t_end=1.0, n_steps=10, max_step=1e-4,
+            m,
+            n,
+            method=method,
+            t_end=1.0,
+            n_steps=10,
+            max_step=1e-4,
         )
-        assert math.isclose(res["observables"]["Y_obs"][-1], 1.0, rel_tol=1e-6, abs_tol=1e-6)
+        assert math.isclose(
+            res["observables"]["Y_obs"][-1], 1.0, rel_tol=1e-6, abs_tol=1e-6
+        )
 
 
 def test_l2_04_12_steady_state_does_not_stop_prematurely():
@@ -739,12 +835,20 @@ end model
 """
     m, n = _parse_and_generate(bngl_ida)
     res_ida = cpp.simulate_ode(
-        m, n, method="cvode", t_end=3.0, n_steps=30, steady_state=True,
-        rtol=1e-10, atol=1e-12,
+        m,
+        n,
+        method="cvode",
+        t_end=3.0,
+        n_steps=30,
+        steady_state=True,
+        rtol=1e-10,
+        atol=1e-12,
         algebraic_rules=[("Z_obs", "Z_obs - cos(time)")],
     )
     assert math.isclose(res_ida["time"][-1], 3.0, rel_tol=1e-9, abs_tol=1e-9)
-    assert math.isclose(res_ida["observables"]["Z_obs"][-1], math.cos(3.0), rel_tol=1e-6, abs_tol=1e-6)
+    assert math.isclose(
+        res_ida["observables"]["Z_obs"][-1], math.cos(3.0), rel_tol=1e-6, abs_tol=1e-6
+    )
 
     bngl_event = """
 begin model
@@ -773,11 +877,22 @@ end model
 """
     m2, n2 = _parse_and_generate(bngl_event)
     res_ev = cpp.simulate_ode(
-        m2, n2, method="cvode", t_end=3.0, n_steps=30, steady_state=True,
-        rtol=1e-10, atol=1e-12,
+        m2,
+        n2,
+        method="cvode",
+        t_end=3.0,
+        n_steps=30,
+        steady_state=True,
+        rtol=1e-10,
+        atol=1e-12,
     )
     assert math.isclose(res_ev["time"][-1], 3.0, rel_tol=1e-9, abs_tol=1e-9)
-    assert math.isclose(res_ev["observables"]["A_obs"][-1], 10.0 * math.exp(-1.0), rel_tol=1e-6, abs_tol=1e-6)
+    assert math.isclose(
+        res_ev["observables"]["A_obs"][-1],
+        10.0 * math.exp(-1.0),
+        rel_tol=1e-6,
+        abs_tol=1e-6,
+    )
 
 
 def test_l2_04_14_observable_indexed_step_tfun_captures_narrow_pulse():
@@ -808,9 +923,17 @@ end model
     for n_steps in (20, 2):
         m, n = _parse_and_generate(bngl)
         res = cpp.simulate_ode(
-            m, n, method="cvode", t_end=2.0, n_steps=n_steps, rtol=1e-10, atol=1e-12,
+            m,
+            n,
+            method="cvode",
+            t_end=2.0,
+            n_steps=n_steps,
+            rtol=1e-10,
+            atol=1e-12,
         )
-        assert math.isclose(res["observables"]["Y_obs"][-1], 1.0, rel_tol=1e-5, abs_tol=1e-5)
+        assert math.isclose(
+            res["observables"]["Y_obs"][-1], 1.0, rel_tol=1e-5, abs_tol=1e-5
+        )
 
 
 def test_l2_01_03_species_zero_matching_quantifiers():
@@ -888,11 +1011,15 @@ end reaction rules
 end model
 """
     m, n = _parse_and_generate(bngl)
-    res = cpp.simulate_ode(m, n, method="cvode", t_end=1.0, n_steps=2, rtol=1e-10, atol=1e-12)
+    res = cpp.simulate_ode(
+        m, n, method="cvode", t_end=1.0, n_steps=2, rtol=1e-10, atol=1e-12
+    )
     assert math.isclose(res["observables"]["M_Dimer"][0], 100.0, rel_tol=1e-12)
     assert math.isclose(res["observables"]["S_TwoPatt"][0], 100.0, rel_tol=1e-12)
     expected_b = 100.0 * (1.0 - math.exp(-1.0))
-    assert math.isclose(res["observables"]["B_active"][-1], expected_b, rel_tol=1e-6, abs_tol=1e-6)
+    assert math.isclose(
+        res["observables"]["B_active"][-1], expected_b, rel_tol=1e-6, abs_tol=1e-6
+    )
 
     m_ssa, n_ssa = _parse_and_generate(bngl)
     res_ssa = cpp.simulate_ssa(m_ssa, n_ssa, t_end=1.0, n_steps=2, seed=42)
@@ -922,8 +1049,14 @@ end model
 """
     m, n = _parse_and_generate(bngl)
     res = cpp.simulate_ssa(
-        m, n, t_end=1.0, n_steps=2, seed=42, batch_size=2000,
-        batch_gpu_preferred=False, batch_gpu_backend="none",
+        m,
+        n,
+        t_end=1.0,
+        n_steps=2,
+        seed=42,
+        batch_size=2000,
+        batch_gpu_preferred=False,
+        batch_gpu_backend="none",
     )
     std_a_t0 = float(res["batch_std_devs"]["obsA"][0])
     std_a_t1 = float(res["batch_std_devs"]["obsA"][-1])

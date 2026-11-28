@@ -67,7 +67,9 @@ def _resolve_seed_species_indices(
     from bionetgen.model import BioNetGenModel
 
     name_to_idx = {name: idx for idx, name in enumerate(species_names)}
-    wrapped = model if isinstance(model, BioNetGenModel) else BioNetGenModel(native_model)
+    wrapped = (
+        model if isinstance(model, BioNetGenModel) else BioNetGenModel(native_model)
+    )
     pairs: list[tuple[int, int]] = []
     for seed_idx, seed in enumerate(getattr(native_model, "seed_species", [])):
         pat = str(seed.pattern).strip()
@@ -682,9 +684,7 @@ def _resolve_params_jax(
         if pid in overridden_ids:
             direct_deps[pid] = set()
         else:
-            direct_deps[pid] = _expr_param_deps(
-                pdef.get("expression"), functions_by_id
-            )
+            direct_deps[pid] = _expr_param_deps(pdef.get("expression"), functions_by_id)
 
     topo_order: list[int] = []
     visit_state: Dict[int, int] = {}
@@ -1025,8 +1025,6 @@ def _compile_dynamic_rhs(
         )
 
     snapshot = data.get("snapshot", {})
-    param_defs = snapshot.get("parameters", [])
-    param_name_to_idx = {p["name"]: p.get("id", i) for i, p in enumerate(param_defs)}
     functions_by_id = {f["id"]: f for f in snapshot.get("functions", []) if "id" in f}
 
     group_names = list(data.get("group_names", []))

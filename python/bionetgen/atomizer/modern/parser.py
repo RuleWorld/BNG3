@@ -5354,10 +5354,7 @@ class SBMLParser:
             return view
 
         max_passes = (
-            len(model.initial_assignments)
-            + len(model.rules)
-            + len(model.species)
-            + 2
+            len(model.initial_assignments) + len(model.rules) + len(model.species) + 2
         )
         for _ in range(max_passes):
             progressed = False
@@ -5389,9 +5386,9 @@ class SBMLParser:
                     )
                     sp_val: Optional[float] = None
                     if bool(getattr(species, "has_only_substance_units", False)):
-                        if bool(getattr(species, "initial_amount_set", False)) and math.isfinite(
-                            float(species.initial_amount)
-                        ):
+                        if bool(
+                            getattr(species, "initial_amount_set", False)
+                        ) and math.isfinite(float(species.initial_amount)):
                             sp_val = float(species.initial_amount)
                         elif (
                             bool(getattr(species, "initial_concentration_set", False))

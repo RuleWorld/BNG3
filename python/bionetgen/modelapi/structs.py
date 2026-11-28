@@ -414,9 +414,7 @@ class Rule(ModelObj):
             )
         elif len(rate_cts) == 2:
             self.rate_constants = [rate_cts[0], rate_cts[1]]
-            self.bidirectional = (
-                True if bidirectional is None else bool(bidirectional)
-            )
+            self.bidirectional = True if bidirectional is None else bool(bidirectional)
         else:
             print("1 or 2 rate constants allowed")
 

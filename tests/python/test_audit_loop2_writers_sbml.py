@@ -349,7 +349,10 @@ writeSBML({level=>3, prefix=>"ev_l3v2", suffix=>""})
     assert l3_trigger is not None
     assert "initialValue" in l3_trigger.attrib
     assert "persistent" in l3_trigger.attrib
-    assert l3_event.find("sbml:delay/{http://www.w3.org/1998/Math/MathML}math", ns3) is not None
+    assert (
+        l3_event.find("sbml:delay/{http://www.w3.org/1998/Math/MathML}math", ns3)
+        is not None
+    )
 
 
 def test_sbml_writer_observable_quantifiers_and_molecule_compartments(tmp_path: Path):
@@ -800,13 +803,15 @@ writeXML({prefix=>"xml_features", suffix=>""})
     )
     root = ET.fromstring((tmp_path / "xml_features.xml").read_text(encoding="utf-8"))
     ns = {"sbml": "http://www.sbml.org/sbml/level3"}
-    rules = {
-        r.attrib["name"]: r for r in root.findall(".//sbml:ReactionRule", ns)
-    }
+    rules = {r.attrib["name"]: r for r in root.findall(".//sbml:ReactionRule", ns)}
 
     # L2-07-02: intra-pattern self-bond symmetry factor = 0.5
     assert rules["self_bond"].attrib.get("symmetry_factor") == "0.5"
-    rev_key = "_reverse__self_bond" if "_reverse__self_bond" in rules else "_reverse_self_bond"
+    rev_key = (
+        "_reverse__self_bond"
+        if "_reverse__self_bond" in rules
+        else "_reverse_self_bond"
+    )
     assert rules[rev_key].attrib.get("symmetry_factor") == "0.5"
 
     # L2-07-03: non-TotalRate modifiers keep symmetry_factor=0.5; TotalRate omits it
@@ -823,7 +828,9 @@ writeXML({prefix=>"xml_features", suffix=>""})
     assert excl_pats[1].find(".//sbml:Molecule", ns).attrib.get("compartment") == "EC"
 
     # L2-07-10: evaluated arithmetic expressions in Sat <RateConstant>
-    sat_rc = rules["sat_expr"].findall(".//sbml:RateLaw/sbml:ListOfRateConstants/sbml:RateConstant", ns)
+    sat_rc = rules["sat_expr"].findall(
+        ".//sbml:RateLaw/sbml:ListOfRateConstants/sbml:RateConstant", ns
+    )
     assert len(sat_rc) == 2
     assert float(sat_rc[0].attrib["value"]) == pytest.approx(1.0)
     assert float(sat_rc[1].attrib["value"]) == pytest.approx(2.0)
@@ -968,8 +975,10 @@ writeMEXfile({prefix=>"cmp", suffix=>""})
 
     cpp_src = (tmp_path / "cmp_cvode.h").read_text(encoding="utf-8")
     assert (
-        "(NV_Ith_S(expressions,0) + NV_Ith_S(expressions,1))*NV_Ith_S(species,0)" in cpp_src
-        or "(NV_Ith_S(expressions,1) + NV_Ith_S(expressions,0))*NV_Ith_S(species,0)" in cpp_src
+        "(NV_Ith_S(expressions,0) + NV_Ith_S(expressions,1))*NV_Ith_S(species,0)"
+        in cpp_src
+        or "(NV_Ith_S(expressions,1) + NV_Ith_S(expressions,0))*NV_Ith_S(species,0)"
+        in cpp_src
     )
     assert "NV_Ith_S(observables,0) = NV_Ith_S(species,0)" in cpp_src
 
@@ -1061,9 +1070,7 @@ simulate({method=>"ode", t_end=>2.0, n_steps=>20})
     m_src = (tmp_path / "rich_ode.m").read_text(encoding="utf-8")
     assert "bng_if(" in m_src
     assert "function val = bng_if(cond, a, b)" in m_src
-    m_code_only = "\n".join(
-        line.split("%", 1)[0] for line in m_src.splitlines()
-    )
+    m_code_only = "\n".join(line.split("%", 1)[0] for line in m_src.splitlines())
     assert not re.search(r"(?<![A-Za-z0-9_])if\s*\([^;\n]+,", m_code_only)
     assert "decay_rate(" not in m_src
 

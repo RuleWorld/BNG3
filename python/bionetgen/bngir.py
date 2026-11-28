@@ -578,9 +578,7 @@ def to_bngir(
             "source pattern text is intentionally unavailable"
         )
     if getattr(model, "_algebraic_rules", None):
-        raise ValueError(
-            f"BNGIR {version} does not preserve SBML algebraic rules"
-        )
+        raise ValueError(f"BNGIR {version} does not preserve SBML algebraic rules")
     effective_provenance: dict[str, Any] | None = (
         dict(provenance) if provenance is not None else None
     )
@@ -720,9 +718,7 @@ def _is_unquoted_bngl_expr(raw: str) -> bool:
         if not isinstance(node, allowed_nodes):
             return False
         if isinstance(node, ast.Constant):
-            if isinstance(node.value, bool) or not isinstance(
-                node.value, (int, float)
-            ):
+            if isinstance(node.value, bool) or not isinstance(node.value, (int, float)):
                 return False
         elif isinstance(node, ast.Call):
             if (
@@ -3587,9 +3583,7 @@ def _pattern_v02(
             and any(m.get("compartment") == comp for m in raw_mols)
         ):
             pass
-        elif raw_mols and (
-            raw_mols[-1].get("compartment") or len(raw_mols) > 1
-        ):
+        elif raw_mols and (raw_mols[-1].get("compartment") or len(raw_mols) > 1):
             body = f"@{comp}:{body}"
         else:
             body = f"{body}@{comp}"

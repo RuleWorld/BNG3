@@ -116,7 +116,9 @@ end model
     psa_mono, psa_dim, psa_s1 = [], [], []
     pla_mono, pla_dim, pla_s1 = [], [], []
     for seed in range(101, 117):
-        rp = cpp.simulate_psa(model, net, t_end=5.0, n_steps=10, poplevel=10.0, seed=seed)
+        rp = cpp.simulate_psa(
+            model, net, t_end=5.0, n_steps=10, poplevel=10.0, seed=seed
+        )
         psa_mono.append(float(rp["observables"]["A_mono"][-1]))
         psa_dim.append(float(rp["observables"]["A_dim"][-1]))
         psa_s1.append(float(rp["observables"]["A_s1"][-1]))
@@ -267,7 +269,9 @@ end model
 """
     m2 = cpp.parse_string(fp_src)
     n2 = cpp.generate_network(m2)
-    ode_ab = float(cpp.simulate_ode(m2, n2, t_end=2.0, n_steps=10)["observables"]["AB"][-1])
+    ode_ab = float(
+        cpp.simulate_ode(m2, n2, t_end=2.0, n_steps=10)["observables"]["AB"][-1]
+    )
 
     psa_ab = float(
         np.mean(
@@ -329,14 +333,16 @@ end model
     psa_dim = float(
         np.mean(
             [
-                cpp.simulate_psa(model, net, t_end=5.0, n_steps=10, poplevel=10.0, seed=s)[
-                    "observables"
-                ]["S_dim"][-1]
+                cpp.simulate_psa(
+                    model, net, t_end=5.0, n_steps=10, poplevel=10.0, seed=s
+                )["observables"]["S_dim"][-1]
                 for s in range(1, 21)
             ]
         )
     )
-    assert 90.0 < psa_dim < 128.0, f"Expected S_dim ~ 108.6 (with 1/V_PM), got {psa_dim:.2f}"
+    assert (
+        90.0 < psa_dim < 128.0
+    ), f"Expected S_dim ~ 108.6 (with 1/V_PM), got {psa_dim:.2f}"
 
 
 def test_psa_builtin_sat_mm_hill_rate_laws() -> None:
@@ -431,9 +437,9 @@ end model
     psa_b = float(
         np.mean(
             [
-                cpp.simulate_psa(model, net, t_end=1.0, n_steps=5, poplevel=5.0, seed=s)[
-                    "observables"
-                ]["obsB"][-1]
+                cpp.simulate_psa(
+                    model, net, t_end=1.0, n_steps=5, poplevel=5.0, seed=s
+                )["observables"]["obsB"][-1]
                 for s in range(1, 21)
             ]
         )
@@ -441,9 +447,9 @@ end model
     pla_b = float(
         np.mean(
             [
-                cpp.simulate_pla(model, net, t_end=1.0, n_steps=5, seed=s)["observables"][
-                    "obsB"
-                ][-1]
+                cpp.simulate_pla(model, net, t_end=1.0, n_steps=5, seed=s)[
+                    "observables"
+                ]["obsB"][-1]
                 for s in range(1, 21)
             ]
         )
@@ -454,11 +460,15 @@ end model
     assert abs(psa_b - pla_b) < 10.0
 
     # Missing tfun file fails cleanly without leaking internal __tfun_file_hex_ tokens
-    missing_src = src.replace(tfun_file.as_posix(), (tmp_path / "missing.tfun").as_posix())
+    missing_src = src.replace(
+        tfun_file.as_posix(), (tmp_path / "missing.tfun").as_posix()
+    )
     m_miss = cpp.parse_string(missing_src)
     n_miss = cpp.generate_network(m_miss)
     for fn in (
-        lambda: cpp.simulate_psa(m_miss, n_miss, t_end=1.0, n_steps=2, poplevel=5.0, seed=1),
+        lambda: cpp.simulate_psa(
+            m_miss, n_miss, t_end=1.0, n_steps=2, poplevel=5.0, seed=1
+        ),
         lambda: cpp.simulate_pla(m_miss, n_miss, t_end=1.0, n_steps=2, seed=1),
     ):
         with pytest.raises(RuntimeError) as exc_info:
@@ -543,9 +553,9 @@ end model
         for n_steps in (1, 10):
             vals = [
                 float(
-                    cpp.simulate_pla(model, net, t_end=1.0, n_steps=n_steps, seed=1000 + i)[
-                        "observables"
-                    ]["obsA"][-1]
+                    cpp.simulate_pla(
+                        model, net, t_end=1.0, n_steps=n_steps, seed=1000 + i
+                    )["observables"]["obsA"][-1]
                 )
                 for i in range(n_traj)
             ]
@@ -621,7 +631,9 @@ end model
         "fEuler|post-eps:sb|eps=0.1,p=0.5,q=1.5,w=0.75",
         "fEuler|post-eps:sb|eps=0.1,p=0.2,q=3.0,w=0.5",
     ):
-        res = cpp.simulate_pla(m_rev, n_rev, t_end=5.0, n_steps=5, config_str=cfg, seed=12345)
+        res = cpp.simulate_pla(
+            m_rev, n_rev, t_end=5.0, n_steps=5, config_str=cfg, seed=12345
+        )
         a_arr = np.asarray(res["observables"]["obsA"], dtype=float)
         b_arr = np.asarray(res["observables"]["obsB"], dtype=float)
         np.testing.assert_allclose(a_arr + b_arr, 500.0, atol=1e-9)
@@ -630,7 +642,9 @@ end model
 
     # L2-05-07: invalid poplevel / eps / tau must fail closed
     with pytest.raises((ValueError, RuntimeError)):
-        cpp.simulate_psa(m_rev, n_rev, t_end=1.0, n_steps=2, poplevel=float("nan"), seed=1)
+        cpp.simulate_psa(
+            m_rev, n_rev, t_end=1.0, n_steps=2, poplevel=float("nan"), seed=1
+        )
     for bad_cfg in (
         "fEuler|pre-neg:sb|eps=0",
         "fEuler|pre-neg:sb|eps=-0.1",
@@ -638,7 +652,9 @@ end model
         "fEuler|fixed:sb|tau=0",
     ):
         with pytest.raises((ValueError, RuntimeError)):
-            cpp.simulate_pla(m_rev, n_rev, t_end=1.0, n_steps=2, config_str=bad_cfg, seed=1)
+            cpp.simulate_pla(
+                m_rev, n_rev, t_end=1.0, n_steps=2, config_str=bad_cfg, seed=1
+            )
 
 
 def test_gpu_batch_ssa_large_population_welford_moments() -> None:
@@ -681,9 +697,9 @@ end model
     # Exact: A(0)=2e7 is deterministic => std(A, t=0) == 0; A + B == 2e7 => std(A, t=1) == std(B, t=1) ~ 1.0
     assert std_a_t0 == 0.0, f"Spurious non-zero t=0 std: {std_a_t0}"
     assert 0.7 < std_a_t1 < 1.3, f"Expected std(obsA, t=1) ~ 1.0, got {std_a_t1}"
-    assert abs(std_a_t1 - std_b_t1) < 1e-4, (
-        f"Conservation std(A)==std(B) violated: stdA={std_a_t1}, stdB={std_b_t1}"
-    )
+    assert (
+        abs(std_a_t1 - std_b_t1) < 1e-4
+    ), f"Conservation std(A)==std(B) violated: stdA={std_a_t1}, stdB={std_b_t1}"
 
     # Functional rate with population > 2^24 must fail closed to CPU fallback
     func_large_src = """begin model

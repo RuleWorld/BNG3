@@ -831,7 +831,9 @@ def test_l2_09_08_non_decimal_logbase_accepted_losslessly(tmp_path):
 </sbml>"""
 
     parsed = SBMLParser().parse(sbml)
-    mathml_warnings = [w for w in parsed.import_warnings if w.get("category") == "mathml"]
+    mathml_warnings = [
+        w for w in parsed.import_warnings if w.get("category") == "mathml"
+    ]
     assert mathml_warnings == []
     assert parsed.parameters["c5"].value == pytest.approx(2.0, rel=1e-12)
 
