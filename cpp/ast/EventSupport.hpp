@@ -49,6 +49,11 @@ inline void validateNativeEventSubset(const Model& model) {
     };
     checkTrigger(trigger);
     const auto dynamicIdentifier = [&](const Expression& expression) {
+        if (expression.kind() == ExpressionKind::Function &&
+            expression.args().empty() &&
+            (expression.name() == "time" || expression.name() == "t")) {
+            return true;
+        }
         if (expression.kind() != ExpressionKind::Identifier) return false;
         if (expression.name() == "time") return true;
         for (const auto& observable : model.getObservables()) {
@@ -114,6 +119,11 @@ inline void validateNativeEventSubset(const Model& model) {
     std::set<std::string> visiting;
     bool allowDistributionAssignment = false;
     std::function<void(const Expression&)> continuous = [&](const Expression& expression) {
+        if (expression.kind() == ExpressionKind::Function &&
+            expression.args().empty() &&
+            (expression.name() == "time" || expression.name() == "t")) {
+            return;
+        }
         if (expression.kind() == ExpressionKind::Function &&
             (expression.name() == "abs" || expression.name() == "floor") &&
             expression.args().size() == 1) {
@@ -233,10 +243,12 @@ inline void validateNativeEventSubset(const Model& model) {
         bool dynamic = false;
         std::function<void(const Expression&)> inspectPriority = [&](const Expression& expression) {
             if (expression.kind() == ExpressionKind::ObservableRef) dynamic = true;
+            if ((expression.kind() == ExpressionKind::Identifier ||
+                 (expression.kind() == ExpressionKind::Function && expression.args().empty())) &&
+                (expression.name() == "time" || expression.name() == "t")) {
+                dynamic = true;
+            }
             if (expression.kind() == ExpressionKind::Identifier) {
-                if (expression.name() == "time" || expression.name() == "t") {
-                    dynamic = true;
-                }
                 for (const auto& observable : model.getObservables()) {
                     if (observable.getName() == expression.name()) dynamic = true;
                 }
@@ -297,8 +309,12 @@ inline void validateNativeEventSubset(const Model& model) {
         std::function<bool(const Expression&)> referencesDynamicValue =
             [&](const Expression& current) {
                 if (current.kind() == ExpressionKind::ObservableRef) return true;
+                if ((current.kind() == ExpressionKind::Identifier ||
+                     (current.kind() == ExpressionKind::Function && current.args().empty())) &&
+                    (current.name() == "time" || current.name() == "t")) {
+                    return true;
+                }
                 if (current.kind() == ExpressionKind::Identifier) {
-                    if (current.name() == "time" || current.name() == "t") return true;
                     for (const auto& observable : model.getObservables()) {
                         if (observable.getName() == current.name()) return true;
                     }

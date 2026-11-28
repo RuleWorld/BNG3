@@ -1745,8 +1745,8 @@ void OdeIntegrator::compileGroups() {
 void OdeIntegrator::updateFunctions(
     const std::vector<double>& groupValues,
     double time,
-    std::vector<double>& functionValues) const {
-    (void)groupValues;
+    std::vector<double>& functionValues,
+    const std::vector<double>* stateOverride) const {
     functionValues.clear();
 
     // Functions are not state variables, but zero-argument functions are
@@ -1758,21 +1758,32 @@ void OdeIntegrator::updateFunctions(
     // integrator. The history-aware evaluator resolves observables, parameters,
     // and nested delay() calls from one state/time context.
     const auto& functions = model_.getFunctions();
-    const auto functionState = historyStateAt(time);
+    std::vector<double> historyState;
+    const std::vector<double>* statePtr = stateOverride;
+    if (statePtr == nullptr || statePtr->size() != nSpecies_) {
+        historyState = historyStateAt(time);
+        statePtr = &historyState;
+    }
     // All result functions share this state and instant, so resolve the
     // observable snapshot and historical parameters once instead of once per
     // function.
     const auto functionParameters = historyParametersAt(time);
     std::vector<double> functionGroupValues;
-    updateGroups(functionState.data(), functionGroupValues);
+    const std::vector<double>* groupsPtr = &functionGroupValues;
+    if (stateOverride != nullptr && stateOverride->size() == nSpecies_ &&
+        groupValues.size() == compiledGroups_.size()) {
+        groupsPtr = &groupValues;
+    } else {
+        updateGroups(statePtr->data(), functionGroupValues);
+    }
 
     for (const auto index : resultFunctionIndices_) {
         const auto& function = functions[index];
         try {
             functionValues.push_back(
                 evaluateExpressionWithHistoryPrepared(
-                    function.getExpression(), time, functionState.data(),
-                    functionParameters, functionGroupValues));
+                    function.getExpression(), time, statePtr->data(),
+                    functionParameters, *groupsPtr));
         } catch (const std::exception&) {
             // Keep a malformed optional function from invalidating an
             // otherwise executable state trajectory.  The writer/parser
@@ -4463,7 +4474,8 @@ OdeResult OdeIntegrator::integrateEuler(const OdeOptions& opts) {
     result.functions.resize(result.timePoints.size());
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
-        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step]);
+        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step],
+                        &result.concentrations[step]);
     }
 
     return result;
@@ -4557,7 +4569,8 @@ OdeResult OdeIntegrator::integrateRK4(const OdeOptions& opts) {
     result.functions.resize(result.timePoints.size());
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
-        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step]);
+        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step],
+                        &result.concentrations[step]);
     }
 
     return result;
@@ -5313,6 +5326,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         times.insert(times.begin(), opts.tStart);
     }
     initializePeriodicEventClocks(initialState, opts.continueSimulation, opts.tStart);
+    std::vector<double> tStartOutputState = initialState;
     if (!nativeEvents_.empty()) {
         // The root function value of every group at the start of the run.
         // A group whose value changed its sign since then crossed its trigger
@@ -5328,16 +5342,40 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
             zeroRootStrictGroups_[groupIndex] =
                 (initialRoot == 0.0 && isStrictTrigger(group.trigger));
         }
+        // First apply events that genuinely hold at tStart with initial_value=false
+        // (SBML L3V2 Core Sec. 4.12.2). Their assignments belong to the t=tStart
+        // output state.
         for (std::size_t index = 0;
              !opts.continueSimulation && index < nativeEvents_.size(); ++index) {
             const auto& event = nativeEvents_[index];
             const auto& trigger = event.trigger;
-            // CVODE does not report a root that starts exactly at zero.  For
-            // a strict trigger whose root surface is rising at tStart, queue
-            // its right-limit event at tStart so the first integration step
-            // starts from the post-trigger state.  The SBML trigger itself is
-            // still false at equality; this represents the crossing that
-            // occurs immediately after tStart at the solver's time precision.
+            if (!event.initialValue &&
+                triggerHolds(trigger, opts.tStart, initialState.data())) {
+                PendingEvent pending;
+                pending.event = index;
+                pending.executionTime =
+                    opts.tStart + eventDelay(event, opts.tStart, initialState.data());
+                if (event.useValuesFromTriggerTime) {
+                    pending.values = eventValues(event, opts.tStart, initialState.data());
+                }
+                triggerRoseAt_[index] = opts.tStart;
+                pendingEvents_.push_back(std::move(pending));
+            }
+        }
+        if (applyDueEvents(opts.tStart, initialState)) {
+            recordHistoryJump(opts.tStart, initialState);
+        }
+        tStartOutputState = initialState;
+        // Now queue strict triggers whose root starts at zero and is rising at
+        // tStart (e.g. ``time > 0``). The trigger itself is false at tStart and
+        // becomes true at tStart+, so the recorded t=tStart output preserves
+        // tStartOutputState while CVODE starts integrating t > tStart from the
+        // post-trigger state.
+        for (std::size_t index = 0;
+             !opts.continueSimulation && index < nativeEvents_.size(); ++index) {
+            if (triggerRoseAt_[index] >= opts.tStart) continue;
+            const auto& event = nativeEvents_[index];
+            const auto& trigger = event.trigger;
             if (isStrictTrigger(trigger) &&
                 eventRootValue(trigger, opts.tStart, initialState.data()) == 0.0) {
                 std::vector<double> initialRates(nSpecies_);
@@ -5365,21 +5403,6 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                     // has not risen yet.
                 }
             }
-            if (!event.initialValue &&
-                triggerHolds(trigger, opts.tStart, initialState.data())) {
-                // The trigger holds at the start of the simulation and the
-                // trigger's initial value is false, so the event triggers
-                // immediately (SBML L3V2 Core Sec. 4.12.2).
-                PendingEvent pending;
-                pending.event = index;
-                pending.executionTime =
-                    opts.tStart + eventDelay(event, opts.tStart, initialState.data());
-                if (event.useValuesFromTriggerTime) {
-                    pending.values = eventValues(event, opts.tStart, initialState.data());
-                }
-                triggerRoseAt_[index] = opts.tStart;
-                pendingEvents_.push_back(std::move(pending));
-            }
         }
         // Any group whose event already queued its rising edge at tStart must
         // not be queued a second time by the initially-zero strict-trigger
@@ -5394,8 +5417,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 }
             }
         }
-        // The events that trigger at the start of the simulation are executed
-        // before the solver takes its first step.
+        // Apply right-limit strict events before CVODE takes its first step.
         if (applyDueEvents(opts.tStart, initialState)) {
             recordHistoryJump(opts.tStart, initialState);
         }
@@ -5757,10 +5779,10 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                     if (CVodeGetRootInfo(cvode_mem, rootsFound.data()) != CV_SUCCESS) {
                         throw std::runtime_error("bng3_events CVodeGetRootInfo failed");
                     }
-                    const auto root = std::find_if(
+                    bool anyRisingRoot = std::any_of(
                         rootsFound.begin(), rootsFound.end(),
                         [](int rootDirection) { return rootDirection > 0; });
-                    if (root != rootsFound.end()) {
+                    if (anyRisingRoot) {
                         std::vector<double> state(nSpecies_);
                         for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
                         recordHistoryPoint(t, state);
@@ -5769,54 +5791,58 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         // session releases the linear solver, the matrix,
                         // the solver memory, the vector and the context
                         // exactly once.
-                        const auto rootIndex = static_cast<std::size_t>(
-                            root - rootsFound.begin());
-                        const auto group = nativeEventRoots_[rootIndex].first;
-                        // This group's rising edge was localized by CVODE;
-                        // the initially-zero strict-trigger poll must not
-                        // queue it a second time on a later accepted step.
-                        if (group < zeroRootStrictGroups_.size()) {
-                            zeroRootStrictGroups_[group] = false;
-                        }
-                        // A conjunction rises only when every surface holds.
-                        // At this root, the selected surface is exactly zero;
-                        // its positive direction makes it conceptually true.
                         std::vector<double> derivatives(nSpecies_);
                         derivs(t, state.data(), derivatives.data());
-                        bool conjunctionHolds = true;
-                        const auto* risingConjunct = nativeEventRoots_[rootIndex].second;
-                        for (const auto* conjunct : triggerConjuncts(
-                                 nativeEventGroups_[group].trigger)) {
-                            // CVODE reported this conjunct's root with an
-                            // increasing direction, so it is rising here even
-                            // where its slope has no analytic form (a user
-                            // function or delay() side has no derivative in
-                            // eventSideDerivative).
-                            if (conjunct == risingConjunct) continue;
-                            if (discreteEventConjuncts_.count(conjunct)) {
-                                // Piecewise constant: it holds or it does not;
-                                // a zero slope says nothing about tangency.
-                                if (!triggerHolds(*conjunct, t, state.data())) {
-                                    conjunctionHolds = false;
-                                    break;
-                                }
-                                continue;
-                            }
-                            const double value = eventRootValue(*conjunct, t, state.data());
-                            const double tolerance = 1e-9 * (1.0 + std::abs(value));
-                            if (value < -tolerance ||
-                                (std::abs(value) <= tolerance &&
-                                 eventRootDerivative(*conjunct, t, state.data(),
-                                                     derivatives) <= 0.0)) {
-                                conjunctionHolds = false;
-                                break;
-                            }
-                        }
-                        if (conjunctionHolds) {
+                        std::set<std::size_t> risingGroups;
+                        for (std::size_t rootIndex = 0; rootIndex < rootsFound.size(); ++rootIndex) {
+                            if (rootsFound[rootIndex] <= 0) continue;
+                            const auto group = nativeEventRoots_[rootIndex].first;
+                            if (risingGroups.count(group)) continue;
+                            // This group's rising edge was localized by CVODE;
+                            // the initially-zero strict-trigger poll must not
+                            // queue it a second time on a later accepted step.
                             if (group < zeroRootStrictGroups_.size()) {
                                 zeroRootStrictGroups_[group] = false;
                             }
-                            queueTriggeredGroup(group, t, state);
+                            // A conjunction rises only when every surface holds.
+                            // At this root, the selected surface is exactly zero;
+                            // its positive direction makes it conceptually true.
+                            bool conjunctionHolds = true;
+                            const auto* risingConjunct = nativeEventRoots_[rootIndex].second;
+                            for (const auto* conjunct : triggerConjuncts(
+                                     nativeEventGroups_[group].trigger)) {
+                                // CVODE reported this conjunct's root with an
+                                // increasing direction, so it is rising here even
+                                // where its slope has no analytic form (a user
+                                // function or delay() side has no derivative in
+                                // eventSideDerivative).
+                                if (conjunct == risingConjunct) continue;
+                                if (discreteEventConjuncts_.count(conjunct)) {
+                                    // Piecewise constant: it holds or it does not;
+                                    // a zero slope says nothing about tangency.
+                                    if (!triggerHolds(*conjunct, t, state.data())) {
+                                        conjunctionHolds = false;
+                                        break;
+                                    }
+                                    continue;
+                                }
+                                const double value = eventRootValue(*conjunct, t, state.data());
+                                const double tolerance = 1e-9 * (1.0 + std::abs(value));
+                                if (value < -tolerance ||
+                                    (std::abs(value) <= tolerance &&
+                                     eventRootDerivative(*conjunct, t, state.data(),
+                                                         derivatives) <= 0.0)) {
+                                    conjunctionHolds = false;
+                                    break;
+                                }
+                            }
+                            if (conjunctionHolds) {
+                                if (group < zeroRootStrictGroups_.size()) {
+                                    zeroRootStrictGroups_[group] = false;
+                                }
+                                risingGroups.insert(group);
+                                queueTriggeredGroup(group, t, state);
+                            }
                         }
                         // Another group may have crossed in the same step:
                         // the solver reports one crossing per step, so the
@@ -5824,7 +5850,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         // root function had at the last instant the events
                         // were processed.
                         for (std::size_t other = 0; other < nativeEventGroups_.size(); ++other) {
-                            if (other == group) continue;
+                            if (risingGroups.count(other)) continue;
                             const double value = eventRootValue(
                                 nativeEventGroups_[other].trigger, t, state.data());
                             const double previous = lastRootValues_[other];
@@ -5933,8 +5959,12 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         // Save current state
         result.timePoints.push_back(tOut);
         std::vector<double> conc(nSpecies_);
-        for (std::size_t i = 0; i < nSpecies_; ++i) {
-            conc[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
+        if (step == 0 && tOut == opts.tStart) {
+            conc = tStartOutputState;
+        } else {
+            for (std::size_t i = 0; i < nSpecies_; ++i) {
+                conc[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
+            }
         }
         result.concentrations.push_back(conc);
 
@@ -5958,7 +5988,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
             // CVODE integrates a scaled vector. At the initial point, use the
             // original model state for stop_if so a scale/unscale round trip
             // cannot change a threshold comparison by one ULP.
-            const auto& stopState = tOut == opts.tStart ? initialState : conc;
+            const auto& stopState = tOut == opts.tStart ? tStartOutputState : conc;
             if (stopConditionMet(*stopIfExpr, tOut, stopState)) {
                 break;
             }
@@ -5970,7 +6000,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
     result.functions.resize(result.timePoints.size());
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
-        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step]);
+        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step],
+                        &result.concentrations[step]);
     }
 
     // Optional solver profile for bench/ode_large_bench.py: one stderr line
@@ -6374,7 +6405,8 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
     result.functions.resize(result.timePoints.size());
     for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
         updateGroups(result.concentrations[step].data(), result.observables[step]);
-        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step]);
+        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step],
+                        &result.concentrations[step]);
     }
     return result;
 }

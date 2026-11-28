@@ -836,3 +836,112 @@ end model
     # the right limit it stays near zero.
     result = bionetgen.load(str(bngl)).simulate(method="ode", t_end=0.1, n_steps=2)
     assert result.observables["A_amt"][-1] < 1.0, list(result.observables["A_amt"])
+
+
+def test_strict_time_gt_zero_preserves_initial_output_and_functions(tmp_path):
+    """A ``time > 0`` event is false at t=0 and fires at t=0+.
+
+    Both observables and zero-argument functions evaluated at t=0 must see the
+    pre-event initial state, while t > 0 sees the post-event state.
+    """
+    import bionetgen
+
+    bngl = tmp_path / "strict_initial_output.bngl"
+    bngl.write_text("""begin model
+begin parameters
+  k 0
+end parameters
+begin molecule types
+  X()
+  V()
+end molecule types
+begin seed species
+  X() 6
+  V() 1
+end seed species
+begin observables
+  Species X_amt X()
+  Species V_amt V()
+end observables
+begin functions
+  conc_x() = X_amt / V_amt
+end functions
+begin reaction rules
+  hold: X() -> X() k
+end reaction rules
+begin bng3_events version 1
+  event "dilute"
+    trigger: time > 0
+    initial_value: true
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: V_amt = V_amt * 3
+  end event
+end bng3_events
+end model
+""")
+    result = bionetgen.load(str(bngl)).simulate(method="ode", t_end=1.0, n_steps=4)
+    assert result.observables["V_amt"][0] == pytest.approx(1.0, abs=1e-12)
+    assert result.observables["V_amt"][1] == pytest.approx(3.0, abs=1e-12)
+    assert result.functions["conc_x"][0] == pytest.approx(6.0, abs=1e-12)
+    assert result.functions["conc_x"][1] == pytest.approx(2.0, abs=1e-12)
+
+
+def test_simultaneous_conjunctive_roots_and_zero_arg_time_function(tmp_path):
+    """Simultaneous rising CVODE roots across conjunctive triggers must all be checked.
+
+    When an earlier event shares the rising conjunct ``time >= last + step``
+    with a false guard ``time >= 10`` while a later event has a true guard
+    ``time < 10``, the later event must still fire and evaluate zero-argument
+    ``time()`` inside a referenced assignment-rule function.
+    """
+    import bionetgen
+
+    bngl = tmp_path / "simultaneous_conjunctive_roots.bngl"
+    bngl.write_text("""begin model
+begin parameters
+  step 0.25
+  t_switch 10
+  k 0
+end parameters
+begin molecule types
+  Last()
+  Val()
+end molecule types
+begin seed species
+  Last() 0
+  Val() 0
+end seed species
+begin observables
+  Species Last_amt Last()
+  Species Val_amt Val()
+end observables
+begin functions
+  clock_fn() = time() * 2
+end functions
+begin reaction rules
+  hold: Val() -> Val() k
+end reaction rules
+begin bng3_events version 1
+  event "late_regime"
+    trigger: (time >= t_switch) && (time > Last_amt + step)
+    initial_value: true
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: Val_amt = 999
+    assignment: Last_amt = time
+  end event
+  event "early_regime"
+    trigger: (time < t_switch) && (time >= Last_amt + step)
+    initial_value: true
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: Val_amt = clock_fn()
+    assignment: Last_amt = time
+  end event
+end bng3_events
+end model
+""")
+    result = bionetgen.load(str(bngl)).simulate(method="ode", t_end=1.0, n_steps=4)
+    assert result.observables["Last_amt"][-1] == pytest.approx(1.0, abs=1e-6)
+    assert result.observables["Val_amt"][-1] == pytest.approx(2.0, abs=1e-6)

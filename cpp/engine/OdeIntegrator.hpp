@@ -431,7 +431,8 @@ private:
                                double tolerance) const;
     void updateFunctions(const std::vector<double>& groupValues,
                          double time,
-                         std::vector<double>& functionValues) const;
+                         std::vector<double>& functionValues,
+                         const std::vector<double>* stateOverride = nullptr) const;
     std::vector<double> historyStateAt(double time) const;
     std::unordered_map<std::string, double> historyParametersAt(double time) const;
     double evaluateExpressionWithHistory(

@@ -1485,6 +1485,10 @@ def _reference_output_target(
         if any(
             rule.type == "rate" and rule.variable == compartment_id
             for rule in parsed.rules
+        ) or any(
+            assignment.variable == compartment_id
+            for event in getattr(parsed, "events", ())
+            for assignment in getattr(event, "assignments", ())
         ):
             return f"{compartment_name}_amt"
         if any(
